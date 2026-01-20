@@ -6,7 +6,7 @@
  */
 
 import { mockCurrentUser, mockUsers } from "@/data/mockData";
-import type { AppUser, SubscriptionStatus, UserRole } from "@/types";
+import { SubscriptionStatus, UserRole, type AppUser } from "@/types";
 
 // Development mode flag - set to false to use real API
 export const USE_MOCK_AUTH = __DEV__;
@@ -139,9 +139,9 @@ export const mockSignup = async (
     phone: phoneNumber || "",
     points: 0,
     avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(firstName || email)}&background=random`,
-    role: "USER" as unknown as UserRole,
-    subscriptionStatus: "INACTIVE" as unknown as SubscriptionStatus,
-    surveysubscriptionStatus: "INACTIVE" as unknown as SubscriptionStatus,
+    role: UserRole.USER,
+    subscriptionStatus: SubscriptionStatus.INACTIVE,
+    surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
     currentSubscriptionId: null,
     privacySettings: null,
     createdAt: new Date().toISOString(),

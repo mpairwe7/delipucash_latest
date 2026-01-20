@@ -1,11 +1,17 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
-    provider = "mongodb"
-    // Connection URL moved to prisma.config.ts for Prisma 7+
-    // See: https://pris.ly/d/config-datasource
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
 }
 
 // Enums for fixed values
@@ -34,12 +40,6 @@ enum SubscriptionType {
   MONTHLY
 }
 
-enum UserRole {
-  USER
-  ADMIN
-  MODERATOR
-}
-
 model AppUser {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   email       String   @unique
@@ -49,7 +49,6 @@ model AppUser {
   phone       String
   points      Int      @default(0)
   avatar      String?  @default("https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png")
-  role        UserRole @default(USER)
   
   subscriptionStatus SubscriptionStatus @default(INACTIVE) 
   surveysubscriptionStatus SubscriptionStatus @default(INACTIVE) 

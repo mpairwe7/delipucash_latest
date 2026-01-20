@@ -2,8 +2,8 @@ import prisma from '../lib/prisma.mjs';
 
 const connectDB = async () => {
   try {
-    // Test the connection
-    await prisma.$queryRaw`SELECT 1`;
+    // MongoDB health check via ping command
+    await prisma.$runCommandRaw({ ping: 1 });
     console.log('✅ Database connected successfully');
     return true;
   } catch (error) {
@@ -21,7 +21,7 @@ const connectDB = async () => {
 // Health check function for database
 export const checkDatabaseHealth = async () => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$runCommandRaw({ ping: 1 });
     return { status: 'healthy', timestamp: new Date().toISOString() };
   } catch (error) {
     return { 
