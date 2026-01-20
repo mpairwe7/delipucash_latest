@@ -1,11 +1,12 @@
 generator client {
-    provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "binary"
 }
 
 datasource db {
-    provider = "mongodb"
-    // Connection URL moved to prisma.config.ts for Prisma 7+
-    // See: https://pris.ly/d/config-datasource
+  provider = "mongodb"
+  // Connection URL configured via prisma.config.ts
+  url      = env("DATABASE_URL")
 }
 
 // Enums for fixed values
@@ -49,7 +50,7 @@ model AppUser {
   phone       String
   points      Int      @default(0)
   avatar      String?  @default("https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png")
-  role        UserRole @default(USER)
+  role        UserRole? @default(USER) // Optional to handle existing records without role
   
   subscriptionStatus SubscriptionStatus @default(INACTIVE) 
   surveysubscriptionStatus SubscriptionStatus @default(INACTIVE) 

@@ -20,7 +20,7 @@
     "test": "echo 'No tests specified'"
   },
   "dependencies": {
-    "@prisma/client": "^7.2.0",
+    "@prisma/client": "6.2.1",
     "@prisma/extension-accelerate": "^3.0.1",
     "axios": "^1.7.9",
     "bcryptjs": "^2.4.3",
@@ -33,12 +33,11 @@
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.8.0",
     "nodemailer": "^6.9.15",
-    "prisma": "^6.13.0",
     "uuid": "9"
   },
   "devDependencies": {
     "nodemon": "^3.1.4",
-    "prisma": "^7.2.0"
+    "prisma": "6.2.1"
   },
-  "packageManager": "yarn@4.9.2"
+  "packageManager": "bun@1.3.6"
 }

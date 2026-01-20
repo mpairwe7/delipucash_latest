@@ -3,6 +3,7 @@ import prisma from '../lib/prisma.mjs';
 import bcrypt from 'bcryptjs';
 import { errorHandler } from "../utils/error.mjs";
 import jwt from 'jsonwebtoken';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
@@ -163,6 +164,8 @@ export const getUserPoints = async (req, res, next) => {
     const user = await prisma.appUser.findUnique({
       where: { id: String(userId) }, // Ensure it's a string
       select: { points: true },
+      // Prisma Accelerate: Short cache for user points (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
     
     if (!user) {

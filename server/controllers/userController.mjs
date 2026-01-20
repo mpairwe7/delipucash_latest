@@ -159,7 +159,9 @@ export const getPrivacySettings = asyncHandler(async (req, res) => {
       where: { id: userId },
       select: {
         privacySettings: true
-      }
+      },
+      // Prisma Accelerate: Standard cache for user privacy settings
+      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!user) {
@@ -222,6 +224,8 @@ export const getLoginActivity = asyncHandler(async (req, res) => {
       where: { userId },
       orderBy: { loginTime: 'desc' },
       take: 10, // Limit to last 10 sessions
+      // Prisma Accelerate: Short cache for login sessions
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     console.log('✅ Found', sessions.length, 'login sessions for user ID:', userId);

@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Create a Question
 export const createQuestion = asyncHandler(async (req, res) => {
@@ -74,6 +75,8 @@ export const getQuestions = asyncHandler(async (_req, res) => {
         createdAt: 'desc', // Sort by createdAt in descending order
       },
       take: 10,            // Limit the result to 10 questions
+      // Prisma Accelerate: Short cache for questions (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     // Log the retrieved data
@@ -98,6 +101,8 @@ export const getQuestionById = asyncHandler(async (req, res) => {
     where: {
       id: questionId,
     },
+    // Prisma Accelerate: Short cache for individual questions
+    cacheStrategy: cacheStrategies.shortLived,
   });
 
   if (!question) {
@@ -173,6 +178,8 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
       orderBy: {
         createdAt: 'asc', // Sort responses by creation date (oldest first)
       },
+      // Prisma Accelerate: Short cache for responses (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     // Enhance responses with like/dislike/reply counts and user status

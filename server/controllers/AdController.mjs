@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Create a new ad
 export const createAd = asyncHandler(async (req, res) => {
@@ -88,7 +89,9 @@ export const getAllAds = asyncHandler(async (req, res) => {
     const ads = await prisma.ad.findMany({
       where: { isActive: true },
       orderBy: { createdAt: 'desc' },
-       include: { user: { select: { firstName: true, lastName: true } } }
+      include: { user: { select: { firstName: true, lastName: true } } },
+      // Prisma Accelerate: Long-lived cache for ads (1 hour TTL, 10 min SWR)
+      cacheStrategy: cacheStrategies.longLived,
     });
 // Format the data to match frontend expectations
 const formattedAds = ads.map(ad => ({
@@ -141,7 +144,9 @@ export const getAdsByUser = asyncHandler(async (req, res) => {
     
     const ads = await prisma.ad.findMany({
       where: { userId },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      // Prisma Accelerate: Long-lived cache for user ads (1 hour TTL, 10 min SWR)
+      cacheStrategy: cacheStrategies.longLived,
     });
 
     res.json(ads);

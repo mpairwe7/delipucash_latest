@@ -23,6 +23,8 @@ import responseRoutes from './routes/responseRoutes.mjs';
 
 dotenv.config();
 
+console.log('Bootstrapping API server...');
+
 const app = express();
 
 // Database connection (Vercel will handle serverless functions, so connection might be per request)
@@ -115,6 +117,17 @@ app.use('/api/*', (req, res) => {
     message: 'API endpoint not found'
   });
 });
+
+// Start server for local development (not on Vercel)
+console.log('VERCEL env:', process.env.VERCEL);
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(` Server running on port ${PORT}`);
+    console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(` Health check: http://localhost:${PORT}/api/health`);
+  });
+}
 
 // Export the app for Vercel serverless functions
 export default app;

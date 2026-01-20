@@ -1,6 +1,7 @@
 import asyncHandler from "express-async-handler";
 import prisma from '../lib/prisma.mjs';
 import { errorHandler } from "../utils/error.mjs";
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Notification templates inspired by fintech apps
 const NOTIFICATION_TEMPLATES = {
@@ -190,7 +191,9 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
             email: true
           }
         }
-      }
+      },
+      // Prisma Accelerate: Short cache for notifications (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     // Get total count for pagination
