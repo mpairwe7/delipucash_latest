@@ -5,13 +5,7 @@ const { PrismaClient } = pkg;
 // Singleton pattern for Prisma Client in serverless environment
 const globalForPrisma = globalThis;
 
-/**
- * PrismaClient initialization
- *
- * Prisma 7 with engineType "binary" (configured in schema.prisma) avoids the
- * Accelerate-only client engine requirement. The datasource URL is provided via
- * prisma.config.ts using DIRECT_DATABASE_URL / DATABASE_URL.
- */
+
 
 // Prisma configuration
 const prismaOptions = {
