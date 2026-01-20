@@ -53,7 +53,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
   const { data: rewardQuestions, isLoading, refetch, isFetching } = useRewardQuestions();
 
-  const isAdmin = Boolean(user?.email?.toLowerCase().includes("admin"));
+  /**
+   * Role-based access control: Check user's role field from backend
+   * instead of inferring from email address (which is insecure)
+   */
+  const isAdmin = user?.role === "ADMIN" || user?.role === "MODERATOR";
 
   const activeQuestions = useMemo<RewardListItem[]>(() => {
     const now = new Date();

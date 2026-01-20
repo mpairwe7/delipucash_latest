@@ -46,6 +46,12 @@ export enum NotificationPriority {
   URGENT = "URGENT",
 }
 
+export enum UserRole {
+  USER = "USER",
+  ADMIN = "ADMIN",
+  MODERATOR = "MODERATOR",
+}
+
 // Models
 export interface AppUser {
   id: string;
@@ -56,6 +62,7 @@ export interface AppUser {
   phone: string;
   points: number;
   avatar: string | null;
+  role: UserRole;
   subscriptionStatus: SubscriptionStatus;
   surveysubscriptionStatus: SubscriptionStatus;
   currentSubscriptionId: string | null;

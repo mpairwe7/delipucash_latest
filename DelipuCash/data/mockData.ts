@@ -27,6 +27,7 @@ import {
   SubscriptionType,
   NotificationType,
   NotificationPriority,
+  UserRole,
 } from "@/types";
 
 // ===========================================
@@ -41,6 +42,7 @@ export const mockUsers: AppUser[] = [
     phone: "+256 700 123 456",
     points: 12500,
     avatar: "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png",
+    role: UserRole.ADMIN,
     subscriptionStatus: SubscriptionStatus.ACTIVE,
     surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
     currentSubscriptionId: "sub_001",
@@ -56,6 +58,7 @@ export const mockUsers: AppUser[] = [
     phone: "+256 700 234 567",
     points: 8900,
     avatar: "https://randomuser.me/api/portraits/women/44.jpg",
+    role: UserRole.USER,
     subscriptionStatus: SubscriptionStatus.ACTIVE,
     surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
     currentSubscriptionId: "sub_002",
@@ -71,6 +74,7 @@ export const mockUsers: AppUser[] = [
     phone: "+256 700 345 678",
     points: 15200,
     avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+    role: UserRole.MODERATOR,
     subscriptionStatus: SubscriptionStatus.INACTIVE,
     surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
     currentSubscriptionId: null,
@@ -86,6 +90,7 @@ export const mockUsers: AppUser[] = [
     phone: "+256 700 456 789",
     points: 6750,
     avatar: "https://randomuser.me/api/portraits/women/68.jpg",
+    role: UserRole.USER,
     subscriptionStatus: SubscriptionStatus.PENDING,
     surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
     currentSubscriptionId: null,
