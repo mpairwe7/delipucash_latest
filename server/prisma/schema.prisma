@@ -1,0 +1,477 @@
+generator client {
+    provider = "prisma-client-js"
+}
+
+datasource db {
+    provider = "mongodb"
+    url      = env("DATABASE_URL")
+}
+
+// Enums for fixed values
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+
+}
+
+enum surveysubscriptionStatus {
+  ACTIVE
+  INACTIVE
+  PENDING
+
+}
+
+enum SubscriptionType {
+  WEEKLY
+  MONTHLY
+}
+
+model AppUser {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  email       String   @unique
+  password    String
+  firstName   String
+  lastName    String
+  phone       String
+  points      Int      @default(0)
+  avatar      String?  @default("https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png")
+  
+  subscriptionStatus SubscriptionStatus @default(INACTIVE) 
+  surveysubscriptionStatus SubscriptionStatus @default(INACTIVE) 
+  currentSubscriptionId String? @db.ObjectId // Tracks the active subscription (if any)
+  
+  // Privacy settings
+  privacySettings Json? // Store privacy settings as JSON
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations 
+  videos      Video[]
+  surveys     Survey[]
+  attempts    QuestionAttempt[]
+  rewards     Reward[]
+  payments    Payment[]
+  questions   Question[]
+  rewardQuestions RewardQuestion[]
+  notifications Notification[]
+  loginSessions LoginSession[]
+  instantRewardWinners InstantRewardWinner[]
+
+  UploadQuestionQuestion UploadQuestion[]
+
+  UploadSurvey UploadSurvey[]
+
+ 
+
+  SurveyResponse SurveyResponse[]
+
+  Response Response[]
+
+  Comment Comment[]
+
+  Ad Ad[]
+
+  // Response interaction relations
+  responseLikes     ResponseLike[]
+  responseDislikes  ResponseDislike[]
+  responseReplies   ResponseReply[]
+}
+
+model Video {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String?
+  description String?
+  videoUrl    String
+  thumbnail   String  
+  userId      String   @db.ObjectId
+  user        AppUser  @relation(fields: [userId], references: [id])
+  likes       Int      @default(0)
+  views       Int      @default(0)
+  isBookmarked Boolean @default(false)
+  comments    Comment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  commentsCount Int    @default(0)
+  @@index([userId])
+}
+
+model Comment {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  text      String
+  mediaUrls String[] @default([])
+  userId    String   @db.ObjectId
+  videoId   String   @db.ObjectId
+  user      AppUser  @relation(fields: [userId], references: [id])
+  video     Video    @relation(fields: [videoId], references: [id])
+  createdAt DateTime @default(now())
+}
+
+model Survey {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String         // Survey title
+  description String?        // Optional survey description
+  userId      String         @db.ObjectId // User who created the survey
+  user        AppUser        @relation(fields: [userId], references: [id])
+     // Questions created via the form
+  uploads     UploadSurvey[] // Questions uploaded via a file
+  startDate   DateTime       // Survey start time
+  endDate     DateTime       // Survey end time
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  SurveyResponse SurveyResponse[]
+}
+
+
+model UploadSurvey {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  text        String   // The question text
+  type        String   // Question type (e.g., "text", "radio", "checkbox", etc.)
+  options     String   // Store options as a JSON string
+  placeholder String?  // Optional placeholder for input fields
+  minValue    Int?     // Optional minimum value for rating questions
+  maxValue    Int?     // Optional maximum value for rating questions
+  userId      String   @db.ObjectId // User who uploaded the question
+  surveyId    String   @db.ObjectId // Survey this question belongs to
+  user        AppUser  @relation(fields: [userId], references: [id])
+  survey      Survey   @relation(fields: [surveyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Ad {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  title       String
+  description String
+  imageUrl    String?
+  videoUrl    String?
+  thumbnailUrl String?
+  type        String   @default("regular") // 'regular', 'featured', 'banner', 'compact'
+  sponsored   Boolean  @default(false)
+  views       Int      @default(0)
+  clicks      Int      @default(0)
+  isActive    Boolean  @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String   @db.ObjectId
+  user        AppUser     @relation(fields: [userId], references: [id])
+  priority    Int      @default(0)
+  frequency   Int?
+  lastShown   DateTime?
+  targetUrl   String?
+
+  @@index([userId])
+  @@index([type])
+  @@index([isActive])
+  @@index([priority])
+  @@index([lastShown])
+}
+
+model SurveyResponse {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId // User who submitted the response
+  surveyId    String   @db.ObjectId // Survey this response belongs to
+  responses   String   // Store responses as a JSON string
+  user        AppUser?  @relation(fields: [userId], references: [id])
+  survey      Survey   @relation(fields: [surveyId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+   @@map("survey_responses") // Explicit table name mapping
+}
+
+model RewardQuestion {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  text          String
+  options       Json     // Structured options as JSON
+  correctAnswer String   // Correct option/answer ID or value
+  rewardAmount  Int      @default(0) // Amount to be rewarded for answering this question
+  expiryTime    DateTime? // When this reward question expires
+  isActive      Boolean  @default(true) // Whether this reward question is active
+  userId        String   @db.ObjectId // User who created this reward question
+  user          AppUser?  @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // New fields for instant reward functionality
+  isInstantReward Boolean @default(false) // Whether this is an instant reward question
+  maxWinners      Int     @default(2) // Maximum number of winners (default 2)
+  winnersCount    Int     @default(0) // Current number of winners
+  isCompleted     Boolean @default(false) // Whether the question is completed (all winners found)
+  paymentProvider String? // MTN or AIRTEL for automatic disbursement
+  phoneNumber     String? // Phone number for automatic disbursement
+
+  // Relations
+  attempts      RewardQuestionOnAttempt[]
+  winners       InstantRewardWinner[]
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([expiryTime])
+  @@index([isInstantReward])
+  @@index([isCompleted])
+}
+
+model RewardQuestionOnAttempt {
+  id                String           @id @default(auto()) @map("_id") @db.ObjectId
+  rewardQuestionId  String           @db.ObjectId
+  rewardQuestion    RewardQuestion   @relation(fields: [rewardQuestionId], references: [id])
+  questionAttemptId String           @db.ObjectId
+  questionAttempt   QuestionAttempt  @relation(fields: [questionAttemptId], references: [id])
+
+  @@index([rewardQuestionId, questionAttemptId])
+}
+
+model InstantRewardWinner {
+  id                String        @id @default(auto()) @map("_id") @db.ObjectId
+  rewardQuestionId  String        @db.ObjectId
+  rewardQuestion    RewardQuestion @relation(fields: [rewardQuestionId], references: [id])
+  userEmail         String
+  user              AppUser       @relation(fields: [userEmail], references: [email])
+  position          Int           // 1st, 2nd, etc.
+  amountAwarded     Int           // Amount awarded to this winner
+  paymentStatus     PaymentStatus @default(PENDING)
+  paymentReference  String?       // Payment reference from provider
+  paymentProvider   String?       // MTN or AIRTEL
+  phoneNumber       String?       // Winner's phone number
+  paidAt            DateTime?     // When payment was processed
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([rewardQuestionId])
+  @@index([userEmail])
+  @@index([paymentStatus])
+  @@unique([rewardQuestionId, userEmail]) // One winner per user per question
+}
+
+model Question {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  text          String
+  userId    String?   @db.ObjectId // Ensure this matches the ID type in AppUser
+  user      AppUser?  @relation(fields: [userId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  responses     Response[]
+
+  attempts      QuestionAttempt[]
+}
+
+model Response {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  responseText        String
+  userId   String  @db.ObjectId
+  user        AppUser  @relation(fields: [userId], references: [id])
+  questionId  String   @db.ObjectId
+  question    Question @relation(fields: [questionId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations for likes, dislikes, and replies
+  likes       ResponseLike[]
+  dislikes    ResponseDislike[]
+  replies     ResponseReply[]
+
+  @@index([userId, questionId]) // Index for faster queries
+}
+
+model ResponseLike {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  user       AppUser  @relation(fields: [userId], references: [id])
+  responseId String   @db.ObjectId
+  response   Response @relation(fields: [responseId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, responseId]) // Each user can only like a response once
+  @@index([responseId])
+}
+
+model ResponseDislike {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  user       AppUser  @relation(fields: [userId], references: [id])
+  responseId String   @db.ObjectId
+  response   Response @relation(fields: [responseId], references: [id])
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, responseId]) // Each user can only dislike a response once
+  @@index([responseId])
+}
+
+model ResponseReply {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  replyText  String
+  userId     String   @db.ObjectId
+  user       AppUser  @relation(fields: [userId], references: [id])
+  responseId String   @db.ObjectId
+  response   Response @relation(fields: [responseId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([responseId])
+  @@index([userId])
+}
+
+model UploadQuestion {
+  id          String   @id @default(cuid()) @map("_id")
+  text        String
+  type        String
+  options     String[] // Store options as JSON
+  correctAnswers String[] // Store correct answers as JSON
+  placeholder String?
+  minValue    Int?
+  maxValue    Int?
+  userId      String   @db.ObjectId
+  user        AppUser  @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+model QuestionAttempt {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  userEmail     String
+  user          AppUser  @relation(fields: [userEmail], references: [email])
+  questionId    String   @db.ObjectId
+  question      Question @relation(fields: [questionId], references: [id])
+  selectedAnswer String
+  isCorrect      Boolean
+  attemptedAt    DateTime @default(now())
+
+  @@index([userEmail, questionId]) // Index for faster queries
+  rewardQuestions RewardQuestionOnAttempt[]
+}
+
+model Reward {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userEmail   String
+  user        AppUser  @relation(fields: [userEmail], references: [email])
+
+  points      Int
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userEmail]) // Index for faster queries
+}
+
+model Payment {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  amount      Float
+  phoneNumber String
+  provider    String
+  TransactionId String @unique
+  status      PaymentStatus  @default(PENDING) 
+  subscriptionType SubscriptionType // Weekly or Monthly
+  startDate   DateTime  // Subscription start time
+  endDate     DateTime // Subscription end time
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  // Relation to AppUser
+  userId      String   @db.ObjectId
+  user        AppUser  @relation(fields: [userId], references: [id])
+
+  @@index([userId, status]) 
+}
+
+// Notification types for different scenarios
+enum NotificationType {
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  PAYMENT_PENDING
+  REWARD_EARNED
+  REWARD_REDEEMED
+  SURVEY_COMPLETED
+  SURVEY_EXPIRING
+  SUBSCRIPTION_ACTIVE
+  SUBSCRIPTION_EXPIRED
+  SECURITY_ALERT
+  SYSTEM_UPDATE
+  PROMOTIONAL
+  ACHIEVEMENT
+  REFERRAL_BONUS
+  WELCOME
+}
+
+// Notification priority levels
+enum NotificationPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model Notification {
+  id          String             @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String             @db.ObjectId
+  user        AppUser            @relation(fields: [userId], references: [id])
+  
+  // Core notification data
+  title       String
+  body        String
+  type        NotificationType
+  priority    NotificationPriority @default(MEDIUM)
+  
+  // Rich content for enhanced UX
+  icon        String?            // Icon name or URL
+  imageUrl    String?            // Optional image for rich notifications
+  actionUrl   String?            // Deep link or action URL
+  actionText  String?            // Call-to-action button text
+  
+  // Metadata
+  metadata    Json?              // Additional data (amount, transaction ID, etc.)
+  category    String?            // Grouping notifications (payments, rewards, etc.)
+  
+  // Status tracking
+  read        Boolean            @default(false)
+  readAt      DateTime?
+  archived    Boolean            @default(false)
+  archivedAt  DateTime?
+  
+  // Delivery tracking
+  delivered   Boolean            @default(false)
+  deliveredAt DateTime?
+  
+  // Expiration
+  expiresAt   DateTime?
+  
+  // Timestamps
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([userId, read, createdAt])
+  @@index([userId, type])
+  @@index([userId, priority])
+  @@index([expiresAt])
+}
+
+model LoginSession {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        AppUser  @relation(fields: [userId], references: [id])
+  deviceInfo  Json?    // Store device information as JSON
+  ipAddress   String?
+  userAgent   String?
+  location    String?
+  isActive    Boolean  @default(true)
+  lastActivity DateTime @default(now())
+  loginTime   DateTime @default(now())
+  logoutTime  DateTime?
+  sessionToken String? // JWT token for this session
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isActive])
+  @@index([sessionToken])
+}
