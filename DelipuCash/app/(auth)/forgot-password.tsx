@@ -1,0 +1,416 @@
+import React, { useState, useCallback, memo } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { ArrowLeft, Mail, CheckCircle } from "lucide-react-native";
+import {
+  useTheme,
+  ThemeColors,
+  SPACING,
+  TYPOGRAPHY,
+  RADIUS,
+  ICON_SIZE,
+  COMPONENT_SIZE,
+} from "@/utils/theme";
+import { FormInput } from "@/components/FormInput";
+import { PrimaryButton } from "@/components/PrimaryButton";
+import { validators, validateForm, ValidationSchema } from "@/utils/validation";
+
+interface FormErrors {
+  email?: string | null;
+}
+
+interface TouchedFields {
+  email?: boolean;
+}
+
+const validationSchema: ValidationSchema = {
+  email: [validators.required, validators.email],
+};
+
+interface ErrorMessageProps {
+  message: string;
+  colors: ThemeColors;
+}
+
+const ErrorMessage = memo<ErrorMessageProps>(({ message, colors }) => (
+  <View
+    style={[
+      styles.errorContainer,
+      {
+        backgroundColor: `${colors.error}15`,
+        borderColor: `${colors.error}30`,
+      },
+    ]}
+  >
+    <Text style={[styles.errorText, { color: colors.error }]}>{message}</Text>
+  </View>
+));
+
+ErrorMessage.displayName = "ErrorMessage";
+
+interface SuccessScreenProps {
+  email: string;
+  colors: ThemeColors;
+  statusBarStyle: "light" | "dark" | "auto" | "inverted";
+  insets: { top: number; bottom: number };
+  onBackToLogin: () => void;
+  onTryAgain: () => void;
+}
+
+const SuccessScreen = memo<SuccessScreenProps>(
+  ({ email, colors, statusBarStyle, insets, onBackToLogin, onTryAgain }) => (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={statusBarStyle} />
+      <View
+        style={[
+          styles.successContainer,
+          {
+            paddingTop: insets.top + 60,
+            paddingBottom: insets.bottom + 20,
+          },
+        ]}
+      >
+        <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]}>
+          <CheckCircle size={48} color={colors.success} />
+        </View>
+
+        <Text style={[styles.successTitle, { color: colors.text }]}>
+          Check Your Email
+        </Text>
+
+        <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
+          We've sent a password reset link to{"\n"}
+          <Text style={[styles.successEmail, { color: colors.text }]}>{email}</Text>
+        </Text>
+
+        <PrimaryButton
+          title="Back to Login"
+          onPress={onBackToLogin}
+          style={styles.successButton}
+        />
+
+        <TouchableOpacity onPress={onTryAgain} accessibilityRole="button">
+          <Text style={[styles.tryAgainText, { color: colors.textSecondary }]}>
+            Didn't receive email?{" "}
+            <Text style={{ color: colors.primary }}>Try again</Text>
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+);
+
+SuccessScreen.displayName = "SuccessScreen";
+
+/**
+ * Forgot password screen component
+ * Handles password reset request flow
+ */
+export default function ForgotPasswordScreen(): React.ReactElement {
+  const insets = useSafeAreaInsets();
+  const { colors, statusBarStyle } = useTheme();
+
+  const [email, setEmail] = useState<string>("");
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [touched, setTouched] = useState<TouchedFields>({});
+  const [loading, setLoading] = useState<boolean>(false);
+  const [success, setSuccess] = useState<boolean>(false);
+  const [generalError, setGeneralError] = useState<string>("");
+
+  const handleChange = useCallback(
+    (value: string): void => {
+      setEmail(value);
+      if (errors.email) {
+        setErrors({});
+      }
+      setGeneralError("");
+    },
+    [errors]
+  );
+
+  const handleBlur = useCallback((): void => {
+    setTouched({ email: true });
+    const fieldValidators = validationSchema.email;
+    for (const validator of fieldValidators) {
+      const error = validator(email, "email");
+      if (error) {
+        setErrors({ email: error });
+        break;
+      }
+    }
+  }, [email]);
+
+  const handleSubmit = async (): Promise<void> => {
+    setTouched({ email: true });
+
+    const { errors: validationErrors, isValid } = validateForm(
+      { email },
+      validationSchema
+    );
+    setErrors(validationErrors);
+
+    if (!isValid) {
+      return;
+    }
+
+    setLoading(true);
+    setGeneralError("");
+
+    try {
+      const baseURL = process.env.EXPO_PUBLIC_BASE_URL;
+      const response = await fetch(`${baseURL}/api/auth/forgot-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-createxyz-project-group-id":
+            process.env.EXPO_PUBLIC_PROJECT_GROUP_ID || "",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to send reset email.");
+      }
+
+      setSuccess(true);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "An error occurred. Please try again.";
+      setGeneralError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBackToLogin = (): void => {
+    router.replace("/(auth)/login");
+  };
+
+  const handleTryAgain = (): void => {
+    setSuccess(false);
+    setEmail("");
+  };
+
+  const handleBack = (): void => {
+    router.back();
+  };
+
+  if (success) {
+    return (
+      <SuccessScreen
+        email={email}
+        colors={colors}
+        statusBarStyle={statusBarStyle}
+        insets={{ top: insets.top, bottom: insets.bottom }}
+        onBackToLogin={handleBackToLogin}
+        onTryAgain={handleTryAgain}
+      />
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <StatusBar style={statusBarStyle} />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.keyboardView}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity
+              onPress={handleBack}
+              style={[styles.backButton, { backgroundColor: colors.card }]}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ArrowLeft size={24} color={colors.text} />
+            </TouchableOpacity>
+
+            <Text style={[styles.title, { color: colors.text }]}>
+              Forgot Password?
+            </Text>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+              No worries! Enter your email address and we'll send you a link to
+              reset your password.
+            </Text>
+          </View>
+
+          {/* Error Message */}
+          {generalError ? (
+            <ErrorMessage message={generalError} colors={colors} />
+          ) : null}
+
+          {/* Form */}
+          <View style={styles.formContainer}>
+            <FormInput
+              label="Email Address"
+              placeholder="Enter your email"
+              value={email}
+              onChangeText={handleChange}
+              onBlur={handleBlur}
+              error={errors.email}
+              touched={touched.email}
+              keyboardType="email-address"
+              autoComplete="email"
+              autoCapitalize="none"
+              leftIcon={<Mail size={20} color={colors.textMuted} />}
+            />
+          </View>
+
+          {/* Submit Button */}
+          <PrimaryButton
+            title="Send Reset Link"
+            onPress={handleSubmit}
+            loading={loading}
+            disabled={loading}
+            style={styles.submitButton}
+          />
+
+          {/* Back to Login */}
+          <View style={styles.loginLinkContainer}>
+            <Text style={[styles.loginLinkText, { color: colors.textSecondary }]}>
+              Remember your password?{" "}
+            </Text>
+            <TouchableOpacity
+              onPress={handleBackToLogin}
+              accessibilityRole="link"
+              accessibilityLabel="Sign in"
+            >
+              <Text style={[styles.loginLink, { color: colors.primary }]}>
+                Sign In
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  keyboardView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+  },
+  header: {
+    marginBottom: 40,
+  },
+  backButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  title: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontFamily: "Roboto_400Regular",
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  errorContainer: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+  },
+  errorText: {
+    fontFamily: "Roboto_500Medium",
+    fontSize: 14,
+    textAlign: "center",
+  },
+  formContainer: {
+    marginBottom: 24,
+  },
+  submitButton: {
+    marginBottom: 24,
+  },
+  loginLinkContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loginLinkText: {
+    fontFamily: "Roboto_400Regular",
+    fontSize: 16,
+  },
+  loginLink: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 16,
+  },
+  successContainer: {
+    flex: 1,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 24,
+  },
+  successTitle: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 24,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  successMessage: {
+    fontFamily: "Roboto_400Regular",
+    fontSize: 16,
+    textAlign: "center",
+    marginBottom: 32,
+    lineHeight: 24,
+  },
+  successEmail: {
+    fontFamily: "Roboto_500Medium",
+  },
+  successButton: {
+    width: "100%",
+    marginBottom: 16,
+  },
+  tryAgainText: {
+    fontFamily: "Roboto_500Medium",
+    fontSize: 14,
+  },
+});

@@ -1,0 +1,435 @@
+/**
+ * TypeScript types based on Prisma schema
+ * These types mirror the database models for type safety
+ */
+
+// Enums
+export enum PaymentStatus {
+  PENDING = "PENDING",
+  SUCCESSFUL = "SUCCESSFUL",
+  FAILED = "FAILED",
+}
+
+export enum SubscriptionStatus {
+  ACTIVE = "ACTIVE",
+  INACTIVE = "INACTIVE",
+  PENDING = "PENDING",
+}
+
+export enum SubscriptionType {
+  WEEKLY = "WEEKLY",
+  MONTHLY = "MONTHLY",
+}
+
+export enum NotificationType {
+  PAYMENT_SUCCESS = "PAYMENT_SUCCESS",
+  PAYMENT_FAILED = "PAYMENT_FAILED",
+  PAYMENT_PENDING = "PAYMENT_PENDING",
+  REWARD_EARNED = "REWARD_EARNED",
+  REWARD_REDEEMED = "REWARD_REDEEMED",
+  SURVEY_COMPLETED = "SURVEY_COMPLETED",
+  SURVEY_EXPIRING = "SURVEY_EXPIRING",
+  SUBSCRIPTION_ACTIVE = "SUBSCRIPTION_ACTIVE",
+  SUBSCRIPTION_EXPIRED = "SUBSCRIPTION_EXPIRED",
+  SECURITY_ALERT = "SECURITY_ALERT",
+  SYSTEM_UPDATE = "SYSTEM_UPDATE",
+  PROMOTIONAL = "PROMOTIONAL",
+  ACHIEVEMENT = "ACHIEVEMENT",
+  REFERRAL_BONUS = "REFERRAL_BONUS",
+  WELCOME = "WELCOME",
+}
+
+export enum NotificationPriority {
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  HIGH = "HIGH",
+  URGENT = "URGENT",
+}
+
+// Models
+export interface AppUser {
+  id: string;
+  email: string;
+  password?: string; // Omitted in client responses
+  firstName: string;
+  lastName: string;
+  phone: string;
+  points: number;
+  avatar: string | null;
+  subscriptionStatus: SubscriptionStatus;
+  surveysubscriptionStatus: SubscriptionStatus;
+  currentSubscriptionId: string | null;
+  privacySettings: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  // Relations (optional, populated when needed)
+  videos?: Video[];
+  surveys?: Survey[];
+  attempts?: QuestionAttempt[];
+  rewards?: Reward[];
+  payments?: Payment[];
+  questions?: Question[];
+  rewardQuestions?: RewardQuestion[];
+  notifications?: Notification[];
+  loginSessions?: LoginSession[];
+}
+
+export interface Video {
+  id: string;
+  title: string | null;
+  description: string | null;
+  videoUrl: string;
+  thumbnail: string;
+  userId: string;
+  user?: AppUser;
+  likes: number;
+  views: number;
+  isBookmarked: boolean;
+  comments?: Comment[];
+  commentsCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Comment {
+  id: string;
+  text: string;
+  mediaUrls: string[];
+  userId: string;
+  videoId: string;
+  user?: AppUser;
+  video?: Video;
+  createdAt: string;
+}
+
+export interface Survey {
+  id: string;
+  title: string;
+  description: string | null;
+  userId: string;
+  user?: AppUser;
+  uploads?: UploadSurvey[];
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  updatedAt: string;
+  responses?: SurveyResponse[];
+  // Computed fields
+  totalResponses?: number;
+  maxResponses?: number;
+  rewardAmount?: number;
+  status?: "running" | "scheduled" | "completed";
+}
+
+export interface UploadSurvey {
+  id: string;
+  text: string;
+  type: string;
+  options: string;
+  placeholder: string | null;
+  minValue: number | null;
+  maxValue: number | null;
+  userId: string;
+  surveyId: string;
+  user?: AppUser;
+  survey?: Survey;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Ad {
+  id: string;
+  title: string;
+  description: string;
+  imageUrl: string | null;
+  videoUrl: string | null;
+  thumbnailUrl: string | null;
+  type: "regular" | "featured" | "banner" | "compact";
+  sponsored: boolean;
+  views: number;
+  clicks: number;
+  isActive: boolean;
+  startDate: string | null;
+  endDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+  user?: AppUser;
+  priority: number;
+  frequency: number | null;
+  lastShown: string | null;
+  targetUrl: string | null;
+}
+
+export interface SurveyResponse {
+  id: string;
+  userId: string;
+  surveyId: string;
+  responses: string;
+  user?: AppUser;
+  survey?: Survey;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RewardQuestion {
+  id: string;
+  text: string;
+  options: Record<string, unknown>;
+  correctAnswer: string;
+  rewardAmount: number;
+  expiryTime: string | null;
+  isActive: boolean;
+  userId: string;
+  user?: AppUser;
+  createdAt: string;
+  updatedAt: string;
+  isInstantReward: boolean;
+  maxWinners: number;
+  winnersCount: number;
+  isCompleted: boolean;
+  paymentProvider: string | null;
+  phoneNumber: string | null;
+  attempts?: RewardQuestionOnAttempt[];
+  winners?: InstantRewardWinner[];
+}
+
+export interface RewardQuestionOnAttempt {
+  id: string;
+  rewardQuestionId: string;
+  rewardQuestion?: RewardQuestion;
+  questionAttemptId: string;
+  questionAttempt?: QuestionAttempt;
+}
+
+export interface RewardAnswerResult {
+  isCorrect: boolean;
+  rewardEarned: number;
+  remainingSpots: number;
+  isExpired: boolean;
+  isCompleted?: boolean;
+  message?: string;
+}
+
+export interface InstantRewardWinner {
+  id: string;
+  rewardQuestionId: string;
+  rewardQuestion?: RewardQuestion;
+  userEmail: string;
+  user?: AppUser;
+  position: number;
+  amountAwarded: number;
+  paymentStatus: PaymentStatus;
+  paymentReference: string | null;
+  paymentProvider: string | null;
+  phoneNumber: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Question {
+  id: string;
+  text: string;
+  userId: string | null;
+  user?: AppUser;
+  createdAt: string;
+  updatedAt: string;
+  responses?: Response[];
+  attempts?: QuestionAttempt[];
+  // Computed fields
+  category?: string;
+  rewardAmount?: number;
+  isInstantReward?: boolean;
+  totalAnswers?: number;
+}
+
+export interface Response {
+  id: string;
+  responseText: string;
+  userId: string;
+  user?: AppUser;
+  questionId: string;
+  question?: Question;
+  createdAt: string;
+  updatedAt: string;
+  likes?: ResponseLike[];
+  dislikes?: ResponseDislike[];
+  replies?: ResponseReply[];
+  // Computed fields
+  likesCount?: number;
+  dislikesCount?: number;
+  repliesCount?: number;
+  isLiked?: boolean;
+  isDisliked?: boolean;
+}
+
+export interface ResponseLike {
+  id: string;
+  userId: string;
+  user?: AppUser;
+  responseId: string;
+  response?: Response;
+  createdAt: string;
+}
+
+export interface ResponseDislike {
+  id: string;
+  userId: string;
+  user?: AppUser;
+  responseId: string;
+  response?: Response;
+  createdAt: string;
+}
+
+export interface ResponseReply {
+  id: string;
+  replyText: string;
+  userId: string;
+  user?: AppUser;
+  responseId: string;
+  response?: Response;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UploadQuestion {
+  id: string;
+  text: string;
+  type: string;
+  options: string[];
+  correctAnswers: string[];
+  placeholder: string | null;
+  minValue: number | null;
+  maxValue: number | null;
+  userId: string;
+  user?: AppUser;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuestionAttempt {
+  id: string;
+  userEmail: string;
+  user?: AppUser;
+  questionId: string;
+  question?: Question;
+  selectedAnswer: string;
+  isCorrect: boolean;
+  attemptedAt: string;
+  rewardQuestions?: RewardQuestionOnAttempt[];
+}
+
+export interface Reward {
+  id: string;
+  userEmail: string;
+  user?: AppUser;
+  points: number;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Payment {
+  id: string;
+  amount: number;
+  phoneNumber: string;
+  provider: string;
+  TransactionId: string;
+  status: PaymentStatus;
+  subscriptionType: SubscriptionType;
+  startDate: string;
+  endDate: string;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+  user?: AppUser;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  user?: AppUser;
+  title: string;
+  body: string;
+  type: NotificationType;
+  priority: NotificationPriority;
+  icon: string | null;
+  imageUrl: string | null;
+  actionUrl: string | null;
+  actionText: string | null;
+  metadata: Record<string, unknown> | null;
+  category: string | null;
+  read: boolean;
+  readAt: string | null;
+  archived: boolean;
+  archivedAt: string | null;
+  delivered: boolean;
+  deliveredAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoginSession {
+  id: string;
+  userId: string;
+  user?: AppUser;
+  deviceInfo: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  location: string | null;
+  isActive: boolean;
+  lastActivity: string;
+  loginTime: string;
+  logoutTime: string | null;
+  sessionToken: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// API Response Types
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+  error?: string;
+}
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+// Transaction type for display purposes
+export interface Transaction {
+  id: string;
+  type: "reward" | "withdrawal" | "deposit" | "payment";
+  amount: number;
+  status: PaymentStatus;
+  description: string;
+  referenceId: string;
+  paymentMethod?: string;
+  phoneNumber?: string;
+  createdAt: string;
+}
+
+// User stats
+export interface UserStats {
+  totalQuestions: number;
+  totalAnswers: number;
+  totalSurveysCompleted: number;
+  totalVideosWatched: number;
+  totalEarnings: number;
+  totalRewards: number;
+  currentStreak: number;
+  questionsAnsweredToday: number;
+  earningsToday: number;
+  rewardsThisWeek: number;
+}

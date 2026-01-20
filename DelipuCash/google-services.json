@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "536088247858",
+    "project_id": "mernapp-6e488",
+    "storage_bucket": "mernapp-6e488.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:536088247858:android:cd8730626839c4c95e462b",
+        "android_client_info": {
+          "package_name": "com.arolainc.DelipuCash"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "536088247858-okai1msf0qp29opsf7v4ih5iuk7tfes9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAdxprwaMvvIq6oXdiDonOGe8YvCNmrC38"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "536088247858-okai1msf0qp29opsf7v4ih5iuk7tfes9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
