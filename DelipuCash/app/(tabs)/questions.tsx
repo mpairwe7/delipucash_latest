@@ -16,7 +16,9 @@ import {
     useUserStats,
 } from "@/services/hooks";
 import {
+    BORDER_WIDTH,
     COMPONENT_SIZE,
+    ICON_SIZE,
     RADIUS,
     SPACING,
     TYPOGRAPHY,
@@ -24,10 +26,11 @@ import {
     withAlpha,
 } from "@/utils/theme";
 import useUser from "@/utils/useUser";
-import { Href, router } from "expo-router";
+import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
     Award,
+    ArrowLeft,
     BadgeCheck,
     CheckCircle2,
     Clock3,
@@ -55,19 +58,154 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-  /**
-   * Question Screen
-   * - Ask a question form
-   * - Instant reward questions
-   * - Recent questions
-   * - Answer & earn CTA
-   * - Admin upload questions card (CSV / JSON)
-   * - Ad registration card with conditional render and approval steps
-   */
-  export default function QuestionsScreen(): React.ReactElement {
+/**
+ * Instant Reward Upload Form Component
+ */
+function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any }) {
+  const [questionText, setQuestionText] = useState("");
+  const [correctAnswer, setCorrectAnswer] = useState("");
+  const [rewardAmount, setRewardAmount] = useState("");
+  const [maxWinners, setMaxWinners] = useState("");
+  const [expiryHours, setExpiryHours] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleUpload = async () => {
+    if (!questionText.trim() || !correctAnswer.trim() || !rewardAmount.trim()) {
+      Alert.alert("Error", "Please fill in all required fields");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      // TODO: Implement actual upload API call
+      Alert.alert("Success", "Instant reward question uploaded successfully!");
+      router.back();
+    } catch (error) {
+      Alert.alert("Error", "Failed to upload question");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <ScrollView
+      style={styles.scrollView}
+      contentContainerStyle={[
+        styles.scrollContent,
+        {
+          paddingTop: insets.top + SPACING.lg,
+          paddingBottom: insets.bottom + SPACING['2xl'],
+        },
+      ]}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={[styles.iconButton, { backgroundColor: colors.secondary }]}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Upload Instant Reward Question</Text>
+        <View style={{ width: COMPONENT_SIZE.touchTarget }} />
+      </View>
+
+      <View style={styles.uploadForm}>
+        <SectionHeader
+          title="Question Details"
+          subtitle="Create a high-impact instant reward question"
+          icon={<Sparkles size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
+        />
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Question Text *</Text>
+          <TextInput
+            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter the question"
+            placeholderTextColor={colors.textMuted}
+            value={questionText}
+            onChangeText={setQuestionText}
+            multiline
+            numberOfLines={3}
+          />
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Correct Answer *</Text>
+          <TextInput
+            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+            placeholder="Enter the correct answer"
+            placeholderTextColor={colors.textMuted}
+            value={correctAnswer}
+            onChangeText={setCorrectAnswer}
+          />
+        </View>
+
+        <View style={styles.formRow}>
+          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.sm }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Reward Amount *</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="0.00"
+              placeholderTextColor={colors.textMuted}
+              value={rewardAmount}
+              onChangeText={setRewardAmount}
+              keyboardType="numeric"
+            />
+          </View>
+          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.sm }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Max Winners</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="10"
+              placeholderTextColor={colors.textMuted}
+              value={maxWinners}
+              onChangeText={setMaxWinners}
+              keyboardType="numeric"
+            />
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Expiry (hours from now)</Text>
+          <TextInput
+            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+            placeholder="24"
+            placeholderTextColor={colors.textMuted}
+            value={expiryHours}
+            onChangeText={setExpiryHours}
+            keyboardType="numeric"
+          />
+        </View>
+
+        <PrimaryButton
+          title="Upload Question"
+          onPress={handleUpload}
+          loading={isUploading}
+          style={{ marginTop: SPACING.lg }}
+        />
+      </View>
+    </ScrollView>
+  );
+}
+
+/**
+ * Question Screen
+ * - Ask a question form
+ * - Instant reward questions
+ * - Recent questions
+ * - Answer & earn CTA
+ * - Admin upload questions card (CSV / JSON)
+ * - Ad registration card with conditional render and approval steps
+ */
+export default function QuestionsScreen(): React.ReactElement {
     const insets = useSafeAreaInsets();
     const { colors, statusBarStyle } = useTheme();
     const { data: user } = useUser();
+    const params = useLocalSearchParams();
+    const intent = params.intent as string | undefined;
     const [refreshing, setRefreshing] = useState(false);
     const [questionText, setQuestionText] = useState("");
     const [category, setCategory] = useState("");
@@ -127,7 +265,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
         Alert.alert("Admin only", "Instant reward uploads require admin access.");
         return;
       }
-      router.push({ pathname: "/(tabs)/questions", params: { intent: "instant-reward-upload" } });
+      router.push("/instant-reward-questions");
     };
 
     const handleInstantRewardBrowse = (): void => {
@@ -147,6 +285,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
     };
 
     const isAdmin = Boolean(user?.email?.toLowerCase().includes("admin"));
+
+    // If intent is instant-reward-upload, show upload form
+    if (intent === "instant-reward-upload") {
+      return (
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <StatusBar style={statusBarStyle} />
+          <InstantRewardUploadForm colors={colors} insets={insets} />
+        </View>
+      );
+    }
 
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -595,6 +743,13 @@ function ActionCard({
       alignItems: "center",
       justifyContent: "center",
     },
+    iconButton: {
+      width: COMPONENT_SIZE.touchTarget,
+      height: COMPONENT_SIZE.touchTarget,
+      borderRadius: RADIUS.base,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     askCard: {
       borderRadius: RADIUS.lg,
       padding: SPACING.lg,
@@ -656,8 +811,8 @@ function ActionCard({
       alignItems: "center",
     },
     actionIcon: {
-      width: COMPONENT_SIZE.lg,
-      height: COMPONENT_SIZE.lg,
+      width: ICON_SIZE.lg,
+      height: ICON_SIZE.lg,
       borderRadius: RADIUS.md,
       alignItems: "center",
       justifyContent: "center",
@@ -788,5 +943,28 @@ function ActionCard({
       alignItems: "center",
       justifyContent: "center",
       paddingVertical: SPACING.lg,
+    },
+    // Upload form styles
+    uploadForm: {
+      padding: SPACING.lg,
+      gap: SPACING.lg,
+    },
+    formGroup: {
+      gap: SPACING.sm,
+    },
+    formRow: {
+      flexDirection: "row",
+    },
+    label: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.base,
+    },
+    uploadInput: {
+      borderWidth: BORDER_WIDTH.thin,
+      borderRadius: RADIUS.md,
+      padding: SPACING.md,
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.base,
+      minHeight: COMPONENT_SIZE.input.medium,
     },
   });

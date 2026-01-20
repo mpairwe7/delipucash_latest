@@ -8,6 +8,41 @@ import { create } from "zustand";
 export const authKey = `${process.env.EXPO_PUBLIC_PROJECT_GROUP_ID}-jwt`;
 
 /**
+ * Login credentials interface
+ */
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+/**
+ * Signup credentials interface
+ */
+export interface SignupCredentials {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  phoneNumber?: string; // Alternative field name
+}
+
+/**
+ * Authentication response interface
+ */
+export interface AuthResponse {
+  success: boolean;
+  data?: AuthData;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Alias for AppUser (for backward compatibility)
+ */
+export type AuthUser = AppUser;
+
+/**
  * Authentication data structure
  */
 export interface AuthData {

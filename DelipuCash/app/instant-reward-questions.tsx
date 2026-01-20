@@ -3,6 +3,7 @@ import {
     QuestionCard,
     SectionHeader,
     StatCard,
+    UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/data/mockData";
 import { useRewardQuestions } from "@/services/hooks";
@@ -16,11 +17,12 @@ import {
     useTheme,
     withAlpha,
 } from "@/utils/theme";
+import useUser from "@/utils/useUser";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ArrowLeft, RefreshCcw, Sparkles, Zap } from "lucide-react-native";
-import React, { useCallback, useMemo } from "react";
+import { ArrowLeft, Plus, RefreshCcw, Sparkles, Zap } from "lucide-react-native";
+import React, { useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     RefreshControl,
@@ -46,8 +48,12 @@ interface RewardListItem {
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
+  const { data: user } = useUser();
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const { data: rewardQuestions, isLoading, refetch, isFetching } = useRewardQuestions();
+
+  const isAdmin = Boolean(user?.email?.toLowerCase().includes("admin"));
 
   const activeQuestions = useMemo<RewardListItem[]>(() => {
     const now = new Date();
@@ -81,6 +87,10 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     router.back();
   }, []);
 
+  const handleUpload = useCallback(() => {
+    setShowUploadModal(true);
+  }, []);
+
   const handleOpenQuestion = useCallback((id: string) => {
     router.push(`/instant-reward-answer/${id}`);
   }, []);
@@ -98,18 +108,30 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           <ArrowLeft size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Instant Reward Questions</Text>
-        <TouchableOpacity
-          style={[styles.iconButton, { backgroundColor: colors.secondary }]}
-          onPress={handleRefresh}
-          accessibilityRole="button"
-          accessibilityLabel="Refresh questions"
-        >
-          {isFetching ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <RefreshCcw size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={[styles.iconButton, { backgroundColor: colors.secondary }]}
+            onPress={handleRefresh}
+            accessibilityRole="button"
+            accessibilityLabel="Refresh questions"
+          >
+            {isFetching ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <RefreshCcw size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
+            )}
+          </TouchableOpacity>
+          {isAdmin && (
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: colors.primary }]}
+              onPress={handleUpload}
+              accessibilityRole="button"
+              accessibilityLabel="Upload question"
+            >
+              <Plus size={ICON_SIZE.base} color={colors.primaryText} strokeWidth={1.5} />
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -192,6 +214,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
         <View style={{ height: SPACING.xl }} />
       </ScrollView>
+
+      <UploadRewardQuestionModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+      />
     </View>
   );
 }
@@ -275,5 +302,9 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: SPACING.md,
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
   },
 });

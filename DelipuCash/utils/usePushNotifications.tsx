@@ -325,7 +325,7 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
   );
 }
 
-export function usePushNotifications(): NotificationContextValue {
+function usePushNotifications(): NotificationContextValue {
   const context = useContext(NotificationContext);
 
   if (!context) {
@@ -336,5 +336,5 @@ export function usePushNotifications(): NotificationContextValue {
 }
 
 // Explicit re-export to ensure availability in all bundlers
-export { NotificationProvider, usePushNotifications };
+export { usePushNotifications };
 export default NotificationProvider;
