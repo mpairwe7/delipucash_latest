@@ -24,6 +24,9 @@ export type {
   AuthMode,
   AuthModalState,
   OpenAuthModalOptions,
+  LoginCredentials,
+  SignupCredentials,
+  AuthResponse,
 } from "./store";
 
 export type { UseAuthResult, RequireAuthOptions } from "./useAuth";

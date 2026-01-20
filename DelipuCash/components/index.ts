@@ -13,6 +13,10 @@ export type { PhoneInputProps, CountryCode } from './PhoneInput';
 export { Checkbox } from './Checkbox';
 export type { CheckboxProps } from './Checkbox';
 
+// Modal Components
+export { UploadRewardQuestionModal } from './UploadRewardQuestionModal';
+export { default as SurveyForm } from './SurveyForm';
+
 // Button Components
 export { PrimaryButton } from './PrimaryButton';
 export type { PrimaryButtonProps, ButtonVariant, ButtonSize } from './PrimaryButton';

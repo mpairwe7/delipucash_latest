@@ -224,6 +224,33 @@ export function useSubmitSurvey(): UseMutationResult<{ reward: number }, Error, 
   });
 }
 
+/**
+ * Hook to create a new survey
+ */
+export function useCreateSurvey(): UseMutationResult<Survey & { questions: UploadSurvey[] }, Error, {
+  title: string;
+  description?: string;
+  startDate: string;
+  endDate: string;
+  questions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[];
+  userId?: string;
+}> {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await api.surveys.create(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runningSurveys });
+      queryClient.invalidateQueries({ queryKey: queryKeys.upcomingSurveys });
+    },
+  });
+}
+
 // ===========================================
 // Questions Hooks
 // ===========================================
@@ -473,6 +500,36 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestion(variables.questionId) });
+    },
+  });
+}
+
+/**
+ * Hook to create a new reward question
+ */
+export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Error, {
+  text: string;
+  options: string[];
+  correctAnswer: string;
+  rewardAmount: number;
+  expiryTime?: string;
+  userId: string;
+  isInstantReward?: boolean;
+  maxWinners?: number;
+  paymentProvider?: string;
+  phoneNumber?: string;
+}> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await api.rewards.createRewardQuestion(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
     },
   });
 }

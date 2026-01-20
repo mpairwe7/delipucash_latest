@@ -5,27 +5,27 @@
  */
 
 import {
-    getQuestionById,
-    getResponsesForQuestion,
-    getSurveyById,
-    getSurveyQuestionsForSurvey,
-    getUnreadNotificationCount,
-    getUserById,
-    getUserNotifications,
-    getVideoById,
-    mockAds,
-    mockComments,
-    mockCurrentUser,
-    mockNotifications,
-    mockPayments,
-    mockQuestions,
-    mockResponses,
-    mockRewardQuestions,
-    mockRewards,
-    mockSurveys,
-    mockTransactions,
-    mockUserStats,
-    mockVideos
+  getQuestionById,
+  getResponsesForQuestion,
+  getSurveyById,
+  getSurveyQuestionsForSurvey,
+  getUnreadNotificationCount,
+  getUserById,
+  getUserNotifications,
+  getVideoById,
+  mockAds,
+  mockComments,
+  mockCurrentUser,
+  mockNotifications,
+  mockPayments,
+  mockQuestions,
+  mockResponses,
+  mockRewardQuestions,
+  mockRewards,
+  mockSurveys,
+  mockTransactions,
+  mockUserStats,
+  mockVideos
 } from "@/data/mockData";
 import {
     Ad,
@@ -52,6 +52,30 @@ import {
 // Simulate network delay
 const delay = (ms: number = 500): Promise<void> => 
   new Promise(resolve => setTimeout(resolve, ms));
+
+const isBackendConfigured = Boolean(process.env.EXPO_PUBLIC_API_URL);
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
+  const url = `${API_BASE_URL}${path}`;
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+      ...init,
+    });
+
+    const json = await response.json();
+    if (!response.ok) {
+      return { success: false, data: json as T, error: json?.message || "Request failed" };
+    }
+
+    return { success: true, data: json as T };
+  } catch (error) {
+    return { success: false, data: {} as T, error: error instanceof Error ? error.message : "Network error" };
+  }
+}
 
 // ===========================================
 // API Configuration
@@ -91,7 +115,10 @@ export const API_ROUTES = {
     get: (id: string) => `/api/surveys/${id}`,
     questions: (id: string) => `/api/surveys/${id}/questions`,
     submit: (id: string) => `/api/surveys/${id}/submit`,
-    create: "/api/surveys",
+    create: "/api/surveys/upload",
+    createDraft: "/api/surveys/create",
+    byStatus: (status: string) => `/api/surveys/status/${status}`,
+    responses: (id: string) => `/api/surveys/${id}/responses`,
   },
   // Questions
   questions: {
@@ -286,73 +313,169 @@ export const surveysApi = {
    * Get all surveys
    */
   async getAll(params?: { status?: string }): Promise<ApiResponse<Survey[]>> {
+    const statusPath = params?.status ? API_ROUTES.surveys.byStatus(params.status) : API_ROUTES.surveys.list;
+
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<Survey[]>(statusPath);
+      if (apiResponse.success) return apiResponse;
+      // fall through to mock on failure
+      console.warn("Falling back to mock surveys", apiResponse.error);
+    }
+
     await delay();
     let surveys = [...mockSurveys];
-    
     if (params?.status) {
-      surveys = surveys.filter(s => s.status === params.status);
+      surveys = surveys.filter((s) => s.status === params.status);
     }
-    
-    return {
-      success: true,
-      data: surveys,
-    };
+    return { success: true, data: surveys };
   },
 
   /**
    * Get running surveys
    */
   async getRunning(): Promise<ApiResponse<Survey[]>> {
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<Survey[]>(API_ROUTES.surveys.byStatus("running"));
+      if (apiResponse.success) return apiResponse;
+      console.warn("Falling back to mock running surveys", apiResponse.error);
+    }
+
     await delay();
-    const surveys = mockSurveys.filter(s => s.status === "running");
-    return {
-      success: true,
-      data: surveys,
-    };
+    const surveys = mockSurveys.filter((s) => s.status === "running");
+    return { success: true, data: surveys };
   },
 
   /**
    * Get upcoming surveys
    */
   async getUpcoming(): Promise<ApiResponse<Survey[]>> {
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<Survey[]>(API_ROUTES.surveys.byStatus("scheduled"));
+      if (apiResponse.success) return apiResponse;
+      console.warn("Falling back to mock upcoming surveys", apiResponse.error);
+    }
+
     await delay();
-    const surveys = mockSurveys.filter(s => s.status === "scheduled");
-    return {
-      success: true,
-      data: surveys,
-    };
+    const surveys = mockSurveys.filter((s) => s.status === "scheduled");
+    return { success: true, data: surveys };
   },
 
   /**
    * Get survey by ID with questions
    */
   async getById(surveyId: string): Promise<ApiResponse<Survey & { questions: UploadSurvey[] } | null>> {
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<Survey & { uploads?: UploadSurvey[] }>(API_ROUTES.surveys.get(surveyId));
+      if (apiResponse.success) {
+        const surveyData = apiResponse.data;
+        const questions = (surveyData as any).uploads || [];
+        return { success: true, data: { ...surveyData, questions } };
+      }
+      console.warn("Falling back to mock survey", apiResponse.error);
+    }
+
     await delay();
     const survey = getSurveyById(surveyId);
-    if (!survey) {
-      return { success: true, data: null };
-    }
+    if (!survey) return { success: true, data: null };
     const questions = getSurveyQuestionsForSurvey(surveyId);
-    return {
-      success: true,
-      data: { ...survey, uploads: questions, questions },
-    };
+    return { success: true, data: { ...survey, uploads: questions, questions } };
   },
 
   /**
    * Submit survey response
    */
-  async submit(surveyId: string, responses: Record<string, unknown>): Promise<ApiResponse<{ reward: number }>> {
+  async submit(surveyId: string, responses: Record<string, unknown> & { userId?: string }): Promise<ApiResponse<{ reward: number }>> {
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<{ message?: string }>(API_ROUTES.surveys.responses(surveyId), {
+        method: "POST",
+        body: JSON.stringify({ userId: responses.userId || mockCurrentUser.id, responses }),
+      });
+      if (apiResponse.success) {
+        return { success: true, data: { reward: 0 }, message: apiResponse.data?.message || "Survey submitted" };
+      }
+      console.warn("Falling back to mock submit", apiResponse.error);
+    }
+
     await delay();
     const survey = getSurveyById(surveyId);
-    if (!survey) {
-      return { success: false, data: { reward: 0 }, error: "Survey not found" };
-    }
+    if (!survey) return { success: false, data: { reward: 0 }, error: "Survey not found" };
     return {
       success: true,
       data: { reward: survey.rewardAmount || 0 },
       message: `Survey completed! You earned $${survey.rewardAmount?.toFixed(2)}`,
     };
+  },
+
+  /**
+   * Create a new survey with questions
+   */
+  async create(data: {
+    title: string;
+    description?: string;
+    startDate: string;
+    endDate: string;
+    questions: Omit<UploadSurvey, "id" | "userId" | "surveyId" | "createdAt" | "updatedAt">[];
+    userId?: string;
+  }): Promise<ApiResponse<Survey & { questions: UploadSurvey[] }>> {
+    const body = {
+      title: data.title,
+      description: data.description,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      userId: data.userId || mockCurrentUser.id,
+      questions: data.questions.map((q) => ({
+        text: q.text,
+        type: q.type,
+        options: typeof q.options === "string" ? JSON.parse(q.options) : q.options,
+        placeholder: q.placeholder || "",
+        minValue: q.minValue ?? null,
+        maxValue: q.maxValue ?? null,
+      })),
+    };
+
+    if (isBackendConfigured) {
+      const apiResponse = await fetchJson<Survey & { uploads?: UploadSurvey[] }>(API_ROUTES.surveys.create, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (apiResponse.success) {
+        const questions = (apiResponse.data as any).uploads || [];
+        return { success: true, data: { ...(apiResponse.data as Survey), questions }, message: "Survey created successfully" };
+      }
+      console.warn("Falling back to mock create", apiResponse.error);
+    }
+
+    await delay(1000);
+    const userId = data.userId || mockCurrentUser.id;
+    const newSurvey: Survey = {
+      id: `survey_${Date.now()}`,
+      title: data.title,
+      description: data.description || null,
+      userId,
+      startDate: data.startDate,
+      endDate: data.endDate,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      totalResponses: 0,
+      maxResponses: 500,
+      rewardAmount: 10.0,
+      status: "scheduled",
+    };
+
+    mockSurveys.push(newSurvey);
+
+    const createdQuestions: UploadSurvey[] = data.questions.map((q, index) => ({
+      ...q,
+      id: `sq_${Date.now()}_${index}`,
+      userId,
+      surveyId: newSurvey.id,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }));
+
+    mockQuestions.push(...createdQuestions);
+
+    return { success: true, data: { ...newSurvey, questions: createdQuestions }, message: "Survey created successfully" };
   },
 };
 
@@ -720,6 +843,52 @@ export const rewardsApi = {
         message,
       },
       message,
+    };
+  },
+
+  /**
+   * Create a new reward question
+   */
+  async createRewardQuestion(data: {
+    text: string;
+    options: string[];
+    correctAnswer: string;
+    rewardAmount: number;
+    expiryTime?: string;
+    userId: string;
+    isInstantReward?: boolean;
+    maxWinners?: number;
+    paymentProvider?: string;
+    phoneNumber?: string;
+  }): Promise<ApiResponse<RewardQuestion>> {
+    await delay(1000);
+
+    const newQuestion: RewardQuestion = {
+      id: `reward_question_${Date.now()}`,
+      text: data.text,
+      options: Object.fromEntries(data.options.map((opt, i) => [String.fromCharCode(97 + i), opt])),
+      correctAnswer: data.correctAnswer,
+      rewardAmount: data.rewardAmount,
+      expiryTime: data.expiryTime || null,
+      isActive: true,
+      userId: data.userId,
+      isInstantReward: data.isInstantReward || false,
+      maxWinners: data.maxWinners || 1,
+      winnersCount: 0,
+      isCompleted: false,
+      paymentProvider: data.paymentProvider || null,
+      phoneNumber: data.phoneNumber || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Add to mock data
+    mockRewardQuestions.push(newQuestion);
+
+    return {
+      success: true,
+      data: newQuestion,
+      message: "Reward question created successfully",
     };
   },
 };

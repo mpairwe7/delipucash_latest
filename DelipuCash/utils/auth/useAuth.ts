@@ -1,7 +1,7 @@
 import { USE_MOCK_AUTH, mockLogin, mockSignup } from "@/services/mockAuth";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useState } from "react";
-import { AuthData, AuthMode, authKey, useAuthModal, useAuthStore } from "./store";
+import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, authKey, useAuthModal, useAuthStore } from "./store";
 
 /**
  * Options for requiring authentication
