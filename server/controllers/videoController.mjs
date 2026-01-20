@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Create a Video
 export const createVideo = asyncHandler(async (req, res) => {
@@ -175,7 +176,9 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      // Prisma Accelerate: Long-lived cache for user videos (1 hour TTL, 10 min SWR)
+      cacheStrategy: cacheStrategies.longLived,
     });
 
     res.json({ 
@@ -214,7 +217,9 @@ export const getAllVideos = asyncHandler(async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      // Prisma Accelerate: Long-lived cache for videos (1 hour TTL, 10 min SWR)
+      cacheStrategy: cacheStrategies.longLived,
     });
 
     console.log('VideoController: getAllVideos - Database query completed:', {

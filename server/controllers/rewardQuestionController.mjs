@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Create a new reward question
 export const createRewardQuestion = asyncHandler(async (req, res) => {
@@ -129,7 +130,9 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      // Prisma Accelerate: Short cache for reward questions (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     console.log('RewardQuestionController: getAllRewardQuestions - Database query completed:', {
@@ -226,7 +229,9 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      // Prisma Accelerate: Short cache for instant reward questions (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     const formattedInstantRewardQuestions = instantRewardQuestions.map(rq => ({
@@ -296,7 +301,9 @@ export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
       },
       orderBy: {
         createdAt: 'desc'
-      }
+      },
+      // Prisma Accelerate: Short cache for user reward questions (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     res.json(rewardQuestions);

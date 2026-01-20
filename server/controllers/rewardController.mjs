@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Add Reward Points
 export const addReward = asyncHandler(async (req, res) => {
@@ -9,6 +10,8 @@ export const addReward = asyncHandler(async (req, res) => {
   const user = await prisma.appUser.findFirst({
     where: { phone: userPhoneNumber },
     select: { email: true },
+    // Prisma Accelerate: Standard cache for user lookups
+    cacheStrategy: cacheStrategies.standard,
   });
 
   if (!user) {
@@ -34,6 +37,8 @@ export const getRewardsByUser = asyncHandler(async (req, res) => {
   const user = await prisma.appUser.findFirst({
     where: { phone: phoneNumber },
     select: { email: true },
+    // Prisma Accelerate: Standard cache for user lookups
+    cacheStrategy: cacheStrategies.standard,
   });
 
   if (!user) {
@@ -43,6 +48,8 @@ export const getRewardsByUser = asyncHandler(async (req, res) => {
   const rewards = await prisma.reward.findMany({
     where: { userEmail: user.email },
     orderBy: { createdAt: 'desc' },
+    // Prisma Accelerate: Short-lived cache for rewards (30s TTL, 10s SWR)
+    cacheStrategy: cacheStrategies.shortLived,
   });
 
   res.json(rewards);
@@ -57,6 +64,8 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
     const user = await prisma.appUser.findUnique({
       where: { id: userId },
       select: { email: true },
+      // Prisma Accelerate: Standard cache for user lookups
+      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!user) {
@@ -67,6 +76,8 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
     const rewards = await prisma.reward.findMany({
       where: { userEmail: user.email },
       orderBy: { createdAt: 'desc' },
+      // Prisma Accelerate: Short-lived cache for rewards (30s TTL, 10s SWR)
+      cacheStrategy: cacheStrategies.shortLived,
     });
 
     res.json(rewards);
