@@ -6,9 +6,19 @@ const { PrismaClient } = pkg;
 const globalForPrisma = globalThis;
 
 
+const datasourceUrl = process.env.DATABASE_URL || process.env.DIRECT_DATABASE_URL;
+const accelerateUrl = process.env.ACCELERATE_URL;
+
+if (!datasourceUrl) {
+  throw new Error('DATABASE_URL or DIRECT_DATABASE_URL is required for Prisma Client');
+}
+
+
 
 // Prisma configuration
 const prismaOptions = {
+  datasourceUrl,
+  ...(accelerateUrl ? { accelerateUrl } : {}),
   log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
 };
 

@@ -1,35 +1,26 @@
-import prisma from '../lib/prisma.mjs';
+import 'dotenv/config';
+import postgres from 'postgres';
 
-const connectDB = async () => {
-  try {
-    // MongoDB health check via ping command
-    await prisma.$runCommandRaw({ ping: 1 });
-    console.log('✅ Database connected successfully');
-    return true;
-  } catch (error) {
-    console.error('❌ Database connection failed:', error.message);
-    
-    // In serverless, we don't want to exit the process
-    if (process.env.VERCEL !== '1') {
-      process.exit(1);
-    }
-    
-    throw error;
-  }
-};
+const connectionString = process.env.DATABASE_URL || process.env.DIRECT_URL;
 
-// Health check function for database
+if (!connectionString) {
+  throw new Error('DATABASE_URL (or DIRECT_URL) is required for Postgres connection');
+}
+
+// Postgres client for Supabase connection pooling or direct URL
+const sql = postgres(connectionString);
+
 export const checkDatabaseHealth = async () => {
   try {
-    await prisma.$runCommandRaw({ ping: 1 });
+    await sql`select 1`;
     return { status: 'healthy', timestamp: new Date().toISOString() };
   } catch (error) {
-    return { 
-      status: 'unhealthy', 
+    return {
+      status: 'unhealthy',
       error: error.message,
-      timestamp: new Date().toISOString() 
+      timestamp: new Date().toISOString(),
     };
   }
 };
 
-export default connectDB;
+export default sql;
