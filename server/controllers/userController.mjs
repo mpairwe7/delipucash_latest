@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { errorHandler } from '../utils/error.mjs';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // User Registration
 export const createAppUser = asyncHandler(async (req, res) => {
@@ -89,13 +90,15 @@ export const getUserRewards = asyncHandler(async (req, res) => {
   }
 });
 
-// Fetch Surveys for User
+// Fetch Surveys for User (with Accelerate caching)
 export const getUserSurveys = asyncHandler(async (req, res) => {
   const { phoneNumber } = req.body;
 
   try {
     const surveys = await prisma.survey.findMany({
       where: { appUser: { phoneNumber } },
+      // Prisma Accelerate: Cache for 5 min, serve stale for 1 min while revalidating
+      cacheStrategy: cacheStrategies.standard,
     });
 
     res.json(surveys);

@@ -8,6 +8,7 @@
 } from "@/components";
 import { formatCurrency } from "@/data/mockData";
 import {
+    useCreateRewardQuestion,
     useInstantRewardQuestions,
     useQuestions,
     useRecentQuestions,
@@ -60,30 +61,94 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
  * Instant Reward Upload Form Component
+ * Implements actual API integration using useCreateRewardQuestion hook
  */
 function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any }) {
+  const { data: user } = useUser();
+  const createQuestion = useCreateRewardQuestion();
+  
   const [questionText, setQuestionText] = useState("");
+  const [option1, setOption1] = useState("");
+  const [option2, setOption2] = useState("");
+  const [option3, setOption3] = useState("");
+  const [option4, setOption4] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [rewardAmount, setRewardAmount] = useState("");
-  const [maxWinners, setMaxWinners] = useState("");
-  const [expiryHours, setExpiryHours] = useState("");
-  const [isUploading, setIsUploading] = useState(false);
+  const [maxWinners, setMaxWinners] = useState("2");
+  const [expiryHours, setExpiryHours] = useState("24");
+  const [paymentProvider, setPaymentProvider] = useState("MTN");
+  const [phoneNumber, setPhoneNumber] = useState("");
 
   const handleUpload = async () => {
-    if (!questionText.trim() || !correctAnswer.trim() || !rewardAmount.trim()) {
-      Alert.alert("Error", "Please fill in all required fields");
+    // Validate required fields
+    if (!questionText.trim()) {
+      Alert.alert("Error", "Question text is required");
+      return;
+    }
+    
+    const options = [option1, option2, option3, option4]
+      .filter(opt => opt.trim())
+      .map(opt => opt.trim());
+    
+    if (options.length < 2) {
+      Alert.alert("Error", "At least 2 options are required");
+      return;
+    }
+    
+    if (!correctAnswer.trim()) {
+      Alert.alert("Error", "Correct answer is required");
+      return;
+    }
+    
+    // Validate correct answer matches one of the options (case-insensitive)
+    const matchingOption = options.find(
+      opt => opt.toLowerCase() === correctAnswer.trim().toLowerCase()
+    );
+    if (!matchingOption) {
+      Alert.alert("Error", "Correct answer must match one of the options");
+      return;
+    }
+    
+    const parsedReward = parseFloat(rewardAmount);
+    if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward <= 0) {
+      Alert.alert("Error", "Valid reward amount is required");
+      return;
+    }
+    
+    const parsedMaxWinners = parseInt(maxWinners) || 2;
+    const parsedExpiryHours = parseInt(expiryHours) || 24;
+    
+    if (!phoneNumber.trim()) {
+      Alert.alert("Error", "Phone number is required for payouts");
+      return;
+    }
+    
+    if (!user) {
+      Alert.alert("Error", "User not found. Please log in again.");
       return;
     }
 
-    setIsUploading(true);
+    const expiryTime = new Date(Date.now() + parsedExpiryHours * 60 * 60 * 1000).toISOString();
+
     try {
-      // TODO: Implement actual upload API call
-      Alert.alert("Success", "Instant reward question uploaded successfully!");
-      router.back();
+      await createQuestion.mutateAsync({
+        text: questionText.trim(),
+        options,
+        correctAnswer: matchingOption, // Use the matched option for consistent casing
+        rewardAmount: parsedReward,
+        expiryTime,
+        userId: user.id,
+        isInstantReward: true,
+        maxWinners: parsedMaxWinners,
+        paymentProvider,
+        phoneNumber: phoneNumber.trim(),
+      });
+      
+      Alert.alert("Success", "Instant reward question uploaded successfully!", [
+        { text: "OK", onPress: () => router.back() }
+      ]);
     } catch (error) {
-      Alert.alert("Error", "Failed to upload question");
-    } finally {
-      setIsUploading(false);
+      Alert.alert("Error", error instanceof Error ? error.message : "Failed to upload question");
     }
   };
 
@@ -132,16 +197,74 @@ function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any 
           />
         </View>
 
+        <SectionHeader
+          title="Answer Options"
+          subtitle="Provide 2-4 multiple choice options"
+          icon={<CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+        />
+
+        <View style={styles.formRow}>
+          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Option 1 *</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="First option"
+              placeholderTextColor={colors.textMuted}
+              value={option1}
+              onChangeText={setOption1}
+            />
+          </View>
+          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Option 2 *</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="Second option"
+              placeholderTextColor={colors.textMuted}
+              value={option2}
+              onChangeText={setOption2}
+            />
+          </View>
+        </View>
+
+        <View style={styles.formRow}>
+          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Option 3</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="Third option (optional)"
+              placeholderTextColor={colors.textMuted}
+              value={option3}
+              onChangeText={setOption3}
+            />
+          </View>
+          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
+            <Text style={[styles.label, { color: colors.text }]}>Option 4</Text>
+            <TextInput
+              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+              placeholder="Fourth option (optional)"
+              placeholderTextColor={colors.textMuted}
+              value={option4}
+              onChangeText={setOption4}
+            />
+          </View>
+        </View>
+
         <View style={styles.formGroup}>
           <Text style={[styles.label, { color: colors.text }]}>Correct Answer *</Text>
           <TextInput
             style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-            placeholder="Enter the correct answer"
+            placeholder="Must match one of the options above"
             placeholderTextColor={colors.textMuted}
             value={correctAnswer}
             onChangeText={setCorrectAnswer}
           />
         </View>
+
+        <SectionHeader
+          title="Reward Settings"
+          subtitle="Configure payout and expiry"
+          icon={<Coins size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
+        />
 
         <View style={styles.formRow}>
           <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.sm }]}>
@@ -156,10 +279,10 @@ function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any 
             />
           </View>
           <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.sm }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Max Winners</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Max Winners (1-10)</Text>
             <TextInput
               style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="10"
+              placeholder="2"
               placeholderTextColor={colors.textMuted}
               value={maxWinners}
               onChangeText={setMaxWinners}
@@ -180,10 +303,54 @@ function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any 
           />
         </View>
 
+        <SectionHeader
+          title="Payment Details"
+          subtitle="How winners will receive rewards"
+          icon={<Award size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
+        />
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Payment Provider</Text>
+          <View style={styles.paymentProviderRow}>
+            {["MTN", "Airtel", "Bank"].map((provider) => (
+              <TouchableOpacity
+                key={provider}
+                style={[
+                  styles.paymentProviderOption,
+                  { 
+                    borderColor: paymentProvider === provider ? colors.primary : colors.border,
+                    backgroundColor: paymentProvider === provider ? withAlpha(colors.primary, 0.1) : colors.card,
+                  }
+                ]}
+                onPress={() => setPaymentProvider(provider)}
+              >
+                <Text style={[
+                  styles.paymentProviderText, 
+                  { color: paymentProvider === provider ? colors.primary : colors.text }
+                ]}>
+                  {provider}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={[styles.label, { color: colors.text }]}>Phone Number *</Text>
+          <TextInput
+            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+            placeholder="+256 700 000 000"
+            placeholderTextColor={colors.textMuted}
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+            keyboardType="phone-pad"
+          />
+        </View>
+
         <PrimaryButton
           title="Upload Question"
           onPress={handleUpload}
-          loading={isUploading}
+          loading={createQuestion.isPending}
           style={{ marginTop: SPACING.lg }}
         />
       </View>
@@ -284,7 +451,11 @@ export default function QuestionsScreen(): React.ReactElement {
       router.push("/(tabs)/questions");
     };
 
-    const isAdmin = Boolean(user?.email?.toLowerCase().includes("admin"));
+    /**
+     * Role-based access control: Check user's role field from backend
+     * instead of inferring from email address (which is insecure)
+     */
+    const isAdmin = user?.role === "ADMIN" || user?.role === "MODERATOR";
 
     // If intent is instant-reward-upload, show upload form
     if (intent === "instant-reward-upload") {
@@ -966,5 +1137,21 @@ function ActionCard({
       fontFamily: TYPOGRAPHY.fontFamily.regular,
       fontSize: TYPOGRAPHY.fontSize.base,
       minHeight: COMPONENT_SIZE.input.medium,
+    },
+    paymentProviderRow: {
+      flexDirection: "row",
+      gap: SPACING.sm,
+    },
+    paymentProviderOption: {
+      flex: 1,
+      borderWidth: BORDER_WIDTH.thin,
+      borderRadius: RADIUS.md,
+      padding: SPACING.md,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    paymentProviderText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.base,
     },
   });

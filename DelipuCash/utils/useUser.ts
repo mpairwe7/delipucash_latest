@@ -1,7 +1,7 @@
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import { useAuth } from "@/utils/auth/useAuth";
 import { userApi } from "@/services/api";
-import { AppUser, UserStats, SubscriptionStatus } from "@/types";
+import { AppUser, UserStats, SubscriptionStatus, UserRole } from "@/types";
 
 /**
  * User profile data structure - Extended from AppUser for UI needs
@@ -15,6 +15,7 @@ export interface UserProfile {
   telephone?: string; // Alias for phone
   points?: number;
   avatar?: string | null;
+  role?: UserRole;
   subscriptionStatus?: SubscriptionStatus;
   surveysubscriptionStatus?: SubscriptionStatus;
   walletBalance?: number;

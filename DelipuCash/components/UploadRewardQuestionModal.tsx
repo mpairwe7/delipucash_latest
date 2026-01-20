@@ -61,11 +61,21 @@ export function UploadRewardQuestionModal({
     if (!formData.correctAnswer.trim()) {
       newErrors.correctAnswer = "Correct answer is required";
     } else {
+      // Get all non-empty options with their original casing
       const options = [formData.option1, formData.option2, formData.option3, formData.option4]
         .filter(opt => opt.trim())
-        .map(opt => opt.trim().toLowerCase());
-      if (!options.includes(formData.correctAnswer.trim().toLowerCase())) {
+        .map(opt => opt.trim());
+      
+      // Find the matching option using case-insensitive comparison
+      const matchingOption = options.find(
+        opt => opt.toLowerCase() === formData.correctAnswer.trim().toLowerCase()
+      );
+      
+      if (!matchingOption) {
         newErrors.correctAnswer = "Correct answer must match one of the options";
+      } else {
+        // Normalize correctAnswer to match the exact casing of the option
+        formData.correctAnswer = matchingOption;
       }
     }
 
@@ -74,11 +84,23 @@ export function UploadRewardQuestionModal({
       newErrors.rewardAmount = "Valid reward amount is required";
     }
 
+    /**
+     * Max winners limit (1-10):
+     * - Prevents excessive reward payouts that could strain platform budget
+     * - Ensures meaningful reward amounts per winner (total pool / winners)
+     * - Aligns with common quiz/trivia app patterns for scarcity-driven engagement
+     * - Can be adjusted via server-side config if business requirements change
+     */
     const maxWinners = parseInt(formData.maxWinners);
     if (!formData.maxWinners || isNaN(maxWinners) || maxWinners < 1 || maxWinners > 10) {
       newErrors.maxWinners = "Max winners must be between 1 and 10";
     }
 
+    /**
+     * Expiry hours limit (1-168 hours = 1 week max):
+     * - Minimum 1 hour ensures questions remain active long enough for participation
+     * - Maximum 168 hours (1 week) prevents stale content and ensures timely payouts
+     */
     const expiryHours = parseInt(formData.expiryHours);
     if (!formData.expiryHours || isNaN(expiryHours) || expiryHours < 1 || expiryHours > 168) {
       newErrors.expiryHours = "Expiry hours must be between 1 and 168";
