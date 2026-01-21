@@ -76,6 +76,7 @@ export const modelCacheRecommendations = {
   // Responses - real-time or very short cache
   Response: cacheStrategies.shortLived,
   SurveyResponse: cacheStrategies.shortLived,
+  QuestionAttempt: cacheStrategies.shortLived,
   
   // Notifications - very short cache
   Notification: cacheStrategies.shortLived,
@@ -87,6 +88,9 @@ export const modelCacheRecommendations = {
   // Static content - aggressive caching
   Video: cacheStrategies.longLived,
   Ad: cacheStrategies.longLived,
+
+  // Uploaded questions - moderate caching to keep templates fast but fresh
+  UploadQuestion: cacheStrategies.standard,
 };
 
 export default cacheStrategies;

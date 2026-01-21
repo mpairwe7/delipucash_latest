@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
+import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
 // Create a Question
 export const createQuestion = asyncHandler(async (req, res) => {
@@ -52,32 +53,29 @@ export const createQuestion = asyncHandler(async (req, res) => {
 // Get Most Recent 10 Questions
 export const getQuestions = asyncHandler(async (_req, res) => {
   try {
-    // Fetch the most recent 10 questions including their IDs and other fields
-    const questions = await prisma.question.findMany({
-      select: {
-        id: true,          // Include the ID field
-        text: true,        // Include the question text
-        userId: true,      // Include the user ID
-        createdAt: true,   // Include the creation timestamp
-        updatedAt: true,   // Include the update timestamp
-
-        responses: true,   // Include associated responses
-        attempts: true,    // Include associated attempts
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc', // Sort by createdAt in descending order
-      },
-      take: 10,            // Limit the result to 10 questions
-      // Prisma Accelerate: Short cache for questions (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+    const questions = await prisma.question.findMany(
+      buildOptimizedQuery('Question', {
+        select: {
+          id: true,
+          text: true,
+          userId: true,
+          createdAt: true,
+          updatedAt: true,
+          responses: true,
+          attempts: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }],
+        take: 10, // preserve existing UX limit
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     // Log the retrieved data
     console.log('Retrieved Questions:', questions);
@@ -159,28 +157,25 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
 
   try {
     // Fetch responses for the question, including user details and timestamps
-    const responses = await prisma.response.findMany({
-      where: {
-        questionId,
-      },
-      select: {
-        id: true,
-        responseText: true,
-        createdAt: true,
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
+    const responses = await prisma.response.findMany(
+      buildOptimizedQuery('Response', {
+        where: { questionId },
+        select: {
+          id: true,
+          responseText: true,
+          createdAt: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
           },
         },
-      },
-      orderBy: {
-        createdAt: 'asc', // Sort responses by creation date (oldest first)
-      },
-      // Prisma Accelerate: Short cache for responses (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+        orderBy: [{ createdAt: 'asc' }],
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     // Enhance responses with like/dislike/reply counts and user status
     const enhancedResponses = await Promise.all(
@@ -318,24 +313,24 @@ export const uploadQuestions = asyncHandler(async (req, res) => {
 export const getUploadedQuestions = asyncHandler(async (_req, res) => {
   try {
     // Fetch all uploaded questions from the database
-    const uploadedQuestions = await prisma.uploadQuestion.findMany({
-      select: {
-        id: true,
-        text: true,
-        type: true,
-        options: true,
-        correctAnswers: true,
-        placeholder: true,
-        createdAt: true,
-        updatedAt: true,
-       
-        minValue: true,
-        maxValue: true,
-      },
-      orderBy: {
-        createdAt: 'desc', // Sort by creation date (newest first)
-      },
-    });
+    const uploadedQuestions = await prisma.uploadQuestion.findMany(
+      buildOptimizedQuery('UploadQuestion', {
+        select: {
+          id: true,
+          text: true,
+          type: true,
+          options: true,
+          correctAnswers: true,
+          placeholder: true,
+          createdAt: true,
+          updatedAt: true,
+          minValue: true,
+          maxValue: true,
+        },
+        orderBy: [{ createdAt: 'desc' }],
+        cacheStrategy: cacheStrategies.standard,
+      }),
+    );
 
     // Log the retrieved data
     console.log('Retrieved Uploaded Questions:', uploadedQuestions);

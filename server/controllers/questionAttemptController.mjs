@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
 // Record a Question Attempt
 export const recordAttempt = asyncHandler(async (req, res) => {
@@ -31,9 +32,12 @@ export const recordAttempt = asyncHandler(async (req, res) => {
 export const getAttemptsByUser = asyncHandler(async (req, res) => {
   const { phoneNumber } = req.params;
 
-  const attempts = await prisma.questionAttempt.findMany({
-    where: { userPhoneNumber: phoneNumber },
-  });
+  const attempts = await prisma.questionAttempt.findMany(
+    buildOptimizedQuery('QuestionAttempt', {
+      where: { userPhoneNumber: phoneNumber },
+      orderBy: [{ createdAt: 'desc' }],
+    }),
+  );
 
   res.json(attempts);
 });

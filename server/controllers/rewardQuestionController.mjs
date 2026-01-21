@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
+import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
 // Create a new reward question
 export const createRewardQuestion = asyncHandler(async (req, res) => {
@@ -110,30 +111,29 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
     
     const currentTime = new Date();
     
-    const rewardQuestions = await prisma.rewardQuestion.findMany({
-      where: { 
-        isActive: true,
-        OR: [
-          { expiryTime: null },
-          { expiryTime: { gt: currentTime } }
-        ]
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
+    const rewardQuestions = await prisma.rewardQuestion.findMany(
+      buildOptimizedQuery('RewardQuestion', {
+        where: {
+          isActive: true,
+          OR: [
+            { expiryTime: null },
+            { expiryTime: { gt: currentTime } },
+          ],
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
           },
         },
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      // Prisma Accelerate: Short cache for reward questions (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+        orderBy: [{ createdAt: 'desc' }],
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     console.log('RewardQuestionController: getAllRewardQuestions - Database query completed:', {
       rewardQuestionsCount: rewardQuestions.length,
@@ -194,45 +194,44 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
     
     const currentTime = new Date();
     
-    const instantRewardQuestions = await prisma.rewardQuestion.findMany({
-      where: { 
-        isActive: true,
-        isInstantReward: true,
-        isCompleted: false, // Only show questions that haven't been completed
-        OR: [
-          { expiryTime: null },
-          { expiryTime: { gt: currentTime } }
-        ]
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
+    const instantRewardQuestions = await prisma.rewardQuestion.findMany(
+      buildOptimizedQuery('RewardQuestion', {
+        where: {
+          isActive: true,
+          isInstantReward: true,
+          isCompleted: false,
+          OR: [
+            { expiryTime: null },
+            { expiryTime: { gt: currentTime } },
+          ],
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+          winners: {
+            select: {
+              id: true,
+              userEmail: true,
+              position: true,
+              amountAwarded: true,
+              paymentStatus: true,
+              createdAt: true,
+            },
+            orderBy: {
+              position: 'asc',
+            },
           },
         },
-        winners: {
-          select: {
-            id: true,
-            userEmail: true,
-            position: true,
-            amountAwarded: true,
-            paymentStatus: true,
-            createdAt: true
-          },
-          orderBy: {
-            position: 'asc'
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      // Prisma Accelerate: Short cache for instant reward questions (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+        orderBy: [{ createdAt: 'desc' }],
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     const formattedInstantRewardQuestions = instantRewardQuestions.map(rq => ({
       id: rq.id,
@@ -287,24 +286,23 @@ export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
   try {
     const { userId } = req.params;
     
-    const rewardQuestions = await prisma.rewardQuestion.findMany({
-      where: { userId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      // Prisma Accelerate: Short cache for user reward questions (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+    const rewardQuestions = await prisma.rewardQuestion.findMany(
+      buildOptimizedQuery('RewardQuestion', {
+        where: { userId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }],
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     res.json(rewardQuestions);
   } catch (error) {
