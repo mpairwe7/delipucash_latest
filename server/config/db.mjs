@@ -1,10 +1,10 @@
 import 'dotenv/config';
 import postgres from 'postgres';
 
-const connectionString = process.env.DATABASE_URL || process.env.DIRECT_URL;
+const connectionString = process.env.DATABASE_URL || process.env.DIRECT_DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL (or DIRECT_URL) is required for Postgres connection');
+  throw new Error('DATABASE_URL (or DIRECT_DATABASE_URL) is required for Postgres connection');
 }
 
 // Postgres client for Supabase connection pooling or direct URL

@@ -6,6 +6,11 @@ const DEFAULT_LIMIT = 100;
 /**
  * Build a query with safe defaults, pagination, and model-specific cache strategy.
  * Use alongside Prisma Accelerate to keep queries lean and cache-friendly.
+ *
+ * @param {string} modelName - The Prisma/model name used as a key in `modelCacheRecommendations`
+ *   to determine the default cache strategy when one is not explicitly provided.
+ * @param {object} [options] - Query options such as `where`, `orderBy`, `select`, `include`,
+ *   `skip`, `take`, and an optional `cacheStrategy` to override the model-based default.
  */
 export function buildOptimizedQuery(modelName, options = {}) {
   const {
@@ -19,16 +24,26 @@ export function buildOptimizedQuery(modelName, options = {}) {
   } = options;
 
   const safeTake = Math.min(take ?? DEFAULT_LIMIT, DEFAULT_LIMIT);
-
-  return {
-    where,
-    orderBy: orderBy || [{ createdAt: 'desc' }],
-    select,
-    include,
+  const query = {
+    orderBy: orderBy ?? [{ createdAt: 'desc' }],
     skip: skip ?? 0,
     take: safeTake,
     cacheStrategy: cacheStrategy ?? modelCacheRecommendations[modelName] ?? cacheStrategies.shortLived,
   };
+
+  if (where !== undefined) {
+    query.where = where;
+  }
+
+  if (select !== undefined) {
+    query.select = select;
+  }
+
+  if (include !== undefined) {
+    query.include = include;
+  }
+
+  return query;
 }
 
 /**
