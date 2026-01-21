@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
+import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
 // Add Reward Points
 export const addReward = asyncHandler(async (req, res) => {
@@ -45,12 +46,13 @@ export const getRewardsByUser = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: "User not found." });
   }
 
-  const rewards = await prisma.reward.findMany({
-    where: { userEmail: user.email },
-    orderBy: { createdAt: 'desc' },
-    // Prisma Accelerate: Short-lived cache for rewards (30s TTL, 10s SWR)
-    cacheStrategy: cacheStrategies.shortLived,
-  });
+  const rewards = await prisma.reward.findMany(
+    buildOptimizedQuery('Reward', {
+      where: { userEmail: user.email },
+      orderBy: [{ createdAt: 'desc' }],
+      cacheStrategy: cacheStrategies.shortLived,
+    }),
+  );
 
   res.json(rewards);
 });
@@ -73,12 +75,13 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
     }
 
     // Then get rewards for that email
-    const rewards = await prisma.reward.findMany({
-      where: { userEmail: user.email },
-      orderBy: { createdAt: 'desc' },
-      // Prisma Accelerate: Short-lived cache for rewards (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
-    });
+    const rewards = await prisma.reward.findMany(
+      buildOptimizedQuery('Reward', {
+        where: { userEmail: user.email },
+        orderBy: [{ createdAt: 'desc' }],
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    );
 
     res.json(rewards);
   } catch (error) {
