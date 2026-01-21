@@ -303,6 +303,170 @@ export const videosApi = {
       data: comments,
     };
   },
+
+  /**
+   * Upload a new video
+   */
+  async upload(videoData: {
+    title: string;
+    description?: string;
+    videoUrl: string;
+    thumbnail: string;
+    duration: number;
+  }): Promise<ApiResponse<Video>> {
+    await delay(1000); // Longer delay to simulate upload
+    const newVideo: Video = {
+      id: `video_${Date.now()}`,
+      title: videoData.title,
+      description: videoData.description || null,
+      videoUrl: videoData.videoUrl,
+      thumbnail: videoData.thumbnail,
+      userId: mockCurrentUser.id,
+      likes: 0,
+      views: 0,
+      isBookmarked: false,
+      commentsCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    return {
+      success: true,
+      data: newVideo,
+      message: "Video uploaded successfully",
+    };
+  },
+
+  /**
+   * Get trending videos
+   */
+  async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
+    await delay();
+    const trending = [...mockVideos]
+      .sort((a, b) => (b.views + b.likes * 2) - (a.views + a.likes * 2))
+      .slice(0, limit);
+    return {
+      success: true,
+      data: trending,
+    };
+  },
+
+  /**
+   * Get live videos
+   */
+  async getLive(): Promise<ApiResponse<Video[]>> {
+    await delay();
+    const liveVideos = mockVideos.filter(v =>
+      v.videoUrl?.includes('.m3u8') || v.videoUrl?.includes('live')
+    );
+    return {
+      success: true,
+      data: liveVideos,
+    };
+  },
+
+  /**
+   * Get recommended videos for user
+   */
+  async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
+    await delay();
+    // Shuffle and return random videos as recommendations
+    const shuffled = [...mockVideos].sort(() => Math.random() - 0.5);
+    return {
+      success: true,
+      data: shuffled.slice(0, limit),
+    };
+  },
+
+  /**
+   * Search videos
+   */
+  async search(query: string): Promise<ApiResponse<Video[]>> {
+    await delay();
+    const lowerQuery = query.toLowerCase();
+    const results = mockVideos.filter(v =>
+      (v.title?.toLowerCase().includes(lowerQuery)) ||
+      (v.description?.toLowerCase().includes(lowerQuery))
+    );
+    return {
+      success: true,
+      data: results,
+    };
+  },
+
+  /**
+   * Increment video view count
+   */
+  async incrementView(videoId: string): Promise<ApiResponse<Video>> {
+    await delay(100); // Quick operation
+    const video = getVideoById(videoId);
+    if (!video) {
+      return { success: false, data: {} as Video, error: "Video not found" };
+    }
+    return {
+      success: true,
+      data: { ...video, views: video.views + 1 },
+    };
+  },
+
+  /**
+   * Add comment to video
+   */
+  async addComment(videoId: string, text: string): Promise<ApiResponse<Comment>> {
+    await delay();
+    const newComment: Comment = {
+      id: `comment_${Date.now()}`,
+      text,
+      mediaUrls: [],
+      userId: mockCurrentUser.id,
+      videoId,
+      createdAt: new Date().toISOString(),
+    };
+    return {
+      success: true,
+      data: newComment,
+      message: "Comment added",
+    };
+  },
+
+  /**
+   * Get user's videos
+   */
+  async getUserVideos(userId: string): Promise<ApiResponse<Video[]>> {
+    await delay();
+    const userVideos = mockVideos.filter(v => v.userId === userId);
+    return {
+      success: true,
+      data: userVideos,
+    };
+  },
+
+  /**
+   * Get bookmarked videos
+   */
+  async getBookmarked(): Promise<ApiResponse<Video[]>> {
+    await delay();
+    const bookmarked = mockVideos.filter(v => v.isBookmarked);
+    return {
+      success: true,
+      data: bookmarked,
+    };
+  },
+
+  /**
+   * Delete a video
+   */
+  async delete(videoId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    await delay();
+    const video = getVideoById(videoId);
+    if (!video) {
+      return { success: false, data: { deleted: false }, error: "Video not found" };
+    }
+    return {
+      success: true,
+      data: { deleted: true },
+      message: "Video deleted successfully",
+    };
+  },
 };
 
 // ===========================================

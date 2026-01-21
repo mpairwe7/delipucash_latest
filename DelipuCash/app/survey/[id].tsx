@@ -1,53 +1,63 @@
-import React, { useState, memo, useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Alert,
+  Animated,
+  Easing,
+  Modal,
+  ScrollView,
   StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  ArrowLeft,
-  Award,
-  Clock,
-  CheckCircle2,
-  ChevronRight,
-  Star,
-} from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
+import { router, useLocalSearchParams } from "expo-router";
 import {
-  useTheme,
-  ThemeColors,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  FileText,
+  ListChecks,
+  MessageCircle,
+  Shield,
+  Star,
+  X,
+} from "lucide-react-native";
+import { PrimaryButton } from "@/components";
+import { formatCurrency, formatDuration } from "@/data/mockData";
+import { useSubmitSurvey, useSurvey } from "@/services/hooks";
+import { UploadSurvey } from "@/types";
+import {
+  BORDER_WIDTH,
+  RADIUS,
+  SHADOWS,
   SPACING,
   TYPOGRAPHY,
-  RADIUS,
-  ICON_SIZE,
-  COMPONENT_SIZE,
-  BORDER_WIDTH,
+  useTheme,
+  withAlpha,
 } from "@/utils/theme";
-import { router, useLocalSearchParams } from "expo-router";
-import { useSurvey, useSubmitSurvey } from "@/services/hooks";
-import { formatCurrency, formatDuration } from "@/data/mockData";
-import { UploadSurvey } from "@/types";
 
 type QuestionType = "rating" | "checkbox" | "radio" | "text";
+
+type AnswerValue = string | number | string[];
 
 interface ParsedOption {
   id: string;
   text: string;
 }
 
-interface SurveyQuestionDisplay {
+interface SurveyQuestion {
   id: string;
-  questionText: string;
-  questionType: QuestionType;
+  text: string;
+  type: QuestionType;
   required: boolean;
   options?: ParsedOption[];
   maxRating?: number;
+  placeholder?: string | null;
 }
 
 interface SurveyDisplay {
@@ -56,255 +66,71 @@ interface SurveyDisplay {
   description: string;
   rewardAmount: number;
   estimatedTime: number;
-  questions: SurveyQuestionDisplay[];
+  questions: SurveyQuestion[];
 }
 
-type AnswerValue = string | number | string[];
-
-interface RatingQuestionProps {
-  question: SurveyQuestionDisplay;
-  value: number;
-  onChange: (value: number) => void;
-  colors: ThemeColors;
-}
-
-const RatingQuestion = memo<RatingQuestionProps>(
-  ({ question, value, onChange, colors }) => (
-    <View style={styles.questionContent}>
-      <View style={styles.ratingContainer}>
-        {Array.from({ length: question.maxRating || 5 }).map((_, index) => (
-          <TouchableOpacity
-            key={index}
-            onPress={() => onChange(index + 1)}
-            style={styles.starButton}
-            accessibilityRole="button"
-            accessibilityLabel={`Rate ${index + 1} stars`}
-          >
-            <Star
-              size={36}
-              color={value >= index + 1 ? colors.warning : colors.textMuted}
-              fill={value >= index + 1 ? colors.warning : "transparent"}
-              strokeWidth={1.5}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-      <Text style={[styles.ratingLabel, { color: colors.textMuted }]}>
-        {value > 0 ? `${value} out of ${question.maxRating || 5}` : "Tap to rate"}
-      </Text>
-    </View>
-  )
-);
-
-RatingQuestion.displayName = "RatingQuestion";
-
-interface CheckboxQuestionProps {
-  question: SurveyQuestionDisplay;
-  value: string[];
-  onChange: (value: string[]) => void;
-  colors: ThemeColors;
-}
-
-const CheckboxQuestion = memo<CheckboxQuestionProps>(
-  ({ question, value, onChange, colors }) => {
-    const toggleOption = (optionId: string): void => {
-      const isSelected = value.includes(optionId);
-      if (isSelected) {
-        onChange(value.filter((id) => id !== optionId));
-      } else {
-        onChange([...value, optionId]);
-      }
-    };
-
-    return (
-      <View style={styles.questionContent}>
-        {question.options?.map((option) => {
-          const isSelected = value.includes(option.id);
-          return (
-            <TouchableOpacity
-              key={option.id}
-              style={[
-                styles.optionButton,
-                {
-                  backgroundColor: isSelected
-                    ? `${colors.primary}15`
-                    : colors.secondary,
-                  borderColor: isSelected ? colors.primary : colors.border,
-                },
-              ]}
-              onPress={() => toggleOption(option.id)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: isSelected }}
-            >
-              <View
-                style={[
-                  styles.checkbox,
-                  {
-                    borderColor: isSelected ? colors.primary : colors.textMuted,
-                    backgroundColor: isSelected ? colors.primary : "transparent",
-                  },
-                ]}
-              >
-                {isSelected && (
-                  <CheckCircle2 size={14} color={colors.primaryText} strokeWidth={2} />
-                )}
-              </View>
-              <Text
-                style={[
-                  styles.optionText,
-                  { color: isSelected ? colors.primary : colors.text },
-                ]}
-              >
-                {option.text}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    );
-  }
-);
-
-CheckboxQuestion.displayName = "CheckboxQuestion";
-
-interface RadioQuestionProps {
-  question: SurveyQuestionDisplay;
-  value: string | null;
-  onChange: (value: string) => void;
-  colors: ThemeColors;
-}
-
-const RadioQuestion = memo<RadioQuestionProps>(
-  ({ question, value, onChange, colors }) => (
-    <View style={styles.questionContent}>
-      {question.options?.map((option) => {
-        const isSelected = value === option.id;
-        return (
-          <TouchableOpacity
-            key={option.id}
-            style={[
-              styles.optionButton,
-              {
-                backgroundColor: isSelected
-                  ? `${colors.primary}15`
-                  : colors.secondary,
-                borderColor: isSelected ? colors.primary : colors.border,
-              },
-            ]}
-            onPress={() => onChange(option.id)}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: isSelected }}
-          >
-            <View
-              style={[
-                styles.radioButton,
-                {
-                  borderColor: isSelected ? colors.primary : colors.textMuted,
-                },
-              ]}
-            >
-              {isSelected && (
-                <View
-                  style={[styles.radioInner, { backgroundColor: colors.primary }]}
-                />
-              )}
-            </View>
-            <Text
-              style={[
-                styles.optionText,
-                { color: isSelected ? colors.primary : colors.text },
-              ]}
-            >
-              {option.text}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </View>
-  )
-);
-
-RadioQuestion.displayName = "RadioQuestion";
-
-interface TextQuestionProps {
-  question: SurveyQuestionDisplay;
-  value: string;
-  onChange: (value: string) => void;
-  colors: ThemeColors;
-}
-
-const TextQuestion = memo<TextQuestionProps>(
-  ({ question, value, onChange, colors }) => (
-    <View style={styles.questionContent}>
-      <TextInput
-        style={[
-          styles.textInput,
-          {
-            backgroundColor: colors.secondary,
-            borderColor: colors.border,
-            color: colors.text,
-          },
-        ]}
-        placeholder="Type your answer here..."
-        placeholderTextColor={colors.textMuted}
-        multiline
-        numberOfLines={4}
-        textAlignVertical="top"
-        value={value}
-        onChangeText={onChange}
-      />
-    </View>
-  )
-);
-
-TextQuestion.displayName = "TextQuestion";
-
-// Helper function to parse question options from UploadSurvey
 const parseQuestionOptions = (question: UploadSurvey): ParsedOption[] => {
   try {
-    const parsed = JSON.parse(question.options);
+    const parsed = JSON.parse(question.options || "[]");
     if (Array.isArray(parsed)) {
-      // Simple array of strings
-      return parsed.map((text, index) => ({ id: `opt_${index}`, text: String(text) }));
-    } else if (parsed && typeof parsed === "object" && parsed.labels) {
-      // Rating with labels
-      return parsed.labels.map((text: string, index: number) => ({ id: `opt_${index}`, text }));
+      return parsed.map((opt, index) => ({
+        id: typeof opt === "string" ? `opt_${index}` : (opt as { id?: string }).id || `opt_${index}`,
+        text: typeof opt === "string" ? opt : String((opt as { text?: string; label?: string; value?: string }).text ?? (opt as { label?: string }).label ?? (opt as { value?: string }).value ?? opt),
+      }));
     }
+
+    if (parsed && typeof parsed === "object") {
+      if (Array.isArray((parsed as { options?: unknown[] }).options)) {
+        return (parsed as { options: unknown[] }).options.map((opt, index) => ({
+          id: typeof opt === "string" ? `opt_${index}` : (opt as { id?: string }).id || `opt_${index}`,
+          text: typeof opt === "string" ? opt : String((opt as { label?: string; text?: string; value?: string }).label ?? (opt as { text?: string }).text ?? (opt as { value?: string }).value ?? opt),
+        }));
+      }
+
+      if (Array.isArray((parsed as { labels?: string[] }).labels)) {
+        return (parsed as { labels: string[] }).labels.map((label, index) => ({
+          id: `opt_${index}`,
+          text: label,
+        }));
+      }
+    }
+
     return [];
   } catch {
     return [];
   }
 };
 
-// Helper to get max rating from question
 const getMaxRating = (question: UploadSurvey): number => {
   if (question.maxValue) return question.maxValue;
   try {
-    const parsed = JSON.parse(question.options);
-    if (parsed && parsed.max) return parsed.max;
-    if (parsed && parsed.labels) return parsed.labels.length;
+    const parsed = JSON.parse(question.options || "{}");
+    if (parsed && typeof parsed === "object") {
+      if ((parsed as { max?: number }).max) return (parsed as { max: number }).max;
+      if (Array.isArray((parsed as { labels?: string[] }).labels)) return (parsed as { labels: string[] }).labels.length;
+    }
   } catch {
-    // ignore
+    // ignore parse errors
   }
   return 5;
 };
 
-/**
- * Survey completion screen component
- * Multi-step survey with various question types
- */
-export default function SurveyScreen(): React.ReactElement {
+const SurveyAttemptScreen = (): React.ReactElement => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const [currentQuestion, setCurrentQuestion] = useState<number>(0);
-  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
 
-  // Fetch survey data using the API hook
-  const { data: surveyData, isLoading: surveyLoading, error: surveyError } = useSurvey(id || "1");
+  const { data: surveyData, isLoading, error } = useSurvey(id || "");
   const submitSurvey = useSubmitSurvey();
 
-  // Transform survey data for display
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
+  const [showReview, setShowReview] = useState(false);
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
+  const modalOpacity = useRef(new Animated.Value(0)).current;
+  const modalScale = useRef(new Animated.Value(0.95)).current;
+
   const survey: SurveyDisplay | null = useMemo(() => {
     if (!surveyData) return null;
     return {
@@ -312,21 +138,22 @@ export default function SurveyScreen(): React.ReactElement {
       title: surveyData.title,
       description: surveyData.description || "",
       rewardAmount: surveyData.rewardAmount || 0,
-      estimatedTime: (surveyData.questions?.length || 0) * 2, // Estimate 2 mins per question
-      questions: (surveyData.questions || []).map((q: UploadSurvey) => ({
+      estimatedTime: (surveyData.questions?.length || 0) * 2,
+      questions: (surveyData.questions || []).map((q) => ({
         id: q.id,
-        questionText: q.text,
-        questionType: q.type as QuestionType,
-        required: true, // All questions required by default
+        text: q.text,
+        type: (q.type as QuestionType) || "text",
+        required: true,
         options: parseQuestionOptions(q),
         maxRating: getMaxRating(q),
+        placeholder: q.placeholder,
       })),
     };
   }, [surveyData]);
 
-  const question = survey?.questions[currentQuestion];
-  const isLastQuestion = survey ? currentQuestion === survey.questions.length - 1 : false;
-  const progress = survey ? ((currentQuestion + 1) / survey.questions.length) * 100 : 0;
+  const question = survey?.questions[currentIndex];
+  const isLastQuestion = survey ? currentIndex === survey.questions.length - 1 : false;
+  const progress = survey ? ((currentIndex + 1) / survey.questions.length) * 100 : 0;
 
   const getDefaultValue = (type: QuestionType): AnswerValue => {
     switch (type) {
@@ -335,24 +162,19 @@ export default function SurveyScreen(): React.ReactElement {
       case "checkbox":
         return [];
       case "radio":
-        return "";
       case "text":
-        return "";
       default:
         return "";
     }
   };
 
-  const currentAnswer = question ? (answers[question.id] ?? getDefaultValue(question.questionType)) : "";
-
-  const setAnswer = (value: AnswerValue): void => {
-    if (!question) return;
-    setAnswers((prev) => ({ ...prev, [question.id]: value }));
-  };
+  const currentAnswer = question ? answers[question.id] ?? getDefaultValue(question.type) : "";
 
   const isQuestionAnswered = (): boolean => {
+    if (!question) return false;
     const answer = currentAnswer;
-    switch (question?.questionType) {
+
+    switch (question.type) {
       case "rating":
         return typeof answer === "number" && answer > 0;
       case "checkbox":
@@ -366,21 +188,41 @@ export default function SurveyScreen(): React.ReactElement {
     }
   };
 
-  const canProceed = !question?.required || isQuestionAnswered();
+  const answeredCount = survey?.questions.reduce((count, q) => {
+    const value = answers[q.id];
+    if (!value) return count;
+    switch (q.type) {
+      case "rating":
+        return typeof value === "number" && value > 0 ? count + 1 : count;
+      case "checkbox":
+        return Array.isArray(value) && value.length > 0 ? count + 1 : count;
+      case "radio":
+        return typeof value === "string" && value.length > 0 ? count + 1 : count;
+      case "text":
+        return typeof value === "string" && value.trim().length > 0 ? count + 1 : count;
+      default:
+        return count;
+    }
+  }, 0) || 0;
+
+  const setAnswer = (value: AnswerValue): void => {
+    if (!question) return;
+    setAnswers((prev) => ({ ...prev, [question.id]: value }));
+  };
 
   const handleNext = (): void => {
-    if (!canProceed) return;
+    if (!question || (question.required && !isQuestionAnswered())) return;
 
     if (isLastQuestion) {
-      handleSubmit();
+      openReviewModal();
     } else {
-      setCurrentQuestion((prev) => prev + 1);
+      setCurrentIndex((prev) => prev + 1);
     }
   };
 
   const handlePrevious = (): void => {
-    if (currentQuestion > 0) {
-      setCurrentQuestion((prev) => prev - 1);
+    if (currentIndex > 0) {
+      setCurrentIndex((prev) => prev - 1);
     }
   };
 
@@ -391,9 +233,10 @@ export default function SurveyScreen(): React.ReactElement {
       { surveyId: survey.id, responses: answers },
       {
         onSuccess: (data) => {
+          closeReviewModal();
           Alert.alert(
-            "Survey Completed!",
-            `Thank you for completing this survey. You earned ${formatCurrency(data.reward)}!`,
+            "Survey submitted",
+            `Thanks for completing the survey. You earned ${formatCurrency(data.reward)}!`,
             [{ text: "OK", onPress: () => router.back() }]
           );
         },
@@ -404,457 +247,755 @@ export default function SurveyScreen(): React.ReactElement {
     );
   };
 
-  const handleBack = (): void => {
-    router.back();
+  const openReviewModal = (): void => {
+    setShowReview(true);
+    modalOpacity.setValue(0);
+    modalScale.setValue(0.95);
+    Animated.parallel([
+      Animated.timing(modalOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+        easing: Easing.out(Easing.cubic),
+      }),
+      Animated.spring(modalScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        damping: 14,
+        stiffness: 140,
+      }),
+    ]).start();
   };
 
-  const renderQuestion = (): React.ReactNode => {
-    if (!question) return null;
-    switch (question.questionType) {
-      case "rating":
-        return (
-          <RatingQuestion
-            question={question}
-            value={currentAnswer as number}
-            onChange={(value) => setAnswer(value)}
-            colors={colors}
-          />
-        );
-      case "checkbox":
-        return (
-          <CheckboxQuestion
-            question={question}
-            value={currentAnswer as string[]}
-            onChange={(value) => setAnswer(value)}
-            colors={colors}
-          />
-        );
-      case "radio":
-        return (
-          <RadioQuestion
-            question={question}
-            value={(currentAnswer as string) || null}
-            onChange={(value) => setAnswer(value)}
-            colors={colors}
-          />
-        );
-      case "text":
-        return (
-          <TextQuestion
-            question={question}
-            value={currentAnswer as string}
-            onChange={(value) => setAnswer(value)}
-            colors={colors}
-          />
-        );
-      default:
-        return null;
-    }
+  const closeReviewModal = (): void => {
+    Animated.parallel([
+      Animated.timing(modalOpacity, {
+        toValue: 0,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+      Animated.timing(modalScale, {
+        toValue: 0.95,
+        duration: 160,
+        useNativeDriver: true,
+      }),
+    ]).start(() => setShowReview(false));
   };
 
-  // Loading state
-  if (surveyLoading) {
+  useEffect(() => {
+    slideAnim.setValue(24);
+    Animated.timing(slideAnim, {
+      toValue: 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [currentIndex, slideAnim]);
+
+  if (isLoading) {
     return (
-      <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading survey...</Text>
+        <Text style={[styles.stateText, { color: colors.textMuted }]}>Loading survey...</Text>
       </View>
     );
   }
 
-  // Error state
-  if (surveyError || !survey || survey.questions.length === 0) {
+  if (error || !survey || survey.questions.length === 0) {
     return (
-      <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
-        <Text style={[styles.errorText, { color: colors.error }]}>Failed to load survey</Text>
-        <TouchableOpacity
-          style={[styles.backButtonError, { backgroundColor: colors.primary }]}
-          onPress={handleBack}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.backButtonErrorText, { color: colors.primaryText }]}>Go Back</Text>
-        </TouchableOpacity>
+        <FileText size={48} color={colors.textMuted} strokeWidth={1.5} />
+        <Text style={[styles.stateTitle, { color: colors.text }]}>Survey unavailable</Text>
+        <Text style={[styles.stateText, { color: colors.textMuted }]}>We could not load this survey right now.</Text>
+        <PrimaryButton title="Go back" onPress={() => router.back()} style={{ marginTop: SPACING.lg }} />
       </View>
     );
   }
+
+  const renderOption = (option: ParsedOption): React.ReactElement => {
+    if (!question) return <></>;
+
+    if (question.type === "radio") {
+      const isSelected = currentAnswer === option.id;
+      return (
+        <TouchableOpacity
+          key={option.id}
+          style={[
+            styles.optionCard,
+            {
+              borderColor: isSelected ? colors.primary : colors.border,
+              backgroundColor: isSelected ? withAlpha(colors.primary, 0.12) : colors.card,
+            },
+          ]}
+          onPress={() => setAnswer(option.id)}
+          accessibilityRole="radio"
+          accessibilityState={{ checked: isSelected }}
+        >
+          <View
+            style={[
+              styles.radioOuter,
+              { borderColor: isSelected ? colors.primary : colors.textMuted },
+            ]}
+          >
+            {isSelected && <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />}
+          </View>
+          <Text style={[styles.optionText, { color: colors.text }]}>{option.text}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    if (question.type === "checkbox") {
+      const selected = Array.isArray(currentAnswer) && currentAnswer.includes(option.id);
+      const toggle = (): void => {
+        const current = Array.isArray(currentAnswer) ? currentAnswer : [];
+        const next = selected ? current.filter((id) => id !== option.id) : [...current, option.id];
+        setAnswer(next);
+      };
+
+      return (
+        <TouchableOpacity
+          key={option.id}
+          style={[
+            styles.optionCard,
+            {
+              borderColor: selected ? colors.primary : colors.border,
+              backgroundColor: selected ? withAlpha(colors.primary, 0.12) : colors.card,
+            },
+          ]}
+          onPress={toggle}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: selected }}
+        >
+          <View
+            style={[
+              styles.checkbox,
+              {
+                borderColor: selected ? colors.primary : colors.textMuted,
+                backgroundColor: selected ? colors.primary : "transparent",
+              },
+            ]}
+          >
+            {selected && <CheckCircle2 size={14} color={colors.primaryText} strokeWidth={2} />}
+          </View>
+          <Text style={[styles.optionText, { color: colors.text }]}>{option.text}</Text>
+        </TouchableOpacity>
+      );
+    }
+
+    return <></>;
+  };
+
+  const renderQuestionBody = (): React.ReactNode => {
+    if (!question) return null;
+
+    switch (question.type) {
+      case "radio":
+      case "checkbox":
+        return (
+          <View style={styles.optionList}>
+            {(question.options || []).map(renderOption)}
+          </View>
+        );
+      case "rating": {
+        const max = question.maxRating || 5;
+        const value = typeof currentAnswer === "number" ? currentAnswer : 0;
+        return (
+          <View style={styles.ratingRow}>
+            {Array.from({ length: max }).map((_, index) => {
+              const level = index + 1;
+              const active = value >= level;
+              return (
+                <TouchableOpacity
+                  key={level}
+                  onPress={() => setAnswer(level)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rate ${level}`}
+                  style={styles.ratingStar}
+                  activeOpacity={0.8}
+                >
+                  <Star
+                    size={28}
+                    color={active ? colors.warning : colors.textMuted}
+                    fill={active ? colors.warning : "transparent"}
+                    strokeWidth={1.4}
+                  />
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        );
+      }
+      case "text":
+      default:
+        return (
+          <View style={styles.textFieldWrapper}>
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
+              placeholder={question.placeholder || "Type your answer"}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              value={typeof currentAnswer === "string" ? currentAnswer : ""}
+              onChangeText={(text) => setAnswer(text)}
+            />
+            <View style={styles.helperRow}>
+              <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
+              <Text style={[styles.helperText, { color: colors.textMuted }]}>Short, clear answers work best.</Text>
+            </View>
+          </View>
+        );
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
 
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop: insets.top + 12,
-            backgroundColor: colors.card,
-            borderBottomColor: colors.border,
-          },
-        ]}
-      >
-        <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.secondary }]}
-          onPress={handleBack}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
-
-        <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: colors.text }]} numberOfLines={1}>
-            {survey.title}
-          </Text>
-          <View style={styles.headerMeta}>
-            <Award size={14} color={colors.primary} strokeWidth={1.5} />
-            <Text style={[styles.headerReward, { color: colors.primary }]}>
-              {formatCurrency(survey.rewardAmount)}
-            </Text>
-            <View style={styles.metaDivider} />
-            <Clock size={14} color={colors.textMuted} strokeWidth={1.5} />
-            <Text style={[styles.headerDuration, { color: colors.textMuted }]}>
-              {formatDuration(survey.estimatedTime)}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Progress Bar */}
-      <View style={[styles.progressContainer, { backgroundColor: colors.card }]}>
-        <View style={[styles.progressTrack, { backgroundColor: colors.secondary }]}>
-          <View
-            style={[
-              styles.progressFill,
-              { backgroundColor: colors.primary, width: `${progress}%` },
-            ]}
-          />
-        </View>
-        <Text style={[styles.progressText, { color: colors.textMuted }]}>
-          Question {currentQuestion + 1} of {survey.questions.length}
-        </Text>
-      </View>
-
       <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: insets.bottom + 100 },
-        ]}
+        style={styles.scroll}
+        contentContainerStyle={{ paddingBottom: insets.bottom + SPACING["4xl"] }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Question Card */}
-        <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
-          <View style={styles.questionHeader}>
-            <Text style={[styles.questionNumber, { color: colors.primary }]}>
-              Q{currentQuestion + 1}
-            </Text>
-            {question?.required && (
-              <View style={[styles.requiredBadge, { backgroundColor: `${colors.error}15` }]}>
-                <Text style={[styles.requiredText, { color: colors.error }]}>
-                  Required
+        <View
+          style={[
+            styles.hero,
+            {
+              paddingTop: insets.top + SPACING.lg,
+              backgroundColor: withAlpha(colors.primary, 0.08),
+              borderBottomColor: withAlpha(colors.primary, 0.1),
+            },
+          ]}
+        >
+          <View style={styles.heroTopRow}>
+            <TouchableOpacity
+              style={[
+                styles.iconButton,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+            >
+              <ChevronLeft size={18} color={colors.text} strokeWidth={1.6} />
+            </TouchableOpacity>
+
+            <View style={styles.heroChips}>
+              <View style={[styles.metaChip, { backgroundColor: withAlpha(colors.primary, 0.16) }]}>
+                <Shield size={14} color={colors.primary} strokeWidth={1.5} />
+                <Text style={[styles.metaText, { color: colors.primary }]}>Secure response</Text>
+              </View>
+              <View style={[styles.metaChip, { backgroundColor: withAlpha(colors.textMuted, 0.1) }]}>
+                <Clock size={14} color={colors.text} strokeWidth={1.5} />
+                <Text style={[styles.metaText, { color: colors.text }]}>~{formatDuration(survey.estimatedTime)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <Text style={[styles.surveyTitle, { color: colors.text }]}>{survey.title}</Text>
+          {survey.description ? (
+            <Text style={[styles.surveyDescription, { color: colors.textMuted }]}>{survey.description}</Text>
+          ) : null}
+
+          <View style={styles.rewardRow}>
+            <View style={[styles.rewardPill, { backgroundColor: colors.card, borderColor: withAlpha(colors.primary, 0.2) }]}>
+              <CheckCircle2 size={16} color={colors.primary} strokeWidth={1.5} />
+              <Text style={[styles.rewardText, { color: colors.primary }]}>Reward: {formatCurrency(survey.rewardAmount)}</Text>
+            </View>
+            <View style={[styles.rewardPill, { backgroundColor: colors.card, borderColor: withAlpha(colors.textMuted, 0.25) }]}>
+              <ListChecks size={16} color={colors.text} strokeWidth={1.5} />
+              <Text style={[styles.rewardText, { color: colors.text }]}>Questions: {survey.questions.length}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={[styles.progressContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
+            <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress}%` }]} />
+          </View>
+          <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Question {currentIndex + 1} of {survey.questions.length}</Text>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: SPACING.base, gap: SPACING.sm, marginBottom: SPACING.lg }}
+        >
+          {survey.questions.map((q, idx) => {
+            const answered = !!answers[q.id] && ((): boolean => {
+              const value = answers[q.id];
+              switch (q.type) {
+                case "rating":
+                  return typeof value === "number" && value > 0;
+                case "checkbox":
+                  return Array.isArray(value) && value.length > 0;
+                case "radio":
+                  return typeof value === "string" && value.length > 0;
+                case "text":
+                  return typeof value === "string" && value.trim().length > 0;
+                default:
+                  return false;
+              }
+            })();
+
+            return (
+              <TouchableOpacity
+                key={q.id}
+                onPress={() => setCurrentIndex(idx)}
+                style={[
+                  styles.stepChip,
+                  {
+                    borderColor: idx === currentIndex ? colors.primary : colors.border,
+                    backgroundColor: idx === currentIndex ? withAlpha(colors.primary, 0.16) : colors.card,
+                  },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to question ${idx + 1}`}
+              >
+                <Text style={[styles.stepNumber, { color: idx === currentIndex ? colors.primary : colors.text }]}>
+                  {idx + 1}
                 </Text>
+                <View style={[styles.stepStatus, { backgroundColor: answered ? withAlpha(colors.primary, 0.8) : withAlpha(colors.textMuted, 0.15) }]} />
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Animated.View
+          style={[
+            styles.questionCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: withAlpha(colors.border, 0.7),
+              shadowColor: withAlpha(colors.text, 0.1),
+              transform: [{ translateY: slideAnim }],
+            },
+          ]}
+        >
+          <View style={styles.questionHeader}>
+            <View style={[styles.questionBadge, { backgroundColor: withAlpha(colors.primary, 0.14) }]}>
+              <Text style={[styles.questionBadgeText, { color: colors.primary }]}>Question {currentIndex + 1}</Text>
+            </View>
+            {question?.required && (
+              <View style={[styles.requiredPill, { backgroundColor: withAlpha(colors.error, 0.12) }]}>
+                <Text style={[styles.requiredText, { color: colors.error }]}>Required</Text>
               </View>
             )}
           </View>
-          <Text style={[styles.questionText, { color: colors.text }]}>
-            {question?.questionText}
-          </Text>
 
-          {renderQuestion()}
-        </View>
+          <Text style={[styles.questionTitle, { color: colors.text }]}>{question?.text}</Text>
+          <View style={styles.helperRow}>
+            <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.helperText, { color: colors.textMuted }]}>Answer thoughtfully to unlock rewards.</Text>
+          </View>
+
+          {renderQuestionBody()}
+        </Animated.View>
       </ScrollView>
 
-      {/* Navigation Buttons */}
       <View
         style={[
-          styles.navigationContainer,
+          styles.navBar,
           {
-            paddingBottom: insets.bottom + 16,
-            backgroundColor: colors.background,
+            paddingBottom: insets.bottom + SPACING.sm,
             borderTopColor: colors.border,
+            backgroundColor: colors.card,
           },
         ]}
       >
-        {currentQuestion > 0 && (
-          <TouchableOpacity
-            style={[styles.prevButton, { borderColor: colors.border }]}
+        {currentIndex > 0 && (
+          <PrimaryButton
+            title="Previous"
+            variant="outline"
             onPress={handlePrevious}
-            accessibilityRole="button"
-            accessibilityLabel="Previous question"
-          >
-            <ArrowLeft size={18} color={colors.text} strokeWidth={1.5} />
-            <Text style={[styles.prevButtonText, { color: colors.text }]}>Back</Text>
-          </TouchableOpacity>
+            style={styles.navButton}
+            leftIcon={<ChevronLeft size={16} color={colors.text} strokeWidth={1.5} />}
+          />
         )}
-
-        <TouchableOpacity
-          style={[
-            styles.nextButton,
-            {
-              backgroundColor: canProceed ? colors.primary : colors.secondary,
-              flex: currentQuestion === 0 ? 1 : 0,
-              marginLeft: currentQuestion > 0 ? 12 : 0,
-            },
-          ]}
+        <PrimaryButton
+          title={isLastQuestion ? "Review & Submit" : "Next"}
           onPress={handleNext}
-          disabled={!canProceed || submitSurvey.isPending}
-          accessibilityRole="button"
-          accessibilityLabel={isLastQuestion ? "Submit survey" : "Next question"}
-        >
-          {submitSurvey.isPending ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
-          ) : (
-            <>
-              <Text
-                style={[
-                  styles.nextButtonText,
-                  { color: canProceed ? colors.primaryText : colors.textMuted },
-                ]}
-              >
-                {isLastQuestion ? "Submit" : "Next"}
-              </Text>
-              {!isLastQuestion && (
-                <ChevronRight
-                  size={18}
-                  color={canProceed ? colors.primaryText : colors.textMuted}
-                  strokeWidth={1.5}
-                />
-              )}
-              {isLastQuestion && (
-                <CheckCircle2
-                  size={18}
-                  color={canProceed ? colors.primaryText : colors.textMuted}
-                  strokeWidth={1.5}
-                />
-              )}
-            </>
-          )}
-        </TouchableOpacity>
+          disabled={(question?.required && !isQuestionAnswered()) || submitSurvey.isPending}
+          loading={submitSurvey.isPending && isLastQuestion}
+          style={styles.navButton}
+          rightIcon={!isLastQuestion ? <ChevronRight size={16} color={colors.primaryText} strokeWidth={1.5} /> : <CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
+        />
       </View>
+
+      <Modal transparent visible={showReview} animationType="none" onRequestClose={closeReviewModal}>
+        <Animated.View
+          style={[
+            styles.modalOverlay,
+            { backgroundColor: "rgba(0,0,0,0.4)", opacity: modalOpacity },
+          ]}
+        >
+          <Animated.View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+                transform: [{ scale: modalScale }],
+              },
+            ]}
+          >
+            <View style={styles.modalHeader}>
+              <View style={[styles.modalIcon, { backgroundColor: withAlpha(colors.primary, 0.18) }]}>
+                <ListChecks size={22} color={colors.primary} strokeWidth={1.6} />
+              </View>
+              <View style={styles.modalHeaderText}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Review your responses</Text>
+                <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>Answered {answeredCount} of {survey.questions.length} questions</Text>
+              </View>
+            </View>
+
+            <View style={styles.modalStats}>
+              <View style={styles.modalStatRow}>
+                <Clock size={18} color={colors.text} strokeWidth={1.5} />
+                <Text style={[styles.modalStatText, { color: colors.text }]}>Estimated time left ~ {formatDuration(Math.max(survey.questions.length - currentIndex - 1, 0) * 2)}</Text>
+              </View>
+              <View style={styles.modalStatRow}>
+                <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
+                <Text style={[styles.modalStatText, { color: colors.text }]}>Reward on completion: {formatCurrency(survey.rewardAmount)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+              <PrimaryButton
+                title="Submit now"
+                onPress={handleSubmit}
+                loading={submitSurvey.isPending}
+                rightIcon={<CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
+              />
+              <PrimaryButton
+                title="Keep editing"
+                variant="outline"
+                onPress={closeReviewModal}
+                leftIcon={<X size={16} color={colors.text} strokeWidth={1.5} />}
+              />
+            </View>
+          </Animated.View>
+        </Animated.View>
+      </Modal>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerContent: {
+  scroll: {
     flex: 1,
   },
-  headerTitle: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 18,
+  hero: {
+    paddingHorizontal: SPACING.base,
+    paddingBottom: SPACING.lg,
+    borderBottomWidth: BORDER_WIDTH.hairline,
   },
-  headerMeta: {
+  heroTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 4,
-    gap: 4,
+    justifyContent: "space-between",
+    marginBottom: SPACING.md,
+    gap: SPACING.base,
   },
-  headerReward: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 13,
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
+    alignItems: "center",
+    justifyContent: "center",
+    ...SHADOWS.sm,
   },
-  metaDivider: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: "#9CA3AF",
-    marginHorizontal: 6,
+  heroChips: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
   },
-  headerDuration: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 13,
+  metaChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  metaText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  surveyTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize["4xl"],
+    marginBottom: SPACING.xs,
+  },
+  surveyDescription: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    lineHeight: TYPOGRAPHY.fontSize.base * TYPOGRAPHY.lineHeight.relaxed,
+  },
+  rewardRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  rewardPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  rewardText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   progressContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    marginHorizontal: SPACING.base,
+    marginTop: SPACING.lg,
+    padding: SPACING.base,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.hairline,
+    ...SHADOWS.sm,
   },
   progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    marginBottom: 8,
+    height: 8,
+    borderRadius: RADIUS.full,
     overflow: "hidden",
   },
   progressFill: {
     height: "100%",
-    borderRadius: 3,
+    borderRadius: RADIUS.full,
   },
-  progressText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 13,
+  progressLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xs,
     textAlign: "center",
   },
-  scrollView: {
-    flex: 1,
+  stepChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
   },
-  scrollContent: {
-    padding: 16,
+  stepNumber: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.md,
+  },
+  stepStatus: {
+    width: 18,
+    height: 6,
+    borderRadius: RADIUS.full,
   },
   questionCard: {
-    borderRadius: 16,
-    padding: 20,
+    marginHorizontal: SPACING.base,
+    padding: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    borderWidth: BORDER_WIDTH.hairline,
+    ...SHADOWS.md,
   },
   questionHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
   },
-  questionNumber: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 14,
+  questionBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
   },
-  requiredBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+  questionBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  requiredPill: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
   },
   requiredText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 11,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
-  questionText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 18,
-    lineHeight: 26,
-    marginBottom: 24,
+  questionTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize["3xl"],
+    lineHeight: TYPOGRAPHY.fontSize["3xl"] * TYPOGRAPHY.lineHeight.relaxed,
+    marginBottom: SPACING.sm,
   },
-  questionContent: {
-    marginTop: 8,
-  },
-  ratingContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 12,
-    paddingVertical: 16,
-  },
-  starButton: {
-    padding: 4,
-  },
-  ratingLabel: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 12,
-  },
-  optionButton: {
+  helperRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 12,
-    gap: 12,
+    gap: SPACING.xs,
+    marginBottom: SPACING.md,
   },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
+  helperText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  optionList: {
+    gap: SPACING.sm,
+  },
+  optionCard: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.base,
+    borderWidth: BORDER_WIDTH.thin,
   },
-  radioButton: {
+  optionText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    flex: 1,
+  },
+  radioOuter: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
+    borderWidth: BORDER_WIDTH.base,
     alignItems: "center",
     justifyContent: "center",
   },
   radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
-  optionText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 15,
-    flex: 1,
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: RADIUS.sm,
+    borderWidth: BORDER_WIDTH.base,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ratingRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    justifyContent: "center",
+    paddingVertical: SPACING.md,
+  },
+  ratingStar: {
+    padding: SPACING.xs,
+  },
+  textFieldWrapper: {
+    gap: SPACING.sm,
   },
   textInput: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 16,
-    fontFamily: "Roboto_400Regular",
-    fontSize: 15,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    padding: SPACING.md,
     minHeight: 120,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.lg,
   },
-  navigationContainer: {
+  navBar: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
     flexDirection: "row",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.base,
+    paddingTop: SPACING.sm,
+    borderTopWidth: BORDER_WIDTH.hairline,
   },
-  prevButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 6,
-  },
-  prevButtonText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 15,
-  },
-  nextButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    gap: 6,
+  navButton: {
     flex: 1,
   },
-  nextButtonText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
+  modalOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.base,
   },
-  loadingContainer: {
+  modalCard: {
+    width: "100%",
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    borderWidth: BORDER_WIDTH.hairline,
+    ...SHADOWS.lg,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  modalIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
   },
-  loadingText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 14,
-    marginTop: 12,
+  modalHeaderText: {
+    flex: 1,
+    gap: SPACING.xs,
   },
-  errorText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 16,
-    marginBottom: 16,
+  modalTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
   },
-  backButtonError: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+  modalSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
-  backButtonErrorText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 14,
+  modalStats: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+    backgroundColor: withAlpha("#000000", 0.02),
+  },
+  modalStatRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  modalStatText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  modalButtons: {
+    gap: SPACING.sm,
+  },
+  stateContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  stateText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: "center",
+  },
+  stateTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
   },
 });
+
+export default SurveyAttemptScreen;

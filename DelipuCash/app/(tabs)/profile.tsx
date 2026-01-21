@@ -13,10 +13,12 @@ import {
 } from "@/utils/theme";
 import useUser from "@/utils/useUser";
 import { Href, router } from "expo-router";
+import * as Haptics from "expo-haptics";
 import { StatusBar } from "expo-status-bar";
 import {
   ArrowRightLeft,
   ArrowUpRight,
+  BadgeCheck,
   ChevronRight,
   CreditCard,
   Edit,
@@ -30,13 +32,16 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Star,
   ThumbsUp,
   TrendingUp,
   Wallet,
+  Zap,
 } from "lucide-react-native";
 import React, { memo, useCallback, useMemo, useState } from "react";
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Switch,
@@ -44,6 +49,15 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface MenuItem {
@@ -71,21 +85,50 @@ interface MenuItemComponentProps {
   colors: ThemeColors;
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
 const MenuItemComponent = memo<MenuItemComponentProps>(
   ({ item, isLast, colors }) => {
     const Icon = item.icon;
+    const scale = useSharedValue(1);
+    const opacity = useSharedValue(1);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: opacity.value,
+    }));
+
+    const handlePressIn = () => {
+      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
+      opacity.value = withTiming(0.8, { duration: 100 });
+    };
+
+    const handlePressOut = () => {
+      scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+      opacity.value = withTiming(1, { duration: 100 });
+    };
+
+    const handlePress = () => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      item.onPress();
+    };
+
     return (
-      <TouchableOpacity
+      <AnimatedPressable
         style={[
           styles.menuItem,
           !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border },
+          animatedStyle,
         ]}
-        onPress={item.onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handlePress}
         accessibilityRole="button"
         accessibilityLabel={item.label}
+        accessibilityHint={item.subtitle || `Navigate to ${item.label}`}
       >
-        <View style={[styles.menuItemIcon, { backgroundColor: colors.secondary }]}>
-          <Icon size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
+        <View style={[styles.menuItemIcon, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+          <Icon size={ICON_SIZE.base} color={colors.primary} strokeWidth={1.5} />
         </View>
         <View style={styles.menuItemContent}>
           <Text style={[styles.menuItemLabel, { color: colors.text }]}>{item.label}</Text>
@@ -93,13 +136,101 @@ const MenuItemComponent = memo<MenuItemComponentProps>(
             <Text style={[styles.menuItemSubtitle, { color: colors.textMuted }]}>{item.subtitle}</Text>
           )}
         </View>
-        <ChevronRight size={ICON_SIZE.base} color={colors.textMuted} strokeWidth={1.5} />
-      </TouchableOpacity>
+        <View style={[styles.menuItemArrow, { backgroundColor: colors.secondary }]}>
+          <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={2} />
+        </View>
+      </AnimatedPressable>
     );
   },
 );
 
 MenuItemComponent.displayName = "MenuItemComponent";
+
+// Enhanced Stat Card Component
+interface StatCardProps {
+  label: string;
+  value: string | number;
+  icon: LucideIcon;
+  color: string;
+  colors: ThemeColors;
+  delay?: number;
+}
+
+const StatCard = memo<StatCardProps>(({ label, value, icon: Icon, color, colors, delay = 0 }) => (
+  <Animated.View
+    entering={FadeInUp.delay(delay).springify()}
+    style={[styles.statItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+    accessibilityLabel={`${label}: ${value}`}
+    accessibilityRole="text"
+  >
+    <View style={[styles.statIconContainer, { backgroundColor: withAlpha(color, 0.12) }]}>
+      <Icon size={ICON_SIZE.md} color={color} strokeWidth={1.5} />
+    </View>
+    <Text style={[styles.statLabel, { color: colors.textMuted }]}>{label}</Text>
+    <Text style={[styles.statValue, { color: colors.text }]}>{typeof value === 'number' ? value.toLocaleString() : value}</Text>
+  </Animated.View>
+));
+
+StatCard.displayName = "StatCard";
+
+// Enhanced Engagement Card Component
+interface EngagementCardProps {
+  label: string;
+  value: number;
+  subtitle: string;
+  icon: LucideIcon;
+  color: string;
+  colors: ThemeColors;
+  index: number;
+}
+
+const EngagementCard = memo<EngagementCardProps>(({ label, value, subtitle, icon: Icon, color, colors, index }) => {
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = () => {
+    scale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
+  };
+
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+
+  return (
+    <AnimatedPressable
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+    >
+      <Animated.View
+        entering={FadeInDown.delay(100 + index * 100).springify()}
+        style={[
+          styles.engagementCard,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          animatedStyle,
+        ]}
+        accessibilityLabel={`${label}: ${value} ${subtitle}`}
+        accessibilityRole="text"
+      >
+        <View style={styles.engagementHeader}>
+          <View style={[styles.engagementIcon, { backgroundColor: withAlpha(color, 0.12) }]}>
+            <Icon size={ICON_SIZE.md} color={color} strokeWidth={1.5} />
+          </View>
+        </View>
+        <Text style={[styles.engagementValue, { color: colors.text }]}>{value}</Text>
+        <Text style={[styles.engagementLabel, { color: colors.textMuted }]}>{label}</Text>
+        <View style={[styles.engagementBadge, { backgroundColor: withAlpha(color, 0.1) }]}>
+          <Text style={[styles.engagementSub, { color }]}>{subtitle}</Text>
+        </View>
+      </Animated.View>
+    </AnimatedPressable>
+  );
+});
+
+EngagementCard.displayName = "EngagementCard";
 
 export default function ProfileScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -118,6 +249,21 @@ export default function ProfileScreen(): React.ReactElement {
   ]);
   const [airtelLinked, setAirtelLinked] = useState(false);
   const [mtnLinked, setMtnLinked] = useState(false);
+  const [activeTab, setActiveTab] = useState<'engagement' | 'shortcuts' | 'security' | 'payments'>('engagement');
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    firstName: user?.firstName || "John",
+    lastName: user?.lastName || "Doe",
+    email: user?.email || "user@example.com",
+    telephone: user?.telephone || "+256 XXX XXX XXX",
+  });
+
+  const tabs = [
+    { key: 'engagement', label: 'Activity', icon: Sparkles },
+    { key: 'shortcuts', label: 'Shortcuts', icon: ArrowRightLeft },
+    { key: 'security', label: 'Security', icon: Shield },
+    { key: 'payments', label: 'Payments', icon: CreditCard },
+  ] as const;
 
   const profile: ProfileData = {
     firstName: user?.firstName || "John",
@@ -190,6 +336,35 @@ export default function ProfileScreen(): React.ReactElement {
     setPrivacy((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleEditProfile = (): void => {
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = (): void => {
+    setEditForm({
+      firstName: user?.firstName || "John",
+      lastName: user?.lastName || "Doe",
+      email: user?.email || "user@example.com",
+      telephone: user?.telephone || "+256 XXX XXX XXX",
+    });
+    setIsEditing(false);
+  };
+
+  const handleSaveProfile = async (): Promise<void> => {
+    try {
+      // TODO: Implement API call to update profile
+      // For now, just show success message
+      Alert.alert("Success", "Profile updated successfully!", [
+        {
+          text: "OK",
+          onPress: () => setIsEditing(false)
+        }
+      ]);
+    } catch {
+      Alert.alert("Error", "Failed to update profile. Please try again.");
+    }
+  };
+
   const handleLinkAirtel = (): void => {
     setAirtelLinked(true);
     Alert.alert("Airtel Money", "Account linked successfully.");
@@ -206,7 +381,7 @@ export default function ProfileScreen(): React.ReactElement {
         icon: Edit,
         label: "Edit profile",
         subtitle: "Update personal details",
-        onPress: () => router.push("/(tabs)/profile"),
+        onPress: handleEditProfile,
       },
       {
         icon: Wallet,
@@ -293,156 +468,290 @@ export default function ProfileScreen(): React.ReactElement {
           <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>Personal info, security, and payouts</Text>
         </View>
 
-        <View style={[styles.profileCard, { backgroundColor: colors.card }]}>
-          <View style={styles.profileInfo}>
-            <View
-              style={[styles.avatar, { backgroundColor: colors.primary }]}
-              accessibilityLabel="User initials"
-              accessibilityRole="image"
-            >
-              <Text style={styles.avatarText}>
-                {profile.firstName.charAt(0)}
-                {profile.lastName.charAt(0)}
-              </Text>
-            </View>
-
-            <View style={styles.profileDetails}>
-              <Text style={[styles.profileName, { color: colors.text }]}>{profile.firstName} {profile.lastName}</Text>
-              <Text style={[styles.profileEmail, { color: colors.textMuted }]}>{profile.email}</Text>
-              <Text style={[styles.profilePhone, { color: colors.text }]}>{profile.telephone}</Text>
-            </View>
-
-            <PrimaryButton
-              title="Edit"
-              onPress={() => router.push("/(tabs)/profile")}
-              size="small"
-              variant="secondary"
-              leftIcon={<Edit size={ICON_SIZE.md} color={colors.text} />}
-              style={styles.editButton}
-              accessibilityLabel="Edit profile"
-            />
-          </View>
-
-          <View style={styles.statsRow}>
-            <View style={[styles.statItem, { backgroundColor: colors.secondary }]} accessibilityLabel="Wallet balance">
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Wallet balance</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>${profile.walletBalance.toLocaleString()}</Text>
-            </View>
-            <View style={[styles.statItem, { backgroundColor: colors.secondary }]} accessibilityLabel="Total earnings">
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Earnings</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>${profile.totalEarnings.toLocaleString()}</Text>
-            </View>
-          </View>
-
-          <View style={styles.statsRow}>
-            <View style={[styles.statItem, { backgroundColor: colors.secondary }]} accessibilityLabel="Rewards">
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Rewards</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>${profile.totalRewards.toLocaleString()}</Text>
-            </View>
-            <View style={[styles.statItem, { backgroundColor: colors.secondary }]} accessibilityLabel="Active sessions">
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Active sessions</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>{profile.activeSessions}</Text>
-            </View>
-          </View>
-        </View>
-
-        <SectionHeader
-          title="Engagement"
-          subtitle="Your activity snapshot"
-          icon={<Sparkles size={ICON_SIZE.base} color={colors.primary} />}
-        />
-        <View style={styles.engagementGrid}>
-          <View style={[styles.engagementCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            accessibilityLabel="Likes received"
-          >
-            <View style={styles.engagementHeader}>
-              <View style={[styles.engagementIcon, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
-                <ThumbsUp size={ICON_SIZE.md} color={colors.success} strokeWidth={1.5} />
-              </View>
-              <Text style={[styles.engagementLabel, { color: colors.textMuted }]}>Likes</Text>
-            </View>
-            <Text style={[styles.engagementValue, { color: colors.text }]}>
-              {userStats?.rewardsThisWeek ?? 0}
-            </Text>
-            <Text style={[styles.engagementSub, { color: colors.textMuted }]}>This week</Text>
-          </View>
-
-          <View style={[styles.engagementCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            accessibilityLabel="Answers submitted"
-          >
-            <View style={styles.engagementHeader}>
-              <View style={[styles.engagementIcon, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
-                <MessageSquare size={ICON_SIZE.md} color={colors.info} strokeWidth={1.5} />
-              </View>
-              <Text style={[styles.engagementLabel, { color: colors.textMuted }]}>Answered</Text>
-            </View>
-            <Text style={[styles.engagementValue, { color: colors.text }]}>
-              {userStats?.totalAnswers ?? 0}
-            </Text>
-            <Text style={[styles.engagementSub, { color: colors.textMuted }]}>Lifetime</Text>
-          </View>
-
-          <View style={[styles.engagementCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            accessibilityLabel="Rewards earned"
-          >
-            <View style={styles.engagementHeader}>
-              <View style={[styles.engagementIcon, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
-                <Sparkles size={ICON_SIZE.md} color={colors.warning} strokeWidth={1.5} />
-              </View>
-              <Text style={[styles.engagementLabel, { color: colors.textMuted }]}>Rewards</Text>
-            </View>
-            <Text style={[styles.engagementValue, { color: colors.text }]}>
-              {userStats?.totalRewards ?? 0}
-            </Text>
-            <Text style={[styles.engagementSub, { color: colors.textMuted }]}>Earned</Text>
-          </View>
-        </View>
-
-        <PrimaryButton
-          title="My dashboard"
-          onPress={() => router.push("/(tabs)/home")}
-          leftIcon={<TrendingUp size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={1.5} />}
-          style={styles.dashboardCta}
-          accessibilityLabel="Open dashboard"
-        />
-
-        <SectionHeader
-          title="Shortcuts"
-          subtitle="Go to frequent actions"
-          icon={<ArrowRightLeft size={ICON_SIZE.base} color={colors.primary} />}
-        />
-        <View
-          style={[styles.menuContainer, { backgroundColor: colors.card }]}
-          accessibilityLabel="Quick access shortcuts"
+        <Animated.View
+          entering={FadeInDown.delay(100).springify()}
+          style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}
         >
-          {quickActions.map((item, index) => (
-            <MenuItemComponent
-              key={item.label}
-              item={item}
-              isLast={index === quickActions.length - 1}
-              colors={colors}
-            />
-          ))}
-        </View>
-
-        <SectionHeader
-          title="Security"
-          subtitle="Two-factor, password, privacy"
-          icon={<Shield size={ICON_SIZE.base} color={colors.success} />}
-        />
-        <View style={[styles.card, { backgroundColor: colors.card }]} accessibilityLabel="Security controls">
-          <View style={[styles.securityRow, { borderColor: colors.border }]} accessibilityLabel="Two-factor authentication">
-            <View style={styles.securityText}>
-              <Text style={[styles.securityTitle, { color: colors.text }]}>Two-factor authentication</Text>
-              <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>OTP required at sign-in to protect access.</Text>
+          <View style={styles.profileHeader}>
+            <View style={styles.avatarContainer}>
+              <View
+                style={[styles.avatar, { backgroundColor: colors.primary }]}
+                accessibilityLabel="User profile picture"
+                accessibilityRole="image"
+                accessibilityHint="Shows your initials"
+              >
+                <Text style={styles.avatarText}>
+                  {isEditing ? editForm.firstName.charAt(0) : profile.firstName.charAt(0)}
+                  {isEditing ? editForm.lastName.charAt(0) : profile.lastName.charAt(0)}
+                </Text>
+              </View>
+              <View style={[styles.verifiedBadge, { backgroundColor: colors.success }]}>
+                <BadgeCheck size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+              </View>
             </View>
-            <Switch
-              value={twoFactorEnabled}
-              onValueChange={toggleTwoFactor}
-              thumbColor={twoFactorEnabled ? colors.primary : colors.border}
-              trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
+            {!isEditing ? (
+              <PrimaryButton
+                title="Edit Profile"
+                onPress={handleEditProfile}
+                size="small"
+                variant="secondary"
+                leftIcon={<Edit size={ICON_SIZE.md} color={colors.text} />}
+                style={styles.editButton}
+                accessibilityLabel="Edit profile"
+              />
+            ) : (
+              <View style={styles.editActions}>
+                <TouchableOpacity
+                  onPress={handleCancelEdit}
+                  style={[styles.editActionButton, { backgroundColor: colors.secondary }]}
+                  accessibilityLabel="Cancel edit"
+                >
+                  <Text style={[styles.editActionText, { color: colors.textMuted }]}>Cancel</Text>
+                </TouchableOpacity>
+                <PrimaryButton
+                  title="Save"
+                  onPress={handleSaveProfile}
+                  size="small"
+                  style={styles.saveButton}
+                  accessibilityLabel="Save profile changes"
+                />
+                </View>
+            )}
+          </View>
+
+          <View style={styles.profileDetails}>
+            {isEditing ? (
+              <View style={styles.editForm}>
+                <View style={styles.nameInputs}>
+                  <FormInput
+                    label="First Name"
+                    value={editForm.firstName}
+                    onChangeText={(text) => setEditForm(prev => ({ ...prev, firstName: text }))}
+                    placeholder="Enter first name"
+                    style={styles.nameInput}
+                  />
+                  <FormInput
+                    label="Last Name"
+                    value={editForm.lastName}
+                    onChangeText={(text) => setEditForm(prev => ({ ...prev, lastName: text }))}
+                    placeholder="Enter last name"
+                    style={styles.nameInput}
+                  />
+                </View>
+                <FormInput
+                  label="Email"
+                  value={editForm.email}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, email: text }))}
+                  placeholder="Enter email address"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+                <FormInput
+                  label="Phone Number"
+                  value={editForm.telephone}
+                  onChangeText={(text) => setEditForm(prev => ({ ...prev, telephone: text }))}
+                  placeholder="Enter phone number"
+                  keyboardType="phone-pad"
+                />
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.profileName, { color: colors.text }]}>{profile.firstName} {profile.lastName}</Text>
+                <Text style={[styles.profileEmail, { color: colors.textMuted }]}>{profile.email}</Text>
+                <Text style={[styles.profilePhone, { color: colors.textMuted }]}>{profile.telephone}</Text>
+              </>
+            )}
+          </View>
+
+          <View style={styles.statsGrid}>
+            <StatCard
+              label="Wallet"
+              value={`$${profile.walletBalance.toLocaleString()}`}
+              icon={Wallet}
+              color={colors.primary}
+              colors={colors}
+              delay={200}
+            />
+            <StatCard
+              label="Earnings"
+              value={`$${profile.totalEarnings.toLocaleString()}`}
+              icon={TrendingUp}
+              color={colors.success}
+              colors={colors}
+              delay={250}
+            />
+            <StatCard
+              label="Rewards"
+              value={`$${profile.totalRewards.toLocaleString()}`}
+              icon={Star}
+              color={colors.warning}
+              colors={colors}
+              delay={300}
+            />
+            <StatCard
+              label="Sessions"
+              value={profile.activeSessions}
+              icon={Smartphone}
+              color={colors.info}
+              colors={colors}
+              delay={350}
             />
           </View>
+        </Animated.View>
+
+        <Animated.View entering={FadeIn.delay(400)} style={styles.tabsContainer}>
+          {tabs.map((tab, index) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                style={[
+                  styles.tabButton,
+                  isActive && [
+                    styles.tabButtonActive,
+                    { backgroundColor: withAlpha(colors.primary, 0.12) }
+                  ],
+                ]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setActiveTab(tab.key);
+                }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                accessibilityHint={`Switch to ${tab.label} section`}
+              >
+                <View style={[
+                  styles.tabIconContainer,
+                  isActive && { backgroundColor: colors.primary }
+                ]}>
+                  <Icon
+                    size={ICON_SIZE.sm}
+                    color={isActive ? "#FFFFFF" : colors.textMuted}
+                    strokeWidth={2}
+                  />
+                </View>
+                <Text style={[
+                  styles.tabLabel,
+                  { color: isActive ? colors.primary : colors.textMuted },
+                  isActive && styles.tabLabelActive
+                ]}>
+                  {tab.label}
+                </Text>
+                {isActive && (
+                  <Animated.View
+                    entering={FadeIn.duration(200)}
+                    style={[styles.tabIndicator, { backgroundColor: colors.primary }]}
+                  />
+                )}
+              </Pressable>
+            );
+          })}
+        </Animated.View>
+
+        {activeTab === 'engagement' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Activity"
+              subtitle="Your engagement snapshot"
+              icon={<Sparkles size={ICON_SIZE.base} color={colors.primary} />}
+            />
+            <View style={styles.engagementGrid}>
+              <EngagementCard
+                label="Likes"
+                value={userStats?.rewardsThisWeek ?? 0}
+                subtitle="This week"
+                icon={ThumbsUp}
+                color={colors.success}
+                colors={colors}
+                index={0}
+              />
+              <EngagementCard
+                label="Answered"
+                value={userStats?.totalAnswers ?? 0}
+                subtitle="Lifetime"
+                icon={MessageSquare}
+                color={colors.info}
+                colors={colors}
+                index={1}
+              />
+              <EngagementCard
+                label="Rewards"
+                value={userStats?.totalRewards ?? 0}
+                subtitle="Earned"
+                icon={Sparkles}
+                color={colors.warning}
+                colors={colors}
+                index={2}
+              />
+            </View>
+
+            <Animated.View entering={FadeInUp.delay(400).springify()}>
+              <PrimaryButton
+                title="View Dashboard"
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  router.push("/(tabs)/home");
+                }}
+                leftIcon={<TrendingUp size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={1.5} />}
+                style={styles.dashboardCta}
+                accessibilityLabel="Open your dashboard"
+                accessibilityHint="Navigate to the home dashboard"
+              />
+            </Animated.View>
+          </Animated.View>
+        )}
+
+        {activeTab === 'shortcuts' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Quick Actions"
+              subtitle="Frequently used features"
+              icon={<Zap size={ICON_SIZE.base} color={colors.primary} />}
+            />
+            <Animated.View
+              entering={FadeInUp.delay(100).springify()}
+              style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+              accessibilityLabel="Quick access shortcuts"
+              accessibilityRole="list"
+            >
+              {quickActions.map((item, index) => (
+                <MenuItemComponent
+                  key={item.label}
+                  item={item}
+                  isLast={index === quickActions.length - 1}
+                  colors={colors}
+                />
+              ))}
+            </Animated.View>
+          </Animated.View>
+        )}
+
+        {activeTab === 'security' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Security & Privacy"
+              subtitle="Protect your account"
+              icon={<Shield size={ICON_SIZE.base} color={colors.success} />}
+            />
+            <Animated.View
+              entering={FadeInUp.delay(100).springify()}
+              style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+              accessibilityLabel="Security controls"
+              accessibilityRole="region"
+            >
+              <View style={[styles.securityRow, { borderColor: colors.border }]} accessibilityLabel="Two-factor authentication">
+                <View style={styles.securityText}>
+                  <Text style={[styles.securityTitle, { color: colors.text }]}>Two-factor authentication</Text>
+                  <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>OTP required at sign-in to protect access.</Text>
+                </View>
+                <Switch
+                  value={twoFactorEnabled}
+                  onValueChange={toggleTwoFactor}
+                  thumbColor={twoFactorEnabled ? colors.primary : colors.border}
+                  trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
+                />
+              </View>
 
           <View style={[styles.sectionBlock, { borderColor: colors.border }]}
             accessibilityLabel="Change password form"
@@ -533,38 +842,57 @@ export default function ProfileScreen(): React.ReactElement {
               </View>
             ))}
           </View>
-        </View>
+            </Animated.View>
+          </Animated.View>
+        )}
 
-        <SectionHeader
-          title="Payments"
-          subtitle="Mobile money and wallet"
-          icon={<CreditCard size={ICON_SIZE.base} color={colors.warning} />}
-        />
-        <View
-          style={[styles.menuContainer, { backgroundColor: colors.card }]}
-          accessibilityLabel="Payments and wallet"
-        >
-          {paymentItems.map((item, index) => (
-            <MenuItemComponent
-              key={item.label}
-              item={item}
-              isLast={index === paymentItems.length - 1}
-              colors={colors}
+        {activeTab === 'payments' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Wallet & Payments"
+              subtitle="Manage your money"
+              icon={<CreditCard size={ICON_SIZE.base} color={colors.warning} />}
             />
-          ))}
-        </View>
+            <Animated.View
+              entering={FadeInUp.delay(100).springify()}
+              style={[styles.menuContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+              accessibilityLabel="Payments and wallet options"
+              accessibilityRole="list"
+            >
+              {paymentItems.map((item, index) => (
+                <MenuItemComponent
+                  key={item.label}
+                  item={item}
+                  isLast={index === paymentItems.length - 1}
+                  colors={colors}
+                />
+              ))}
+            </Animated.View>
+          </Animated.View>
+        )}
 
-        <TouchableOpacity
-          style={[styles.signOutButton, { backgroundColor: colors.card }]}
-          onPress={handleSignOut}
-          accessibilityRole="button"
-          accessibilityLabel="Sign out"
-        >
-          <View style={styles.signOutIcon}>
-            <LogOut size={ICON_SIZE.base} color={colors.error} strokeWidth={1.5} />
-          </View>
-          <Text style={[styles.signOutText, { color: colors.error }]}>Sign Out</Text>
-        </TouchableOpacity>
+        <Animated.View entering={FadeIn.delay(500)}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.signOutButton,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              pressed && { opacity: 0.8, transform: [{ scale: 0.98 }] }
+            ]}
+            onPress={() => {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              handleSignOut();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out of your account"
+            accessibilityHint="Double tap to sign out"
+          >
+            <View style={[styles.signOutIcon, { backgroundColor: withAlpha(colors.error, 0.1) }]}>
+              <LogOut size={ICON_SIZE.base} color={colors.error} strokeWidth={2} />
+            </View>
+            <Text style={[styles.signOutText, { color: colors.error }]}>Sign Out</Text>
+            <ChevronRight size={ICON_SIZE.base} color={colors.error} strokeWidth={1.5} />
+          </Pressable>
+        </Animated.View>
       </ScrollView>
     </View>
   );
@@ -591,35 +919,64 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize["3xl"],
+    fontSize: TYPOGRAPHY.fontSize["4xl"], // Larger for better visibility
+    letterSpacing: 0.2,
   },
   headerSubtitle: {
     marginTop: SPACING.xs,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.base,
+    fontSize: TYPOGRAPHY.fontSize.lg, // Slightly larger for clarity
+    color: '#7A7A7A',
   },
   profileCard: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     padding: SPACING.lg,
     marginBottom: SPACING.xl,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   profileInfo: {
     flexDirection: "row",
     alignItems: "center",
     marginBottom: SPACING.lg,
   },
+  avatarContainer: {
+    position: "relative",
+    marginBottom: SPACING.md,
+  },
   avatar: {
-    width: COMPONENT_SIZE.avatar.xl,
-    height: COMPONENT_SIZE.avatar.xl,
-    borderRadius: COMPONENT_SIZE.avatar.xl / 2,
+    width: COMPONENT_SIZE.avatar.xl + 8,
+    height: COMPONENT_SIZE.avatar.xl + 8,
+    borderRadius: (COMPONENT_SIZE.avatar.xl + 8) / 2,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: SPACING.md,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  verifiedBadge: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
   },
   avatarText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize["3xl"],
+    fontSize: TYPOGRAPHY.fontSize["4xl"], // Larger initials for avatar
     color: "#FFFFFF",
+    letterSpacing: 0.5,
   },
   profileDetails: {
     flex: 1,
@@ -628,15 +985,18 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["2xl"],
     marginBottom: SPACING.xs,
+    letterSpacing: 0.1,
   },
   profileEmail: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.base,
+    fontSize: TYPOGRAPHY.fontSize.lg, // Larger for readability
+    color: '#7A7A7A',
   },
   profilePhone: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.base, // Larger for accessibility
     marginTop: SPACING.xs,
+    color: '#7A7A7A',
   },
   editButton: {
     minWidth: COMPONENT_SIZE.button.small,
@@ -649,17 +1009,31 @@ const styles = StyleSheet.create({
   },
   statItem: {
     flex: 1,
-    borderRadius: RADIUS.base,
+    borderRadius: RADIUS.lg,
     padding: SPACING.md,
+    borderWidth: 1,
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  statIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.xs,
   },
   statLabel: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    marginBottom: SPACING.xs,
+    textAlign: "center",
+    color: '#7A7A7A',
   },
   statValue: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: 0.1,
+    textAlign: "center",
   },
   engagementGrid: {
     flexDirection: "row",
@@ -668,72 +1042,109 @@ const styles = StyleSheet.create({
   },
   engagementCard: {
     flex: 1,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     padding: SPACING.md,
     borderWidth: 1,
-    gap: SPACING.xs,
+    alignItems: "center",
+    gap: SPACING.sm,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   engagementHeader: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
   engagementIcon: {
-    width: COMPONENT_SIZE.avatar.sm,
-    height: COMPONENT_SIZE.avatar.sm,
-    borderRadius: COMPONENT_SIZE.avatar.sm / 2,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
   },
   engagementLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: "center",
+    color: '#7A7A7A',
   },
   engagementValue: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["2xl"],
+    letterSpacing: 0.1,
+    textAlign: "center",
+  },
+  engagementBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xxs,
+    borderRadius: RADIUS.full,
   },
   engagementSub: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: "center",
   },
   dashboardCta: {
     marginBottom: SPACING.xl,
   },
   menuContainer: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     overflow: "hidden",
     marginBottom: SPACING.xl,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: SPACING.base,
+    minHeight: 72,
   },
   menuItemIcon: {
-    width: COMPONENT_SIZE.avatar.md,
-    height: COMPONENT_SIZE.avatar.md,
-    borderRadius: COMPONENT_SIZE.avatar.md / 2,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     marginRight: SPACING.md,
+  },
+  menuItemArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
   menuItemContent: {
     flex: 1,
   },
   menuItemLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.body,
+    fontSize: TYPOGRAPHY.fontSize.lg, // Larger for touch targets
+    letterSpacing: 0.1,
   },
   menuItemSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.base, // Larger for clarity
     marginTop: SPACING.xxs,
+    color: '#7A7A7A',
   },
   card: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     padding: SPACING.lg,
     marginBottom: SPACING.xl,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
   },
   securityRow: {
     flexDirection: "row",
@@ -747,33 +1158,38 @@ const styles = StyleSheet.create({
   },
   securityTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontSize: TYPOGRAPHY.fontSize.xl, // Larger for accessibility
+    letterSpacing: 0.1,
   },
   securitySubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.base, // Larger for clarity
     marginTop: SPACING.xs,
+    color: '#7A7A7A',
   },
   signOutButton: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     padding: SPACING.base,
     flexDirection: "row",
     alignItems: "center",
     marginBottom: SPACING.lg,
+    marginTop: SPACING.lg,
+    borderWidth: 1,
+    minHeight: 64,
   },
   signOutIcon: {
-    width: COMPONENT_SIZE.avatar.md,
-    height: COMPONENT_SIZE.avatar.md,
-    borderRadius: COMPONENT_SIZE.avatar.md / 2,
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
     marginRight: SPACING.md,
   },
   signOutText: {
     flex: 1,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.body,
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: 0.1,
   },
   sectionBlock: {
     paddingVertical: SPACING.sm,
@@ -810,5 +1226,83 @@ const styles = StyleSheet.create({
   },
   sessionRevoke: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  profileHeader: {
+    alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+  statsGrid: {
+    flexDirection: "row",
+    gap: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  tabsContainer: {
+    flexDirection: "row",
+    marginBottom: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+    borderRadius: RADIUS.lg,
+    gap: SPACING.xs,
+    position: "relative",
+    overflow: "hidden",
+  },
+  tabButtonActive: {
+    borderWidth: 0,
+  },
+  tabIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  tabLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: "center",
+  },
+  tabLabelActive: {
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+  },
+  tabIndicator: {
+    position: "absolute",
+    bottom: 4,
+    width: 20,
+    height: 3,
+    borderRadius: 1.5,
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  editActionButton: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.sm,
+  },
+  editActionText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  saveButton: {
+    minWidth: COMPONENT_SIZE.button.small,
+  },
+  editForm: {
+    gap: SPACING.md,
+  },
+  nameInputs: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  nameInput: {
+    flex: 1,
   },
 });
