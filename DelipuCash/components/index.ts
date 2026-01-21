@@ -63,3 +63,60 @@ export type {
   SearchBarProps,
   ProgressCardProps,
 } from './cards';
+
+// UI Components
+export { IconButton } from './ui/IconButton';
+export type { IconButtonProps, IconButtonSize, IconButtonVariant } from './ui/IconButton';
+
+export { ProgressBar } from './ui/ProgressBar';
+export type { ProgressBarProps, ProgressBarSize } from './ui/ProgressBar';
+
+export { FloatingActionButton } from './ui/FloatingActionButton';
+export type {
+  FloatingActionButtonProps,
+  FABAction,
+  FABPosition,
+} from './ui/FloatingActionButton';
+
+// Video Components
+export {
+  VideoPlayerOverlay,
+  MiniPlayer,
+  VideoActions,
+  UploadModal,
+  SearchResults,
+} from './video';
+export type {
+  VideoPlayerOverlayProps,
+  MiniPlayerProps,
+  VideoActionsProps,
+  UploadModalProps,
+  UploadFormData,
+  SearchResultsProps,
+} from './video';
+
+// LiveStream Components
+export {
+  LiveStreamScreen,
+  CameraControls,
+  CameraControlButton,
+  BottomControls,
+  RecordButton,
+  RecordingTimer,
+  RecordingProgressBar,
+  PermissionPrompt,
+  GradientOverlay,
+} from './livestream';
+export type {
+  LiveStreamScreenProps,
+  RecordedVideo,
+  CameraControlsProps,
+  CameraControlButtonProps,
+  BottomControlsProps,
+  RecordButtonProps,
+  RecordingTimerProps,
+  RecordingProgressBarProps,
+  PermissionPromptProps,
+  GradientOverlayProps,
+} from './livestream';
+

@@ -181,6 +181,37 @@ export default function SurveysScreen(): React.ReactElement {
           />
         </View>
 
+        {/* ==================== SEARCH & QUICK ACCESS ==================== */}
+        <View
+          style={[
+            styles.searchPanel,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              ...SHADOWS.md,
+            },
+          ]}
+        >
+          <View style={styles.searchHeaderRow}>
+            <Text style={[styles.searchTitle, { color: colors.text }]}>Find a survey</Text>
+            <View style={[styles.searchBadge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
+              <Text style={[styles.searchBadgeText, { color: colors.primary }]}>Active {runningSurveys.length}</Text>
+            </View>
+          </View>
+          <SearchBar
+            placeholder="Search by title or topic"
+            value={search}
+            onChangeText={setSearch}
+            style={styles.searchBar}
+          />
+          <View style={styles.searchMetaRow}>
+            <Text style={[styles.searchHint, { color: colors.textMuted }]}>Tip: start with short surveys to boost completion.</Text>
+            <TouchableOpacity onPress={handleCreateSurvey} accessibilityRole="button">
+              <Text style={[styles.searchAction, { color: colors.primary }]}>New survey</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* ==================== QUICK STATS ==================== */}
         <View style={styles.statsRow}>
           {stats.map((stat) => (
@@ -232,14 +263,6 @@ export default function SurveysScreen(): React.ReactElement {
           </View>
           <ArrowRight size={22} color={colors.primaryText} strokeWidth={2} />
         </TouchableOpacity>
-
-        {/* ==================== SEARCH ==================== */}
-        <SearchBar
-          placeholder="Search surveys..."
-          value={search}
-          onChangeText={setSearch}
-          style={styles.searchBar}
-        />
 
         {/* ==================== QUESTION TYPES PREVIEW ==================== */}
         <View style={styles.sectionHeader}>
@@ -488,8 +511,49 @@ const styles = StyleSheet.create({
   },
 
   // Search
-  searchBar: {
+  searchPanel: {
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
+    borderWidth: 1,
     marginBottom: SPACING.xl,
+    gap: SPACING.sm,
+  },
+  searchHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  searchTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  searchBadge: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  searchBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  searchBar: {
+    marginBottom: SPACING.sm,
+  },
+  searchMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  searchHint: {
+    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  searchAction: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 
   // Section Headers
