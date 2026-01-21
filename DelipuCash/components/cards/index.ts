@@ -26,3 +26,6 @@ export type { SearchBarProps } from './SearchBar';
 
 export { ProgressCard } from './ProgressCard';
 export type { ProgressCardProps } from './ProgressCard';
+
+export { ProfileSupportCard } from './ProfileSupportCard';
+export { ProfileNotificationCard } from './ProfileNotificationCard';
