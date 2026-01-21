@@ -13,16 +13,21 @@ if (!datasourceUrl) {
   throw new Error('DATABASE_URL or DIRECT_DATABASE_URL is required for Prisma Client');
 }
 
+if (!accelerateUrl || accelerateUrl.trim() === '') {
+  throw new Error('ACCELERATE_URL (or fallback DATABASE_URL) is required for Prisma Accelerate');
+}
+
 
 
 // Prisma configuration
 const prismaOptions = {
+  accelerateUrl,
   log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
 };
 
 // Create the prisma instance with Accelerate
 const prisma = globalForPrisma.prisma
-  || new PrismaClient(prismaOptions).$extends(withAccelerate({ accelerateUrl }));
+  || new PrismaClient(prismaOptions).$extends(withAccelerate());
 
 // Prevent multiple instances in development
 if (process.env.NODE_ENV !== 'production') {
