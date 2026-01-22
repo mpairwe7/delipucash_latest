@@ -126,3 +126,16 @@ export * from './support';
 // Notification Components (detailed)
 export * from './notifications';
 
+// Payment Components
+export {
+  PaymentProviderCard,
+  SubscriptionPlanCard,
+} from './payment';
+export type {
+  PaymentProviderCardProps,
+  PaymentProvider,
+  SubscriptionPlanCardProps,
+  SubscriptionPlanType,
+  PlanConfig,
+} from './payment';
+

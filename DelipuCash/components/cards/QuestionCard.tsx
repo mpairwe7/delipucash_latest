@@ -1,7 +1,8 @@
 /**
  * QuestionCard Component
  * Displays question with reward and engagement info
- * 
+ * Features smooth animations and modern UI design
+ *
  * @example
  * ```tsx
  * <QuestionCard
@@ -11,16 +12,32 @@
  * ```
  */
 
-import React from 'react';
+import React, { useCallback } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   StyleProp,
   ViewStyle,
-} from 'react-native';
-import { MessageCircle, DollarSign, Zap } from 'lucide-react-native';
+  Pressable,
+} from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  FadeIn,
+  interpolate,
+  Extrapolation,
+} from "react-native-reanimated";
+import {
+  MessageCircle,
+  DollarSign,
+  Zap,
+  Clock,
+  Users,
+  ChevronRight,
+  Award,
+} from "lucide-react-native";
 import {
   useTheme,
   SPACING,
@@ -28,8 +45,11 @@ import {
   RADIUS,
   SHADOWS,
   withAlpha,
-} from '@/utils/theme';
-import { Question } from '@/types';
+} from "@/utils/theme";
+import { Question } from "@/types";
+
+// Create AnimatedPressable
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export interface QuestionCardProps {
   /** Question data object */
@@ -39,104 +59,212 @@ export interface QuestionCardProps {
   /** Custom container style */
   style?: StyleProp<ViewStyle>;
   /** Card variant: default or compact */
-  variant?: 'default' | 'compact';
+  variant?: "default" | "compact";
+  /** Animation delay for staggered entrance */
+  index?: number;
   /** Test ID for testing */
   testID?: string;
 }
+
+/**
+ * Spring animation config for press feedback
+ */
+const SPRING_CONFIG = {
+  damping: 15,
+  stiffness: 150,
+  mass: 0.5,
+};
+
+/**
+ * Get category color based on category name
+ */
+const getCategoryColor = (
+  category: string | undefined,
+  colors: ReturnType<typeof useTheme>["colors"]
+): string => {
+  const categoryColors: Record<string, string> = {
+    Technology: colors.info,
+    Lifestyle: colors.success,
+    Finance: colors.warning,
+    Business: colors.primary,
+    Health: "#10B981",
+    Education: "#8B5CF6",
+    Science: "#06B6D4",
+    Sports: "#F97316",
+    Entertainment: "#EC4899",
+    General: colors.textMuted,
+  };
+  return categoryColors[category || ""] || colors.textMuted;
+};
+
+/**
+ * Format time ago
+ */
+const formatTimeAgo = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 1) return "Just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
 
 export function QuestionCard({
   question,
   onPress,
   style,
-  variant = 'default',
+  variant = "default",
+  index = 0,
   testID,
 }: QuestionCardProps): React.ReactElement {
   const { colors } = useTheme();
 
-  const getCategoryColor = (category?: string): string => {
-    const categoryColors: Record<string, string> = {
-      Technology: colors.info,
-      Lifestyle: colors.success,
-      Finance: colors.warning,
-      Business: colors.primary,
-      Health: '#10B981',
-      Education: '#8B5CF6',
-    };
-    return categoryColors[category || ''] || colors.textMuted;
-  };
+  // Animation values
+  const scale = useSharedValue(1);
+  const pressed = useSharedValue(0);
+
+  // Press handlers
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.98, SPRING_CONFIG);
+    pressed.value = withSpring(1, SPRING_CONFIG);
+  }, [scale, pressed]);
+
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, SPRING_CONFIG);
+    pressed.value = withSpring(0, SPRING_CONFIG);
+  }, [scale, pressed]);
+
+  // Animated styles
+  const animatedCardStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const animatedArrowStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        translateX: interpolate(
+          pressed.value,
+          [0, 1],
+          [0, 4],
+          Extrapolation.CLAMP
+        ),
+      },
+    ],
+    opacity: interpolate(pressed.value, [0, 1], [0.5, 1], Extrapolation.CLAMP),
+  }));
+
+  const categoryColor = getCategoryColor(question.category, colors);
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Question: ${question.text}`}
-      testID={testID}
-      style={[
-        styles.container,
-        variant === 'compact' && styles.containerCompact,
-        { backgroundColor: colors.card },
-        style,
-      ]}
-    >
-      {/* Category & Instant Reward Badge */}
-      <View style={styles.headerRow}>
-        {question.category && (
-          <View
-            style={[
-              styles.categoryBadge,
-              { backgroundColor: withAlpha(getCategoryColor(question.category), 0.15) },
-            ]}
-          >
-            <Text
+    <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
+      <AnimatedPressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel={`Question: ${question.text}`}
+        testID={testID}
+        style={[
+          animatedCardStyle,
+          styles.container,
+          variant === "compact" && styles.containerCompact,
+          { backgroundColor: colors.card },
+          style,
+        ]}
+      >
+        {/* Header Row - Category & Badges */}
+        <View style={styles.headerRow}>
+          <View style={styles.badgesContainer}>
+            {question.category && (
+              <View
+                style={[
+                  styles.categoryBadge,
+                  { backgroundColor: withAlpha(categoryColor, 0.12) },
+                ]}
+              >
+                <Text style={[styles.categoryText, { color: categoryColor }]}>
+                  {question.category}
+                </Text>
+              </View>
+            )}
+            {question.isInstantReward && (
+              <View
+                style={[
+                  styles.instantBadge,
+                  { backgroundColor: withAlpha(colors.warning, 0.12) },
+                ]}
+              >
+                <Zap size={10} color={colors.warning} fill={colors.warning} />
+                <Text style={[styles.instantText, { color: colors.warning }]}>
+                  Instant
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Time indicator */}
+          <View style={styles.timeContainer}>
+            <Clock size={12} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.timeText, { color: colors.textMuted }]}>
+              {formatTimeAgo(question.createdAt)}
+            </Text>
+          </View>
+        </View>
+
+        {/* Question Text */}
+        <Text
+          style={[styles.questionText, { color: colors.text }]}
+          numberOfLines={variant === "compact" ? 2 : 3}
+        >
+          {question.text}
+        </Text>
+
+        {/* Stats Row */}
+        <View style={styles.statsRow}>
+          {/* Answers */}
+          <View style={styles.statItem}>
+            <View
               style={[
-                styles.categoryText,
-                { color: getCategoryColor(question.category) },
+                styles.statIconContainer,
+                { backgroundColor: withAlpha(colors.info, 0.1) },
               ]}
             >
-              {question.category}
+              <MessageCircle size={14} color={colors.info} strokeWidth={1.5} />
+            </View>
+            <Text style={[styles.statText, { color: colors.textMuted }]}>
+              {question.totalAnswers || 0}{" "}
+              {(question.totalAnswers || 0) === 1 ? "answer" : "answers"}
             </Text>
           </View>
-        )}
-        {question.isInstantReward && (
-          <View
-            style={[
-              styles.instantBadge,
-              { backgroundColor: withAlpha(colors.warning, 0.15) },
-            ]}
-          >
-            <Zap size={10} color={colors.warning} fill={colors.warning} />
-            <Text style={[styles.instantText, { color: colors.warning }]}>
-              Instant
+
+          {/* Reward */}
+          <View style={styles.statItem}>
+            <View
+              style={[
+                styles.statIconContainer,
+                { backgroundColor: withAlpha(colors.success, 0.1) },
+              ]}
+            >
+              <DollarSign size={14} color={colors.success} strokeWidth={1.5} />
+            </View>
+            <Text style={[styles.rewardText, { color: colors.success }]}>
+              {question.rewardAmount?.toFixed(2) || "0.00"}
             </Text>
           </View>
-        )}
-      </View>
 
-      {/* Question Text */}
-      <Text
-        style={[styles.questionText, { color: colors.text }]}
-        numberOfLines={variant === 'compact' ? 2 : 3}
-      >
-        {question.text}
-      </Text>
-
-      {/* Meta Info */}
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <MessageCircle size={14} color={colors.textMuted} strokeWidth={1.5} />
-          <Text style={[styles.metaText, { color: colors.textMuted }]}>
-            {question.totalAnswers || 0} answers
-          </Text>
+          {/* Arrow indicator */}
+          <Animated.View style={[styles.arrowContainer, animatedArrowStyle]}>
+            <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
+          </Animated.View>
         </View>
-        <View style={styles.rewardContainer}>
-          <DollarSign size={14} color={colors.success} strokeWidth={1.5} />
-          <Text style={[styles.rewardText, { color: colors.success }]}>
-            {question.rewardAmount?.toFixed(2) || '0.00'}
-          </Text>
-        </View>
-      </View>
-    </TouchableOpacity>
+      </AnimatedPressable>
+    </Animated.View>
   );
 }
 
@@ -152,30 +280,45 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: SPACING.sm,
+  },
+  badgesContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    flex: 1,
   },
   categoryBadge: {
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.sm,
+    borderRadius: RADIUS.full,
   },
   categoryText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
   instantBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.sm,
-    gap: 2,
+    borderRadius: RADIUS.full,
+    gap: 3,
   },
   instantText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  timeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  timeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
   questionText: {
@@ -184,28 +327,33 @@ const styles = StyleSheet.create({
     lineHeight: TYPOGRAPHY.fontSize.base * 1.5,
     marginBottom: SPACING.md,
   },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  statsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.lg,
   },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  statItem: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: SPACING.xs,
   },
-  metaText: {
+  statIconContainer: {
+    width: 26,
+    height: 26,
+    borderRadius: RADIUS.full,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
-  rewardContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-  },
   rewardText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  arrowContainer: {
+    marginLeft: "auto",
   },
 });
 

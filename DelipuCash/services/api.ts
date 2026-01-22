@@ -16,6 +16,7 @@ import {
   mockAds,
   mockComments,
   mockCurrentUser,
+  mockLoginSessions,
   mockNotifications,
   mockPayments,
   mockQuestions,
@@ -32,6 +33,7 @@ import {
     ApiResponse,
     AppUser,
     Comment,
+  LoginSession,
     Notification,
     PaginatedResponse,
     Payment,
@@ -213,6 +215,79 @@ export const userApi = {
     return {
       success: true,
       data: user || null,
+    };
+  },
+
+  /**
+   * Get user login sessions
+   */
+  async getSessions(): Promise<ApiResponse<LoginSession[]>> {
+    await delay();
+    return {
+      success: true,
+      data: mockLoginSessions.filter(s => s.userId === mockCurrentUser.id),
+    };
+  },
+
+  /**
+   * Revoke a login session
+   */
+  async revokeSession(sessionId: string): Promise<ApiResponse<{ revoked: boolean }>> {
+    await delay();
+    const sessionIndex = mockLoginSessions.findIndex(s => s.id === sessionId);
+    if (sessionIndex === -1) {
+      return { success: false, data: { revoked: false }, error: "Session not found" };
+    }
+    // Update session to inactive
+    mockLoginSessions[sessionIndex] = {
+      ...mockLoginSessions[sessionIndex],
+      isActive: false,
+      logoutTime: new Date().toISOString(),
+    };
+    return {
+      success: true,
+      data: { revoked: true },
+      message: "Session revoked successfully",
+    };
+  },
+
+  /**
+   * Update 2FA settings
+   */
+  async updateTwoFactor(enabled: boolean): Promise<ApiResponse<{ enabled: boolean }>> {
+    await delay();
+    return {
+      success: true,
+      data: { enabled },
+      message: enabled ? "Two-factor authentication enabled" : "Two-factor authentication disabled",
+    };
+  },
+
+  /**
+   * Change password
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
+    await delay(800);
+    // Simulate password validation
+    if (currentPassword === newPassword) {
+      return { success: false, data: { success: false }, error: "New password must be different from current password" };
+    }
+    return {
+      success: true,
+      data: { success: true },
+      message: "Password changed successfully",
+    };
+  },
+
+  /**
+   * Update privacy settings
+   */
+  async updatePrivacySettings(settings: { shareProfile: boolean; shareActivity: boolean }): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
+    await delay();
+    return {
+      success: true,
+      data: settings,
+      message: "Privacy settings updated",
     };
   },
 };
@@ -641,6 +716,23 @@ export const surveysApi = {
 
     return { success: true, data: { ...newSurvey, questions: createdQuestions }, message: "Survey created successfully" };
   },
+
+  /**
+   * Delete a survey
+   */
+  async delete(surveyId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    await delay();
+    const surveyIndex = mockSurveys.findIndex((s) => s.id === surveyId);
+    if (surveyIndex === -1) {
+      return { success: false, data: { deleted: false }, error: "Survey not found" };
+    }
+    mockSurveys.splice(surveyIndex, 1);
+    return {
+      success: true,
+      data: { deleted: true },
+      message: "Survey deleted successfully",
+    };
+  },
 };
 
 // ===========================================
@@ -1053,6 +1145,61 @@ export const rewardsApi = {
       success: true,
       data: newQuestion,
       message: "Reward question created successfully",
+    };
+  },
+
+  /**
+   * Bulk create reward questions from file upload
+   */
+  async bulkCreateQuestions(questions: Array<{
+    text: string;
+    options: string[];
+    correctAnswer?: string;
+    category?: string;
+    rewardAmount?: number;
+  }>, userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
+    await delay(1500);
+
+    const createdQuestions: RewardQuestion[] = [];
+    let failed = 0;
+
+    for (const q of questions) {
+      if (!q.text || !q.options || q.options.length < 2) {
+        failed++;
+        continue;
+      }
+
+      const newQuestion: RewardQuestion = {
+        id: `reward_question_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        text: q.text,
+        options: Object.fromEntries(q.options.map((opt, i) => [String.fromCharCode(97 + i), opt])),
+        correctAnswer: q.correctAnswer || q.options[0],
+        rewardAmount: q.rewardAmount || 100,
+        expiryTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        isActive: true,
+        userId,
+        isInstantReward: false,
+        maxWinners: 10,
+        winnersCount: 0,
+        isCompleted: false,
+        paymentProvider: null,
+        phoneNumber: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      mockRewardQuestions.push(newQuestion);
+      createdQuestions.push(newQuestion);
+    }
+
+    return {
+      success: true,
+      data: {
+        created: createdQuestions.length,
+        failed,
+        questions: createdQuestions,
+      },
+      message: `Successfully created ${createdQuestions.length} questions${failed > 0 ? `, ${failed} failed` : ''}`,
     };
   },
 };

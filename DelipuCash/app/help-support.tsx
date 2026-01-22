@@ -522,12 +522,12 @@ export default function HelpSupportScreen() {
         entering={FadeIn.duration(ANIMATION.duration.normal)}
         style={styles.header}
       >
-        <AnimatedPressable
+        <Pressable
           style={styles.backButton}
           onPress={() => router.back()}
         >
           <ArrowLeft size={ICON_SIZE.sm} color={colors.text} />
-        </AnimatedPressable>
+        </Pressable>
         
         <View style={styles.headerContent}>
           <ThemedText style={styles.headerTitle}>Help & Support</ThemedText>

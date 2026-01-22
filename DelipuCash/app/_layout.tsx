@@ -1,15 +1,10 @@
-import {
-  Roboto_400Regular,
-  Roboto_500Medium,
-  Roboto_700Bold,
-} from '@expo-google-fonts/roboto';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef } from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import NotificationProvider from '@/utils/usePushNotifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -30,36 +25,34 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   const { initiate, isReady } = useAuth();
 
-  const [fontsLoaded, fontError] = useFonts({
-    Roboto_400Regular,
-    Roboto_500Medium,
-    Roboto_700Bold,
-  });
-
   // Initialize auth state from SecureStore on app start
   useEffect(() => {
     initiate();
   }, [initiate]);
 
+  // Keep the screen awake in development; swallow errors on unsupported platforms
+  useEffect(() => {
+    if (__DEV__ && Platform.OS !== 'web') {
+      activateKeepAwakeAsync().catch((err) => console.warn('Keep awake unavailable:', err));
+
+      return () => {
+        deactivateKeepAwake().catch(() => undefined);
+      };
+    }
+  }, []);
+
   // Callback-based approach for hiding splash screen (recommended)
   const onLayoutRootView = useCallback(async () => {
-    if ((fontsLoaded || fontError) && isReady) {
+    if (isReady) {
       // Hide splash screen after the root view has performed layout
       // and auth state has been initialized
       await SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError, isReady]);
-
-  // Log font errors in development for debugging
-  useEffect(() => {
-    if (fontError) {
-      console.error('Font loading error:', fontError);
-    }
-  }, [fontError]);
+  }, [isReady]);
 
   // Keep showing splash screen while fonts load or auth initializes
   // Return a minimal view instead of null to prevent white flash
-  if (!fontsLoaded && !fontError) {
+  if (!isReady) {
     return null;
   }
 

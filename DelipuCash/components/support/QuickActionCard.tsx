@@ -129,14 +129,16 @@ export const QuickActionCard: React.FC<QuickActionCardProps> = ({
   });
 
   return (
-    <AnimatedPressable
+    <Animated.View
       entering={FadeInRight.delay(index * 60).duration(ANIMATION.duration.normal)}
-      style={[styles.container, animatedStyle]}
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
     >
-      <View style={styles.iconContainer}>
+      <AnimatedPressable
+        style={[styles.container, animatedStyle]}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <View style={styles.iconContainer}>
         <Icon size={ICON_SIZE.sm + 2} color={iconColor} />
       </View>
       
@@ -150,7 +152,8 @@ export const QuickActionCard: React.FC<QuickActionCardProps> = ({
       <View style={styles.arrowContainer}>
         <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} />
       </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 };
 

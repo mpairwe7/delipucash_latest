@@ -4,8 +4,11 @@ import {
   SurveyCard,
 } from "@/components";
 import { useRunningSurveys, useUnreadCount, useUpcomingSurveys } from "@/services/hooks";
+import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
+import { useAuth, useAuthModal } from "@/utils/auth";
 import { Survey } from "@/types";
 import {
+  BORDER_WIDTH,
   RADIUS,
   SHADOWS,
   SPACING,
@@ -18,13 +21,17 @@ import { StatusBar } from "expo-status-bar";
 import {
   ArrowRight,
   BarChart3,
+  CheckCircle,
   Clock,
+  CreditCard,
   FileText,
   Lightbulb,
   ListPlus,
+  Lock,
   PenLine,
   Play,
   Plus,
+  ShieldCheck,
   SquareCheck,
   Star,
   Target,
@@ -35,6 +42,7 @@ import {
 import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -62,14 +70,28 @@ export default function SurveysScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
 
+  // Auth state
+  const { isAuthenticated, isReady: authReady } = useAuth();
+  const { open: openAuth } = useAuthModal();
+
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+
+  // Subscription status
+  const {
+    data: subscriptionStatus,
+    isLoading: loadingSubscription,
+    refetch: refetchSubscription,
+  } = useSurveySubscriptionStatus();
+
+  const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
+  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
 
   const { data: runningSurveys = [], isLoading: loadingRunning, refetch: refetchRunning } = useRunningSurveys();
   const { data: upcomingSurveys = [], isLoading: loadingUpcoming, refetch: refetchUpcoming } = useUpcomingSurveys();
   const { data: unreadCount } = useUnreadCount();
 
-  const isLoading = loadingRunning || loadingUpcoming;
+  const isLoading = loadingRunning || loadingUpcoming || loadingSubscription;
 
   // Stats for quick overview
   const stats: StatItem[] = useMemo(() => [
@@ -133,17 +155,65 @@ export default function SurveysScreen(): React.ReactElement {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchRunning(), refetchUpcoming()]);
+    await Promise.all([refetchRunning(), refetchUpcoming(), refetchSubscription()]);
     setRefreshing(false);
-  }, [refetchRunning, refetchUpcoming]);
+  }, [refetchRunning, refetchUpcoming, refetchSubscription]);
 
   const handleSurveyPress = (id: string): void => {
     router.push(`/survey/${id}`);
   };
 
-  const handleCreateSurvey = (): void => {
+  /**
+   * Handle create survey action with auth and subscription checks
+   */
+  const handleCreateSurvey = useCallback((): void => {
+    // Check authentication first
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "You need to be logged in to create surveys.",
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Sign In",
+            onPress: () => openAuth({ mode: "signin" }),
+          },
+        ]
+      );
+      return;
+    }
+
+    // Check subscription status
+    if (!hasActiveSubscription) {
+      Alert.alert(
+        "Subscription Required",
+        "You need an active subscription to create surveys. Subscribe now to unlock survey creation.",
+        [
+          { text: "Maybe Later", style: "cancel" },
+          {
+            text: "Subscribe",
+            onPress: () => router.push("/survey-payment" as Href),
+            style: "default",
+          },
+        ]
+      );
+      return;
+    }
+
+  // Navigate to create survey
     router.push("/create-survey" as Href);
-  };
+  }, [isAuthenticated, hasActiveSubscription, openAuth]);
+
+  /**
+   * Navigate to payment screen
+   */
+  const handleSubscribe = useCallback((): void => {
+    if (!isAuthenticated) {
+      openAuth({ mode: "signin" });
+      return;
+    }
+    router.push("/survey-payment" as Href);
+  }, [isAuthenticated, openAuth]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -212,6 +282,68 @@ export default function SurveysScreen(): React.ReactElement {
           </View>
         </View>
 
+        {/* ==================== SUBSCRIPTION STATUS BANNER ==================== */}
+        {authReady && isAuthenticated && (
+          <TouchableOpacity
+            style={[
+              styles.subscriptionBanner,
+              {
+                backgroundColor: hasActiveSubscription
+                  ? withAlpha(colors.success, 0.1)
+                  : withAlpha(colors.warning, 0.1),
+                borderColor: hasActiveSubscription
+                  ? withAlpha(colors.success, 0.25)
+                  : withAlpha(colors.warning, 0.25),
+              },
+            ]}
+            onPress={!hasActiveSubscription ? handleSubscribe : undefined}
+            activeOpacity={hasActiveSubscription ? 1 : 0.8}
+            accessibilityRole="button"
+            accessibilityLabel={
+              hasActiveSubscription
+                ? `Active subscription with ${remainingDays} days remaining`
+                : "No active subscription. Tap to subscribe"
+            }
+          >
+            <View style={[
+              styles.subscriptionIconBg,
+              {
+                backgroundColor: hasActiveSubscription
+                  ? withAlpha(colors.success, 0.15)
+                  : withAlpha(colors.warning, 0.15),
+              }
+            ]}>
+              {hasActiveSubscription ? (
+                <ShieldCheck size={20} color={colors.success} strokeWidth={2} />
+              ) : (
+                <CreditCard size={20} color={colors.warning} strokeWidth={2} />
+              )}
+            </View>
+            <View style={styles.subscriptionContent}>
+              <Text style={[
+                styles.subscriptionTitle,
+                { color: hasActiveSubscription ? colors.success : colors.warning }
+              ]}>
+                {hasActiveSubscription ? "Active Subscription" : "No Active Subscription"}
+              </Text>
+              <Text style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}>
+                {hasActiveSubscription
+                  ? `${remainingDays} days remaining • ${subscriptionStatus?.subscription?.planType ?? 'Standard'} plan`
+                  : "Subscribe to create unlimited surveys"
+                }
+              </Text>
+            </View>
+            {!hasActiveSubscription && (
+              <View style={[styles.subscribeBtn, { backgroundColor: colors.warning }]}>
+                <Text style={[styles.subscribeBtnText, { color: colors.card }]}>Subscribe</Text>
+              </View>
+            )}
+            {hasActiveSubscription && (
+              <CheckCircle size={20} color={colors.success} strokeWidth={2} />
+            )}
+          </TouchableOpacity>
+        )}
+
         {/* ==================== QUICK STATS ==================== */}
         <View style={styles.statsRow}>
           {stats.map((stat) => (
@@ -241,27 +373,68 @@ export default function SurveysScreen(): React.ReactElement {
           style={[
             styles.ctaCard,
             {
-              backgroundColor: colors.primary,
+              backgroundColor: hasActiveSubscription ? colors.primary : colors.card,
+              borderWidth: hasActiveSubscription ? 0 : BORDER_WIDTH.thin,
+              borderColor: colors.border,
               ...SHADOWS.md,
             },
           ]}
           onPress={handleCreateSurvey}
           activeOpacity={0.9}
           accessibilityRole="button"
-          accessibilityLabel="Create new survey"
+          accessibilityLabel={
+            hasActiveSubscription
+              ? "Create new survey"
+              : "Create new survey - subscription required"
+          }
+          accessibilityHint={
+            !hasActiveSubscription
+              ? "You need an active subscription to create surveys"
+              : undefined
+          }
         >
           <View style={styles.ctaContent}>
-            <View style={[styles.ctaIconBg, { backgroundColor: withAlpha("#fff", 0.2) }]}>
-              <Plus size={24} color={colors.primaryText} strokeWidth={2.5} />
+            <View style={[
+              styles.ctaIconBg,
+              {
+                backgroundColor: hasActiveSubscription
+                  ? withAlpha("#fff", 0.2)
+                  : withAlpha(colors.primary, 0.12)
+              }
+            ]}>
+              {hasActiveSubscription ? (
+                <Plus size={24} color={colors.primaryText} strokeWidth={2.5} />
+              ) : (
+                <Lock size={24} color={colors.primary} strokeWidth={2} />
+              )}
             </View>
             <View style={styles.ctaTextContainer}>
-              <Text style={[styles.ctaTitle, { color: colors.primaryText }]}>Create New Survey</Text>
-              <Text style={[styles.ctaSubtitle, { color: withAlpha(colors.primaryText, 0.8) }]}>
-                Build from scratch or import JSON
+              <Text style={[
+                styles.ctaTitle,
+                { color: hasActiveSubscription ? colors.primaryText : colors.text }
+              ]}>
+                Create New Survey
+              </Text>
+              <Text style={[
+                styles.ctaSubtitle,
+                {
+                  color: hasActiveSubscription
+                    ? withAlpha(colors.primaryText, 0.8)
+                    : colors.textMuted
+                }
+              ]}>
+                {hasActiveSubscription
+                  ? "Build from scratch or import JSON"
+                  : "Subscription required • Tap to subscribe"
+                }
               </Text>
             </View>
           </View>
-          <ArrowRight size={22} color={colors.primaryText} strokeWidth={2} />
+          <ArrowRight
+            size={22}
+            color={hasActiveSubscription ? colors.primaryText : colors.primary}
+            strokeWidth={2}
+          />
         </TouchableOpacity>
 
         {/* ==================== QUESTION TYPES PREVIEW ==================== */}
@@ -689,5 +862,44 @@ const styles = StyleSheet.create({
     padding: SPACING.xl,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // Subscription Banner
+  subscriptionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.lg,
+    gap: SPACING.md,
+  },
+  subscriptionIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  subscriptionContent: {
+    flex: 1,
+  },
+  subscriptionTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  subscriptionSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xxs,
+  },
+  subscribeBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.md,
+  },
+  subscribeBtnText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });
