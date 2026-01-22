@@ -52,6 +52,10 @@ export {
   SectionHeader,
   SearchBar,
   ProgressCard,
+  ExploreCard,
+  Section,
+  RecentQuestionCard,
+  ExploreModal,
 } from './cards';
 export type {
   StatCardProps,
@@ -62,6 +66,11 @@ export type {
   SectionHeaderProps,
   SearchBarProps,
   ProgressCardProps,
+  ExploreCardProps,
+  SectionProps,
+  RecentQuestionCardProps,
+  ExploreModalProps,
+  ExploreFeature,
 } from './cards';
 
 // UI Components
