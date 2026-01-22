@@ -1,26 +1,43 @@
 /**
  * SurveyCard Component
- * Displays survey information with progress and reward
+ * Enhanced survey card with improved UI, animations, and state management
  * 
  * @example
  * ```tsx
  * <SurveyCard
  *   survey={surveyData}
  *   onPress={() => router.push(`/survey/${survey.id}`)}
+ *   variant="default"
  * />
  * ```
  */
 
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   StyleProp,
   ViewStyle,
+  Pressable,
 } from 'react-native';
-import { Clock, Users, DollarSign } from 'lucide-react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  FadeIn,
+} from 'react-native-reanimated';
+import {
+  Clock,
+  Users,
+  DollarSign,
+  FileText,
+  ChevronRight,
+  TrendingUp,
+  Calendar,
+  CheckCircle2,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -40,129 +57,239 @@ export interface SurveyCardProps {
   style?: StyleProp<ViewStyle>;
   /** Card variant: default, compact, or featured */
   variant?: 'default' | 'compact' | 'featured';
+  /** Animation delay index for staggered animations */
+  index?: number;
   /** Test ID for testing */
   testID?: string;
+  /** Show detailed stats */
+  showStats?: boolean;
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export function SurveyCard({
   survey,
   onPress,
   style,
   variant = 'default',
+  index = 0,
   testID,
+  showStats = true,
 }: SurveyCardProps): React.ReactElement {
   const { colors } = useTheme();
+  const scale = useSharedValue(1);
 
-  const progress = survey.maxResponses
-    ? ((survey.totalResponses || 0) / survey.maxResponses) * 100
-    : 0;
+  const progress = useMemo(() => {
+    return survey.maxResponses
+      ? ((survey.totalResponses || 0) / survey.maxResponses) * 100
+      : 0;
+  }, [survey.maxResponses, survey.totalResponses]);
 
   const isScheduled = survey.status === 'scheduled';
-  const statusColor = isScheduled ? colors.warning : colors.success;
-  const statusText = isScheduled ? 'Upcoming' : 'Running';
+  const isCompleted = survey.status === 'completed';
 
-  const getTimeRemaining = (): string => {
-    const endDate = new Date(survey.endDate);
+  const statusConfig = useMemo(() => {
+    if (isCompleted) {
+      return {
+        color: colors.textMuted,
+        text: 'Completed',
+        icon: CheckCircle2,
+      };
+    }
+    if (isScheduled) {
+      return {
+        color: colors.warning,
+        text: 'Upcoming',
+        icon: Calendar,
+      };
+    }
+    return {
+      color: colors.success,
+      text: 'Active',
+      icon: TrendingUp,
+    };
+  }, [isScheduled, isCompleted, colors]);
+
+  const getTimeRemaining = useCallback((): string => {
     const now = new Date();
+
+    if (isScheduled) {
+      const startDate = new Date(survey.startDate);
+      const diffMs = startDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+      if (diffDays <= 0) return 'Starting soon';
+      if (diffDays === 1) return 'Starts tomorrow';
+      return `Starts in ${diffDays} days`;
+    }
+
+    const endDate = new Date(survey.endDate);
     const diffMs = endDate.getTime() - now.getTime();
     const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
     
-    if (diffDays < 0) return 'Ended';
-    if (diffDays === 0) return 'Ends today';
+    if (diffMs < 0) return 'Ended';
+    if (diffHours < 24) return `${diffHours}h left`;
     if (diffDays === 1) return '1 day left';
-    return `${diffDays} days left`;
-  };
+    if (diffDays <= 7) return `${diffDays} days left`;
+    return `${diffDays} days`;
+  }, [isScheduled, survey.startDate, survey.endDate]);
+
+  const questionsCount = useMemo(() => {
+    return survey.uploads?.length || 4;
+  }, [survey.uploads]);
+
+  const estimatedTime = useMemo(() => {
+    return Math.max(2, Math.ceil(questionsCount * 0.5));
+  }, [questionsCount]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.98, { stiffness: 400, damping: 15 });
+  }, [scale]);
+
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, { stiffness: 400, damping: 15 });
+  }, [scale]);
+
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onPress?.();
+  }, [onPress]);
+
+  const StatusIcon = statusConfig.icon;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Survey: ${survey.title}`}
-      testID={testID}
-      style={[
-        styles.container,
-        variant === 'compact' && styles.containerCompact,
-        variant === 'featured' && styles.containerFeatured,
-        { backgroundColor: colors.card },
-        style,
-      ]}
+    <Animated.View
+      entering={FadeIn.delay(index * 50).duration(300)}
     >
-      {/* Status Badge */}
-      <View
+      <AnimatedPressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
         style={[
-          styles.statusBadge,
-          { backgroundColor: withAlpha(statusColor, 0.15) },
+          styles.container,
+          { backgroundColor: colors.card, borderColor: colors.border },
+          variant === 'compact' && styles.containerCompact,
+          variant === 'featured' && [styles.containerFeatured, { borderColor: withAlpha(colors.primary, 0.3) }],
+          animatedStyle,
+          style,
         ]}
+        accessibilityRole="button"
+        accessibilityLabel={`Survey: ${survey.title}`}
+        accessibilityHint={`${statusConfig.text}, ${getTimeRemaining()}, ${survey.rewardAmount?.toFixed(2) || '0.00'} dollar reward`}
+        testID={testID}
       >
-        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-        <Text style={[styles.statusText, { color: statusColor }]}>
-          {statusText}
-        </Text>
-      </View>
-
-      {/* Title & Description */}
-      <Text
-        style={[styles.title, { color: colors.text }]}
-        numberOfLines={2}
-      >
-        {survey.title}
-      </Text>
-      {variant !== 'compact' && survey.description && (
-        <Text
-          style={[styles.description, { color: colors.textMuted }]}
-          numberOfLines={2}
-        >
-          {survey.description}
-        </Text>
-      )}
-
-      {/* Progress Bar */}
-      {!isScheduled && (
-        <View style={styles.progressContainer}>
+        {/* Header: Status & Reward */}
+        <View style={styles.header}>
           <View
-            style={[styles.progressBar, { backgroundColor: colors.border }]}
+            style={[
+              styles.statusBadge,
+              { backgroundColor: withAlpha(statusConfig.color, 0.12) },
+            ]}
           >
-            <View
-              style={[
-                styles.progressFill,
-                {
-                  backgroundColor: colors.primary,
-                  width: `${Math.min(progress, 100)}%`,
-                },
-              ]}
-            />
+            <StatusIcon size={12} color={statusConfig.color} strokeWidth={2} />
+            <Text style={[styles.statusText, { color: statusConfig.color }]}>
+              {statusConfig.text}
+            </Text>
           </View>
-          <Text style={[styles.progressText, { color: colors.textMuted }]}>
-            {survey.totalResponses || 0}/{survey.maxResponses || 0}
-          </Text>
-        </View>
-      )}
 
-      {/* Meta Info */}
-      <View style={styles.metaRow}>
-        <View style={styles.metaItem}>
-          <Clock size={14} color={colors.textMuted} strokeWidth={1.5} />
-          <Text style={[styles.metaText, { color: colors.textMuted }]}>
-            {getTimeRemaining()}
-          </Text>
+          <View
+            style={[
+              styles.rewardBadge,
+              { backgroundColor: withAlpha(colors.success, 0.12) },
+            ]}
+          >
+            <DollarSign size={14} color={colors.success} strokeWidth={2} />
+            <Text style={[styles.rewardText, { color: colors.success }]}>
+              {survey.rewardAmount?.toFixed(2) || '0.00'}
+            </Text>
+          </View>
         </View>
-        <View style={styles.metaItem}>
-          <DollarSign size={14} color={colors.success} strokeWidth={1.5} />
-          <Text style={[styles.metaText, { color: colors.success }]}>
-            ${survey.rewardAmount?.toFixed(2) || '0.00'}
+
+        {/* Title */}
+        <Text style={[styles.title, { color: colors.text }, variant === 'compact' && styles.titleCompact]} numberOfLines={2}>
+          {survey.title}
+        </Text>
+
+        {/* Description (not in compact mode) */}
+        {variant !== 'compact' && survey.description && (
+          <Text style={[styles.description, { color: colors.textSecondary }]} numberOfLines={2}>
+            {survey.description}
           </Text>
+        )}
+
+        {/* Progress Bar (only for active surveys) */}
+        {!isScheduled && showStats && (
+          <View style={styles.progressSection}>
+            <View style={styles.progressHeader}>
+              <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Responses</Text>
+              <Text style={[styles.progressValue, { color: colors.text }]}>
+                {survey.totalResponses || 0}/{survey.maxResponses || 0}
+              </Text>
+            </View>
+            <View style={[styles.progressBarContainer, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { backgroundColor: colors.primary, width: `${Math.min(progress, 100)}%` },
+                ]}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Meta Info */}
+        <View style={styles.metaGrid}>
+          <View style={[styles.metaItem, { backgroundColor: withAlpha(colors.text, 0.04) }]}>
+            <Clock size={12} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{getTimeRemaining()}</Text>
+          </View>
+          <View style={[styles.metaItem, { backgroundColor: withAlpha(colors.text, 0.04) }]}>
+            <FileText size={12} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{questionsCount} questions</Text>
+          </View>
+          <View style={[styles.metaItem, { backgroundColor: withAlpha(colors.text, 0.04) }]}>
+            <Users size={12} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>~{estimatedTime} min</Text>
+          </View>
         </View>
-      </View>
-    </TouchableOpacity>
+
+        {/* Footer with CTA */}
+        {variant !== 'compact' && (
+          <View style={[styles.footer, { borderTopColor: colors.border }]}>
+            <View style={styles.statsRow}>
+              {survey.totalResponses && survey.totalResponses > 0 && (
+                <View style={styles.statItem}>
+                  <TrendingUp size={12} color={colors.success} strokeWidth={1.5} />
+                  <Text style={[styles.statText, { color: colors.success }]}>
+                    {Math.round(progress)}% filled
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.actionHint}>
+              <Text style={[styles.actionText, { color: colors.primary }]}>
+                {isScheduled ? 'View details' : 'Take survey'}
+              </Text>
+              <ChevronRight size={16} color={colors.primary} strokeWidth={2} />
+            </View>
+          </View>
+        )}
+      </AnimatedPressable>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.lg,
     marginBottom: SPACING.md,
+    borderWidth: 1,
     ...SHADOWS.sm,
   },
   containerCompact: {
@@ -170,76 +297,129 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   containerFeatured: {
-    padding: SPACING.lg,
+    borderWidth: 1.5,
     ...SHADOWS.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: SPACING.sm,
   },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
-    marginBottom: SPACING.sm,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: SPACING.xs,
+    gap: SPACING.xs,
   },
   statusText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
     fontSize: TYPOGRAPHY.fontSize.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  rewardBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.md,
+    gap: SPACING.xxs,
+  },
+  rewardText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   title: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
     marginBottom: SPACING.xs,
+    lineHeight: TYPOGRAPHY.fontSize.lg * 1.3,
+  },
+  titleCompact: {
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   description: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
     marginBottom: SPACING.md,
-    lineHeight: TYPOGRAPHY.fontSize.sm * 1.4,
+    lineHeight: TYPOGRAPHY.fontSize.sm * 1.5,
   },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  progressSection: {
     marginBottom: SPACING.md,
   },
-  progressBar: {
-    flex: 1,
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    marginRight: SPACING.sm,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    minWidth: 50,
-    textAlign: 'right',
-  },
-  metaRow: {
+  progressHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: SPACING.xs,
+  },
+  progressLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  progressValue: {
+    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  progressBarContainer: {
+    height: 8,
+    borderRadius: RADIUS.full,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: RADIUS.full,
+  },
+  metaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.sm,
   },
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.md,
     gap: SPACING.xs,
   },
   metaText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  footer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: SPACING.md,
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+  },
+  actionHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  actionText: {
+    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xxs,
+  },
+  statText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });
 

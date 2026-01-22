@@ -171,14 +171,16 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
   });
 
   return (
-    <AnimatedPressable
+    <Animated.View
       entering={FadeInUp.delay(index * 70).duration(ANIMATION.duration.normal)}
-      style={[styles.container, animatedStyle]}
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
     >
-      <View style={styles.thumbnailContainer}>
+      <AnimatedPressable
+        style={[styles.container, animatedStyle]}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <View style={styles.thumbnailContainer}>
         <Image
           source={{ uri: tutorial.thumbnail }}
           style={styles.thumbnail}
@@ -225,7 +227,8 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
           </View>
         )}
       </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 };
 

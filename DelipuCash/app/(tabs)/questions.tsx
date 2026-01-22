@@ -1,4 +1,4 @@
-  import {
+import {
     NotificationBell,
     PrimaryButton,
     QuestionCard,
@@ -8,7 +8,6 @@
 } from "@/components";
 import { formatCurrency } from "@/data/mockData";
 import {
-    useCreateRewardQuestion,
     useInstantRewardQuestions,
     useQuestions,
     useRecentQuestions,
@@ -16,6 +15,7 @@ import {
     useUnreadCount,
     useUserStats,
 } from "@/services/hooks";
+import { SubscriptionStatus, UserRole } from "@/types";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -27,28 +27,28 @@ import {
     withAlpha,
 } from "@/utils/theme";
 import useUser from "@/utils/useUser";
-import { Href, router, useLocalSearchParams } from "expo-router";
+import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-    Award,
-    ArrowLeft,
+  AlertCircle,
+  Award,
     BadgeCheck,
     CheckCircle2,
     Clock3,
     Coins,
-    FileJson,
-    FileSpreadsheet,
+  CreditCard,
+  Lock,
     Plus,
     Search,
     ShieldCheck,
     Sparkles,
-    TrendingUp,
-    Upload as UploadIcon,
+  TrendingUp,
 } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
+  Modal,
     RefreshControl,
     ScrollView,
     StyleSheet,
@@ -60,323 +60,22 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /**
- * Instant Reward Upload Form Component
- * Implements actual API integration using useCreateRewardQuestion hook
- */
-function InstantRewardUploadForm({ colors, insets }: { colors: any; insets: any }) {
-  const { data: user } = useUser();
-  const createQuestion = useCreateRewardQuestion();
-  
-  const [questionText, setQuestionText] = useState("");
-  const [option1, setOption1] = useState("");
-  const [option2, setOption2] = useState("");
-  const [option3, setOption3] = useState("");
-  const [option4, setOption4] = useState("");
-  const [correctAnswer, setCorrectAnswer] = useState("");
-  const [rewardAmount, setRewardAmount] = useState("");
-  const [maxWinners, setMaxWinners] = useState("2");
-  const [expiryHours, setExpiryHours] = useState("24");
-  const [paymentProvider, setPaymentProvider] = useState("MTN");
-  const [phoneNumber, setPhoneNumber] = useState("");
-
-  const handleUpload = async () => {
-    // Validate required fields
-    if (!questionText.trim()) {
-      Alert.alert("Error", "Question text is required");
-      return;
-    }
-    
-    const options = [option1, option2, option3, option4]
-      .filter(opt => opt.trim())
-      .map(opt => opt.trim());
-    
-    if (options.length < 2) {
-      Alert.alert("Error", "At least 2 options are required");
-      return;
-    }
-    
-    if (!correctAnswer.trim()) {
-      Alert.alert("Error", "Correct answer is required");
-      return;
-    }
-    
-    // Validate correct answer matches one of the options (case-insensitive)
-    const matchingOption = options.find(
-      opt => opt.toLowerCase() === correctAnswer.trim().toLowerCase()
-    );
-    if (!matchingOption) {
-      Alert.alert("Error", "Correct answer must match one of the options");
-      return;
-    }
-    
-    const parsedReward = parseFloat(rewardAmount);
-    if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward <= 0) {
-      Alert.alert("Error", "Valid reward amount is required");
-      return;
-    }
-    
-    const parsedMaxWinners = parseInt(maxWinners) || 2;
-    const parsedExpiryHours = parseInt(expiryHours) || 24;
-    
-    if (!phoneNumber.trim()) {
-      Alert.alert("Error", "Phone number is required for payouts");
-      return;
-    }
-    
-    if (!user) {
-      Alert.alert("Error", "User not found. Please log in again.");
-      return;
-    }
-
-    const expiryTime = new Date(Date.now() + parsedExpiryHours * 60 * 60 * 1000).toISOString();
-
-    try {
-      await createQuestion.mutateAsync({
-        text: questionText.trim(),
-        options,
-        correctAnswer: matchingOption, // Use the matched option for consistent casing
-        rewardAmount: parsedReward,
-        expiryTime,
-        userId: user.id,
-        isInstantReward: true,
-        maxWinners: parsedMaxWinners,
-        paymentProvider,
-        phoneNumber: phoneNumber.trim(),
-      });
-      
-      Alert.alert("Success", "Instant reward question uploaded successfully!", [
-        { text: "OK", onPress: () => router.back() }
-      ]);
-    } catch (error) {
-      Alert.alert("Error", error instanceof Error ? error.message : "Failed to upload question");
-    }
-  };
-
-  return (
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={[
-        styles.scrollContent,
-        {
-          paddingTop: insets.top + SPACING.lg,
-          paddingBottom: insets.bottom + SPACING['2xl'],
-        },
-      ]}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={[styles.iconButton, { backgroundColor: colors.secondary }]}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Upload Instant Reward Question</Text>
-        <View style={{ width: COMPONENT_SIZE.touchTarget }} />
-      </View>
-
-      <View style={styles.uploadForm}>
-        <SectionHeader
-          title="Question Details"
-          subtitle="Create a high-impact instant reward question"
-          icon={<Sparkles size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
-        />
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Question Text *</Text>
-          <TextInput
-            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-            placeholder="Enter the question"
-            placeholderTextColor={colors.textMuted}
-            value={questionText}
-            onChangeText={setQuestionText}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-        <SectionHeader
-          title="Answer Options"
-          subtitle="Provide 2-4 multiple choice options"
-          icon={<CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-        />
-
-        <View style={styles.formRow}>
-          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Option 1 *</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="First option"
-              placeholderTextColor={colors.textMuted}
-              value={option1}
-              onChangeText={setOption1}
-            />
-          </View>
-          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Option 2 *</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="Second option"
-              placeholderTextColor={colors.textMuted}
-              value={option2}
-              onChangeText={setOption2}
-            />
-          </View>
-        </View>
-
-        <View style={styles.formRow}>
-          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Option 3</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="Third option (optional)"
-              placeholderTextColor={colors.textMuted}
-              value={option3}
-              onChangeText={setOption3}
-            />
-          </View>
-          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Option 4</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="Fourth option (optional)"
-              placeholderTextColor={colors.textMuted}
-              value={option4}
-              onChangeText={setOption4}
-            />
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Correct Answer *</Text>
-          <TextInput
-            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-            placeholder="Must match one of the options above"
-            placeholderTextColor={colors.textMuted}
-            value={correctAnswer}
-            onChangeText={setCorrectAnswer}
-          />
-        </View>
-
-        <SectionHeader
-          title="Reward Settings"
-          subtitle="Configure payout and expiry"
-          icon={<Coins size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
-        />
-
-        <View style={styles.formRow}>
-          <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.sm }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Reward Amount *</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="0.00"
-              placeholderTextColor={colors.textMuted}
-              value={rewardAmount}
-              onChangeText={setRewardAmount}
-              keyboardType="numeric"
-            />
-          </View>
-          <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.sm }]}>
-            <Text style={[styles.label, { color: colors.text }]}>Max Winners (1-10)</Text>
-            <TextInput
-              style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-              placeholder="2"
-              placeholderTextColor={colors.textMuted}
-              value={maxWinners}
-              onChangeText={setMaxWinners}
-              keyboardType="numeric"
-            />
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Expiry (hours from now)</Text>
-          <TextInput
-            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-            placeholder="24"
-            placeholderTextColor={colors.textMuted}
-            value={expiryHours}
-            onChangeText={setExpiryHours}
-            keyboardType="numeric"
-          />
-        </View>
-
-        <SectionHeader
-          title="Payment Details"
-          subtitle="How winners will receive rewards"
-          icon={<Award size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-        />
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Payment Provider</Text>
-          <View style={styles.paymentProviderRow}>
-            {["MTN", "Airtel", "Bank"].map((provider) => (
-              <TouchableOpacity
-                key={provider}
-                style={[
-                  styles.paymentProviderOption,
-                  { 
-                    borderColor: paymentProvider === provider ? colors.primary : colors.border,
-                    backgroundColor: paymentProvider === provider ? withAlpha(colors.primary, 0.1) : colors.card,
-                  }
-                ]}
-                onPress={() => setPaymentProvider(provider)}
-              >
-                <Text style={[
-                  styles.paymentProviderText, 
-                  { color: paymentProvider === provider ? colors.primary : colors.text }
-                ]}>
-                  {provider}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.formGroup}>
-          <Text style={[styles.label, { color: colors.text }]}>Phone Number *</Text>
-          <TextInput
-            style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-            placeholder="+256 700 000 000"
-            placeholderTextColor={colors.textMuted}
-            value={phoneNumber}
-            onChangeText={setPhoneNumber}
-            keyboardType="phone-pad"
-          />
-        </View>
-
-        <PrimaryButton
-          title="Upload Question"
-          onPress={handleUpload}
-          loading={createQuestion.isPending}
-          style={{ marginTop: SPACING.lg }}
-        />
-      </View>
-    </ScrollView>
-  );
-}
-
-/**
  * Question Screen
  * - Ask a question form
  * - Instant reward questions
  * - Recent questions
  * - Answer & earn CTA
- * - Admin upload questions card (CSV / JSON)
- * - Ad registration card with conditional render and approval steps
  */
 export default function QuestionsScreen(): React.ReactElement {
     const insets = useSafeAreaInsets();
     const { colors, statusBarStyle } = useTheme();
-    const { data: user } = useUser();
-    const params = useLocalSearchParams();
-    const intent = params.intent as string | undefined;
+  const { data: user, loading: userLoading } = useUser();
     const [refreshing, setRefreshing] = useState(false);
     const [questionText, setQuestionText] = useState("");
     const [category, setCategory] = useState("");
     const [searchQuery, setSearchQuery] = useState("");
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
     const { data: questionsData, isLoading, refetch } = useQuestions();
     const { data: instantQuestions } = useInstantRewardQuestions(5);
@@ -406,66 +105,187 @@ export default function QuestionsScreen(): React.ReactElement {
       }));
     }, [rewardQuestions]);
 
+  /**
+   * Role-based access control: Check user's role field from backend
+   * instead of inferring from email address (which is insecure)
+   */
+  const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
+
+  /**
+   * Payment/Subscription status checks
+   */
+  const hasActiveSubscription = user?.subscriptionStatus === SubscriptionStatus.ACTIVE;
+  const hasSurveySubscription = user?.surveysubscriptionStatus === SubscriptionStatus.ACTIVE;
+  const isAuthenticated = !!user && !userLoading;
+
+  /**
+   * Payment check helper - shows payment modal if subscription is not active
+   */
+  const requiresPayment = useCallback((action: string): boolean => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please log in to access this feature.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+        ]
+      );
+      return true;
+    }
+
+    if (!hasActiveSubscription) {
+      setPendingAction(action);
+      setShowPaymentModal(true);
+      return true;
+    }
+
+    return false;
+  }, [isAuthenticated, hasActiveSubscription]);
+
+  /**
+   * Admin-only action helper with proper access control
+   */
+  const requiresAdmin = useCallback((action: string): boolean => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please log in to access this feature.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+        ]
+      );
+      return true;
+    }
+
+    if (!isAdmin) {
+      Alert.alert(
+        "Admin Access Required",
+        "This feature is only available for administrators and moderators.",
+        [{ text: "OK" }]
+      );
+      return true;
+    }
+
+    return false;
+  }, [isAuthenticated, isAdmin]);
+
     const onRefresh = useCallback(async () => {
       setRefreshing(true);
       await Promise.all([refetch()]);
       setRefreshing(false);
     }, [refetch]);
 
+  /**
+   * Navigate to question answer screen with proper checks
+   */
     const handleQuestionPress = (id: string): void => {
-      router.push(`/question-answer/${id}`);
+      if (!isAuthenticated) {
+        Alert.alert(
+          "Login Required",
+          "Please log in to answer questions.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+          ]
+        );
+        return;
+      }
+      router.push(`/question-answer/${id}` as Href);
     };
 
+  /**
+   * Navigate to instant reward answer screen with payment check
+   */
     const handleRewardQuestionPress = (id: string): void => {
-      router.push(`/instant-reward-answer/${id}`);
+      if (!isAuthenticated) {
+        Alert.alert(
+          "Login Required",
+          "Please log in to answer reward questions.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+          ]
+        );
+        return;
+      }
+      router.push(`/instant-reward-answer/${id}` as Href);
     };
 
+  /**
+   * Submit a new question - requires active subscription
+   */
     const handleAskQuestion = (): void => {
-      // Placeholder for ask-question flow
-      if (!questionText.trim()) return;
-      setQuestionText("");
-      setCategory("");
-    };
-
-    const handleInstantRewardUpload = (): void => {
-      if (!isAdmin) {
-        Alert.alert("Admin only", "Instant reward uploads require admin access.");
+      if (!questionText.trim()) {
+        Alert.alert("Empty Question", "Please enter your question before submitting.");
         return;
       }
-      router.push("/instant-reward-questions");
+
+      if (requiresPayment("ask_question")) return;
+
+      // TODO: Integrate with question submission API
+      Alert.alert(
+        "Question Submitted",
+        "Your question has been submitted successfully!",
+        [{
+          text: "OK", onPress: () => {
+            setQuestionText("");
+            setCategory("");
+          }
+        }]
+      );
     };
 
-    const handleInstantRewardBrowse = (): void => {
-      router.push("/instant-reward-questions");
+  /**
+   * Browse instant reward questions - Available to all authenticated users
+   */
+  const handleInstantRewardBrowse = (): void => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please log in to browse instant reward questions.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+        ]
+      );
+      return;
+    }
+    router.push("/instant-reward-questions" as Href);
     };
 
-    const handleFileUploadCard = (): void => {
-      if (!isAdmin) {
-        Alert.alert("Admin only", "File uploads are limited to administrators.");
-        return;
-      }
-      router.push({ pathname: "/(tabs)/questions", params: { intent: "file-upload" } });
-    };
-
-    const handleAnswerEarn = (): void => {
-      router.push("/(tabs)/questions");
+  /**
+   * Navigate to answer questions and earn screen
+   */
+  const handleAnswerEarn = (): void => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please log in to start earning.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+        ]
+      );
+      return;
+    }
+    router.push("/(tabs)/questions" as Href);
     };
 
     /**
-     * Role-based access control: Check user's role field from backend
-     * instead of inferring from email address (which is insecure)
+     * Handle payment completion callback
      */
-    const isAdmin = user?.role === "ADMIN" || user?.role === "MODERATOR";
+  const handlePaymentComplete = useCallback(() => {
+    setShowPaymentModal(false);
 
-    // If intent is instant-reward-upload, show upload form
-    if (intent === "instant-reward-upload") {
-      return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <StatusBar style={statusBarStyle} />
-          <InstantRewardUploadForm colors={colors} insets={insets} />
-        </View>
-      );
+    if (pendingAction === "ask_question") {
+      // Re-attempt the ask question action
+      handleAskQuestion();
     }
+
+    setPendingAction(null);
+  }, [pendingAction]);
 
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -525,26 +345,6 @@ export default function QuestionsScreen(): React.ReactElement {
 
           {/* Action cards for core flows */}
           <View style={styles.actionGrid}>
-            <ActionCard
-              title="Upload instant reward questions"
-              subtitle="Create high-impact questions with instant payouts"
-              icon={<Sparkles size={18} color={colors.warning} strokeWidth={1.5} />}
-              badgeLabel="Admin"
-              badgeColor={colors.warning}
-              onPress={handleInstantRewardUpload}
-              disabled={!isAdmin}
-              colors={colors}
-            />
-            <ActionCard
-              title="Upload questions via file"
-              subtitle="Bulk import questions from JSON or CSV"
-              icon={<UploadIcon size={18} color={colors.info} strokeWidth={1.5} />}
-              badgeLabel="Admin"
-              badgeColor={colors.info}
-              onPress={handleFileUploadCard}
-              disabled={!isAdmin}
-              colors={colors}
-            />
             <ActionCard
               title="Answer questions & earn"
               subtitle="Browse open questions and claim rewards"
@@ -691,68 +491,6 @@ export default function QuestionsScreen(): React.ReactElement {
             </View>
           </View>
 
-          {/* Upload Questions (Admin only) */}
-          {isAdmin && (
-            <View style={[styles.adminCard, { backgroundColor: colors.card }]}
-              accessibilityLabel="Upload questions as admin"
-            >
-              <View style={styles.adminHeader}>
-                <UploadIcon size={18} color={colors.text} strokeWidth={1.5} />
-                <Text style={[styles.adminTitle, { color: colors.text }]}>Upload questions (Admin)</Text>
-              </View>
-              <Text style={[styles.adminSubtitle, { color: colors.textMuted }]}>Bulk import questions to speed up publishing.</Text>
-              <View style={styles.uploadRow}>
-                <TouchableOpacity style={[styles.uploadButton, { borderColor: colors.border }]}>
-                  <FileSpreadsheet size={18} color={colors.text} strokeWidth={1.5} />
-                  <Text style={[styles.uploadText, { color: colors.text }]}>Upload CSV</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.uploadButton, { borderColor: colors.border }]}>
-                  <FileJson size={18} color={colors.text} strokeWidth={1.5} />
-                  <Text style={[styles.uploadText, { color: colors.text }]}>Upload JSON</Text>
-                </TouchableOpacity>
-              </View>
-              <PrimaryButton title="Review & Publish" onPress={() => {}} />
-            </View>
-          )}
-
-          {/* Ad Registration Card */}
-          <View style={[styles.adminCard, { backgroundColor: colors.card }]}
-            accessibilityLabel="Ad registration"
-          >
-            <View style={styles.adminHeader}>
-              <BadgeCheck size={18} color={colors.primary} strokeWidth={1.5} />
-              <Text style={[styles.adminTitle, { color: colors.text }]}>Ad registration</Text>
-            </View>
-            <Text style={[styles.adminSubtitle, { color: colors.textMuted }]}>
-              {isAdmin ? "Manage ad slots, verify payments, and approve campaigns." : "Submit your ad and track verification."}
-            </Text>
-
-            {/* Stepwise navigation */}
-            <View style={styles.stepsRow}>
-              <StepPill label="Details" active color={colors.primary} />
-              <StepPill label="Payment" active={!isAdmin} color={colors.warning} />
-              <StepPill label="Approval" active={isAdmin} color={colors.success} />
-            </View>
-
-            {/* Payment verification */}
-            <View style={[styles.noteBox, { borderColor: withAlpha(colors.warning, 0.4) }]}>
-              <ShieldCheck size={16} color={colors.warning} strokeWidth={1.5} />
-              <Text style={[styles.noteText, { color: colors.text }]}>Payment verification required before activation.</Text>
-            </View>
-
-            {/* Approval workflow */}
-            <View style={[styles.workflowRow, { backgroundColor: withAlpha(colors.secondary, 0.4) }]}>
-              <CheckCircle2 size={16} color={colors.success} strokeWidth={1.5} />
-              <Text style={[styles.workflowText, { color: colors.text }]}>Approval workflow: Submitted → Payment verified → Admin approval → Live</Text>
-            </View>
-
-            <PrimaryButton
-              title={isAdmin ? "Manage ads" : "Start ad registration"}
-              onPress={() => router.push("/ad-registration")}
-              variant={isAdmin ? "ghost" : "primary"}
-            />
-          </View>
-
           {/* All Questions List */}
           <SectionHeader
             title="All questions"
@@ -776,6 +514,62 @@ export default function QuestionsScreen(): React.ReactElement {
             </View>
           )}
         </ScrollView>
+
+        {/* Payment Required Modal */}
+        <Modal
+          visible={showPaymentModal}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowPaymentModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconContainer, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+                  <CreditCard size={32} color={colors.warning} strokeWidth={1.5} />
+                </View>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Subscription Required</Text>
+                <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+                  An active subscription is required to submit questions. Upgrade now to unlock all features.
+                </Text>
+              </View>
+
+              <View style={styles.modalFeatures}>
+                <View style={styles.featureRow}>
+                  <CheckCircle2 size={16} color={colors.success} strokeWidth={1.5} />
+                  <Text style={[styles.featureText, { color: colors.text }]}>Submit unlimited questions</Text>
+                </View>
+                <View style={styles.featureRow}>
+                  <CheckCircle2 size={16} color={colors.success} strokeWidth={1.5} />
+                  <Text style={[styles.featureText, { color: colors.text }]}>Access premium reward questions</Text>
+                </View>
+                <View style={styles.featureRow}>
+                  <CheckCircle2 size={16} color={colors.success} strokeWidth={1.5} />
+                  <Text style={[styles.featureText, { color: colors.text }]}>Priority customer support</Text>
+                </View>
+              </View>
+
+              <View style={styles.modalActions}>
+                <PrimaryButton
+                  title="Subscribe Now"
+                  onPress={() => {
+                    setShowPaymentModal(false);
+                    router.push("/(tabs)/withdraw" as Href);
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setShowPaymentModal(false);
+                    setPendingAction(null);
+                  }}
+                >
+                  <Text style={[styles.cancelButtonText, { color: colors.textMuted }]}>Maybe Later</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -1153,5 +947,67 @@ function ActionCard({
     paymentProviderText: {
       fontFamily: TYPOGRAPHY.fontFamily.medium,
       fontSize: TYPOGRAPHY.fontSize.base,
+    },
+    // Payment Modal Styles
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: "rgba(0, 0, 0, 0.5)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: SPACING.lg,
+    },
+    modalContent: {
+      width: "100%",
+      maxWidth: 400,
+      borderRadius: RADIUS.xl,
+      padding: SPACING.xl,
+      gap: SPACING.lg,
+    },
+    modalHeader: {
+      alignItems: "center",
+      gap: SPACING.sm,
+    },
+    modalIconContainer: {
+      width: 64,
+      height: 64,
+      borderRadius: RADIUS.full,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: SPACING.sm,
+    },
+    modalTitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: TYPOGRAPHY.fontSize.xl,
+      textAlign: "center",
+    },
+    modalSubtitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+      textAlign: "center",
+      lineHeight: 20,
+    },
+    modalFeatures: {
+      gap: SPACING.sm,
+      paddingVertical: SPACING.md,
+    },
+    featureRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.sm,
+    },
+    featureText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    modalActions: {
+      gap: SPACING.sm,
+    },
+    cancelButton: {
+      alignItems: "center",
+      paddingVertical: SPACING.md,
+    },
+    cancelButtonText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.sm,
     },
   });

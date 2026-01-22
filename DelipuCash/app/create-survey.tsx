@@ -5,6 +5,8 @@
  * and JSON import. Follows WCAG 2.1 accessibility guidelines and Material Design
  * principles for optimal mobile and tablet experiences.
  * 
+ * Requires authentication and active subscription to access.
+ * 
  * @module app/create-survey
  */
 
@@ -20,12 +22,25 @@ import {
   KeyboardAvoidingView,
   useWindowDimensions,
   AccessibilityInfo,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, Href } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { X, FileJson, PenTool, Upload, CheckCircle, FileText, Code2 } from 'lucide-react-native';
+import {
+  X,
+  FileJson,
+  PenTool,
+  Upload,
+  CheckCircle,
+  FileText,
+  Code2,
+  Lock,
+  ShieldCheck,
+} from 'lucide-react-native';
 import SurveyForm from '../components/SurveyForm';
+import { PrimaryButton } from '@/components/PrimaryButton';
 import {
   SPACING,
   TYPOGRAPHY,
@@ -39,6 +54,8 @@ import {
   useTheme,
   withAlpha,
 } from '@/utils/theme';
+import { useAuth, useAuthModal } from '@/utils/auth';
+import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -104,6 +121,17 @@ const CreateSurveyScreen: React.FC = () => {
   const { colors, statusBarStyle } = useTheme();
   const responsive = useResponsive();
 
+  // Auth & Subscription state
+  const { isAuthenticated, isReady: authReady } = useAuth();
+  const { open: openAuth } = useAuthModal();
+  const {
+    data: subscriptionStatus,
+    isLoading: loadingSubscription
+  } = useSurveySubscriptionStatus();
+
+  const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
+  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
+
   // State
   const [activeTab, setActiveTab] = useState<TabKey>('build');
   const [isReducedMotion, setIsReducedMotion] = useState(false);
@@ -121,6 +149,52 @@ const CreateSurveyScreen: React.FC = () => {
     );
     return () => subscription.remove();
   }, []);
+
+  // Redirect unauthenticated users
+  useEffect(() => {
+    if (authReady && !isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "You need to sign in to create surveys.",
+        [
+          {
+            text: "Go Back",
+            onPress: () => router.back(),
+            style: "cancel",
+          },
+          {
+            text: "Sign In",
+            onPress: () => {
+              router.back();
+              setTimeout(() => openAuth({ mode: "signin" }), 300);
+            },
+          },
+        ]
+      );
+    }
+  }, [authReady, isAuthenticated, router, openAuth]);
+
+  // Check subscription status
+  useEffect(() => {
+    if (authReady && isAuthenticated && !loadingSubscription && !hasActiveSubscription) {
+      Alert.alert(
+        "Subscription Required",
+        "You need an active subscription to create surveys. Subscribe now to unlock survey creation.",
+        [
+          {
+            text: "Go Back",
+            onPress: () => router.back(),
+            style: "cancel",
+          },
+          {
+            text: "Subscribe",
+            onPress: () => router.replace("/survey-payment" as Href),
+            style: "default",
+          },
+        ]
+      );
+    }
+  }, [authReady, isAuthenticated, loadingSubscription, hasActiveSubscription, router]);
 
   // Entrance animation
   useEffect(() => {
@@ -240,6 +314,66 @@ const CreateSurveyScreen: React.FC = () => {
 
         {/* Right side placeholder for symmetry */}
         <View style={styles.headerSide} />
+      </View>
+
+      {/* Subscription Status Badge */}
+      {hasActiveSubscription && (
+        <View style={[
+          styles.subscriptionBadge,
+          {
+            backgroundColor: withAlpha(colors.success, 0.1),
+            borderColor: withAlpha(colors.success, 0.2),
+          }
+        ]}>
+          <ShieldCheck size={14} color={colors.success} strokeWidth={2} />
+          <Text style={[styles.subscriptionBadgeText, { color: colors.success }]}>
+            {remainingDays} days remaining
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
+  /**
+   * Render loading state while checking auth/subscription
+   */
+  const renderLoadingState = () => (
+    <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <ActivityIndicator size="large" color={colors.primary} />
+      <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+        Checking your subscription...
+      </Text>
+    </View>
+  );
+
+  /**
+   * Render access denied state
+   */
+  const renderAccessDenied = () => (
+    <View style={[styles.accessDeniedContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.accessDeniedIcon, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+        <Lock size={48} color={colors.warning} strokeWidth={1.5} />
+      </View>
+      <Text style={[styles.accessDeniedTitle, { color: colors.text }]}>
+        Subscription Required
+      </Text>
+      <Text style={[styles.accessDeniedSubtitle, { color: colors.textMuted }]}>
+        You need an active subscription to create surveys. Subscribe now to unlock this feature.
+      </Text>
+      <View style={styles.accessDeniedActions}>
+        <PrimaryButton
+          title="Subscribe Now"
+          onPress={() => router.replace("/survey-payment" as Href)}
+          variant="primary"
+          size="large"
+          style={{ marginBottom: SPACING.md }}
+        />
+        <PrimaryButton
+          title="Go Back"
+          onPress={() => router.back()}
+          variant="ghost"
+          size="medium"
+        />
       </View>
     </View>
   );
@@ -456,6 +590,48 @@ const CreateSurveyScreen: React.FC = () => {
   // MAIN RENDER
   // ============================================================================
 
+  // Show loading state while checking auth/subscription
+  if (!authReady || loadingSubscription) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={['left', 'right']}
+      >
+        <StatusBar style={statusBarStyle} />
+        {renderHeader()}
+        {renderLoadingState()}
+      </SafeAreaView>
+    );
+  }
+
+  // Show access denied if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={['left', 'right']}
+      >
+        <StatusBar style={statusBarStyle} />
+        {renderHeader()}
+        {renderAccessDenied()}
+      </SafeAreaView>
+    );
+  }
+
+  // Show access denied if no subscription
+  if (!hasActiveSubscription) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: colors.background }]}
+        edges={['left', 'right']}
+      >
+        <StatusBar style={statusBarStyle} />
+        {renderHeader()}
+        {renderAccessDenied()}
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -657,6 +833,71 @@ const styles = StyleSheet.create({
   formatTagText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+
+  // Subscription Badge in Header
+  subscriptionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
+    marginTop: SPACING.xs,
+    gap: SPACING.xs,
+  },
+  subscriptionBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+
+  // Loading State
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING['2xl'],
+  },
+  loadingText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    marginTop: SPACING.lg,
+    textAlign: 'center',
+  },
+
+  // Access Denied State
+  accessDeniedContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING['2xl'],
+  },
+  accessDeniedIcon: {
+    width: 96,
+    height: 96,
+    borderRadius: RADIUS['2xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.xl,
+  },
+  accessDeniedTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['2xl'],
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  accessDeniedSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: 'center',
+    maxWidth: 300,
+    lineHeight: TYPOGRAPHY.fontSize.base * 1.5,
+    marginBottom: SPACING.xl,
+  },
+  accessDeniedActions: {
+    width: '100%',
+    maxWidth: 280,
   },
 });
 

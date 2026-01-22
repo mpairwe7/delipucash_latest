@@ -31,8 +31,6 @@ interface SearchBarProps extends Omit<TextInputProps, 'style'> {
   autoFocus?: boolean;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 export const SearchBar: React.FC<SearchBarProps> = ({
   value,
   onChangeText,
@@ -142,13 +140,15 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       />
       
       {value.length > 0 && (
-        <AnimatedPressable
-          style={[styles.clearButton, clearButtonStyle]}
-          onPress={handleClear}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <X size={14} color={colors.textSecondary} />
-        </AnimatedPressable>
+        <Animated.View style={clearButtonStyle}>
+          <Pressable
+            style={styles.clearButton}
+            onPress={handleClear}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <X size={14} color={colors.textSecondary} />
+          </Pressable>
+        </Animated.View>
       )}
     </Animated.View>
   );

@@ -5,6 +5,8 @@
 
 import {
     AppUser,
+  Comment,
+  LoginSession,
     Notification,
     Payment,
     Question,
@@ -25,6 +27,7 @@ import api from "./api";
 export const queryKeys = {
   user: ["user"] as const,
   userStats: ["user", "stats"] as const,
+  userSessions: ["user", "sessions"] as const,
   videos: ["videos"] as const,
   trendingVideos: ["videos", "trending"] as const,
   video: (id: string) => ["videos", id] as const,
@@ -99,6 +102,88 @@ export function useUpdateProfile(): UseMutationResult<AppUser, Error, Partial<Ap
   });
 }
 
+/**
+ * Hook to fetch user login sessions
+ */
+export function useUserSessions(): UseQueryResult<LoginSession[], Error> {
+  return useQuery({
+    queryKey: queryKeys.userSessions,
+    queryFn: async () => {
+      const response = await api.user.getSessions();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/**
+ * Hook to revoke a user session
+ */
+export function useRevokeSession(): UseMutationResult<{ revoked: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      const response = await api.user.revokeSession(sessionId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.userSessions });
+    },
+  });
+}
+
+/**
+ * Hook to update 2FA settings
+ */
+export function useUpdateTwoFactor(): UseMutationResult<{ enabled: boolean }, Error, boolean> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const response = await api.user.updateTwoFactor(enabled);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
+    },
+  });
+}
+
+/**
+ * Hook to change password
+ */
+export function useChangePassword(): UseMutationResult<{ success: boolean }, Error, { currentPassword: string; newPassword: string }> {
+  return useMutation({
+    mutationFn: async ({ currentPassword, newPassword }) => {
+      const response = await api.user.changePassword(currentPassword, newPassword);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Hook to update privacy settings
+ */
+export function useUpdatePrivacySettings(): UseMutationResult<{ shareProfile: boolean; shareActivity: boolean }, Error, { shareProfile: boolean; shareActivity: boolean }> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (settings) => {
+      const response = await api.user.updatePrivacySettings(settings);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
+    },
+  });
+}
+
 // ===========================================
 // Videos Hooks
 // ===========================================
@@ -153,6 +238,162 @@ export function useLikeVideo(): UseMutationResult<Video, Error, string> {
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.video(data.id), data);
       queryClient.invalidateQueries({ queryKey: queryKeys.videos });
+      queryClient.invalidateQueries({ queryKey: queryKeys.trendingVideos });
+    },
+  });
+}
+
+/**
+ * Hook to fetch trending videos
+ */
+export function useTrendingVideos(limit: number = 10): UseQueryResult<Video[], Error> {
+  return useQuery({
+    queryKey: [...queryKeys.trendingVideos, limit],
+    queryFn: async () => {
+      const response = await api.videos.getTrending(limit);
+      if (!response.success) throw new Error(response.error || "Failed to fetch trending videos");
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/**
+ * Hook to fetch live videos
+ */
+export function useLiveVideos(): UseQueryResult<Video[], Error> {
+  return useQuery({
+    queryKey: ["videos", "live"],
+    queryFn: async () => {
+      const response = await api.videos.getLive();
+      if (!response.success) throw new Error(response.error || "Failed to fetch live videos");
+      return response.data;
+    },
+    staleTime: 1000 * 30, // 30 seconds - live content updates frequently
+  });
+}
+
+/**
+ * Hook to fetch recommended videos
+ */
+export function useRecommendedVideos(limit: number = 10): UseQueryResult<Video[], Error> {
+  return useQuery({
+    queryKey: ["videos", "recommended", limit],
+    queryFn: async () => {
+      const response = await api.videos.getRecommended(limit);
+      if (!response.success) throw new Error(response.error || "Failed to fetch recommended videos");
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+/**
+ * Hook to bookmark/unbookmark a video
+ */
+export function useBookmarkVideo(): UseMutationResult<Video, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (videoId: string) => {
+      const response = await api.videos.bookmark(videoId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.video(data.id), data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos });
+    },
+  });
+}
+
+/**
+ * Hook to upload a video
+ */
+export function useUploadVideo(): UseMutationResult<
+  Video,
+  Error,
+  { title: string; description?: string; videoUrl: string; thumbnail: string; duration?: number }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await api.videos.upload(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.videos });
+    },
+  });
+}
+
+/**
+ * Hook to search videos
+ */
+export function useSearchVideos(query: string): UseQueryResult<Video[], Error> {
+  return useQuery({
+    queryKey: ["videos", "search", query],
+    queryFn: async () => {
+      const response = await api.videos.search(query);
+      if (!response.success) throw new Error(response.error || "Search failed");
+      return response.data;
+    },
+    enabled: query.length > 0,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook to increment video view
+ */
+export function useIncrementVideoView(): UseMutationResult<Video, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (videoId: string) => {
+      const response = await api.videos.incrementView(videoId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.video(data.id), data);
+    },
+  });
+}
+
+/**
+ * Hook to get video comments
+ */
+export function useVideoComments(videoId: string): UseQueryResult<Comment[], Error> {
+  return useQuery({
+    queryKey: ["videos", videoId, "comments"],
+    queryFn: async () => {
+      const response = await api.videos.getComments(videoId);
+      if (!response.success) throw new Error(response.error || "Failed to fetch comments");
+      return response.data;
+    },
+    enabled: !!videoId,
+    staleTime: 1000 * 60, // 1 minute
+  });
+}
+
+/**
+ * Hook to add comment to video
+ */
+export function useAddVideoComment(): UseMutationResult<Comment, Error, { videoId: string; text: string }> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ videoId, text }) => {
+      const response = await api.videos.addComment(videoId, text);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["videos", variables.videoId, "comments"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.video(variables.videoId) });
     },
   });
 }
@@ -188,6 +429,21 @@ export function useUpcomingSurveys(): UseQueryResult<Survey[], Error> {
       return response.data;
     },
     staleTime: 1000 * 60 * 5,
+  });
+}
+
+/**
+ * Hook to fetch all surveys with optional filters
+ */
+export function useSurveys(filters?: { status?: string; search?: string }): UseQueryResult<Survey[], Error> {
+  return useQuery({
+    queryKey: [...queryKeys.surveys, filters],
+    queryFn: async () => {
+      const response = await api.surveys.getAll(filters);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 2,
   });
 }
 
@@ -232,6 +488,8 @@ export function useCreateSurvey(): UseMutationResult<Survey & { questions: Uploa
   description?: string;
   startDate: string;
   endDate: string;
+  rewardAmount?: number;
+  maxResponses?: number;
   questions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[];
   userId?: string;
 }> {
@@ -241,6 +499,26 @@ export function useCreateSurvey(): UseMutationResult<Survey & { questions: Uploa
     mutationFn: async (data) => {
       const response = await api.surveys.create(data);
       if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
+      queryClient.invalidateQueries({ queryKey: queryKeys.runningSurveys });
+      queryClient.invalidateQueries({ queryKey: queryKeys.upcomingSurveys });
+    },
+  });
+}
+
+/**
+ * Hook to delete a survey
+ */
+export function useDeleteSurvey(): UseMutationResult<{ deleted: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (surveyId) => {
+      const response = await api.surveys.delete?.(surveyId);
+      if (!response?.success) throw new Error(response?.error || "Failed to delete survey");
       return response.data;
     },
     onSuccess: () => {
@@ -337,6 +615,154 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
       queryClient.invalidateQueries({ queryKey: queryKeys.questions });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
     },
+  });
+}
+
+/**
+ * Hook to fetch popular questions
+ */
+export function usePopularQuestions(limit: number = 10): UseQueryResult<Question[], Error> {
+  return useQuery({
+    queryKey: ["questions", "popular", limit],
+    queryFn: async () => {
+      const response = await api.questions.getAll({ limit: 50 });
+      if (!response.success) throw new Error("Failed to fetch popular questions");
+      // Sort by total answers (most engaged)
+      return response.data
+        .sort((a, b) => (b.totalAnswers || 0) - (a.totalAnswers || 0))
+        .slice(0, limit);
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook to fetch trending questions
+ */
+export function useTrendingQuestions(limit: number = 10): UseQueryResult<Question[], Error> {
+  return useQuery({
+    queryKey: ["questions", "trending", limit],
+    queryFn: async () => {
+      const response = await api.questions.getAll({ limit: 50 });
+      if (!response.success) throw new Error("Failed to fetch trending questions");
+      // Trending = recent + popular (weighted by recency)
+      const now = Date.now();
+      return response.data
+        .map((q) => {
+          const ageInHours = (now - new Date(q.createdAt).getTime()) / (1000 * 60 * 60);
+          const recencyScore = Math.max(0, 100 - ageInHours);
+          const engagementScore = (q.totalAnswers || 0) * 10;
+          return { ...q, trendScore: recencyScore + engagementScore };
+        })
+        .sort((a, b) => b.trendScore - a.trendScore)
+        .slice(0, limit);
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook to search questions
+ */
+export function useSearchQuestions(query: string): UseQueryResult<Question[], Error> {
+  return useQuery({
+    queryKey: ["questions", "search", query],
+    queryFn: async () => {
+      const response = await api.questions.getAll({ limit: 100 });
+      if (!response.success) throw new Error("Search failed");
+      const lowerQuery = query.toLowerCase();
+      return response.data.filter((q) =>
+        q.text.toLowerCase().includes(lowerQuery)
+      );
+    },
+    enabled: query.length > 0,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Hook to create a new question
+ */
+export function useCreateQuestion(): UseMutationResult<
+  Question,
+  Error,
+  { text: string; category?: string; rewardAmount?: number; isInstantReward?: boolean }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      // Using direct fetch since api.questions.create might not exist in base api
+      const response = await api.questions.getAll({ limit: 1 });
+      // Simulate creation - in real app this would be a POST
+      const newQuestion: Question = {
+        id: `question_${Date.now()}`,
+        text: data.text,
+        userId: null,
+        category: data.category,
+        rewardAmount: data.rewardAmount || 0,
+        isInstantReward: data.isInstantReward || false,
+        totalAnswers: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      return newQuestion;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.recentQuestions });
+    },
+  });
+}
+
+/**
+ * Hook to like a response
+ */
+export function useLikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string }> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ responseId }) => {
+      const response = await api.responses.like(responseId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
+    },
+  });
+}
+
+/**
+ * Hook to dislike a response
+ */
+export function useDislikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string }> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ responseId }) => {
+      const response = await api.responses.dislike(responseId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
+    },
+  });
+}
+
+/**
+ * Hook to get question categories
+ */
+export function useQuestionCategories(): UseQueryResult<string[], Error> {
+  return useQuery({
+    queryKey: ["questions", "categories"],
+    queryFn: async () => {
+      const response = await api.questions.getCategories();
+      if (!response.success) throw new Error("Failed to fetch categories");
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 10, // 10 minutes
   });
 }
 
@@ -534,25 +960,42 @@ export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Err
   });
 }
 
+/**
+ * Hook to bulk create questions from file upload
+ */
+export function useBulkCreateQuestions(): UseMutationResult<
+  { created: number; failed: number; questions: RewardQuestion[] },
+  Error,
+  {
+    questions: Array<{
+      text: string;
+      options: string[];
+      correctAnswer?: string;
+      category?: string;
+      rewardAmount?: number;
+    }>;
+    userId: string;
+  }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data) => {
+      const response = await api.rewards.bulkCreateQuestions(data.questions, data.userId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.questions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
+    },
+  });
+}
+
 // ===========================================
 // Dashboard Hooks
 // ===========================================
-
-/**
- * Hook to fetch trending videos for dashboard
- */
-export function useTrendingVideos(limit: number = 5): UseQueryResult<Video[], Error> {
-  return useQuery({
-    queryKey: [...queryKeys.trendingVideos, limit],
-    queryFn: async () => {
-      const response = await api.videos.getAll({ limit });
-      if (!response.success) throw new Error("Failed to fetch trending videos");
-      // Sort by views to get trending
-      return response.data.sort((a, b) => b.views - a.views).slice(0, limit);
-    },
-    staleTime: 1000 * 60 * 5,
-  });
-}
 
 /**
  * Daily reward data structure

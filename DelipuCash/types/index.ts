@@ -21,6 +21,19 @@ export enum SubscriptionType {
   MONTHLY = "MONTHLY",
 }
 
+export enum SurveySubscriptionType {
+  ONCE = "ONCE",
+  WEEKLY = "WEEKLY",
+  MONTHLY = "MONTHLY",
+  YEARLY = "YEARLY",
+  LIFETIME = "LIFETIME",
+}
+
+export enum PaymentProvider {
+  MTN = "MTN",
+  AIRTEL = "AIRTEL",
+}
+
 export enum NotificationType {
   PAYMENT_SUCCESS = "PAYMENT_SUCCESS",
   PAYMENT_FAILED = "PAYMENT_FAILED",

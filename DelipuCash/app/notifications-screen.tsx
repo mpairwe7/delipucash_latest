@@ -420,9 +420,9 @@ export default function NotificationsScreen() {
         entering={FadeIn.duration(ANIMATION.duration.normal)}
         style={styles.header}
       >
-        <AnimatedPressable style={styles.backButton} onPress={() => router.back()}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
           <ArrowLeft size={ICON_SIZE.sm} color={colors.text} />
-        </AnimatedPressable>
+        </Pressable>
 
         <View style={styles.headerContent}>
           <View style={styles.headerTitleRow}>
@@ -440,20 +440,23 @@ export default function NotificationsScreen() {
 
         <View style={styles.headerActions}>
           {hasUnread && (
-            <AnimatedPressable
+            <Animated.View
               entering={SlideInRight.duration(ANIMATION.duration.fast)}
-              style={styles.headerActionButton}
-              onPress={handleMarkAllAsRead}
             >
-              <CheckCheck size={ICON_SIZE.sm} color={colors.primary} />
-            </AnimatedPressable>
+              <Pressable
+                style={styles.headerActionButton}
+                onPress={handleMarkAllAsRead}
+              >
+                <CheckCheck size={ICON_SIZE.sm} color={colors.primary} />
+              </Pressable>
+            </Animated.View>
           )}
-          <AnimatedPressable
+          <Pressable
             style={styles.headerActionButton}
             onPress={handleSettingsPress}
           >
             <Settings size={ICON_SIZE.sm} color={colors.textSecondary} />
-          </AnimatedPressable>
+          </Pressable>
         </View>
       </Animated.View>
 
