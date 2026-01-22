@@ -449,7 +449,7 @@ export default function HomePage(): React.ReactElement {
                   key={video.id}
                   video={video}
                   variant="compact"
-                  onPress={() => router.push(\`/(tabs)/videos\`)}
+                  onPress={() => router.push(`/(tabs)/videos`)}
                 />
               ))}
             </ScrollView>
@@ -528,7 +528,7 @@ export default function HomePage(): React.ReactElement {
                   key={question.id}
                   question={question}
                   index={index}
-                  onPress={() => router.push(\`/question/\${question.id}\`)}
+                  onPress={() => router.push(`/question/${question.id}`)}
                 />
               ))}
               <TouchableOpacity
@@ -585,7 +585,7 @@ export default function HomePage(): React.ReactElement {
                 <SurveyCard
                   key={survey.id}
                   survey={survey}
-                  onPress={() => router.push(\`/survey/\${survey.id}\`)}
+                  onPress={() => router.push(`/survey/${survey.id}`)}
                 />
               ))}
             </ScrollView>
@@ -631,7 +631,7 @@ export default function HomePage(): React.ReactElement {
                   key={survey.id}
                   survey={survey}
                   variant="compact"
-                  onPress={() => router.push(\`/survey/\${survey.id}\`)}
+                  onPress={() => router.push(`/survey/${survey.id}`)}
                 />
               ))}
             </ScrollView>

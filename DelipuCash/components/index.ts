@@ -148,3 +148,16 @@ export type {
   PlanConfig,
 } from './payment';
 
+// Ad Components
+export {
+  AdComponent,
+  VideoAdComponent,
+  StandardAd,
+  FeaturedAd,
+  BannerAd,
+  CompactAd,
+  NativeAd,
+  CardAd,
+  SmartAd,
+} from './ads';
+export type { AdComponentProps, AdVariant } from './ads';

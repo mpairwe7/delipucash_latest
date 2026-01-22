@@ -17,3 +17,7 @@ export { default as questionApi } from "./questionApi";
 export * from "./surveyPaymentApi";
 export { default as surveyPaymentApi } from "./surveyPaymentApi";
 export * from "./surveyPaymentHooks";
+// Ad Services
+export * from "./adApi";
+export { default as adApi } from "./adApi";
+export * from "./adHooks";
