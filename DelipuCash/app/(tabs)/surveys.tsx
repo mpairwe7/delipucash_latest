@@ -71,7 +71,7 @@ export default function SurveysScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
 
   // Auth state
-  const { isAuthenticated, isReady: authReady } = useAuth();
+  const { isAuthenticated, isReady: authReady, auth } = useAuth();
   const { open: openAuth } = useAuthModal();
 
   const [refreshing, setRefreshing] = useState(false);
@@ -237,6 +237,7 @@ export default function SurveysScreen(): React.ReactElement {
           />
         }
       >
+        <View style={styles.pageWidth}>
         {/* ==================== HEADER ==================== */}
         <View style={styles.header}>
           <View style={styles.headerTitleSection}>
@@ -506,6 +507,8 @@ export default function SurveysScreen(): React.ReactElement {
                 key={survey.id}
                 survey={survey}
                 onPress={() => handleSurveyPress(survey.id)}
+                isOwner={auth?.user?.id === survey.userId}
+                onViewResponses={() => router.push(`/survey-responses/${survey.id}` as Href)}
               />
             ))}
           </View>
@@ -542,6 +545,8 @@ export default function SurveysScreen(): React.ReactElement {
                 survey={survey}
                 variant="compact"
                 onPress={() => handleSurveyPress(survey.id)}
+                isOwner={auth?.user?.id === survey.userId}
+                onViewResponses={() => router.push(`/survey-responses/${survey.id}` as Href)}
               />
             ))}
           </View>
@@ -579,6 +584,7 @@ export default function SurveysScreen(): React.ReactElement {
             </View>
           ))}
         </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -593,6 +599,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: SPACING.base,
+    alignItems: "center",
+  },
+  pageWidth: {
+    width: "100%",
+    maxWidth: 960,
+    alignSelf: "center",
   },
   
   // Header
@@ -619,6 +631,7 @@ const styles = StyleSheet.create({
   // Stats Row
   statsRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: SPACING.sm,
     marginBottom: SPACING.xl,
   },
@@ -718,6 +731,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: SPACING.sm,
+    flexWrap: "wrap",
   },
   searchHint: {
     flex: 1,

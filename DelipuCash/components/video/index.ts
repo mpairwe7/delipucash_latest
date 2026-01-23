@@ -4,6 +4,9 @@
  */
 
 // Player Components
+export { VideoPlayer } from './VideoPlayer';
+export type { VideoPlayerProps } from './VideoPlayer';
+
 export { VideoPlayerOverlay } from './VideoPlayerOverlay';
 export type { VideoPlayerOverlayProps } from './VideoPlayerOverlay';
 

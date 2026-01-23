@@ -8,6 +8,7 @@ import {
     withAlpha,
 } from "@/utils/theme";
 import { useUpload } from "@/utils/useUpload";
+import { useCreateAd } from "@/services/adHooksRefactored";
 import { Feather, Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -62,6 +63,9 @@ export default function AdRegistrationScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
   const [upload, { loading: uploading }] = useUpload();
+  
+  // TanStack Query mutation for creating ads
+  const createAdMutation = useCreateAd();
 
   const [form, setForm] = useState<FormState>({
     title: "",
@@ -174,8 +178,23 @@ export default function AdRegistrationScreen(): React.ReactElement {
   const handleSubmit = useCallback(async () => {
     if (!validate()) return;
     setSubmitting(true);
+    
     try {
-      // Placeholder submission; integrate with API when available
+      // Use TanStack Query mutation for optimized caching and state management
+      await createAdMutation.mutateAsync({
+        title: form.title.trim(),
+        description: form.description.trim(),
+        imageUrl: mediaKind === 'image' ? uploadedUrl : undefined,
+        videoUrl: mediaKind === 'video' ? uploadedUrl : undefined,
+        thumbnailUrl: mediaKind === 'video' ? uploadedUrl : undefined,
+        type: form.type,
+        sponsored: form.sponsored,
+        isActive: form.isActive,
+        targetUrl: form.targetUrl.trim(),
+        startDate: form.startDate?.toISOString(),
+        endDate: form.endDate?.toISOString(),
+      });
+      
       Alert.alert("Ad created", "Your ad was registered successfully.", [
         { text: "Done", onPress: handleBack },
       ]);
@@ -185,7 +204,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
     } finally {
       setSubmitting(false);
     }
-  }, [handleBack, validate]);
+  }, [handleBack, validate, createAdMutation, form, mediaKind, uploadedUrl]);
 
   return (
     <SafeAreaView style={[themedStyles.safeArea, { paddingTop: insets.top }]}> 

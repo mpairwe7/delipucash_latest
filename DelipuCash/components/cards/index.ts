@@ -29,3 +29,16 @@ export type { ProgressCardProps } from './ProgressCard';
 
 export { ProfileSupportCard } from './ProfileSupportCard';
 export { ProfileNotificationCard } from './ProfileNotificationCard';
+
+// Enhanced home screen components
+export { ExploreCard } from './ExploreCard';
+export type { ExploreCardProps } from './ExploreCard';
+
+export { Section } from './Section';
+export type { SectionProps } from './Section';
+
+export { RecentQuestionCard } from './RecentQuestionCard';
+export type { RecentQuestionCardProps } from './RecentQuestionCard';
+
+export { ExploreModal } from './ExploreModal';
+export type { ExploreModalProps, ExploreFeature } from './ExploreModal';

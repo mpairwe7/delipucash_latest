@@ -52,6 +52,10 @@ export {
   SectionHeader,
   SearchBar,
   ProgressCard,
+  ExploreCard,
+  Section,
+  RecentQuestionCard,
+  ExploreModal,
 } from './cards';
 export type {
   StatCardProps,
@@ -62,6 +66,11 @@ export type {
   SectionHeaderProps,
   SearchBarProps,
   ProgressCardProps,
+  ExploreCardProps,
+  SectionProps,
+  RecentQuestionCardProps,
+  ExploreModalProps,
+  ExploreFeature,
 } from './cards';
 
 // UI Components
@@ -80,6 +89,7 @@ export type {
 
 // Video Components
 export {
+  VideoPlayer,
   VideoPlayerOverlay,
   MiniPlayer,
   VideoActions,
@@ -87,6 +97,7 @@ export {
   SearchResults,
 } from './video';
 export type {
+  VideoPlayerProps,
   VideoPlayerOverlayProps,
   MiniPlayerProps,
   VideoActionsProps,
@@ -139,3 +150,16 @@ export type {
   PlanConfig,
 } from './payment';
 
+// Ad Components
+export {
+  AdComponent,
+  VideoAdComponent,
+  StandardAd,
+  FeaturedAd,
+  BannerAd,
+  CompactAd,
+  NativeAd,
+  CardAd,
+  SmartAd,
+} from './ads';
+export type { AdComponentProps, AdVariant } from './ads';

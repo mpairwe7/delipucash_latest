@@ -36,6 +36,7 @@ import {
   TrendingUp,
   Calendar,
   CheckCircle2,
+  BarChart3,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
@@ -63,6 +64,10 @@ export interface SurveyCardProps {
   testID?: string;
   /** Show detailed stats */
   showStats?: boolean;
+  /** Is current user the survey owner */
+  isOwner?: boolean;
+  /** Handler for viewing responses (only shown if isOwner is true) */
+  onViewResponses?: () => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -75,6 +80,8 @@ export function SurveyCard({
   index = 0,
   testID,
   showStats = true,
+  isOwner = false,
+  onViewResponses,
 }: SurveyCardProps): React.ReactElement {
   const { colors } = useTheme();
   const scale = useSharedValue(1);
@@ -258,6 +265,26 @@ export function SurveyCard({
           </View>
         </View>
 
+        {/* Owner Actions - View Responses */}
+        {isOwner && onViewResponses && variant !== 'compact' && (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onViewResponses();
+            }}
+            style={[
+              styles.viewResponsesBtn,
+              { backgroundColor: withAlpha(colors.info, 0.12), borderColor: withAlpha(colors.info, 0.3) },
+            ]}
+          >
+            <BarChart3 size={16} color={colors.info} strokeWidth={2} />
+            <Text style={[styles.viewResponsesText, { color: colors.info }]}>
+              View Responses ({survey.totalResponses || 0})
+            </Text>
+          </Pressable>
+        )}
+
         {/* Footer with CTA */}
         {variant !== 'compact' && (
           <View style={[styles.footer, { borderTopColor: colors.border }]}>
@@ -273,7 +300,7 @@ export function SurveyCard({
             </View>
             <View style={styles.actionHint}>
               <Text style={[styles.actionText, { color: colors.primary }]}>
-                {isScheduled ? 'View details' : 'Take survey'}
+                {isOwner ? 'Edit survey' : isScheduled ? 'View details' : 'Take survey'}
               </Text>
               <ChevronRight size={16} color={colors.primary} strokeWidth={2} />
             </View>
@@ -420,6 +447,20 @@ const styles = StyleSheet.create({
   statText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  viewResponsesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.sm,
+  },
+  viewResponsesText: {
+    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });
 

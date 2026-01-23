@@ -1,5 +1,5 @@
 import { PrimaryButton, StatCard } from "@/components";
-import { formatCurrency, formatDate } from "@/data/mockData";
+import { formatDate } from "@/data/mockData";
 import { useQuestion, useSubmitResponse } from "@/services/hooks";
 import {
     BORDER_WIDTH,
@@ -20,6 +20,7 @@ import {
     Sparkles,
     ThumbsDown,
     ThumbsUp,
+  Users,
 } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import {
@@ -212,10 +213,10 @@ export default function QuestionCommentsScreen(): React.ReactElement {
                 subtitle="Total replies"
               />
               <StatCard
-                icon={<Sparkles size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-                title="Reward"
-                value={formatCurrency(question.rewardAmount || 0)}
-                subtitle={question.isInstantReward ? "Instant" : "Standard"}
+                icon={<Users size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />}
+                title="Following"
+                value={Math.floor(Math.random() * 50) + 5}
+                subtitle="People interested"
               />
             </View>
           </View>
