@@ -163,3 +163,14 @@ export {
   SmartAd,
 } from './ads';
 export type { AdComponentProps, AdVariant } from './ads';
+
+// Quiz Components
+export {
+  QuizProgressBar,
+  CircularTimer,
+  ScoreBadge,
+  OptionButton,
+  TextInputAnswer,
+  AnswerFeedback,
+  SessionSummaryCard,
+} from './quiz';

@@ -3,6 +3,160 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { v4 as uuidv4 } from 'uuid';
 
+// ============================================================================
+// EXPORTED PAYMENT PROCESSING FUNCTIONS FOR AUTOMATIC DISBURSEMENTS
+// These are called from rewardQuestionController for instant reward payouts
+// ============================================================================
+
+/**
+ * Process MTN Mobile Money disbursement
+ * Used for automatic reward payouts to winners
+ * @param {Object} params - Payment parameters
+ * @param {number} params.amount - Amount in UGX
+ * @param {string} params.phoneNumber - Recipient phone number
+ * @param {string} params.userId - User ID or email
+ * @param {string} params.reason - Payment reason/description
+ * @returns {Promise<{success: boolean, reference: string|null}>}
+ */
+export const processMtnPayment = async ({ amount, phoneNumber, userId, reason }) => {
+  try {
+    console.log(`[MTN Disbursement] Processing payment: ${amount} UGX to ${phoneNumber}`);
+
+    const token = await getMtnToken();
+    const referenceId = uuidv4();
+
+    // Format phone number
+    let formattedPhone = phoneNumber;
+    if (phoneNumber.startsWith('0')) {
+      formattedPhone = `256${phoneNumber.substring(1)}`;
+    } else if (!phoneNumber.startsWith('256') && !phoneNumber.startsWith('+256')) {
+      formattedPhone = `256${phoneNumber}`;
+    }
+    formattedPhone = formattedPhone.replace('+', '');
+
+    // Convert UGX to EUR for sandbox (MTN sandbox uses EUR)
+    const eurAmount = Math.max(1, Math.round(amount / 4000));
+
+    const response = await axios.post(
+      'https://sandbox.momodeveloper.mtn.com/disbursement/v1_0/transfer',
+      {
+        amount: eurAmount.toString(),
+        currency: 'EUR',
+        externalId: referenceId,
+        payee: {
+          partyIdType: 'MSISDN',
+          partyId: formattedPhone,
+        },
+        payerMessage: reason || 'DelipuCash reward payment',
+        payeeNote: 'Your reward from DelipuCash',
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Reference-Id': referenceId,
+          'X-Target-Environment': 'sandbox',
+          'Ocp-Apim-Subscription-Key': process.env.MTN_DISBURSEMENT_KEY || process.env.MTN_PRIMARY_KEY,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    console.log(`[MTN Disbursement] Transfer initiated: ${referenceId}`);
+
+    // Wait for processing
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Check status
+    const statusResponse = await axios.get(
+      `https://sandbox.momodeveloper.mtn.com/disbursement/v1_0/transfer/${referenceId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Target-Environment': 'sandbox',
+          'Ocp-Apim-Subscription-Key': process.env.MTN_DISBURSEMENT_KEY || process.env.MTN_PRIMARY_KEY,
+        },
+      }
+    );
+
+    const status = statusResponse.data.status;
+    console.log(`[MTN Disbursement] Status: ${status}`);
+
+    if (status === 'SUCCESSFUL') {
+      return { success: true, reference: referenceId };
+    } else {
+      return { success: false, reference: referenceId };
+    }
+  } catch (error) {
+    console.error('[MTN Disbursement] Error:', error.response?.data || error.message);
+    return { success: false, reference: null };
+  }
+};
+
+/**
+ * Process Airtel Money disbursement
+ * Used for automatic reward payouts to winners
+ * @param {Object} params - Payment parameters
+ * @param {number} params.amount - Amount in UGX
+ * @param {string} params.phoneNumber - Recipient phone number
+ * @param {string} params.userId - User ID or email
+ * @param {string} params.reason - Payment reason/description
+ * @returns {Promise<{success: boolean, reference: string|null}>}
+ */
+export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason }) => {
+  try {
+    console.log(`[Airtel Disbursement] Processing payment: ${amount} UGX to ${phoneNumber}`);
+
+    const token = await getAirtelToken();
+    const referenceId = uuidv4();
+
+    // Format phone number (remove leading 0 or +)
+    let formattedPhone = phoneNumber;
+    if (phoneNumber.startsWith('0')) {
+      formattedPhone = phoneNumber.substring(1);
+    } else if (phoneNumber.startsWith('+256')) {
+      formattedPhone = phoneNumber.substring(4);
+    } else if (phoneNumber.startsWith('256')) {
+      formattedPhone = phoneNumber.substring(3);
+    }
+
+    const response = await axios.post(
+      'https://openapiuat.airtel.africa/standard/v1/disbursements/',
+      {
+        payee: {
+          msisdn: formattedPhone,
+        },
+        reference: referenceId,
+        pin: process.env.AIRTEL_PIN || '1234', // Sandbox PIN
+        transaction: {
+          amount: amount,
+          id: referenceId,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Country': 'UG',
+          'X-Currency': 'UGX',
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    console.log(`[Airtel Disbursement] Response:`, response.data);
+
+    const status = response.data.status?.response_code || response.data.data?.transaction?.status;
+
+    if (status === 'DP00800001001' || status === 'SUCCESS' || status === 'SUCCESSFUL') {
+      return { success: true, reference: referenceId };
+    } else {
+      return { success: false, reference: referenceId };
+    }
+  } catch (error) {
+    console.error('[Airtel Disbursement] Error:', error.response?.data || error.message);
+    return { success: false, reference: null };
+  }
+};
+
 // Environment validation
 const validateEnvironmentVariables = () => {
   const requiredVars = {

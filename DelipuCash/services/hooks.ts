@@ -913,13 +913,14 @@ export function useRewardQuestion(questionId: string): UseQueryResult<RewardQues
 
 /**
  * Hook to submit an answer for a reward question
+ * For instant reward questions, include phoneNumber for automatic payout
  */
-export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, Error, { questionId: string; answer: string }> {
+export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, Error, { questionId: string; answer: string; phoneNumber?: string; userEmail?: string }> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ questionId, answer }) => {
-      const response = await api.rewards.submitAnswer(questionId, answer);
+    mutationFn: async ({ questionId, answer, phoneNumber, userEmail }) => {
+      const response = await api.rewards.submitAnswer(questionId, answer, phoneNumber, userEmail);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },

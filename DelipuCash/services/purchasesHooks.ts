@@ -111,6 +111,40 @@ export function useSurveyCreatorAccess() {
 }
 
 /**
+ * Hook to check if user has video premium entitlement
+ * 
+ * Video premium allows:
+ * - Upload videos larger than 20MB (up to 500MB)
+ * - Livestream longer than 5 minutes (up to 2 hours)
+ * 
+ * @example
+ * ```tsx
+ * const { hasVideoPremium, maxUploadSize, maxLivestreamDuration } = useVideoPremiumAccess();
+ * 
+ * if (!hasVideoPremium && fileSize > 20MB) {
+ *   return <UpgradePrompt />;
+ * }
+ * ```
+ */
+export function useVideoPremiumAccess() {
+  const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
+
+  // Check if user has video_premium entitlement
+  const hasVideoPremium = subscription?.entitlements?.includes(ENTITLEMENTS.VIDEO_PREMIUM) ?? false;
+
+  return {
+    hasVideoPremium,
+    isLoading,
+    subscription,
+    refetch,
+    // Return limits based on premium status
+    maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 20 * 1024 * 1024, // 500MB vs 20MB
+    maxLivestreamDuration: hasVideoPremium ? 7200 : 300, // 2 hours vs 5 minutes
+    maxRecordingDuration: hasVideoPremium ? 1800 : 300, // 30 minutes vs 5 minutes
+  };
+}
+
+/**
  * Hook to purchase a package
  * 
  * @example
@@ -267,6 +301,8 @@ export function usePackageFormatter() {
   }, []);
 
   const formatPeriod = useCallback((pkg: PurchasesPackage): string => {
+    // RevenueCat PACKAGE_TYPE values:
+    // UNKNOWN, CUSTOM, LIFETIME, ANNUAL, SIX_MONTH, THREE_MONTH, TWO_MONTH, MONTHLY, WEEKLY
     const packageType = pkg.packageType;
     
     switch (packageType) {
@@ -284,6 +320,14 @@ export function usePackageFormatter() {
         return 'year';
       case 'LIFETIME':
         return 'lifetime';
+      case 'CUSTOM':
+        // For custom packages, try to infer from product identifier
+        const productId = pkg.product.identifier.toLowerCase();
+        if (productId.includes('daily')) return 'day';
+        if (productId.includes('quarterly')) return '3 months';
+        if (productId.includes('half_yearly') || productId.includes('half-yearly')) return '6 months';
+        if (productId.includes('yearly')) return 'year';
+        return '';
       default:
         return '';
     }

@@ -31,8 +31,12 @@ enum surveysubscriptionStatus {
 }
 
 enum SubscriptionType {
+  DAILY
   WEEKLY
   MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+  YEARLY
 }
 
 enum UserRole {

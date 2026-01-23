@@ -1059,8 +1059,67 @@ export const rewardsApi = {
 
   /**
    * Submit an answer for a reward question
+   * For instant reward questions, phoneNumber and userEmail are used for automatic payout
    */
-  async submitAnswer(questionId: string, answer: string): Promise<ApiResponse<RewardAnswerResult>> {
+  async submitAnswer(
+    questionId: string,
+    answer: string,
+    phoneNumber?: string,
+    userEmail?: string
+  ): Promise<ApiResponse<RewardAnswerResult>> {
+    // If API is configured, call the real endpoint
+    if (API_BASE_URL) {
+      try {
+        const response = await fetchJson<RewardAnswerResult>(
+          `${API_BASE_URL}/api/reward-questions/submit-answer`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              rewardQuestionId: questionId,
+              selectedAnswer: answer,
+              phoneNumber,
+              userEmail,
+            }),
+          }
+        );
+
+        if (response.success && response.data) {
+          return {
+            success: true,
+            data: {
+              isCorrect: response.data.isCorrect ?? false,
+              rewardEarned: response.data.pointsAwarded ?? 0,
+              remainingSpots: 0,
+              isExpired: false,
+              isCompleted: response.data.isCompleted ?? false,
+              message: response.data.message ?? '',
+              isWinner: response.data.isWinner ?? false,
+              position: response.data.position ?? null,
+              paymentStatus: response.data.paymentStatus ?? null,
+            },
+            message: response.data.message,
+          };
+        }
+
+        return {
+          success: false,
+          data: {} as RewardAnswerResult,
+          error: response.error || 'Failed to submit answer'
+        };
+      } catch (error) {
+        console.error('Submit answer error:', error);
+        return {
+          success: false,
+          data: {} as RewardAnswerResult,
+          error: error instanceof Error ? error.message : 'Network error'
+        };
+      }
+    }
+
+  // Mock implementation for development
     await delay(500);
     const question = mockRewardQuestions.find((q) => q.id === questionId);
 
@@ -1085,7 +1144,7 @@ export const rewardsApi = {
       : isCompleted
       ? "All rewards for this question have already been claimed."
       : isCorrect
-      ? `Correct! You earned ${question.rewardAmount.toFixed(2)}.`
+          ? `Correct! You earned ${question.rewardAmount.toFixed(2)}. ${question.isInstantReward ? 'Payment is being processed to your phone.' : ''}`
       : "Incorrect answer. Try another question.";
 
     return {
@@ -1097,6 +1156,9 @@ export const rewardsApi = {
         isExpired,
         isCompleted,
         message,
+        isWinner: isCorrect && question.isInstantReward,
+        position: isCorrect && question.isInstantReward ? question.winnersCount + 1 : null,
+        paymentStatus: isCorrect && question.isInstantReward ? 'PENDING' : null,
       },
       message,
     };

@@ -63,9 +63,25 @@ export const VIDEO_QUALITIES: Record<string, VideoQuality> = {
   '4k': { label: '4K UHD', resolution: '3840x2160', bitrate: 15000000, fps: 60 },
 };
 
-// Max recording duration in seconds
-export const MAX_RECORDING_DURATION = 60;
-export const MAX_RECORDING_DURATION_PREMIUM = 180;
+// Max recording duration in seconds (free users: 5 minutes, premium: 30 minutes)
+export const MAX_RECORDING_DURATION = 300; // 5 minutes for free users
+export const MAX_RECORDING_DURATION_PREMIUM = 1800; // 30 minutes for premium users
+
+// Max livestream duration in seconds (free users: 5 minutes, premium: unlimited)
+export const MAX_LIVESTREAM_DURATION = 300; // 5 minutes for free users
+export const MAX_LIVESTREAM_DURATION_PREMIUM = 7200; // 2 hours for premium users
+
+// Max upload file size in bytes (free users: 20MB, premium: 500MB)
+export const MAX_UPLOAD_SIZE_FREE = 20 * 1024 * 1024; // 20MB
+export const MAX_UPLOAD_SIZE_PREMIUM = 500 * 1024 * 1024; // 500MB
+
+// Helper to format file size
+export const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
 
 // ============================================================================
 // RESPONSIVE HELPERS

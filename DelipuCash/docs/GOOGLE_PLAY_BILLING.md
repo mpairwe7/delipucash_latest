@@ -47,8 +47,11 @@ Create these subscription products:
 
 | Product ID | Name | Price (Uganda) | Period |
 |------------|------|----------------|--------|
-| `survey_subscription_weekly` | Weekly Survey Access | UGX 2,000 | 1 week |
+| `survey_subscription_daily` | Daily Survey Access | UGX 300 | 1 day |
+| `survey_subscription_weekly` | Weekly Survey Access | UGX 1,500 | 1 week |
 | `survey_subscription_monthly` | Monthly Survey Access | UGX 5,000 | 1 month |
+| `survey_subscription_quarterly` | Quarterly Survey Access | UGX 12,000 | 3 months |
+| `survey_subscription_half_yearly` | Half Yearly Survey Access | UGX 22,000 | 6 months |
 | `survey_subscription_yearly` | Yearly Survey Access | UGX 40,000 | 1 year |
 
 **Optional:** Create one-time products:
@@ -56,7 +59,7 @@ Create these subscription products:
 | Product ID | Name | Price (Uganda) |
 |------------|------|----------------|
 | `survey_single_access` | Single Survey | UGX 500 |
-| `survey_lifetime_access` | Lifetime Access | UGX 100,000 |
+| `survey_lifetime_access` | Lifetime Access | UGX 150,000 |
 
 ### 4. Configure RevenueCat Products
 
@@ -64,8 +67,11 @@ Create these subscription products:
 2. Click **"Import from Store"** to automatically import products
 3. Create an **Offering** called "default" (or "survey_plans")
 4. Add packages to the offering:
+   - Daily package → `survey_subscription_daily`
    - Weekly package → `survey_subscription_weekly`
    - Monthly package → `survey_subscription_monthly`
+   - Quarterly package → `survey_subscription_quarterly`
+   - Half Yearly package → `survey_subscription_half_yearly`
    - Annual package → `survey_subscription_yearly`
 
 ### 5. Create Entitlements

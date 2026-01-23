@@ -53,6 +53,8 @@ interface SubscriptionPackageCardProps {
  */
 const getPeriodLabel = (packageType: string): string => {
   switch (packageType) {
+      case 'DAILY':
+          return 'day';
     case 'WEEKLY':
       return 'week';
     case 'MONTHLY':
@@ -60,10 +62,13 @@ const getPeriodLabel = (packageType: string): string => {
     case 'TWO_MONTH':
       return '2 months';
     case 'THREE_MONTH':
+      case 'QUARTERLY':
       return '3 months';
     case 'SIX_MONTH':
+      case 'HALF_YEARLY':
       return '6 months';
     case 'ANNUAL':
+      case 'YEARLY':
       return 'year';
     case 'LIFETIME':
       return 'one-time';
@@ -77,6 +82,8 @@ const getPeriodLabel = (packageType: string): string => {
  */
 const getPackageTitle = (packageType: string): string => {
   switch (packageType) {
+      case 'DAILY':
+          return 'Daily';
     case 'WEEKLY':
       return 'Weekly';
     case 'MONTHLY':
@@ -84,10 +91,13 @@ const getPackageTitle = (packageType: string): string => {
     case 'TWO_MONTH':
       return '2 Months';
     case 'THREE_MONTH':
-      return '3 Months';
+      case 'QUARTERLY':
+          return 'Quarterly';
     case 'SIX_MONTH':
-      return '6 Months';
+      case 'HALF_YEARLY':
+          return 'Half Yearly';
     case 'ANNUAL':
+      case 'YEARLY':
       return 'Yearly';
     case 'LIFETIME':
       return 'Lifetime';

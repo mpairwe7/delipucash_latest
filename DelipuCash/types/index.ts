@@ -17,14 +17,21 @@ export enum SubscriptionStatus {
 }
 
 export enum SubscriptionType {
+  DAILY = "DAILY",
   WEEKLY = "WEEKLY",
   MONTHLY = "MONTHLY",
+  QUARTERLY = "QUARTERLY",
+  HALF_YEARLY = "HALF_YEARLY",
+  YEARLY = "YEARLY",
 }
 
 export enum SurveySubscriptionType {
   ONCE = "ONCE",
+  DAILY = "DAILY",
   WEEKLY = "WEEKLY",
   MONTHLY = "MONTHLY",
+  QUARTERLY = "QUARTERLY",
+  HALF_YEARLY = "HALF_YEARLY",
   YEARLY = "YEARLY",
   LIFETIME = "LIFETIME",
 }
@@ -229,6 +236,12 @@ export interface RewardAnswerResult {
   isExpired: boolean;
   isCompleted?: boolean;
   message?: string;
+  // Instant reward specific fields
+  isWinner?: boolean;
+  position?: number | null;
+  paymentStatus?: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | null;
+  paymentReference?: string | null;
+  pointsAwarded?: number;
 }
 
 export interface InstantRewardWinner {
@@ -452,4 +465,99 @@ export interface UserStats {
   questionsAnsweredToday: number;
   earningsToday: number;
   rewardsThisWeek: number;
+}
+
+// ===========================================
+// Quiz Session Types
+// ===========================================
+
+export type QuizSessionState =
+  | 'LOADING'
+  | 'DISPLAYING_QUESTION'
+  | 'ANSWER_SELECTED'
+  | 'ANSWER_VALIDATED'
+  | 'SESSION_SUMMARY'
+  | 'REWARDS_SELECTION'
+  | 'COMPLETED';
+
+export type QuizQuestionType = 'single_choice' | 'multiple_choice' | 'boolean' | 'text' | 'checkbox';
+
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  options?: Record<string, string> | string[];
+  correctAnswer: string | string[];
+  explanation?: string;
+  category?: string;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  pointValue: number;
+  timeLimit?: number; // seconds
+  type: QuizQuestionType;
+}
+
+export interface QuizAnswerResult {
+  questionId: string;
+  userAnswer: string | string[];
+  correctAnswer: string | string[];
+  isCorrect: boolean;
+  pointsEarned: number;
+  timeTaken: number;
+  feedback: string;
+}
+
+export interface QuizSession {
+  id: string;
+  userId: string;
+  questions: QuizQuestion[];
+  answers: QuizAnswerResult[];
+  startedAt: string;
+  completedAt?: string;
+  totalPoints: number;
+  correctCount: number;
+  incorrectCount: number;
+  maxStreak: number;
+  currentStreak: number;
+  averageTimePerQuestion: number;
+}
+
+export interface QuizSessionSummary {
+  sessionId: string;
+  totalQuestions: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  totalPoints: number;
+  pointsEarned: number;
+  accuracy: number; // percentage
+  averageTime: number;
+  maxStreak: number;
+  bonusPoints: number;
+  totalEarned: number; // points + bonus
+}
+
+export type RewardRedemptionType = 'CASH' | 'AIRTIME';
+
+export interface RewardRedemptionRequest {
+  userId: string;
+  points: number;
+  redemptionType: RewardRedemptionType;
+  phoneNumber: string;
+  provider: 'MTN' | 'AIRTEL';
+}
+
+export interface RewardRedemptionResult {
+  success: boolean;
+  transactionId?: string;
+  amountRedeemed: number;
+  pointsDeducted: number;
+  remainingPoints: number;
+  message: string;
+  paymentStatus: PaymentStatus;
+}
+
+export interface UserPoints {
+  userId: string;
+  totalPoints: number;
+  availablePoints: number;
+  redeemedPoints: number;
+  pendingRedemption: number;
 }
