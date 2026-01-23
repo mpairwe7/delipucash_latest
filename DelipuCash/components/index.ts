@@ -89,6 +89,7 @@ export type {
 
 // Video Components
 export {
+  VideoPlayer,
   VideoPlayerOverlay,
   MiniPlayer,
   VideoActions,
@@ -96,6 +97,7 @@ export {
   SearchResults,
 } from './video';
 export type {
+  VideoPlayerProps,
   VideoPlayerOverlayProps,
   MiniPlayerProps,
   VideoActionsProps,

@@ -2,6 +2,7 @@
  * Videos Screen - Using Design System Reusable Components
  * Clean implementation with proper component composition
  * Includes LiveStream functionality inspired by TikTok/Instagram
+ * YouTube-like video player experience with watch history and auto-play queue
  */
 
 import React, { useCallback, useMemo, useState, useRef } from "react";
@@ -16,7 +17,6 @@ import {
   TextInput,
   Dimensions,
   Share,
-  Image,
   ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -47,7 +47,6 @@ import {
   RADIUS,
   withAlpha,
   ICON_SIZE,
-  Z_INDEX,
 } from "@/utils/theme";
 import {
   useTrendingVideos,
@@ -62,7 +61,7 @@ import {
   PrimaryButton,
   StatCard,
   NotificationBell,
-  VideoPlayerOverlay,
+  VideoPlayer,
   MiniPlayer,
   VideoActions,
   UploadModal,
@@ -71,7 +70,7 @@ import {
   LiveStreamScreen,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
-import { mockAds } from "@/data/mockData";
+import { useAds } from "@/services/adHooksRefactored";
 import { Video } from "@/types";
 import * as Haptics from "expo-haptics";
 
@@ -101,13 +100,15 @@ export default function VideosScreen(): React.ReactElement {
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
 
-  // Player State
+  // Player State - YouTube-like experience
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
+  const [isPlayerVisible, setIsPlayerVisible] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [showControls, setShowControls] = useState(true);
-  const [progress, setProgress] = useState(0);
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
+  const [videoQueue, setVideoQueue] = useState<Video[]>([]);
+  const [watchHistory, setWatchHistory] = useState<string[]>([]);
+  const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState(0);
 
   // Data Hooks
   const { data: videosData, isLoading, refetch } = useVideos({ limit: 30 });
@@ -115,6 +116,9 @@ export default function VideosScreen(): React.ReactElement {
   const { data: userStats } = useUserStats();
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideo } = useLikeVideo();
+  
+  // Ad data using TanStack Query for optimized caching
+  const { data: adsData } = useAds({ sponsored: true, isActive: true, limit: 3 });
 
   // Memoized Data
   const videos = useMemo(() => videosData?.videos ?? [], [videosData?.videos]);
@@ -141,15 +145,24 @@ export default function VideosScreen(): React.ReactElement {
     [videos]
   );
 
-  const sponsoredVideos = useMemo(
-    () => mockAds.filter((ad) => ad.sponsored).slice(0, 3),
-    []
+  // Sponsored ads from TanStack Query cache
+  const sponsoredAds = useMemo(
+    () => adsData?.data?.filter((ad) => ad.sponsored).slice(0, 3) ?? [],
+    [adsData]
   );
 
   const totalLikes = useMemo(
     () => videos.reduce((sum, video) => sum + (video.likes || 0), 0),
     [videos]
   );
+
+  // Recently watched videos for "Continue Watching" section (YouTube-like)
+  const recentlyWatched = useMemo(() => {
+    return watchHistory
+      .map((id) => videos.find((v) => v.id === id))
+      .filter((v): v is Video => v !== undefined)
+      .slice(0, 5);
+  }, [watchHistory, videos]);
 
   // Handlers
   const onRefresh = useCallback(async () => {
@@ -158,14 +171,6 @@ export default function VideosScreen(): React.ReactElement {
     await refetch();
     setRefreshing(false);
   }, [refetch]);
-
-  const handleLike = useCallback(
-    (videoId: string): void => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      likeVideo(videoId);
-    },
-    [likeVideo]
-  );
 
   const handleComment = useCallback((video: Video): void => {
     router.push(`/question-comments/${video.id}` as Href);
@@ -191,12 +196,29 @@ export default function VideosScreen(): React.ReactElement {
 
   const handleVideoSelect = useCallback((video: Video): void => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Track watch history (YouTube-like)
+    setWatchHistory((prev) => {
+      const filtered = prev.filter((id) => id !== video.id);
+      return [video.id, ...filtered].slice(0, 50); // Keep last 50 videos
+    });
+
+    // Set up video queue with related videos (YouTube-like auto-play)
+    const relatedVideos = videos.filter(
+      (v) => v.id !== video.id && (
+        (v.title || "").toLowerCase().includes((video.title || "").toLowerCase().split(" ")[0]) ||
+        v.likes > (video.likes || 0) * 0.5
+      )
+    ).slice(0, 10);
+    setVideoQueue(relatedVideos);
+
+    // Open player
     setCurrentVideo(video);
+    setIsPlayerVisible(true);
     setIsPlaying(true);
-    setShowControls(true);
     setShowMiniPlayer(false);
-    setTimeout(() => setShowControls(false), 3000);
-  }, []);
+    setProgress(0);
+  }, [videos]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -209,25 +231,67 @@ export default function VideosScreen(): React.ReactElement {
   }, []);
 
   const closePlayer = useCallback(() => {
+    // YouTube-like behavior: minimize to mini player instead of closing
     if (currentVideo) {
       setShowMiniPlayer(true);
+      setIsPlayerVisible(false);
+    } else {
+      setCurrentVideo(null);
+      setIsPlaying(false);
+      setProgress(0);
+      setIsPlayerVisible(false);
     }
-    setCurrentVideo(null);
-    setIsPlaying(false);
-    setProgress(0);
   }, [currentVideo]);
 
   const closeMiniPlayer = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowMiniPlayer(false);
     setCurrentVideo(null);
     setIsPlaying(false);
     setProgress(0);
+    setVideoQueue([]);
   }, []);
 
   const expandMiniPlayer = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setShowMiniPlayer(false);
-    setShowControls(true);
+    setIsPlayerVisible(true);
   }, []);
+
+  // YouTube-like: Handle video like with visual feedback
+  const handleVideoLike = useCallback((videoId: string): void => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLikedVideos((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(videoId)) {
+        newSet.delete(videoId);
+      } else {
+        newSet.add(videoId);
+      }
+      return newSet;
+    });
+    likeVideo(videoId);
+  }, [likeVideo]);
+
+  // YouTube-like: Auto-play next video in queue
+  const playNextVideo = useCallback(() => {
+    if (videoQueue.length > 0) {
+      const nextVideo = videoQueue[0];
+      setVideoQueue((prev) => prev.slice(1));
+      setCurrentVideo(nextVideo);
+      setIsPlaying(true);
+      setProgress(0);
+
+      // Track in watch history
+      setWatchHistory((prev) => {
+        const filtered = prev.filter((id) => id !== nextVideo.id);
+        return [nextVideo.id, ...filtered].slice(0, 50);
+      });
+    } else {
+      // No more videos in queue, close player
+      closePlayer();
+    }
+  }, [videoQueue, closePlayer]);
 
   // LiveStream Handlers
   const openLiveStream = useCallback(() => {
@@ -404,7 +468,7 @@ export default function VideosScreen(): React.ReactElement {
               <View style={styles.statsRow}>
                 <StatCard
                   title="Watched"
-                  value={userStats?.totalVideosWatched || 0}
+                  value={userStats?.totalVideosWatched || watchHistory.length}
                   subtitle="This week"
                   icon={<Eye size={ICON_SIZE.md} color={colors.primary} strokeWidth={1.5} />}
                 />
@@ -415,6 +479,105 @@ export default function VideosScreen(): React.ReactElement {
                   icon={<Heart size={ICON_SIZE.md} color={colors.error} strokeWidth={1.5} />}
                 />
               </View>
+
+              {/* Up Next Section - YouTube-like auto-play queue */}
+              {videoQueue.length > 0 && (
+                <>
+                  <SectionHeader
+                    title="Up Next"
+                    subtitle={`${videoQueue.length} videos in queue`}
+                    icon={<Sparkles size={ICON_SIZE.md} color={colors.warning} strokeWidth={1.5} />}
+                    onSeeAll={() => Alert.alert("Queue", `${videoQueue.length} videos in your queue`)}
+                  />
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                    accessibilityLabel="Up next videos"
+                  >
+                    {videoQueue.slice(0, 5).map((video, index) => (
+                      <TouchableOpacity
+                        key={video.id}
+                        style={styles.upNextCard}
+                        onPress={() => {
+                          // Play this video immediately
+                          setVideoQueue((prev) => prev.filter((v) => v.id !== video.id));
+                          handleVideoSelect(video);
+                        }}
+                        accessibilityLabel={`Play ${video.title} next`}
+                        accessibilityRole="button"
+                      >
+                        <View style={styles.upNextIndex}>
+                          <Text style={[styles.upNextIndexText, { color: colors.text }]}>
+                            {index + 1}
+                          </Text>
+                        </View>
+                        <VideoCard
+                          video={video}
+                          variant="compact"
+                          style={styles.horizontalCard}
+                          onPress={() => {
+                            setVideoQueue((prev) => prev.filter((v) => v.id !== video.id));
+                            handleVideoSelect(video);
+                          }}
+                        />
+                      </TouchableOpacity>
+                    ))}
+                    {videoQueue.length > 5 && (
+                      <TouchableOpacity
+                        style={[styles.seeMoreQueue, { backgroundColor: colors.card }]}
+                        onPress={playNextVideo}
+                        accessibilityLabel="Play next video"
+                        accessibilityRole="button"
+                      >
+                        <Text style={[styles.seeMoreText, { color: colors.primary }]}>
+                          +{videoQueue.length - 5} more
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </ScrollView>
+                </>
+              )}
+
+              {/* Continue Watching Section - YouTube-like */}
+              {recentlyWatched.length > 0 && (
+                <>
+                  <SectionHeader
+                    title="Continue Watching"
+                    subtitle="Pick up where you left off"
+                    icon={<Eye size={ICON_SIZE.md} color={colors.primary} strokeWidth={1.5} />}
+                    onSeeAll={() => Alert.alert("Watch History", "View full watch history")}
+                  />
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.horizontalList}
+                    accessibilityLabel="Continue watching videos"
+                  >
+                    {recentlyWatched.map((video) => (
+                      <View key={video.id} style={styles.continueWatchingCard}>
+                        <VideoCard
+                          video={video}
+                          variant="compact"
+                          style={styles.horizontalCard}
+                          onPress={() => handleVideoSelect(video)}
+                        />
+                        <View style={styles.progressIndicator}>
+                          <View
+                            style={[
+                              styles.progressFill,
+                              {
+                                backgroundColor: colors.primary,
+                                width: `${Math.random() * 80 + 10}%`, // Simulated progress
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </>
+              )}
 
               {/* Live Now Section */}
               <SectionHeader
@@ -427,6 +590,7 @@ export default function VideosScreen(): React.ReactElement {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.horizontalList}
+                accessibilityLabel="Live videos"
               >
                 {liveVideos.length === 0 ? (
                   <View style={[styles.emptyLive, { backgroundColor: colors.card }]}>
@@ -469,7 +633,7 @@ export default function VideosScreen(): React.ReactElement {
                     />
                     <VideoActions
                       video={video}
-                      onLike={handleLike}
+                      onLike={handleVideoLike}
                       onComment={handleComment}
                       onShare={handleShare}
                       onBookmark={handleBookmark}
@@ -491,7 +655,7 @@ export default function VideosScreen(): React.ReactElement {
                     <VideoCard video={video} onPress={() => handleVideoSelect(video)} />
                     <VideoActions
                       video={video}
-                      onLike={handleLike}
+                      onLike={handleVideoLike}
                       onComment={handleComment}
                       onShare={handleShare}
                       onBookmark={handleBookmark}
@@ -507,7 +671,7 @@ export default function VideosScreen(): React.ReactElement {
                 icon={<BadgeDollarSign size={ICON_SIZE.md} color={colors.success} strokeWidth={1.5} />}
               />
               <View style={styles.sponsoredList}>
-                {sponsoredVideos.map((ad) => (
+                {sponsoredAds.map((ad) => (
                   <View key={ad.id} style={[styles.sponsoredCard, { backgroundColor: colors.card }]}>
                     <View style={styles.sponsoredHeader}>
                       <View style={[styles.sponsoredBadge, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
@@ -574,7 +738,7 @@ export default function VideosScreen(): React.ReactElement {
                         <VideoCard video={video} onPress={() => handleVideoSelect(video)} />
                         <VideoActions
                           video={video}
-                          onLike={handleLike}
+                          onLike={handleVideoLike}
                           onComment={handleComment}
                           onShare={handleShare}
                           onBookmark={handleBookmark}
@@ -587,40 +751,20 @@ export default function VideosScreen(): React.ReactElement {
         )}
       </ScrollView>
 
-      {/* Video Player Overlay */}
-      {currentVideo && !showMiniPlayer && (
-        <View style={styles.playerContainer}>
-          <Image
-            source={{ uri: currentVideo.thumbnail }}
-            style={styles.playerThumbnail}
-            accessibilityLabel={`Playing ${currentVideo.title}`}
-          />
-          <VideoPlayerOverlay
-            video={currentVideo}
-            isPlaying={isPlaying}
-            isMuted={isMuted}
-            progress={progress}
-            currentTime={progress * 180}
-            duration={180}
-            onPlayPause={() => setIsPlaying(!isPlaying)}
-            onMute={() => setIsMuted(!isMuted)}
-            onSeek={setProgress}
-            onClose={closePlayer}
-            onShare={() => handleShare(currentVideo)}
-            onLike={() => handleLike(currentVideo.id)}
-            visible={showControls}
-            isLiked={currentVideo.isBookmarked}
-          />
-          <TouchableOpacity
-            style={styles.playerTouchArea}
-            onPress={() => setShowControls(!showControls)}
-            activeOpacity={1}
-            accessibilityLabel="Toggle video controls"
-          />
-        </View>
-      )}
+      {/* Video Player - YouTube-like full screen player */}
+      <VideoPlayer
+        videoSource={isPlayerVisible && currentVideo ? currentVideo.videoUrl : null}
+        videoDetails={currentVideo}
+        onClose={closePlayer}
+        onLike={() => currentVideo && handleVideoLike(currentVideo.id)}
+        onShare={() => currentVideo && handleShare(currentVideo)}
+        isLiked={currentVideo ? likedVideos.has(currentVideo.id) : false}
+        autoPlay={true}
+        loop={false}
+        testID="video-player"
+      />
 
-      {/* Mini Player */}
+      {/* Mini Player - YouTube-like minimized player */}
       {showMiniPlayer && currentVideo && (
         <MiniPlayer
           video={currentVideo}
@@ -842,16 +986,52 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.base,
   },
-  playerContainer: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000000",
-    zIndex: Z_INDEX.modal,
+  // YouTube-like Continue Watching styles
+  continueWatchingCard: {
+    width: getResponsiveValue(200, 240, 280),
+    marginRight: SPACING.md,
   },
-  playerThumbnail: {
-    width: "100%",
+  progressIndicator: {
+    height: 3,
+    backgroundColor: withAlpha("#FFFFFF", 0.3),
+    borderRadius: RADIUS.xs,
+    marginTop: SPACING.xs,
+    overflow: "hidden",
+  },
+  progressFill: {
     height: "100%",
+    borderRadius: RADIUS.xs,
   },
-  playerTouchArea: {
-    ...StyleSheet.absoluteFillObject,
+  // YouTube-like Up Next styles
+  upNextCard: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginRight: SPACING.md,
+  },
+  upNextIndex: {
+    width: 24,
+    height: 24,
+    borderRadius: RADIUS.full,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: SPACING.xs,
+    marginTop: SPACING.md,
+  },
+  upNextIndexText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  seeMoreQueue: {
+    width: 100,
+    height: 120,
+    borderRadius: RADIUS.lg,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: SPACING.md,
+  },
+  seeMoreText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: "center",
   },
 });

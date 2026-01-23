@@ -7,12 +7,14 @@
 import {
   ApiResponse,
   Survey,
+  SurveyResponse,
   UploadSurvey,
 } from "@/types";
 import {
   mockSurveys,
   mockSurveyQuestions,
   mockCurrentUser,
+  mockUsers,
   getSurveyById,
   getSurveyQuestionsForSurvey,
 } from "@/data/mockData";
@@ -675,6 +677,327 @@ export const surveyApi = {
       },
       message: "Survey duplicated successfully",
     };
+  },
+
+  /**
+   * Get survey responses (for survey owner/admin)
+   */
+  async getResponses(
+    surveyId: string,
+    options?: {
+      page?: number;
+      limit?: number;
+      startDate?: string;
+      endDate?: string;
+    }
+  ): Promise<ApiResponse<{
+    responses: SurveyResponse[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }>> {
+    if (isBackendConfigured) {
+      const params = new URLSearchParams();
+      if (options?.page) params.append("page", String(options.page));
+      if (options?.limit) params.append("limit", String(options.limit));
+      if (options?.startDate) params.append("startDate", options.startDate);
+      if (options?.endDate) params.append("endDate", options.endDate);
+
+      const queryString = params.toString();
+      const path = queryString
+        ? `${SURVEY_ROUTES.responses(surveyId)}?${queryString}`
+        : SURVEY_ROUTES.responses(surveyId);
+
+      const response = await fetchJson<{
+        responses: SurveyResponse[];
+        pagination: {
+          page: number;
+          limit: number;
+          total: number;
+          totalPages: number;
+        };
+      }>(path);
+      if (response.success) return response;
+    }
+
+    await delay();
+    const survey = getSurveyById(surveyId);
+    if (!survey) {
+      return {
+        success: false,
+        data: {
+          responses: [],
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0 },
+        },
+        error: "Survey not found",
+      };
+    }
+
+    // Generate mock responses based on survey data
+    const questions = getSurveyQuestionsForSurvey(surveyId);
+    const totalResponses = survey.totalResponses || 0;
+    const page = options?.page || 1;
+    const limit = options?.limit || 20;
+
+    const mockResponses: SurveyResponse[] = Array.from(
+      { length: Math.min(totalResponses, limit) },
+      (_, index) => {
+        const responseId = `resp_${surveyId}_${(page - 1) * limit + index}`;
+        const userIndex = index % mockUsers.length;
+        const user = mockUsers[userIndex];
+
+        // Generate random responses for each question
+        const responses: Record<string, unknown> = {};
+        questions.forEach((q) => {
+          switch (q.type.toLowerCase()) {
+            case 'rating':
+              responses[q.id] = Math.floor(Math.random() * 5) + 1;
+              break;
+            case 'radio':
+            case 'dropdown':
+              try {
+                const opts = JSON.parse(q.options || '[]');
+                if (Array.isArray(opts) && opts.length > 0) {
+                  responses[q.id] = opts[Math.floor(Math.random() * opts.length)];
+                }
+              } catch {
+                responses[q.id] = 'Option 1';
+              }
+              break;
+            case 'checkbox':
+              try {
+                const opts = JSON.parse(q.options || '[]');
+                if (Array.isArray(opts) && opts.length > 0) {
+                  const numSelected = Math.floor(Math.random() * opts.length) + 1;
+                  responses[q.id] = opts
+                    .sort(() => Math.random() - 0.5)
+                    .slice(0, numSelected);
+                }
+              } catch {
+                responses[q.id] = ['Option 1'];
+              }
+              break;
+            case 'boolean':
+              responses[q.id] = Math.random() > 0.5;
+              break;
+            case 'number':
+              const min = q.minValue || 0;
+              const max = q.maxValue || 100;
+              responses[q.id] = Math.floor(Math.random() * (max - min)) + min;
+              break;
+            case 'text':
+            case 'paragraph':
+              const sampleTexts = [
+                'Great experience overall!',
+                'Could use some improvements.',
+                'Very satisfied with the service.',
+                'The platform is easy to use.',
+                'Would recommend to others.',
+                'Quick and efficient.',
+                'Needs more features.',
+                'Love the user interface.',
+              ];
+              responses[q.id] = sampleTexts[Math.floor(Math.random() * sampleTexts.length)];
+              break;
+            case 'date':
+              const date = new Date();
+              date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+              responses[q.id] = date.toISOString().split('T')[0];
+              break;
+            case 'time':
+              const hours = Math.floor(Math.random() * 12) + 8;
+              const minutes = Math.floor(Math.random() * 60);
+              responses[q.id] = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+              break;
+            default:
+              responses[q.id] = 'Sample response';
+          }
+        });
+
+        // Create date spread over last 14 days
+        const createdAt = new Date();
+        createdAt.setDate(createdAt.getDate() - Math.floor(Math.random() * 14));
+        createdAt.setHours(Math.floor(Math.random() * 14) + 8);
+        createdAt.setMinutes(Math.floor(Math.random() * 60));
+
+        return {
+          id: responseId,
+          userId: user.id,
+          surveyId,
+          responses: JSON.stringify(responses),
+          user,
+          createdAt: createdAt.toISOString(),
+          updatedAt: createdAt.toISOString(),
+        };
+      }
+    );
+
+    // Sort by createdAt descending
+    mockResponses.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+
+    return {
+      success: true,
+      data: {
+        responses: mockResponses,
+        pagination: {
+          page,
+          limit,
+          total: totalResponses,
+          totalPages: Math.ceil(totalResponses / limit),
+        },
+      },
+    };
+  },
+
+  /**
+   * Get detailed analytics for a survey
+   */
+  async getDetailedAnalytics(
+    surveyId: string
+  ): Promise<ApiResponse<{
+    totalResponses: number;
+    completionRate: number;
+    averageCompletionTime: number;
+    responsesByDay: { date: string; count: number }[];
+    questionStats: {
+      questionId: string;
+      questionText: string;
+      questionType: string;
+      answerDistribution: Record<string, number>;
+    }[];
+  }>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{
+        totalResponses: number;
+        completionRate: number;
+        averageCompletionTime: number;
+        responsesByDay: { date: string; count: number }[];
+        questionStats: {
+          questionId: string;
+          questionText: string;
+          questionType: string;
+          answerDistribution: Record<string, number>;
+        }[];
+      }>(SURVEY_ROUTES.analytics(surveyId));
+      if (response.success) return response;
+    }
+
+    await delay();
+    const survey = getSurveyById(surveyId);
+    if (!survey) {
+      return {
+        success: false,
+        data: {
+          totalResponses: 0,
+          completionRate: 0,
+          averageCompletionTime: 0,
+          responsesByDay: [],
+          questionStats: [],
+        },
+        error: "Survey not found",
+      };
+    }
+
+    const questions = getSurveyQuestionsForSurvey(surveyId);
+    const totalResponses = survey.totalResponses || 0;
+
+    // Generate mock responses by day (last 14 days)
+    const responsesByDay: { date: string; count: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      responsesByDay.push({
+        date: date.toISOString().split('T')[0],
+        count: Math.floor(Math.random() * Math.max(1, totalResponses / 7)) + (i === 0 ? 5 : 0),
+      });
+    }
+
+    // Generate mock question statistics
+    const questionStats = questions.map((q) => {
+      const stats: {
+        questionId: string;
+        questionText: string;
+        questionType: string;
+        answerDistribution: Record<string, number>;
+      } = {
+        questionId: q.id,
+        questionText: q.text,
+        questionType: q.type,
+        answerDistribution: {},
+      };
+
+      switch (q.type.toLowerCase()) {
+        case 'rating':
+          for (let i = 1; i <= 5; i++) {
+            stats.answerDistribution[String(i)] = Math.floor(Math.random() * 50) + 10;
+          }
+          break;
+        case 'radio':
+        case 'dropdown':
+          try {
+            const opts = JSON.parse(q.options || '[]');
+            if (Array.isArray(opts)) {
+              opts.forEach((opt: string) => {
+                stats.answerDistribution[opt] = Math.floor(Math.random() * 60) + 5;
+              });
+            }
+          } catch {
+            stats.answerDistribution['Option 1'] = 30;
+            stats.answerDistribution['Option 2'] = 25;
+          }
+          break;
+        case 'boolean':
+          stats.answerDistribution['Yes'] = Math.floor(Math.random() * 80) + 20;
+          stats.answerDistribution['No'] = Math.floor(Math.random() * 60) + 10;
+          break;
+        case 'checkbox':
+          try {
+            const opts = JSON.parse(q.options || '[]');
+            if (Array.isArray(opts)) {
+              opts.forEach((opt: string) => {
+                stats.answerDistribution[opt] = Math.floor(Math.random() * 40) + 5;
+              });
+            }
+          } catch {
+            stats.answerDistribution['Option A'] = 25;
+            stats.answerDistribution['Option B'] = 35;
+          }
+          break;
+        default:
+          // Text questions - show top terms
+          stats.answerDistribution['great'] = 45;
+          stats.answerDistribution['good'] = 38;
+          stats.answerDistribution['easy'] = 32;
+          stats.answerDistribution['improve'] = 18;
+          stats.answerDistribution['recommend'] = 28;
+      }
+
+      return stats;
+    });
+
+    return {
+      success: true,
+      data: {
+        totalResponses,
+        completionRate: ((survey.totalResponses || 0) / (survey.maxResponses || 500)) * 100,
+        averageCompletionTime: 180 + Math.floor(Math.random() * 120), // 3-5 minutes
+        responsesByDay,
+        questionStats,
+      },
+    };
+  },
+
+  /**
+   * Check if user is survey owner
+   */
+  async isSurveyOwner(surveyId: string, userId: string): Promise<boolean> {
+    const survey = getSurveyById(surveyId);
+    return survey?.userId === userId;
   },
 };
 

@@ -38,6 +38,7 @@ import {
     Coins,
   CreditCard,
   Lock,
+  MessageCircle,
     Plus,
     Search,
     ShieldCheck,
@@ -196,6 +197,24 @@ export default function QuestionsScreen(): React.ReactElement {
     };
 
   /**
+   * Navigate to question comments/discussion screen (Quora-like experience)
+   */
+  const handleRecentQuestionPress = (id: string): void => {
+    if (!isAuthenticated) {
+      Alert.alert(
+        "Login Required",
+        "Please log in to view discussions.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+        ]
+      );
+      return;
+    }
+    router.push(`/question-comments/${id}` as Href);
+  };
+
+  /**
    * Navigate to instant reward answer screen with payment check
    */
     const handleRewardQuestionPress = (id: string): void => {
@@ -314,7 +333,7 @@ export default function QuestionsScreen(): React.ReactElement {
             <View>
               <Text style={[styles.headerTitle, { color: colors.text }]}>Questions</Text>
               <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-                Ask, answer, and earn rewards
+                Ask questions, share knowledge
               </Text>
             </View>
             <View style={styles.headerActions}>
@@ -347,8 +366,31 @@ export default function QuestionsScreen(): React.ReactElement {
           <View style={styles.actionGrid}>
             <ActionCard
               title="Answer questions & earn"
-              subtitle="Browse open questions and claim rewards"
+              subtitle="Browse open questions and share knowledge"
               icon={<Award size={18} color={colors.success} strokeWidth={1.5} />}
+              onPress={() => {
+                if (!isAuthenticated) {
+                  Alert.alert(
+                    "Login Required",
+                    "Please log in to answer questions.",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      { text: "Login", onPress: () => router.push("/(auth)/login" as Href) }
+                    ]
+                  );
+                  return;
+                }
+                // Navigate to questions list where they can pick one to answer
+                if (questions.length > 0) {
+                  router.push(`/question-answer/${questions[0].id}` as Href);
+                }
+              }}
+              colors={colors}
+            />
+            <ActionCard
+              title="Answer Instant Reward Questions!"
+              subtitle="Earn instant payouts for quality answers"
+              icon={<Sparkles size={18} color={colors.warning} strokeWidth={1.5} />}
               onPress={handleInstantRewardBrowse}
               colors={colors}
             />
@@ -414,7 +456,7 @@ export default function QuestionsScreen(): React.ReactElement {
                 key={q.id}
                 question={q}
                 variant="compact"
-                onPress={() => handleQuestionPress(q.id)}
+                onPress={() => handleRewardQuestionPress(q.id)}
               />
             ))}
             {(!instantQuestions || instantQuestions.length === 0) && (
@@ -452,10 +494,10 @@ export default function QuestionsScreen(): React.ReactElement {
             )}
           </View>
 
-          {/* Recent Questions */}
+          {/* Recent Questions - Quora-like discussion feed */}
           <SectionHeader
-            title="Recent questions"
-            subtitle="Fresh topics to answer"
+            title="Recent discussions"
+            subtitle="Join the conversation"
             icon={<Clock3 size={18} color={colors.info} strokeWidth={1.5} />}
             onSeeAll={() => router.push("/(tabs)/questions")}
           />
@@ -465,19 +507,24 @@ export default function QuestionsScreen(): React.ReactElement {
                 key={q.id}
                 question={q}
                 variant="compact"
-                onPress={() => handleQuestionPress(q.id)}
+                onPress={() => handleRecentQuestionPress(q.id)}
               />
             ))}
+            {(!recentQuestions || recentQuestions.length === 0) && (
+              <View style={[styles.emptyState, { backgroundColor: colors.card }]}>
+                <Text style={[styles.emptyText, { color: colors.textMuted }]}>No recent discussions</Text>
+              </View>
+            )}
           </View>
 
-          {/* Answer & Earn CTA */}
+          {/* Knowledge Sharing CTA - Quora-like */}
           <View style={[styles.earnCard, { backgroundColor: colors.card }]}
-            accessibilityLabel="Answer questions and earn rewards"
+            accessibilityLabel="Share your knowledge with the community"
           >
             <View style={styles.earnLeft}>
-              <Text style={[styles.earnTitle, { color: colors.text }]}>Answer questions and earn</Text>
+              <Text style={[styles.earnTitle, { color: colors.text }]}>Share your knowledge</Text>
               <Text style={[styles.earnSubtitle, { color: colors.textMuted }]}>
-                Pick a question, submit quality answers, and get instant or scheduled rewards.
+                Answer questions from the community and help others learn from your expertise.
               </Text>
               <PrimaryButton
                 title="Start Answering"
@@ -485,16 +532,16 @@ export default function QuestionsScreen(): React.ReactElement {
                 variant="secondary"
               />
             </View>
-            <View style={[styles.earnBadge, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
-              <Coins size={20} color={colors.success} strokeWidth={1.5} />
-              <Text style={[styles.earnBadgeText, { color: colors.success }]}>Earn rewards</Text>
+            <View style={[styles.earnBadge, { backgroundColor: withAlpha(colors.info, 0.15) }]}>
+              <MessageCircle size={20} color={colors.info} strokeWidth={1.5} />
+              <Text style={[styles.earnBadgeText, { color: colors.info }]}>Join discussion</Text>
             </View>
           </View>
 
           {/* All Questions List */}
           <SectionHeader
             title="All questions"
-            subtitle="Browse and answer"
+            subtitle="Browse and discuss"
             icon={<Search size={18} color={colors.text} strokeWidth={1.5} />}
           />
           {isLoading ? (
@@ -508,7 +555,7 @@ export default function QuestionsScreen(): React.ReactElement {
                   key={question.id}
                   question={question}
                   variant="default"
-                  onPress={() => handleQuestionPress(question.id)}
+                  onPress={() => handleRecentQuestionPress(question.id)}
                 />
               ))}
             </View>

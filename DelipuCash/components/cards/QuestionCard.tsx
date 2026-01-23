@@ -225,7 +225,7 @@ export function QuestionCard({
           {question.text}
         </Text>
 
-        {/* Stats Row */}
+        {/* Stats Row - Quora-like engagement metrics */}
         <View style={styles.statsRow}>
           {/* Answers */}
           <View style={styles.statItem}>
@@ -243,18 +243,18 @@ export function QuestionCard({
             </Text>
           </View>
 
-          {/* Reward */}
+          {/* Followers/Views - Quora-like metric */}
           <View style={styles.statItem}>
             <View
               style={[
                 styles.statIconContainer,
-                { backgroundColor: withAlpha(colors.success, 0.1) },
+                { backgroundColor: withAlpha(colors.primary, 0.1) },
               ]}
             >
-              <DollarSign size={14} color={colors.success} strokeWidth={1.5} />
+              <Users size={14} color={colors.primary} strokeWidth={1.5} />
             </View>
-            <Text style={[styles.rewardText, { color: colors.success }]}>
-              {question.rewardAmount?.toFixed(2) || "0.00"}
+            <Text style={[styles.statText, { color: colors.textMuted }]}>
+              {Math.floor(Math.random() * 50) + 5} following
             </Text>
           </View>
 

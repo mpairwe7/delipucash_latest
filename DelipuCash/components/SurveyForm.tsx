@@ -10,6 +10,8 @@ import {
   Animated,
   Platform,
   Modal,
+  Share,
+  Clipboard,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -26,6 +28,13 @@ import {
   Upload,
   Eye,
   Info,
+  ToggleLeft,
+  Clock,
+  Hash,
+  AlignLeft,
+  FileText,
+  CircleDot,
+  Download,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -35,7 +44,17 @@ import { useCreateSurvey } from '@/services/hooks';
 import { UploadSurvey } from '@/types';
 import useUser from '@/utils/useUser';
 
-type QuestionType = 'text' | 'radio' | 'checkbox' | 'rating';
+type QuestionType =
+  | 'text'           // Short answer
+  | 'paragraph'      // Long answer / multi-line text
+  | 'radio'          // Multiple choice (single selection)
+  | 'checkbox'       // Checkboxes (multiple selection)
+  | 'dropdown'       // Dropdown (single selection from list)
+  | 'rating'         // Star rating / Linear scale
+  | 'boolean'        // Yes/No toggle
+  | 'date'           // Date picker
+  | 'time'           // Time picker
+  | 'number';        // Numeric input
 
 interface QuestionData {
   id: string;
@@ -214,6 +233,70 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
     }
   };
 
+  // Sample JSON template for download
+  const sampleJsonTemplate = {
+    title: "Customer Feedback",
+    description: "Help us improve our services",
+    questions: [
+      { text: "Rate our service", type: "rating", required: true, minValue: 1, maxValue: 5 },
+      { text: "Select features you use", type: "checkbox", options: ["Speed", "Design", "Support"] },
+      { text: "Choose your preference", type: "dropdown", options: ["Option A", "Option B", "Option C"] },
+      { text: "Would you recommend us?", type: "boolean" },
+      { text: "Your birth date", type: "date" },
+      { text: "Detailed feedback", type: "paragraph", placeholder: "Share your thoughts..." }
+    ]
+  };
+
+  const handleDownloadSample = async () => {
+    try {
+      const jsonString = JSON.stringify(sampleJsonTemplate, null, 2);
+
+      if (Platform.OS === 'web') {
+        // For web, create a download link
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'survey-template.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        // For mobile, use Share API with copy to clipboard option
+        Alert.alert(
+          'Survey Template',
+          'How would you like to get the template?',
+          [
+            {
+              text: 'Copy to Clipboard',
+              onPress: () => {
+                Clipboard.setString(jsonString);
+                Alert.alert('Copied!', 'Template copied to clipboard. Paste it into a .json file.');
+              },
+            },
+            {
+              text: 'Share',
+              onPress: async () => {
+                try {
+                  await Share.share({
+                    message: jsonString,
+                    title: 'Survey Template JSON',
+                  });
+                } catch {
+                  Alert.alert('Error', 'Failed to share template');
+                }
+              },
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      }
+    } catch {
+      Alert.alert('Error', 'Failed to export sample template');
+    }
+  };
+
   const handleSave = async () => {
     // Validation
     if (!title.trim()) {
@@ -226,8 +309,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       return;
     }
 
-    if (questions.some(q => (q.type === 'radio' || q.type === 'checkbox') && q.options.length < 2)) {
-      Alert.alert('Error', 'Choice questions must have at least 2 options');
+    // Validate options for choice-based questions
+    if (questions.some(q => (q.type === 'radio' || q.type === 'checkbox' || q.type === 'dropdown') && q.options.length < 2)) {
+      Alert.alert('Error', 'Choice questions (radio, checkbox, dropdown) must have at least 2 options');
       return;
     }
 
@@ -236,19 +320,66 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       return;
     }
 
-    // Convert questions to UploadSurvey format
-    const surveyQuestions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[] = questions.map(q => ({
-      text: q.text,
-      type: q.type,
-      options: q.type === 'rating' 
-        ? JSON.stringify({ min: q.minValue || 1, max: q.maxValue || 5, labels: ['Poor', 'Fair', 'Good', 'Very Good', 'Excellent'] })
-        : q.type === 'text'
-        ? JSON.stringify({ multiline: true, placeholder: q.placeholder || '' })
-        : JSON.stringify(q.options),
-      placeholder: q.placeholder || null,
-      minValue: q.type === 'rating' ? q.minValue || 1 : null,
-      maxValue: q.type === 'rating' ? q.maxValue || 5 : null,
-    }));
+    // Convert questions to UploadSurvey format based on type
+    const surveyQuestions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[] = questions.map(q => {
+      let options: string;
+      let minValue: number | null = null;
+      let maxValue: number | null = null;
+
+      switch (q.type) {
+        case 'rating':
+          minValue = q.minValue || 1;
+          maxValue = q.maxValue || 5;
+          options = JSON.stringify({
+            min: minValue,
+            max: maxValue,
+            labels: Array.from({ length: maxValue - minValue + 1 }, (_, i) => String(minValue! + i))
+          });
+          break;
+        case 'text':
+          options = JSON.stringify({ multiline: false, placeholder: q.placeholder || '' });
+          break;
+        case 'paragraph':
+          options = JSON.stringify({ multiline: true, placeholder: q.placeholder || '' });
+          break;
+        case 'boolean':
+          options = JSON.stringify({
+            yesLabel: q.options[0] || 'Yes',
+            noLabel: q.options[1] || 'No'
+          });
+          break;
+        case 'number':
+          minValue = q.minValue ?? null;
+          maxValue = q.maxValue ?? null;
+          options = JSON.stringify({
+            placeholder: q.placeholder || 'Enter a number',
+            min: minValue,
+            max: maxValue
+          });
+          break;
+        case 'date':
+          options = JSON.stringify({ format: 'YYYY-MM-DD' });
+          break;
+        case 'time':
+          options = JSON.stringify({ format: 'HH:mm' });
+          break;
+        case 'radio':
+        case 'checkbox':
+        case 'dropdown':
+        default:
+          options = JSON.stringify(q.options);
+          break;
+      }
+
+      return {
+        text: q.text,
+        type: q.type,
+        options,
+        placeholder: q.placeholder || null,
+        minValue,
+        maxValue,
+      };
+    });
 
     try {
       await createSurveyMutation.mutateAsync({
@@ -268,13 +399,37 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
     }
   };
 
-  const renderQuestionTypeIcon = (type: QuestionType) => {
+  const renderQuestionTypeIcon = (type: QuestionType, size: number = 16) => {
     switch (type) {
-      case 'text': return <Type size={16} color={colors.primary} />;
-      case 'radio': return <List size={16} color={colors.primary} />;
-      case 'checkbox': return <CheckSquare size={16} color={colors.primary} />;
-      case 'rating': return <Star size={16} color={colors.primary} />;
+      case 'text': return <Type size={size} color={colors.primary} />;
+      case 'paragraph': return <AlignLeft size={size} color={colors.primary} />;
+      case 'radio': return <CircleDot size={size} color={colors.primary} />;
+      case 'checkbox': return <CheckSquare size={size} color={colors.primary} />;
+      case 'dropdown': return <List size={size} color={colors.primary} />;
+      case 'rating': return <Star size={size} color={colors.primary} />;
+      case 'boolean': return <ToggleLeft size={size} color={colors.primary} />;
+      case 'date': return <Calendar size={size} color={colors.primary} />;
+      case 'time': return <Clock size={size} color={colors.primary} />;
+      case 'number': return <Hash size={size} color={colors.primary} />;
+      default: return <FileText size={size} color={colors.primary} />;
     }
+  };
+
+  // Helper to get question type label
+  const getQuestionTypeLabel = (type: QuestionType): string => {
+    const labels: Record<QuestionType, string> = {
+      text: 'Short Answer',
+      paragraph: 'Paragraph',
+      radio: 'Multiple Choice',
+      checkbox: 'Checkboxes',
+      dropdown: 'Dropdown',
+      rating: 'Linear Scale',
+      boolean: 'Yes/No',
+      date: 'Date',
+      time: 'Time',
+      number: 'Number',
+    };
+    return labels[type] || type;
   };
 
   const renderQuestionEditor = (question: QuestionData) => {
@@ -322,7 +477,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Question Type</Text>
               <View style={styles.typeSelector}>
-                {(['text', 'radio', 'checkbox', 'rating'] as QuestionType[]).map((type) => (
+                {(['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number'] as QuestionType[]).map((type) => (
                   <TouchableOpacity
                     key={type}
                     style={[
@@ -336,7 +491,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                       styles.typeText,
                       { color: question.type === type ? colors.primaryText : colors.text }
                     ]}>
-                      {type.charAt(0).toUpperCase() + type.slice(1)}
+                      {getQuestionTypeLabel(type)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -344,7 +499,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             </View>
 
             {/* Type-specific options */}
-            {(question.type === 'radio' || question.type === 'checkbox') && (
+            {(question.type === 'radio' || question.type === 'checkbox' || question.type === 'dropdown') && (
               <View style={styles.inputGroup}>
                 <View style={styles.optionHeader}>
                   <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Options</Text>
@@ -408,6 +563,112 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                   placeholderTextColor={colors.textMuted}
                   style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
                 />
+              </View>
+            )}
+
+            {question.type === 'paragraph' && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Placeholder</Text>
+                <TextInput
+                  value={question.placeholder}
+                  onChangeText={(placeholder) => updateQuestion(question.id, { placeholder })}
+                  placeholder="Enter placeholder text for long answer"
+                  placeholderTextColor={colors.textMuted}
+                  style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                />
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  Users can enter multiple lines of text
+                </Text>
+              </View>
+            )}
+
+            {question.type === 'boolean' && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Yes/No Labels (Optional)</Text>
+                <View style={styles.booleanLabels}>
+                  <View style={styles.booleanLabelInput}>
+                    <Text style={[styles.ratingLabel, { color: colors.textMuted }]}>Yes Label</Text>
+                    <TextInput
+                      value={question.options[0] || 'Yes'}
+                      onChangeText={(text) => {
+                        const newOptions = [...question.options];
+                        newOptions[0] = text;
+                        updateQuestion(question.id, { options: newOptions });
+                      }}
+                      placeholder="Yes"
+                      placeholderTextColor={colors.textMuted}
+                      style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    />
+                  </View>
+                  <View style={styles.booleanLabelInput}>
+                    <Text style={[styles.ratingLabel, { color: colors.textMuted }]}>No Label</Text>
+                    <TextInput
+                      value={question.options[1] || 'No'}
+                      onChangeText={(text) => {
+                        const newOptions = [...question.options];
+                        newOptions[1] = text;
+                        updateQuestion(question.id, { options: newOptions });
+                      }}
+                      placeholder="No"
+                      placeholderTextColor={colors.textMuted}
+                      style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    />
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {question.type === 'number' && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Number Range (Optional)</Text>
+                <View style={styles.ratingRow}>
+                  <View style={styles.ratingInput}>
+                    <Text style={[styles.ratingLabel, { color: colors.textMuted }]}>Min</Text>
+                    <TextInput
+                      value={question.minValue !== null && question.minValue !== undefined ? String(question.minValue) : ''}
+                      onChangeText={(text) => updateQuestion(question.id, { minValue: text ? parseInt(text) : undefined })}
+                      keyboardType="numeric"
+                      placeholder="No min"
+                      placeholderTextColor={colors.textMuted}
+                      style={[styles.ratingValue, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    />
+                  </View>
+                  <View style={styles.ratingInput}>
+                    <Text style={[styles.ratingLabel, { color: colors.textMuted }]}>Max</Text>
+                    <TextInput
+                      value={question.maxValue !== null && question.maxValue !== undefined ? String(question.maxValue) : ''}
+                      onChangeText={(text) => updateQuestion(question.id, { maxValue: text ? parseInt(text) : undefined })}
+                      keyboardType="numeric"
+                      placeholder="No max"
+                      placeholderTextColor={colors.textMuted}
+                      style={[styles.ratingValue, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    />
+                  </View>
+                </View>
+                <Text style={[styles.inputLabel, { color: colors.textMuted, marginTop: SPACING.sm }]}>Placeholder</Text>
+                <TextInput
+                  value={question.placeholder}
+                  onChangeText={(placeholder) => updateQuestion(question.id, { placeholder })}
+                  placeholder="Enter a number"
+                  placeholderTextColor={colors.textMuted}
+                  style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                />
+              </View>
+            )}
+
+            {question.type === 'date' && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  Users will select a date using a date picker
+                </Text>
+              </View>
+            )}
+
+            {question.type === 'time' && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  Users will select a time using a time picker
+                </Text>
               </View>
             )}
 
@@ -621,21 +882,34 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   "description": "Help us improve",
   "questions": [
     {
-      "text": "How satisfied are you?",
+      "text": "Rate our service",
       "type": "rating",
       "required": true,
       "minValue": 1,
       "maxValue": 5
     },
     {
-      "text": "Select your favorites",
+      "text": "Select features you use",
       "type": "checkbox",
       "options": ["Speed", "Design", "Support"]
     },
     {
+      "text": "Choose your preference",
+      "type": "dropdown",
+      "options": ["Option A", "Option B", "Option C"]
+    },
+    {
+      "text": "Would you recommend us?",
+      "type": "boolean"
+    },
+    {
+      "text": "Your birth date",
+      "type": "date"
+    },
+    {
       "text": "Any suggestions?",
-      "type": "text",
-      "placeholder": "Your feedback..."
+      "type": "paragraph",
+      "placeholder": "Your detailed feedback..."
     }
   ]
 }`}
@@ -646,10 +920,16 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               <Text style={[styles.exampleLabel, { color: colors.text }]}>Supported Question Types</Text>
               <View style={styles.typesGrid}>
                 {[
-                  { type: 'text', desc: 'Open-ended responses', icon: <Type size={18} color={colors.primary} /> },
-                  { type: 'radio', desc: 'Single choice from options', icon: <List size={18} color={colors.secondary} /> },
+                  { type: 'text', desc: 'Short answer', icon: <Type size={18} color={colors.primary} /> },
+                  { type: 'paragraph', desc: 'Long text response', icon: <AlignLeft size={18} color={colors.primary} /> },
+                  { type: 'radio', desc: 'Single choice', icon: <CircleDot size={18} color={colors.secondary} /> },
                   { type: 'checkbox', desc: 'Multiple selections', icon: <CheckSquare size={18} color={colors.info} /> },
-                  { type: 'rating', desc: 'Scale ratings (1-5)', icon: <Star size={18} color={colors.warning} /> },
+                  { type: 'dropdown', desc: 'Dropdown list', icon: <List size={18} color={colors.success} /> },
+                  { type: 'rating', desc: 'Linear scale', icon: <Star size={18} color={colors.warning} /> },
+                  { type: 'boolean', desc: 'Yes/No toggle', icon: <ToggleLeft size={18} color={colors.error} /> },
+                  { type: 'date', desc: 'Date picker', icon: <Calendar size={18} color={colors.primary} /> },
+                  { type: 'time', desc: 'Time picker', icon: <Clock size={18} color={colors.secondary} /> },
+                  { type: 'number', desc: 'Numeric input', icon: <Hash size={18} color={colors.info} /> },
                 ].map((item) => (
                   <View 
                     key={item.type} 
@@ -672,9 +952,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.tipsList}>
                   {[
                     'Set "required": true for mandatory questions',
-                    'Radio/checkbox need an "options" array',
+                    'Radio/checkbox/dropdown need an "options" array',
                     'Rating uses minValue & maxValue (default 1-5)',
-                    'Add "placeholder" for text input hints',
+                    'Add "placeholder" for text/paragraph/number inputs',
+                    'Boolean defaults to Yes/No, customize via options',
+                    'Number type supports minValue & maxValue validation',
                   ].map((tip, index) => (
                     <View key={index} style={styles.tipRow}>
                       <View style={[styles.tipBullet, { backgroundColor: colors.success }]} />
@@ -687,6 +969,14 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
             {/* Actions */}
             <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.modalDownloadBtn, { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, 0.08) }]}
+                onPress={handleDownloadSample}
+              >
+                <Download size={16} color={colors.primary} />
+                <Text style={[styles.modalDownloadText, { color: colors.primary }]}>Sample</Text>
+              </TouchableOpacity>
+
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { borderColor: colors.border }]}
                 onPress={() => setShowJsonModal(false)}
@@ -759,23 +1049,93 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                     />
                   )}
 
+                  {question.type === 'paragraph' && (
+                    <TextInput
+                      placeholder={question.placeholder || 'Your long answer'}
+                      style={[styles.previewInput, styles.previewTextArea, { borderColor: colors.border, color: colors.text }]}
+                      editable={false}
+                      multiline
+                    />
+                  )}
+
                   {(question.type === 'radio' || question.type === 'checkbox') && (
                     <View style={styles.previewOptions}>
                       {question.options.map((option, optIndex) => (
                         <View key={optIndex} style={styles.previewOption}>
-                          <View style={[styles.previewRadio, { borderColor: colors.border }]} />
+                          <View style={[
+                            question.type === 'radio' ? styles.previewRadio : styles.previewCheckbox,
+                            { borderColor: colors.border }
+                          ]} />
                           <Text style={[styles.previewOptionText, { color: colors.text }]}>{option}</Text>
                         </View>
                       ))}
                     </View>
                   )}
 
+                  {question.type === 'dropdown' && (
+                    <View style={[styles.previewDropdown, { borderColor: colors.border }]}>
+                      <Text style={[styles.previewDropdownText, { color: colors.textMuted }]}>
+                        Select an option
+                      </Text>
+                      <ChevronDown size={16} color={colors.textMuted} />
+                    </View>
+                  )}
+
                   {question.type === 'rating' && (
                     <View style={styles.previewRating}>
-                      {Array.from({ length: question.maxValue || 5 }, (_, i) => (
-                        <Star key={i} size={20} color={colors.primary} fill="none" />
+                      {Array.from({ length: (question.maxValue || 5) - (question.minValue || 1) + 1 }, (_, i) => (
+                        <View key={i} style={styles.previewRatingItem}>
+                          <Text style={[styles.previewRatingNumber, { color: colors.textMuted }]}>
+                            {(question.minValue || 1) + i}
+                          </Text>
+                          <View style={[styles.previewRatingCircle, { borderColor: colors.border }]} />
+                        </View>
                       ))}
                     </View>
+                  )}
+
+                  {question.type === 'boolean' && (
+                    <View style={styles.previewBoolean}>
+                      <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
+                        <View style={[styles.previewRadio, { borderColor: colors.border }]} />
+                        <Text style={[styles.previewOptionText, { color: colors.text }]}>
+                          {question.options[0] || 'Yes'}
+                        </Text>
+                      </View>
+                      <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
+                        <View style={[styles.previewRadio, { borderColor: colors.border }]} />
+                        <Text style={[styles.previewOptionText, { color: colors.text }]}>
+                          {question.options[1] || 'No'}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {question.type === 'date' && (
+                    <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
+                      <Calendar size={16} color={colors.textMuted} />
+                      <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
+                        Select a date
+                      </Text>
+                    </View>
+                  )}
+
+                  {question.type === 'time' && (
+                    <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
+                      <Clock size={16} color={colors.textMuted} />
+                      <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
+                        Select a time
+                      </Text>
+                    </View>
+                  )}
+
+                  {question.type === 'number' && (
+                    <TextInput
+                      placeholder={question.placeholder || 'Enter a number'}
+                      style={[styles.previewInput, { borderColor: colors.border, color: colors.text }]}
+                      editable={false}
+                      keyboardType="numeric"
+                    />
                   )}
                 </View>
               ))}
@@ -970,6 +1330,18 @@ const styles = StyleSheet.create({
     padding: SPACING.sm,
     fontSize: TYPOGRAPHY.fontSize.base,
     textAlign: 'center',
+  },
+  helperText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xs,
+    fontStyle: 'italic',
+  },
+  booleanLabels: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  booleanLabelInput: {
+    flex: 1,
   },
   requiredRow: {
     flexDirection: 'row',
@@ -1208,6 +1580,20 @@ const styles = StyleSheet.create({
     borderTopWidth: BORDER_WIDTH.thin,
     gap: SPACING.sm,
   },
+  modalDownloadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.md,
+    gap: SPACING.xs,
+  },
+  modalDownloadText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
+  },
   modalCancelBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -1273,6 +1659,10 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
   },
+  previewTextArea: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
   previewOptions: {
     gap: SPACING.sm,
   },
@@ -1287,12 +1677,69 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH.thin,
     borderRadius: 8,
   },
+  previewCheckbox: {
+    width: 16,
+    height: 16,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.xs,
+  },
   previewOptionText: {
     fontSize: TYPOGRAPHY.fontSize.base,
   },
   previewRating: {
     flexDirection: 'row',
+    gap: SPACING.sm,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  previewRatingItem: {
+    alignItems: 'center',
     gap: SPACING.xs,
+  },
+  previewRatingNumber: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  previewRatingCircle: {
+    width: 20,
+    height: 20,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: 10,
+  },
+  previewDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  previewDropdownText: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  previewBoolean: {
+    flexDirection: 'row',
+    gap: SPACING.lg,
+  },
+  previewBooleanOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+  },
+  previewDateInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.sm,
+    padding: SPACING.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  previewDateText: {
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 });
 
