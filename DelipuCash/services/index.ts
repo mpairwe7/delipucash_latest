@@ -55,3 +55,10 @@ export {
 
 // Survey Response TanStack Query Hooks (NEW - Industry Standard)
 export * from "./surveyResponseHooks";
+
+// ============================================================================
+// RevenueCat Purchases (Google Play Billing / App Store)
+// ============================================================================
+export * from "./purchasesService";
+export { purchasesService, default as purchasesServiceInstance } from "./purchasesService";
+export * from "./purchasesHooks";
