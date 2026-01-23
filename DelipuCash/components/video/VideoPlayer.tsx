@@ -42,6 +42,7 @@ import {
   Pressable,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import * as Haptics from 'expo-haptics';
 import {
   X,
@@ -379,8 +380,28 @@ function VideoPlayerComponent({
         clearTimeout(tapTimeoutRef.current);
       }
       player?.pause();
+      // Reset orientation to portrait when closing
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
     };
   }, [player]);
+
+  // Handle fullscreen orientation changes
+  useEffect(() => {
+    const updateOrientation = async () => {
+      try {
+        if (isFullscreen) {
+          // Lock to landscape when fullscreen
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        } else {
+          // Return to portrait when exiting fullscreen
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        }
+      } catch (error) {
+        console.warn('Failed to change orientation:', error);
+      }
+    };
+    updateOrientation();
+  }, [isFullscreen]);
 
   // ============================================================================
   // CONTROL VISIBILITY HANDLERS

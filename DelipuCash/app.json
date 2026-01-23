@@ -3,7 +3,7 @@
     "name": "DelipuCash",
     "slug": "DelipuCash",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/logo.png",
     "scheme": "delipucash",
     "userInterfaceStyle": "automatic",
