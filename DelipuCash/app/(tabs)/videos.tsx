@@ -70,7 +70,13 @@ import {
   LiveStreamScreen,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
-import { useAds } from "@/services/adHooksRefactored";
+import {
+  useBannerAds,
+  useAdsForPlacement,
+  useRecordAdClick,
+  useRecordAdImpression,
+} from "@/services/adHooksRefactored";
+import { BannerAd, NativeAd, CompactAd, FeaturedAd } from "@/components/ads";
 import { Video } from "@/types";
 import * as Haptics from "expo-haptics";
 
@@ -118,7 +124,20 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: likeVideo } = useLikeVideo();
   
   // Ad data using TanStack Query for optimized caching
-  const { data: adsData } = useAds({ sponsored: true, isActive: true, limit: 3 });
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds();
+  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video');
+  const { mutate: recordAdClick } = useRecordAdClick();
+  const { mutate: recordAdImpression } = useRecordAdImpression();
+
+  // Ad handlers for analytics tracking
+  const handleAdClick = useCallback((ad: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    recordAdClick(ad.id);
+  }, [recordAdClick]);
+
+  const handleAdImpression = useCallback((ad: any) => {
+    recordAdImpression(ad.id);
+  }, [recordAdImpression]);
 
   // Memoized Data
   const videos = useMemo(() => videosData?.videos ?? [], [videosData?.videos]);
@@ -147,8 +166,8 @@ export default function VideosScreen(): React.ReactElement {
 
   // Sponsored ads from TanStack Query cache
   const sponsoredAds = useMemo(
-    () => adsData?.data?.filter((ad) => ad.sponsored).slice(0, 3) ?? [],
-    [adsData]
+    () => videoAds?.filter((ad: any) => ad.sponsored).slice(0, 3) ?? [],
+    [videoAds]
   );
 
   const totalLikes = useMemo(
@@ -168,9 +187,9 @@ export default function VideosScreen(): React.ReactElement {
   const onRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
-    await refetch();
+    await Promise.all([refetch(), refetchBannerAds(), refetchVideoAds()]);
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetch, refetchBannerAds, refetchVideoAds]);
 
   const handleComment = useCallback((video: Video): void => {
     router.push(`/question-comments/${video.id}` as Href);
@@ -480,6 +499,18 @@ export default function VideosScreen(): React.ReactElement {
                 />
               </View>
 
+              {/* Banner Ad - High visibility after stats */}
+              {bannerAds && bannerAds.length > 0 && (
+                <View style={styles.adContainer}>
+                  <BannerAd
+                    ad={bannerAds[0]}
+                    onAdClick={handleAdClick}
+                    onAdLoad={() => handleAdImpression(bannerAds[0])}
+                    style={styles.bannerAd}
+                  />
+                </View>
+              )}
+
               {/* Up Next Section - YouTube-like auto-play queue */}
               {videoQueue.length > 0 && (
                 <>
@@ -643,6 +674,18 @@ export default function VideosScreen(): React.ReactElement {
                 ))}
               </ScrollView>
 
+              {/* Native Ad - Blends naturally after trending content */}
+              {videoAds && videoAds.length > 0 && (
+                <View style={styles.adContainer}>
+                  <NativeAd
+                    ad={videoAds[0]}
+                    onAdClick={handleAdClick}
+                    onAdLoad={() => handleAdImpression(videoAds[0])}
+                    style={styles.nativeAd}
+                  />
+                </View>
+              )}
+
               {/* Popular Section */}
               <SectionHeader
                 title="Popular"
@@ -663,6 +706,18 @@ export default function VideosScreen(): React.ReactElement {
                   </View>
                 ))}
               </View>
+
+              {/* Compact Ad - Minimal footprint before sponsored content */}
+              {bannerAds && bannerAds.length > 1 && (
+                <View style={styles.adContainer}>
+                  <CompactAd
+                    ad={bannerAds[1]}
+                    onAdClick={handleAdClick}
+                    onAdLoad={() => handleAdImpression(bannerAds[1])}
+                    style={styles.compactAd}
+                  />
+                </View>
+              )}
 
               {/* Sponsored Section */}
               <SectionHeader
@@ -1033,5 +1088,23 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: "center",
+  },
+  // Ad Styles
+  adContainer: {
+    marginVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  bannerAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  nativeAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  compactAd: {
+    borderRadius: RADIUS.md,
+    overflow: "hidden",
   },
 });

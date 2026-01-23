@@ -15,6 +15,13 @@ import {
     useUnreadCount,
     useUserStats,
 } from "@/services/hooks";
+import {
+    useBannerAds,
+    useAdsForPlacement,
+    useRecordAdClick,
+    useRecordAdImpression,
+} from "@/services/adHooksRefactored";
+import { BannerAd, NativeAd, CompactAd } from "@/components/ads";
 import { SubscriptionStatus, UserRole } from "@/types";
 import {
     BORDER_WIDTH,
@@ -84,6 +91,32 @@ export default function QuestionsScreen(): React.ReactElement {
     const { data: recentQuestions } = useRecentQuestions(6);
     const { data: userStats } = useUserStats();
     const { data: unreadCount } = useUnreadCount();
+
+    // Ad hooks - TanStack Query for intelligent ad loading
+    const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
+    const { data: questionAds, refetch: refetchQuestionAds } = useAdsForPlacement('question', 3);
+    const recordAdClick = useRecordAdClick();
+    const recordAdImpression = useRecordAdImpression();
+
+    // Ad click handler with analytics tracking
+    const handleAdClick = useCallback((ad: any) => {
+      recordAdClick.mutate({
+        adId: ad.id,
+        placement: 'question',
+        deviceInfo: { platform: 'ios', version: '1.0' },
+      });
+    }, [recordAdClick]);
+
+    // Ad impression tracking
+    const handleAdImpression = useCallback((ad: any, duration: number = 1000) => {
+      recordAdImpression.mutate({
+        adId: ad.id,
+        placement: 'question',
+        duration,
+        wasVisible: true,
+        viewportPercentage: 100,
+      });
+    }, [recordAdImpression]);
 
     const questions = useMemo(() => {
       const list = questionsData?.questions || [];
@@ -174,7 +207,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
     const onRefresh = useCallback(async () => {
       setRefreshing(true);
-      await Promise.all([refetch()]);
+      await Promise.all([refetch(), refetchBannerAds(), refetchQuestionAds()]);
       setRefreshing(false);
     }, [refetch]);
 
@@ -443,6 +476,18 @@ export default function QuestionsScreen(): React.ReactElement {
             />
           </View>
 
+          {/* Smart Banner Ad - Non-intrusive placement after stats */}
+          {bannerAds && bannerAds.length > 0 && (
+            <View style={styles.adContainer}>
+              <BannerAd
+                ad={bannerAds[0]}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(bannerAds[0])}
+                style={styles.bannerAd}
+              />
+            </View>
+          )}
+
           {/* Instant Reward Questions */}
           <SectionHeader
             title="Instant-reward questions"
@@ -494,6 +539,18 @@ export default function QuestionsScreen(): React.ReactElement {
             )}
           </View>
 
+          {/* Native Ad - Blends with content between sections */}
+          {questionAds && questionAds.length > 0 && (
+            <View style={styles.adContainer}>
+              <NativeAd
+                ad={questionAds[0]}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(questionAds[0])}
+                style={styles.nativeAd}
+              />
+            </View>
+          )}
+
           {/* Recent Questions - Quora-like discussion feed */}
           <SectionHeader
             title="Recent discussions"
@@ -537,6 +594,18 @@ export default function QuestionsScreen(): React.ReactElement {
               <Text style={[styles.earnBadgeText, { color: colors.info }]}>Join discussion</Text>
             </View>
           </View>
+
+          {/* Compact Ad - Minimal footprint before all questions */}
+          {bannerAds && bannerAds.length > 1 && (
+            <View style={styles.adContainer}>
+              <CompactAd
+                ad={bannerAds[1]}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(bannerAds[1])}
+                style={styles.compactAd}
+              />
+            </View>
+          )}
 
           {/* All Questions List */}
           <SectionHeader
@@ -1056,5 +1125,23 @@ function ActionCard({
     cancelButtonText: {
       fontFamily: TYPOGRAPHY.fontFamily.medium,
       fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    // Ad Styles
+    adContainer: {
+      marginVertical: SPACING.md,
+      borderRadius: RADIUS.lg,
+      overflow: "hidden",
+    },
+    bannerAd: {
+      borderRadius: RADIUS.lg,
+      overflow: "hidden",
+    },
+    nativeAd: {
+      borderRadius: RADIUS.lg,
+      overflow: "hidden",
+    },
+    compactAd: {
+      borderRadius: RADIUS.md,
+      overflow: "hidden",
     },
   });
