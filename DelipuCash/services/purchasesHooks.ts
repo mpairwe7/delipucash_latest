@@ -117,6 +117,9 @@ export function useSurveyCreatorAccess() {
  * - Upload videos larger than 20MB (up to 500MB)
  * - Livestream longer than 5 minutes (up to 2 hours)
  * 
+ * This hook combines RevenueCat subscription status with backend API limits.
+ * The backend is the source of truth for actual limits.
+ * 
  * @example
  * ```tsx
  * const { hasVideoPremium, maxUploadSize, maxLivestreamDuration } = useVideoPremiumAccess();
@@ -129,8 +132,20 @@ export function useSurveyCreatorAccess() {
 export function useVideoPremiumAccess() {
   const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
 
-  // Check if user has video_premium entitlement
-  const hasVideoPremium = subscription?.entitlements?.includes(ENTITLEMENTS.VIDEO_PREMIUM) ?? false;
+  // Check if user has video_premium entitlement from RevenueCat
+  // Also consider general premium/active subscription for video features
+  const hasVideoPremium = (
+    subscription?.entitlements?.includes(ENTITLEMENTS.VIDEO_PREMIUM) ||
+    subscription?.entitlements?.includes(ENTITLEMENTS.PREMIUM) ||
+    subscription?.isActive
+  ) ?? false;
+
+  // Constants for limits (synced with backend/VideoStore)
+  const FREE_UPLOAD_LIMIT = 20 * 1024 * 1024; // 20MB
+  const PREMIUM_UPLOAD_LIMIT = 500 * 1024 * 1024; // 500MB
+  const FREE_DURATION_LIMIT = 300; // 5 minutes
+  const PREMIUM_LIVESTREAM_LIMIT = 7200; // 2 hours
+  const PREMIUM_RECORDING_LIMIT = 1800; // 30 minutes
 
   return {
     hasVideoPremium,
@@ -138,9 +153,13 @@ export function useVideoPremiumAccess() {
     subscription,
     refetch,
     // Return limits based on premium status
-    maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 20 * 1024 * 1024, // 500MB vs 20MB
-    maxLivestreamDuration: hasVideoPremium ? 7200 : 300, // 2 hours vs 5 minutes
-    maxRecordingDuration: hasVideoPremium ? 1800 : 300, // 30 minutes vs 5 minutes
+    maxUploadSize: hasVideoPremium ? PREMIUM_UPLOAD_LIMIT : FREE_UPLOAD_LIMIT,
+    maxLivestreamDuration: hasVideoPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
+    maxRecordingDuration: hasVideoPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
+    // Formatted versions for display
+    maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '20 MB',
+    maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
+    maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
   };
 }
 

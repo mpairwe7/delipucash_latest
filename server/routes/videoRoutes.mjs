@@ -8,10 +8,20 @@ import {
   likeVideo,
   commentPost,
   bookmarkVideo,
-  incrementVideoViews
+  incrementVideoViews,
+  // Video premium & limits endpoints
+  getVideoLimits,
+  validateUpload,
+  startLivestream,
+  endLivestream,
+  validateSessionDuration,
 } from '../controllers/videoController.mjs';
 
 const router = express.Router();
+
+// ============================================================================
+// VIDEO CRUD ROUTES
+// ============================================================================
 
 // Route to create a new video
 router.post('/create', createVideo);
@@ -39,5 +49,24 @@ router.put('/update/:id', updateVideo);
 
 // Route to delete a video
 router.delete('/delete/:id', deleteVideo);
+
+// ============================================================================
+// VIDEO PREMIUM & LIMITS ROUTES
+// ============================================================================
+
+// Get user's video premium status and limits
+router.get('/limits/:userId', getVideoLimits);
+
+// Validate upload request before uploading (check file size against user's limit)
+router.post('/validate-upload', validateUpload);
+
+// Start a livestream session
+router.post('/livestream/start', startLivestream);
+
+// End a livestream session
+router.post('/livestream/end', endLivestream);
+
+// Validate session duration (for recording or livestream)
+router.post('/validate-session', validateSessionDuration);
 
 export default router;

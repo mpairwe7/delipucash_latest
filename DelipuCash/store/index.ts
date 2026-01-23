@@ -171,3 +171,51 @@ export type {
   InstantRewardUIState,
   InstantRewardUIActions,
 } from './InstantRewardStore';
+
+// ============================================================================
+// Video Store (NEW - Industry Standard)
+// Manages video upload, recording, livestream state and premium limits
+// ============================================================================
+export {
+  useVideoStore,
+  // Constants
+  FREE_UPLOAD_LIMIT_BYTES,
+  PREMIUM_UPLOAD_LIMIT_BYTES,
+  FREE_LIVESTREAM_LIMIT_SECONDS,
+  PREMIUM_LIVESTREAM_LIMIT_SECONDS,
+  PREMIUM_RECORDING_LIMIT_SECONDS,
+  // Selectors
+  selectPremiumStatus,
+  selectHasVideoPremium,
+  selectMaxUploadSize,
+  selectMaxRecordingDuration,
+  selectMaxLivestreamDuration,
+  selectCurrentUpload,
+  selectUploadHistory,
+  selectIsUploading,
+  selectCurrentRecording,
+  selectRecordingHistory,
+  selectIsRecording,
+  selectCurrentLivestream,
+  selectLivestreamHistory,
+  selectIsLive,
+  selectActiveWarning,
+  selectShowUpgradePrompt,
+  selectLastError,
+  // Computed selectors
+  selectUploadProgress,
+  selectRecordingProgress,
+  selectLivestreamProgress,
+} from './VideoStore';
+export type {
+  UploadStatus,
+  RecordingStatus,
+  LivestreamStatus,
+  VideoUploadProgress,
+  RecordingSession,
+  LivestreamSession,
+  VideoPremiumStatus,
+  VideoLimitsWarning,
+  VideoState,
+  VideoActions,
+} from './VideoStore';

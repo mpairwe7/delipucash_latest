@@ -1090,3 +1090,102 @@ export function useClaimDailyReward(): UseMutationResult<{ points: number; messa
     },
   });
 }
+
+// ===========================================
+// Video Premium & Limits Hooks
+// ===========================================
+
+import videoApi, {
+  VideoPremiumLimits,
+  ValidateUploadRequest,
+  ValidateUploadResponse,
+  StartLivestreamRequest,
+  LivestreamSessionResponse,
+  EndLivestreamRequest,
+  ValidateSessionRequest,
+  ValidateSessionResponse,
+} from './videoApi';
+
+// Query keys for video limits
+export const videoLimitsQueryKeys = {
+  limits: (userId: string) => ['video', 'limits', userId] as const,
+  validateUpload: ['video', 'validateUpload'] as const,
+  validateSession: ['video', 'validateSession'] as const,
+};
+
+/**
+ * Hook to fetch user's video premium status and limits
+ * @param userId - The user's ID
+ */
+export function useVideoLimits(userId: string | undefined): UseQueryResult<VideoPremiumLimits, Error> {
+  return useQuery({
+    queryKey: videoLimitsQueryKeys.limits(userId || ''),
+    queryFn: async () => {
+      if (!userId) throw new Error('User ID is required');
+      const response = await videoApi.getVideoLimits(userId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    enabled: Boolean(userId),
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Hook to validate file upload before uploading
+ */
+export function useValidateUpload(): UseMutationResult<ValidateUploadResponse, Error, ValidateUploadRequest> {
+  return useMutation({
+    mutationFn: async (data: ValidateUploadRequest) => {
+      const response = await videoApi.validateUpload(data);
+      if (!response.success && response.data?.error) {
+        // Return the error response data for handling in UI
+        throw Object.assign(new Error(response.error || 'Validation failed'), {
+          validationError: response.data,
+        });
+      }
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Hook to start a livestream session
+ */
+export function useStartLivestream(): UseMutationResult<LivestreamSessionResponse, Error, StartLivestreamRequest> {
+  return useMutation({
+    mutationFn: async (data: StartLivestreamRequest) => {
+      const response = await videoApi.startLivestream(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Hook to end a livestream session
+ */
+export function useEndLivestream(): UseMutationResult<{ endedAt: string }, Error, EndLivestreamRequest> {
+  return useMutation({
+    mutationFn: async (data: EndLivestreamRequest) => {
+      const response = await videoApi.endLivestream(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Hook to validate session duration (recording or livestream)
+ */
+export function useValidateSession(): UseMutationResult<ValidateSessionResponse, Error, ValidateSessionRequest> {
+  return useMutation({
+    mutationFn: async (data: ValidateSessionRequest) => {
+      const response = await videoApi.validateSession(data);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+  });
+}

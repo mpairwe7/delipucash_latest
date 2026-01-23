@@ -26,11 +26,12 @@ import { router, Href } from 'expo-router';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, withAlpha } from '@/utils/theme';
 import {
   MAX_RECORDING_DURATION,
-
   MAX_LIVESTREAM_DURATION_PREMIUM,
   formatDuration,
 } from '@/utils/video-utils';
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
+import { useVideoStore, selectRecordingProgress, selectLivestreamStatus } from '@/store/VideoStore';
+import { useStartLivestream, useEndLivestream } from '@/services/hooks';
 
 // Components
 import { CameraControls } from './CameraControls';
@@ -97,11 +98,39 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const { colors } = useTheme();
   const { hasVideoPremium, maxRecordingDuration } = useVideoPremiumAccess();
 
+  // Video store for state management (selectors available for UI display if needed)
+  const storeRecordingProgress = useVideoStore(selectRecordingProgress);
+  const storeLivestreamStatus = useVideoStore(selectLivestreamStatus);
+  const { 
+    startRecording: storeStartRecording, 
+    stopRecording: storeStopRecording,
+    updateRecordingTime,
+    startLivestream: storeStartLivestream,
+    endLivestream: storeEndLivestream,
+    setPremiumStatus,
+  } = useVideoStore();
+
+  // Use store state for display (exposed for parent components if needed)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const isStoreRecording = storeRecordingProgress.isRecording;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const isStoreLive = storeLivestreamStatus.isActive;
+
+  // API hooks for server-side session management
+  const startLivestreamMutation = useStartLivestream();
+  const endLivestreamMutation = useEndLivestream();
+
+  // Sync premium status with store
+  useEffect(() => {
+    setPremiumStatus(hasVideoPremium);
+  }, [hasVideoPremium, setPremiumStatus]);
+
   // Use premium limits or prop override
   const effectiveMaxDuration = propMaxDuration ?? (hasVideoPremium ? maxRecordingDuration : MAX_RECORDING_DURATION);
   
   // Refs
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -181,6 +210,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime(prev => {
           const newTime = prev + 1;
+          
+          // Sync with store
+          updateRecordingTime(newTime);
 
           // Show warning 30 seconds before limit (for free users)
           if (!hasVideoPremium && newTime === effectiveMaxDuration - 30) {
@@ -225,7 +257,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         clearInterval(recordingTimerRef.current);
       }
     };
-  }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade]);
+  }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade, updateRecordingTime]);
 
   // Handlers
   const toggleCamera = useCallback(() => {
@@ -278,6 +310,20 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [showControls, fadeAnim]);
   
   const startRecording = useCallback(async () => {
+    // Update store state
+    storeStartRecording();
+    
+    // Start server-side livestream session
+    try {
+      const response = await startLivestreamMutation.mutateAsync({
+        isLivestream: true,
+      });
+      sessionIdRef.current = response.sessionId;
+      storeStartLivestream(response.sessionId);
+    } catch {
+      console.warn('Failed to start server session, continuing locally');
+    }
+
     setIsRecording(true);
     setShowControls(true);
     
@@ -286,9 +332,26 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [fadeAnim]);
+  }, [fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream]);
   
   const stopRecording = useCallback(async () => {
+    // Update store state
+    storeStopRecording();
+    
+    // End server-side session
+    if (sessionIdRef.current) {
+      try {
+        await endLivestreamMutation.mutateAsync({
+          sessionId: sessionIdRef.current,
+          duration: recordingTime,
+        });
+        storeEndLivestream();
+      } catch {
+        console.warn('Failed to end server session');
+      }
+      sessionIdRef.current = null;
+    }
+
     setIsRecording(false);
     setIsUploading(true);
     
@@ -323,7 +386,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       }
       setUploadProgress(Math.min(Math.round(progress), 100));
     }, 200);
-  }, [recordingTime, onVideoUploaded, onClose]);
+  }, [recordingTime, onVideoUploaded, onClose, storeStopRecording, endLivestreamMutation, storeEndLivestream]);
 
   // Update ref when stopRecording changes
   useEffect(() => {

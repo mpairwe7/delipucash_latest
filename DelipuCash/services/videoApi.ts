@@ -45,6 +45,12 @@ const VIDEO_ROUTES = {
   popular: "/api/videos/popular",
   byUser: (userId: string) => `/api/videos/user/${userId}`,
   categories: "/api/videos/categories",
+  // Video premium & limits
+  limits: (userId: string) => `/api/videos/limits/${userId}`,
+  validateUpload: "/api/videos/validate-upload",
+  livestreamStart: "/api/videos/livestream/start",
+  livestreamEnd: "/api/videos/livestream/end",
+  validateSession: "/api/videos/validate-session",
 } as const;
 
 // Helper to fetch JSON
@@ -91,6 +97,96 @@ export interface VideoStats {
   averageEngagement: number;
   watchTime: number; // in minutes
 }
+
+// ============================================================================
+// VIDEO PREMIUM & LIMITS TYPES
+// ============================================================================
+
+/** User's video premium status and limits */
+export interface VideoPremiumLimits {
+  hasVideoPremium: boolean;
+  maxUploadSize: number;
+  maxRecordingDuration: number;
+  maxLivestreamDuration: number;
+  maxUploadSizeFormatted: string;
+  maxRecordingDurationFormatted: string;
+  maxLivestreamDurationFormatted: string;
+}
+
+/** Upload validation request */
+export interface ValidateUploadRequest {
+  userId: string;
+  fileSize: number;
+  fileName?: string;
+  mimeType?: string;
+}
+
+/** Upload validation response */
+export interface ValidateUploadResponse {
+  valid: boolean;
+  message?: string;
+  error?: 'INVALID_FILE_TYPE' | 'FILE_TOO_LARGE';
+  upgradeRequired?: boolean;
+  currentLimit?: number;
+  premiumLimit?: number;
+  hasVideoPremium?: boolean;
+  fileSize?: number;
+  fileName?: string;
+  maxUploadSize?: number;
+}
+
+/** Livestream session request */
+export interface StartLivestreamRequest {
+  userId: string;
+  title?: string;
+  description?: string;
+}
+
+/** Livestream session response */
+export interface LivestreamSessionResponse {
+  sessionId: string;
+  streamKey: string;
+  maxDuration: number;
+  maxDurationFormatted: string;
+  hasVideoPremium: boolean;
+  streamer: {
+    id: string;
+    name: string;
+  };
+  title: string;
+  description: string;
+  startedAt: string;
+}
+
+/** End livestream request */
+export interface EndLivestreamRequest {
+  sessionId: string;
+  duration: number;
+  viewerCount?: number;
+  peakViewers?: number;
+}
+
+/** Session duration validation request */
+export interface ValidateSessionRequest {
+  userId: string;
+  sessionType: 'recording' | 'livestream';
+  currentDuration?: number;
+}
+
+/** Session duration validation response */
+export interface ValidateSessionResponse {
+  valid: boolean;
+  hasVideoPremium: boolean;
+  sessionType: 'recording' | 'livestream';
+  currentDuration: number;
+  maxDuration: number;
+  remainingSeconds: number;
+  isNearLimit: boolean;
+  limitReached: boolean;
+  upgradeRequired?: boolean;
+  premiumMaxDuration: number;
+}
+
 
 // Video filter options
 export interface VideoFilters {
@@ -935,6 +1031,200 @@ export const videoApi = {
       success: true,
       data: { reported: true },
       message: "Video reported successfully. Our team will review it.",
+    };
+  },
+
+  // ==========================================================================
+  // VIDEO PREMIUM & LIMITS API
+  // ==========================================================================
+
+  /**
+   * Get user's video premium status and upload/stream limits
+   */
+  async getVideoLimits(userId: string): Promise<ApiResponse<VideoPremiumLimits>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{ data: VideoPremiumLimits }>(
+        VIDEO_ROUTES.limits(userId)
+      );
+      if (response.success) {
+        return { success: true, data: response.data.data };
+      }
+      return response as ApiResponse<VideoPremiumLimits>;
+    }
+
+    // Mock response for development
+    await delay();
+    return {
+      success: true,
+      data: {
+        hasVideoPremium: false,
+        maxUploadSize: 20 * 1024 * 1024, // 20MB
+        maxRecordingDuration: 300, // 5 minutes
+        maxLivestreamDuration: 300, // 5 minutes
+        maxUploadSizeFormatted: '20 MB',
+        maxRecordingDurationFormatted: '5 minutes',
+        maxLivestreamDurationFormatted: '5 minutes',
+      },
+    };
+  },
+
+  /**
+   * Validate upload request before uploading (check file size against user's limit)
+   */
+  async validateUpload(data: ValidateUploadRequest): Promise<ApiResponse<ValidateUploadResponse>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{ data: ValidateUploadResponse }>(
+        VIDEO_ROUTES.validateUpload,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      );
+      if (response.success) {
+        return { success: true, data: response.data.data || response.data as unknown as ValidateUploadResponse };
+      }
+      // Return error response with validation details
+      return {
+        success: false,
+        data: response.data as unknown as ValidateUploadResponse,
+        error: response.error,
+      };
+    }
+
+    // Mock validation for development
+    await delay();
+    const FREE_LIMIT = 20 * 1024 * 1024; // 20MB
+    
+    if (data.fileSize > FREE_LIMIT) {
+      return {
+        success: false,
+        data: {
+          valid: false,
+          error: 'FILE_TOO_LARGE',
+          message: 'File size exceeds maximum allowed (20 MB)',
+          upgradeRequired: true,
+          currentLimit: FREE_LIMIT,
+          premiumLimit: 500 * 1024 * 1024, // 500MB
+        },
+        error: 'File too large',
+      };
+    }
+
+    return {
+      success: true,
+      data: {
+        valid: true,
+        hasVideoPremium: false,
+        fileSize: data.fileSize,
+        fileName: data.fileName,
+        maxUploadSize: FREE_LIMIT,
+      },
+    };
+  },
+
+  /**
+   * Start a livestream session
+   */
+  async startLivestream(data: StartLivestreamRequest): Promise<ApiResponse<LivestreamSessionResponse>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{ data: LivestreamSessionResponse }>(
+        VIDEO_ROUTES.livestreamStart,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      );
+      if (response.success) {
+        return { success: true, data: response.data.data };
+      }
+      return response as ApiResponse<LivestreamSessionResponse>;
+    }
+
+    // Mock response for development
+    await delay();
+    return {
+      success: true,
+      data: {
+        sessionId: `stream_${Date.now()}`,
+        streamKey: `key_${Math.random().toString(36).substr(2, 9)}`,
+        maxDuration: 300, // 5 minutes for free users
+        maxDurationFormatted: '5 minutes',
+        hasVideoPremium: false,
+        streamer: {
+          id: data.userId,
+          name: 'User',
+        },
+        title: data.title || 'Live Stream',
+        description: data.description || '',
+        startedAt: new Date().toISOString(),
+      },
+    };
+  },
+
+  /**
+   * End a livestream session
+   */
+  async endLivestream(data: EndLivestreamRequest): Promise<ApiResponse<{ endedAt: string }>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{ data: { endedAt: string } }>(
+        VIDEO_ROUTES.livestreamEnd,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      );
+      if (response.success) {
+        return { success: true, data: response.data.data };
+      }
+      return response as ApiResponse<{ endedAt: string }>;
+    }
+
+    // Mock response for development
+    await delay();
+    return {
+      success: true,
+      data: { endedAt: new Date().toISOString() },
+    };
+  },
+
+  /**
+   * Validate session duration (for recording or livestream)
+   */
+  async validateSession(data: ValidateSessionRequest): Promise<ApiResponse<ValidateSessionResponse>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<{ data: ValidateSessionResponse }>(
+        VIDEO_ROUTES.validateSession,
+        {
+          method: 'POST',
+          body: JSON.stringify(data),
+        }
+      );
+      if (response.success) {
+        return { success: true, data: response.data.data };
+      }
+      return response as ApiResponse<ValidateSessionResponse>;
+    }
+
+    // Mock response for development
+    await delay();
+    const maxDuration = 300; // 5 minutes for free users
+    const currentDuration = data.currentDuration || 0;
+    const remainingSeconds = Math.max(0, maxDuration - currentDuration);
+
+    return {
+      success: true,
+      data: {
+        valid: remainingSeconds > 0,
+        hasVideoPremium: false,
+        sessionType: data.sessionType,
+        currentDuration,
+        maxDuration,
+        remainingSeconds,
+        isNearLimit: remainingSeconds <= 30,
+        limitReached: remainingSeconds <= 0,
+        upgradeRequired: remainingSeconds <= 0,
+        premiumMaxDuration: data.sessionType === 'livestream' ? 7200 : 1800,
+      },
     };
   },
 };

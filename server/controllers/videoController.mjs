@@ -506,3 +506,297 @@ export const incrementVideoViews = asyncHandler(async (req, res) => {
     res.status(500).json({ message: 'Something went wrong' });
   }
 });
+
+// ============================================================================
+// VIDEO PREMIUM & LIMITS ENDPOINTS
+// ============================================================================
+
+// Video limits constants
+const VIDEO_LIMITS = {
+  FREE: {
+    maxUploadSizeBytes: 20 * 1024 * 1024, // 20MB
+    maxRecordingDurationSeconds: 300, // 5 minutes
+    maxLivestreamDurationSeconds: 300, // 5 minutes
+  },
+  PREMIUM: {
+    maxUploadSizeBytes: 500 * 1024 * 1024, // 500MB
+    maxRecordingDurationSeconds: 1800, // 30 minutes
+    maxLivestreamDurationSeconds: 7200, // 2 hours
+  },
+};
+
+// Get user's video premium status and limits
+export const getVideoLimits = asyncHandler(async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    // Validate user ID
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Get user with subscription status
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        currentSubscriptionId: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if user has video premium (could be based on subscription or specific entitlement)
+    // For now, we check if they have an active subscription
+    const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
+
+    const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
+
+    res.json({
+      success: true,
+      data: {
+        hasVideoPremium,
+        maxUploadSize: limits.maxUploadSizeBytes,
+        maxRecordingDuration: limits.maxRecordingDurationSeconds,
+        maxLivestreamDuration: limits.maxLivestreamDurationSeconds,
+        // Include human-readable versions
+        maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '20 MB',
+        maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
+        maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
+      },
+    });
+  } catch (error) {
+    console.error('Error getting video limits:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Validate upload request before uploading
+export const validateUpload = asyncHandler(async (req, res) => {
+  try {
+    const { userId, fileSize, fileName, mimeType } = req.body;
+
+    // Validate required fields
+    if (!userId || fileSize === undefined) {
+      return res.status(400).json({ 
+        message: 'userId and fileSize are required',
+        valid: false,
+      });
+    }
+
+    // Validate mime type
+    const allowedMimeTypes = ['video/mp4', 'video/quicktime', 'video/x-m4v', 'video/webm'];
+    if (mimeType && !allowedMimeTypes.includes(mimeType)) {
+      return res.status(400).json({
+        message: `Invalid file type. Allowed types: ${allowedMimeTypes.join(', ')}`,
+        valid: false,
+        error: 'INVALID_FILE_TYPE',
+      });
+    }
+
+    // Get user's subscription status
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        subscriptionStatus: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ 
+        message: 'User not found',
+        valid: false,
+      });
+    }
+
+    const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
+    const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
+
+    // Check file size
+    if (fileSize > limits.maxUploadSizeBytes) {
+      const maxSizeFormatted = hasVideoPremium ? '500 MB' : '20 MB';
+      const fileSizeFormatted = (fileSize / (1024 * 1024)).toFixed(1) + ' MB';
+      
+      return res.status(413).json({
+        message: `File size (${fileSizeFormatted}) exceeds maximum allowed (${maxSizeFormatted})`,
+        valid: false,
+        error: 'FILE_TOO_LARGE',
+        upgradeRequired: !hasVideoPremium,
+        currentLimit: limits.maxUploadSizeBytes,
+        premiumLimit: VIDEO_LIMITS.PREMIUM.maxUploadSizeBytes,
+      });
+    }
+
+    res.json({
+      success: true,
+      valid: true,
+      message: 'Upload validation passed',
+      data: {
+        hasVideoPremium,
+        fileSize,
+        fileName,
+        maxUploadSize: limits.maxUploadSizeBytes,
+      },
+    });
+  } catch (error) {
+    console.error('Error validating upload:', error);
+    res.status(500).json({ message: 'Something went wrong', valid: false });
+  }
+});
+
+// Start a livestream session
+export const startLivestream = asyncHandler(async (req, res) => {
+  try {
+    const { userId, title, description } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'User ID is required' });
+    }
+
+    // Get user's subscription status
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        subscriptionStatus: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
+    const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
+
+    // Generate stream key (in production, integrate with streaming service)
+    const streamKey = `stream_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    res.json({
+      success: true,
+      data: {
+        sessionId: streamKey,
+        streamKey,
+        maxDuration: limits.maxLivestreamDurationSeconds,
+        maxDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
+        hasVideoPremium,
+        streamer: {
+          id: user.id,
+          name: `${user.firstName} ${user.lastName}`,
+        },
+        title: title || 'Live Stream',
+        description: description || '',
+        startedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Error starting livestream:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// End a livestream session
+export const endLivestream = asyncHandler(async (req, res) => {
+  try {
+    const { sessionId, duration, viewerCount, peakViewers } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({ message: 'Session ID is required' });
+    }
+
+    // In production, save livestream stats to database
+    // For now, just acknowledge the end
+
+    res.json({
+      success: true,
+      message: 'Livestream ended successfully',
+      data: {
+        sessionId,
+        duration,
+        viewerCount,
+        peakViewers,
+        endedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Error ending livestream:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Check if user can start recording/livestream (duration validation)
+export const validateSessionDuration = asyncHandler(async (req, res) => {
+  try {
+    const { userId, sessionType, currentDuration } = req.body;
+
+    if (!userId || !sessionType) {
+      return res.status(400).json({ 
+        message: 'userId and sessionType are required',
+        valid: false,
+      });
+    }
+
+    if (!['recording', 'livestream'].includes(sessionType)) {
+      return res.status(400).json({
+        message: 'sessionType must be "recording" or "livestream"',
+        valid: false,
+      });
+    }
+
+    // Get user's subscription status
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        subscriptionStatus: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ 
+        message: 'User not found',
+        valid: false,
+      });
+    }
+
+    const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
+    const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
+    
+    const maxDuration = sessionType === 'livestream' 
+      ? limits.maxLivestreamDurationSeconds 
+      : limits.maxRecordingDurationSeconds;
+
+    const duration = currentDuration || 0;
+    const remainingSeconds = maxDuration - duration;
+    const isNearLimit = remainingSeconds <= 30;
+    const limitReached = remainingSeconds <= 0;
+
+    res.json({
+      success: true,
+      valid: !limitReached,
+      data: {
+        hasVideoPremium,
+        sessionType,
+        currentDuration: duration,
+        maxDuration,
+        remainingSeconds: Math.max(0, remainingSeconds),
+        isNearLimit,
+        limitReached,
+        upgradeRequired: limitReached && !hasVideoPremium,
+        premiumMaxDuration: sessionType === 'livestream' 
+          ? VIDEO_LIMITS.PREMIUM.maxLivestreamDurationSeconds 
+          : VIDEO_LIMITS.PREMIUM.maxRecordingDurationSeconds,
+      },
+    });
+  } catch (error) {
+    console.error('Error validating session duration:', error);
+    res.status(500).json({ message: 'Something went wrong', valid: false });
+  }
+});
