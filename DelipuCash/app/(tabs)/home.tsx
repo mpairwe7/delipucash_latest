@@ -91,6 +91,14 @@ import {
   useClaimDailyReward,
   useUnreadCount,
 } from "@/services/hooks";
+import {
+  useFeaturedAds,
+  useBannerAds,
+  useAdsForPlacement,
+  useRecordAdClick,
+  useRecordAdImpression,
+} from "@/services/adHooksRefactored";
+import { BannerAd, FeaturedAd, NativeAd, CompactAd } from "@/components/ads";
 
 const { width, height } = Dimensions.get("window");
 
@@ -196,6 +204,34 @@ export default function HomePage(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
+  // Ad hooks - TanStack Query for intelligent ad loading
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement('home', 4);
+  const recordAdClick = useRecordAdClick();
+  const recordAdImpression = useRecordAdImpression();
+
+  // Ad click handler with analytics tracking
+  const handleAdClick = useCallback((ad: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    recordAdClick.mutate({
+      adId: ad.id,
+      placement: 'home',
+      deviceInfo: { platform: Platform.OS, version: Platform.Version.toString() },
+    });
+  }, [recordAdClick]);
+
+  // Ad impression tracking
+  const handleAdImpression = useCallback((ad: any, duration: number = 1000) => {
+    recordAdImpression.mutate({
+      adId: ad.id,
+      placement: 'home',
+      duration,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
+  }, [recordAdImpression]);
+
   // Animation for Answer Now button
   const pulseAnim = useSharedValue(1);
 
@@ -228,9 +264,12 @@ export default function HomePage(): React.ReactElement {
       refetchUpcomingSurveys(),
       refetchDailyReward(),
       refetchStats(),
+      refetchFeaturedAds(),
+      refetchBannerAds(),
+      refetchHomeAds(),
     ]);
     setRefreshing(false);
-  }, [refetch, refetchVideos, refetchQuestions, refetchRunningSurveys, refetchUpcomingSurveys, refetchDailyReward, refetchStats]);
+  }, [refetch, refetchVideos, refetchQuestions, refetchRunningSurveys, refetchUpcomingSurveys, refetchDailyReward, refetchStats, refetchFeaturedAds, refetchBannerAds, refetchHomeAds]);
 
   const handleClaimDailyReward = useCallback(async () => {
     if (!user) {
@@ -354,6 +393,18 @@ export default function HomePage(): React.ReactElement {
           </Animated.View>
         )}
 
+        {/* Smart Banner Ad - Non-intrusive placement after daily rewards */}
+        {bannerAds && bannerAds.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(175).duration(400)} style={styles.adContainer}>
+            <BannerAd
+              ad={bannerAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[0])}
+              style={styles.bannerAd}
+            />
+          </Animated.View>
+        )}
+
         {/* Wallet Card */}
         <Animated.View entering={FadeInDown.delay(200).duration(400)}>
           <LinearGradient
@@ -467,6 +518,18 @@ export default function HomePage(): React.ReactElement {
           )}
         </Section>
 
+        {/* Featured Ad - Premium placement after trending content */}
+        {featuredAds && featuredAds.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(325).duration(400)} style={styles.adContainer}>
+            <FeaturedAd
+              ad={featuredAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(featuredAds[0])}
+              style={styles.featuredAd}
+            />
+          </Animated.View>
+        )}
+
         {/* Questions & Rewards Section */}
         <Section
           title="Questions & Rewards"
@@ -557,6 +620,18 @@ export default function HomePage(): React.ReactElement {
             </View>
           )}
         </Section>
+
+        {/* Native Ad - Blends with content between sections */}
+        {homeAds && homeAds.length > 1 && (
+          <Animated.View entering={FadeInDown.delay(425).duration(400)} style={styles.adContainer}>
+            <NativeAd
+              ad={homeAds[1]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(homeAds[1])}
+              style={styles.nativeAd}
+            />
+          </Animated.View>
+        )}
 
         {/* Running Surveys Section */}
         <Section
@@ -677,6 +752,18 @@ export default function HomePage(): React.ReactElement {
             ))}
           </View>
         </Section>
+
+        {/* Compact Ad - Minimal footprint before statistics */}
+        {bannerAds && bannerAds.length > 1 && (
+          <Animated.View entering={FadeInDown.delay(575).duration(400)} style={styles.adContainer}>
+            <CompactAd
+              ad={bannerAds[1]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[1])}
+              style={styles.compactAd}
+            />
+          </Animated.View>
+        )}
 
         {/* Statistics Section */}
         <Section
@@ -955,5 +1042,26 @@ const styles = StyleSheet.create({
   },
   engagementCard: {
     flex: 1,
+  },
+  // Ad Styles - Non-intrusive, industry-standard spacing
+  adContainer: {
+    marginVertical: SPACING.sm,
+  },
+  bannerAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  featuredAd: {
+    borderRadius: RADIUS.xl,
+    overflow: "hidden",
+    ...SHADOWS.md,
+  },
+  nativeAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  compactAd: {
+    borderRadius: RADIUS.base,
+    overflow: "hidden",
   },
 });

@@ -10,9 +10,10 @@ import {
   User,
   Video,
 } from "lucide-react-native";
-import React from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
+import { StyleSheet, View, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as ScreenOrientation from "expo-screen-orientation";
 
 interface TabIconProps {
   Icon: LucideIcon;
@@ -47,6 +48,15 @@ const tabs: TabConfig[] = [
 export default function TabLayout(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+
+  // Lock to portrait for main tab navigation
+  // Individual screens can unlock for specific features (video player, camera, etc.)
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
+        .catch((err) => console.warn('Failed to lock portrait in tabs:', err));
+    }
+  }, []);
 
   return (
     <Tabs

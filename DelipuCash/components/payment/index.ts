@@ -16,3 +16,7 @@ export {
   type SubscriptionPlanType,
   type PlanConfig,
 } from './SubscriptionPlanCard';
+
+export {
+  SubscriptionPackageCard,
+} from './SubscriptionPackageCard';

@@ -16,6 +16,7 @@ import {
   Platform,
   Modal,
 } from 'react-native';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { useTheme } from '@/utils/theme';
 import { MAX_RECORDING_DURATION } from '@/utils/video-utils';
 
@@ -98,6 +99,33 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   
   // Permissions (mock for demo)
   const { hasPermission, requestPermissions } = useMockCameraPermissions();
+
+  // Orientation state for landscape recording support
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [isLandscape, setIsLandscape] = useState(false);
+
+  // Handle orientation changes and cleanup
+  useEffect(() => {
+    if (!visible || Platform.OS === 'web') return;
+
+    // Allow landscape orientation when screen is visible
+    ScreenOrientation.unlockAsync().catch(() => { });
+
+    // Listen for orientation changes
+    const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
+      const { orientation } = event.orientationInfo;
+      setIsLandscape(
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
+        orientation === ScreenOrientation.Orientation.LANDSCAPE_RIGHT
+      );
+    });
+
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(subscription);
+      // Reset to portrait when closing
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
+    };
+  }, [visible]);
   
   // Auto-hide controls when recording
   useEffect(() => {

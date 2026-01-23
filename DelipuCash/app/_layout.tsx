@@ -5,12 +5,14 @@ import { useCallback, useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 import NotificationProvider from '@/utils/usePushNotifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/utils/auth/useAuth';
+import { purchasesService } from '@/services/purchasesService';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -29,6 +31,23 @@ export default function RootLayout() {
   useEffect(() => {
     initiate();
   }, [initiate]);
+
+  // Initialize RevenueCat Purchases SDK
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      purchasesService.initialize().catch((err) =>
+        console.warn('Failed to initialize RevenueCat:', err)
+      );
+    }
+  }, []);
+
+  // Set default orientation to portrait on app start
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP)
+        .catch((err) => console.warn('Failed to set initial orientation:', err));
+    }
+  }, []);
 
   // Keep the screen awake in development; swallow errors on unsupported platforms
   useEffect(() => {

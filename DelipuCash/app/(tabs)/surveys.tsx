@@ -5,8 +5,15 @@ import {
 } from "@/components";
 import { useRunningSurveys, useUnreadCount, useUpcomingSurveys } from "@/services/hooks";
 import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
+import {
+  useAdsForPlacement,
+  useBannerAds,
+  useRecordAdClick,
+  useRecordAdImpression,
+} from "@/services/adHooksRefactored";
+import { NativeAd, BannerAd } from "@/components/ads";
 import { useAuth, useAuthModal } from "@/utils/auth";
-import { Survey } from "@/types";
+import { Survey, Ad } from "@/types";
 import {
   BORDER_WIDTH,
   RADIUS,
@@ -91,6 +98,13 @@ export default function SurveysScreen(): React.ReactElement {
   const { data: upcomingSurveys = [], isLoading: loadingUpcoming, refetch: refetchUpcoming } = useUpcomingSurveys();
   const { data: unreadCount } = useUnreadCount();
 
+  // Ad hooks - TanStack Query for intelligent ad loading
+  // Following industry best practices: ads are contextually placed and non-intrusive
+  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 3);
+  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(2);
+  const recordAdClick = useRecordAdClick();
+  const recordAdImpression = useRecordAdImpression();
+
   const isLoading = loadingRunning || loadingUpcoming || loadingSubscription;
 
   // Stats for quick overview
@@ -155,9 +169,27 @@ export default function SurveysScreen(): React.ReactElement {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchRunning(), refetchUpcoming(), refetchSubscription()]);
+    await Promise.all([refetchRunning(), refetchUpcoming(), refetchSubscription(), refetchSurveyAds(), refetchBannerAds()]);
     setRefreshing(false);
-  }, [refetchRunning, refetchUpcoming, refetchSubscription]);
+  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds]);
+
+  // Ad interaction handlers - Following IAB standards
+  const handleAdClick = useCallback((ad: Ad) => {
+    recordAdClick.mutate({
+      adId: ad.id,
+      placement: 'survey',
+    });
+  }, [recordAdClick]);
+
+  const handleAdImpression = useCallback((ad: Ad) => {
+    recordAdImpression.mutate({
+      adId: ad.id,
+      placement: 'survey',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
+  }, [recordAdImpression]);
 
   const handleSurveyPress = (id: string): void => {
     router.push(`/survey/${id}`);
@@ -514,6 +546,19 @@ export default function SurveysScreen(): React.ReactElement {
           </View>
         )}
 
+          {/* ==================== NATIVE AD - Between Sections ==================== */}
+          {/* Industry Standard: Native ads blend with content, placed at natural break points */}
+          {surveyAds.length > 0 && (
+            <View style={styles.adContainer}>
+              <NativeAd
+                ad={surveyAds[0]}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(surveyAds[0])}
+                style={styles.nativeAd}
+              />
+            </View>
+          )}
+
         {/* ==================== UPCOMING SURVEYS ==================== */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionTitleRow}>
@@ -551,6 +596,19 @@ export default function SurveysScreen(): React.ReactElement {
             ))}
           </View>
         )}
+
+          {/* ==================== COMPACT BANNER AD - Before Tips ==================== */}
+          {/* Industry Standard: Banner ads at natural content boundaries, minimal disruption */}
+          {bannerAds.length > 0 && (
+            <View style={styles.bannerAdContainer}>
+              <BannerAd
+                ad={bannerAds[0]}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(bannerAds[0])}
+                style={styles.bannerAd}
+              />
+            </View>
+          )}
 
         {/* ==================== PRO TIPS ==================== */}
         <View style={styles.sectionHeader}>
@@ -915,5 +973,24 @@ const styles = StyleSheet.create({
   subscribeBtnText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+
+  // Ad Containers - Industry Standard: Non-intrusive, clearly labeled
+  adContainer: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.xs,
+  },
+  nativeAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  bannerAdContainer: {
+    marginVertical: SPACING.md,
+    alignItems: "center",
+  },
+  bannerAd: {
+    borderRadius: RADIUS.md,
+    overflow: "hidden",
+    width: "100%",
   },
 });
