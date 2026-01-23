@@ -643,6 +643,18 @@ export default function VideosScreen(): React.ReactElement {
                 )}
               </ScrollView>
 
+              {/* Featured Ad - Premium placement after live content */}
+              {videoAds && videoAds.length > 1 && (
+                <View style={styles.adContainer}>
+                  <FeaturedAd
+                    ad={videoAds[1]}
+                    onAdClick={handleAdClick}
+                    onAdLoad={() => handleAdImpression(videoAds[1])}
+                    style={styles.featuredAd}
+                  />
+                </View>
+              )}
+
               {/* Trending Section */}
               <SectionHeader
                 title="Trending"
@@ -1101,6 +1113,10 @@ const styles = StyleSheet.create({
   },
   nativeAd: {
     borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  featuredAd: {
+    borderRadius: RADIUS.xl,
     overflow: "hidden",
   },
   compactAd: {
