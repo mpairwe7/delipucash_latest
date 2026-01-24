@@ -171,9 +171,31 @@ const SAMPLE_EXCEL_TEMPLATE = `text\ttype\toptions\trequired\tminValue\tmaxValue
 // ============================================================================
 
 /**
- * Parse CSV line handling quoted values
+ * Remove UTF-8 BOM (Byte Order Mark) from content
+ * BOM is common in files created by Excel or Windows applications
  */
-function parseCSVLine(line: string): string[] {
+function stripBOM(content: string): string {
+  // UTF-8 BOM is EF BB BF, which appears as \uFEFF in JavaScript
+  if (content.charCodeAt(0) === 0xFEFF) {
+    return content.slice(1);
+  }
+  return content;
+}
+
+/**
+ * Normalize line endings to Unix-style (\n)
+ * Handles Windows (\r\n) and old Mac (\r) line endings
+ */
+function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * Parse delimited line handling quoted values
+ * Supports CSV (comma), TSV (tab), and SSV (semicolon) formats
+ * Follows RFC 4180 standards for CSV parsing
+ */
+function parseDelimitedLine(line: string, delimiter: string = ','): string[] {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -186,12 +208,13 @@ function parseCSVLine(line: string): string[] {
       inQuotes = true;
     } else if (char === '"' && inQuotes) {
       if (nextChar === '"') {
+        // Escaped quote (RFC 4180: "" represents a single ")
         current += '"';
         i++;
       } else {
         inQuotes = false;
       }
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current.trim());
       current = '';
     } else {
@@ -203,24 +226,74 @@ function parseCSVLine(line: string): string[] {
 }
 
 /**
- * Parse TSV line (tab-separated)
+ * Parse CSV line (comma-separated)
  */
-function parseTSVLine(line: string): string[] {
-  return line.split('\t').map(val => val.replace(/^["']|["']$/g, '').trim());
+function parseCSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ',');
 }
 
 /**
- * Detect delimiter in content
+ * Parse TSV line (tab-separated)
+ */
+function parseTSVLine(line: string): string[] {
+  return parseDelimitedLine(line, '\t');
+}
+
+/**
+ * Parse SSV line (semicolon-separated, common in European locales)
+ */
+function parseSSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ';');
+}
+
+/**
+ * Detect delimiter in content by analyzing the header row
+ * Uses heuristics: counts delimiters outside of quoted strings
  */
 function detectDelimiter(content: string): ',' | '\t' | ';' {
-  const firstLine = content.split('\n')[0] || '';
-  const tabCount = (firstLine.match(/\t/g) || []).length;
-  const commaCount = (firstLine.match(/,/g) || []).length;
-  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const lines = content.split('\n');
+  const firstLine = lines[0] || '';
 
-  if (tabCount >= commaCount && tabCount >= semicolonCount) return '\t';
-  if (semicolonCount >= commaCount) return ';';
+  // Count delimiters outside of quotes
+  let tabCount = 0;
+  let commaCount = 0;
+  let semicolonCount = 0;
+  let inQuotes = false;
+
+  for (const char of firstLine) {
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (!inQuotes) {
+      if (char === '\t') tabCount++;
+      else if (char === ',') commaCount++;
+      else if (char === ';') semicolonCount++;
+    }
+  }
+
+  // Tab takes priority (most reliable), then compare comma vs semicolon
+  if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return '\t';
+  if (semicolonCount > commaCount) return ';';
   return ',';
+}
+
+/**
+ * Detect file type from file name extension
+ */
+function detectFileTypeFromName(fileName: string): ImportFileType {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  switch (ext) {
+    case 'json':
+      return 'json';
+    case 'csv':
+      return 'csv';
+    case 'tsv':
+    case 'xls':
+    case 'xlsx':
+    case 'xlsb':
+      return 'excel';
+    default:
+      return 'csv'; // Default to CSV for unknown extensions
+  }
 }
 
 /**
@@ -228,18 +301,62 @@ function detectDelimiter(content: string): ',' | '\t' | ';' {
  */
 function isValidQuestionType(type: string): type is QuestionType {
   const validTypes = ['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number'];
-  return validTypes.includes(type);
+  return validTypes.includes(type?.toLowerCase());
+}
+
+/**
+ * Check if a question type requires options
+ */
+function requiresOptions(type: QuestionType): boolean {
+  return ['radio', 'checkbox', 'dropdown'].includes(type);
+}
+
+/**
+ * Validate a parsed question
+ */
+function validateQuestion(question: QuestionData): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!question.text?.trim()) {
+    errors.push('Question text is required');
+  }
+
+  if (requiresOptions(question.type) && (!question.options || question.options.length < 2)) {
+    errors.push(`${question.type} questions require at least 2 options`);
+  }
+
+  if (question.type === 'rating') {
+    const min = question.minValue ?? 1;
+    const max = question.maxValue ?? 5;
+    if (min >= max) {
+      errors.push('Rating minValue must be less than maxValue');
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 
 /**
  * Parse spreadsheet content (CSV/TSV/Excel export)
+ * Handles BOM, different line endings, and various delimiters
+ * Returns validated questions with parse warnings
  */
-function parseSpreadsheetContent(content: string): QuestionData[] {
-  const lines = content.split('\n').filter(line => line.trim());
-  if (lines.length < 2) return [];
+function parseSpreadsheetContent(content: string): { questions: QuestionData[]; warnings: string[] } {
+  // Pre-process content: strip BOM and normalize line endings
+  const cleanContent = normalizeLineEndings(stripBOM(content));
+  const lines = cleanContent.split('\n').filter(line => line.trim());
+  const warnings: string[] = [];
 
-  const delimiter = detectDelimiter(content);
-  const parseLine = delimiter === '\t' ? parseTSVLine : parseCSVLine;
+  if (lines.length < 2) {
+    return { questions: [], warnings: ['File must have a header row and at least one data row'] };
+  }
+
+  const delimiter = detectDelimiter(cleanContent);
+  const parseLine = delimiter === '\t'
+    ? parseTSVLine
+    : delimiter === ';'
+      ? parseSSVLine
+      : parseCSVLine;
 
   const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim());
   const questions: QuestionData[] = [];
@@ -286,11 +403,17 @@ function parseSpreadsheetContent(content: string): QuestionData[] {
         placeholder: placeholderIndex !== -1 ? values[placeholderIndex]?.replace(/^["']|["']$/g, '') : undefined,
       };
 
-      questions.push(question);
+      // Validate the question
+      const validation = validateQuestion(question);
+      if (validation.valid) {
+        questions.push(question);
+      } else {
+        warnings.push(`Row ${i + 1}: ${validation.errors.join(', ')}`);
+      }
     }
   }
 
-  return questions;
+  return { questions, warnings };
 }
 
 // ============================================================================
@@ -457,9 +580,14 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       let surveyTitle = '';
       let surveyDescription = '';
 
-      if (fileType === 'json' || file.name.endsWith('.json')) {
+      // Detect actual file type from extension (more reliable than MIME type)
+      const detectedType = detectFileTypeFromName(file.name);
+      const actualFileType = detectedType || fileType;
+
+      if (actualFileType === 'json') {
         // Parse JSON
-        const parsed = JSON.parse(content);
+        const cleanContent = stripBOM(content);
+        const parsed = JSON.parse(cleanContent);
 
         if (!parsed.title || !Array.isArray(parsed.questions)) {
           throw new Error('Invalid JSON format. Expected { title: string, description?: string, questions: array }');
@@ -480,10 +608,19 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         }));
       } else {
         // Parse CSV/TSV/Excel
-        parsedQuestions = parseSpreadsheetContent(content);
+        const { questions: spreadsheetQuestions, warnings } = parseSpreadsheetContent(content);
+        parsedQuestions = spreadsheetQuestions;
 
         if (parsedQuestions.length === 0) {
-          throw new Error('No valid questions found in the file. Please check the format matches our template.');
+          const warningMsg = warnings.length > 0
+            ? `\n\nValidation issues:\n${warnings.slice(0, 3).join('\n')}${warnings.length > 3 ? `\n...and ${warnings.length - 3} more` : ''}`
+            : '';
+          throw new Error(`No valid questions found in the file. Please check the format matches our template.${warningMsg}`);
+        }
+
+        // Log warnings but continue with valid questions
+        if (warnings.length > 0) {
+          console.warn('[SurveyForm] Parse warnings:', warnings);
         }
       }
 
