@@ -1273,13 +1273,19 @@ export const rewardsApi = {
 
   /**
    * Bulk create reward questions from file upload
+   * Supports multiple question types for enhanced quiz experience
    */
   async bulkCreateQuestions(questions: Array<{
     text: string;
-    options: string[];
-    correctAnswer?: string;
+    options: string[] | Record<string, string>;
+    correctAnswer?: string | string[];
     category?: string;
     rewardAmount?: number;
+    type?: 'single_choice' | 'multiple_choice' | 'boolean' | 'text' | 'checkbox';
+    difficulty?: 'easy' | 'medium' | 'hard';
+    explanation?: string;
+    timeLimit?: number;
+    pointValue?: number;
   }>, userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
     await delay(1500);
 
@@ -1287,21 +1293,44 @@ export const rewardsApi = {
     let failed = 0;
 
     for (const q of questions) {
-      if (!q.text || !q.options || q.options.length < 2) {
+      // Validate required fields
+      if (!q.text || q.text.trim().length < 5) {
         failed++;
         continue;
       }
 
+      // Convert options to proper format
+      let optionsObj: Record<string, unknown>;
+      if (Array.isArray(q.options)) {
+        if (q.options.length < 2 && q.type !== 'text') {
+          failed++;
+          continue;
+        }
+        optionsObj = Object.fromEntries(q.options.map((opt, i) => [String.fromCharCode(97 + i), opt]));
+      } else if (q.options && typeof q.options === 'object') {
+        optionsObj = q.options;
+      } else if (q.type !== 'text') {
+        failed++;
+        continue;
+      } else {
+        optionsObj = {};
+      }
+
+      // Determine reward amount (prioritize pointValue for quiz questions)
+      const rewardAmount = q.pointValue || q.rewardAmount || 10;
+
       const newQuestion: RewardQuestion = {
         id: `reward_question_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        text: q.text,
-        options: Object.fromEntries(q.options.map((opt, i) => [String.fromCharCode(97 + i), opt])),
-        correctAnswer: q.correctAnswer || q.options[0],
-        rewardAmount: q.rewardAmount || 100,
+        text: q.text.trim(),
+        options: optionsObj,
+        correctAnswer: Array.isArray(q.correctAnswer)
+          ? q.correctAnswer.join(',')
+          : (q.correctAnswer || Object.values(optionsObj)[0] as string || ''),
+        rewardAmount,
         expiryTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         isActive: true,
         userId,
-        isInstantReward: false,
+        isInstantReward: false, // Bulk uploaded questions are for quiz, not instant reward
         maxWinners: 10,
         winnersCount: 0,
         isCompleted: false,

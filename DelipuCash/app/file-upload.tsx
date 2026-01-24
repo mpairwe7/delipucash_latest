@@ -49,12 +49,141 @@ interface UploadedFile {
   uri: string;
 }
 
+/**
+ * Question type detection based on options structure
+ * Matches QuizQuestionType from types/index.ts
+ */
+type QuestionType = 'single_choice' | 'multiple_choice' | 'boolean' | 'text' | 'checkbox';
+
+/**
+ * Enhanced ParsedQuestion interface matching QuizQuestion structure
+ * Supports all question types for Answer Questions & Earn feature
+ */
 interface ParsedQuestion {
   text: string;
-  options: string[];
-  correctAnswer?: string;
+  options: string[] | Record<string, string>;
+  correctAnswer?: string | string[];
   category?: string;
   rewardAmount?: number;
+  // Enhanced fields for different question types
+  type?: QuestionType;
+  difficulty?: 'easy' | 'medium' | 'hard';
+  explanation?: string;
+  timeLimit?: number; // seconds
+  pointValue?: number;
+}
+
+/**
+ * Detect question type based on options structure
+ */
+function detectQuestionType(options: unknown, correctAnswer?: unknown): QuestionType {
+  if (!options) return 'text';
+
+  const optionsArray = Array.isArray(options)
+    ? options
+    : Object.values(options as Record<string, string>);
+
+  // Check for boolean type
+  if (optionsArray.length === 2) {
+    const normalized = optionsArray.map(o => String(o).toLowerCase().trim());
+    if (
+      (normalized.includes('true') && normalized.includes('false')) ||
+      (normalized.includes('yes') && normalized.includes('no'))
+    ) {
+      return 'boolean';
+    }
+  }
+
+  // Check for multiple choice (multiple correct answers)
+  if (Array.isArray(correctAnswer) && correctAnswer.length > 1) {
+    return 'multiple_choice';
+  }
+
+  // Check for checkbox type (based on convention or metadata)
+  if (optionsArray.length > 0) {
+    return 'single_choice';
+  }
+
+  return 'text';
+}
+
+/**
+ * Validate parsed question structure
+ */
+function validateQuestion(q: ParsedQuestion): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!q.text || q.text.trim().length < 5) {
+    errors.push('Question text must be at least 5 characters');
+  }
+
+  const options = Array.isArray(q.options)
+    ? q.options
+    : Object.values(q.options || {});
+
+  if (q.type !== 'text' && options.length < 2) {
+    errors.push('At least 2 options are required for choice questions');
+  }
+
+  if (q.type !== 'text' && !q.correctAnswer) {
+    errors.push('Correct answer is required');
+  }
+
+  if (q.correctAnswer) {
+    const correctAnswers = Array.isArray(q.correctAnswer)
+      ? q.correctAnswer
+      : [q.correctAnswer];
+    const optionValues = options.map(o => String(o).toLowerCase().trim());
+    const optionKeys = !Array.isArray(q.options)
+      ? Object.keys(q.options || {})
+      : options.map((_, i) => String.fromCharCode(97 + i));
+
+    for (const answer of correctAnswers) {
+      const answerLower = String(answer).toLowerCase().trim();
+      const isValidAnswer = optionValues.includes(answerLower) ||
+        optionKeys.includes(answerLower);
+      if (!isValidAnswer) {
+        errors.push(`Correct answer "${answer}" must match one of the options`);
+        break;
+      }
+    }
+  }
+
+  if (q.rewardAmount !== undefined && (isNaN(Number(q.rewardAmount)) || Number(q.rewardAmount) < 0)) {
+    errors.push('Reward amount must be a positive number');
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Parse CSV content with proper handling of quoted values
+ */
+function parseCSVLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i++; // Skip the escaped quote
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+
+  values.push(current.trim());
+  return values;
 }
 
 export default function FileUploadScreen(): React.ReactElement {
@@ -107,29 +236,117 @@ export default function FileUploadScreen(): React.ReactElement {
 
         if (fileType === 'json') {
           const parsed = JSON.parse(content);
-          const questions = Array.isArray(parsed) ? parsed : parsed.questions || [];
-          setParsedQuestions(questions);
+          const rawQuestions = Array.isArray(parsed) ? parsed : parsed.questions || [];
+
+          // Enhanced JSON parsing with type detection
+          const questions: ParsedQuestion[] = rawQuestions.map((q: Record<string, unknown>) => {
+            // Handle options in both array and object format
+            let options: string[] | Record<string, string> = [];
+            if (Array.isArray(q.options)) {
+              options = q.options.map(String);
+            } else if (q.options && typeof q.options === 'object') {
+              options = q.options as Record<string, string>;
+            }
+
+            const correctAnswer = q.correctAnswer || q.answer;
+            const questionType = (q.type as QuestionType) || detectQuestionType(options, correctAnswer);
+
+            return {
+              text: String(q.text || q.question || ''),
+              options,
+              correctAnswer: correctAnswer as string | string[],
+              category: q.category as string | undefined,
+              rewardAmount: q.rewardAmount ? Number(q.rewardAmount) : q.pointValue ? Number(q.pointValue) : undefined,
+              type: questionType,
+              difficulty: (q.difficulty as 'easy' | 'medium' | 'hard') || 'medium',
+              explanation: q.explanation as string | undefined,
+              timeLimit: q.timeLimit ? Number(q.timeLimit) : 90,
+              pointValue: q.pointValue ? Number(q.pointValue) : q.rewardAmount ? Number(q.rewardAmount) : 10,
+            };
+          });
+
+          // Validate all questions and filter out invalid ones
+          const validQuestions = questions.filter(q => {
+            const validation = validateQuestion(q);
+            if (!validation.valid) {
+              console.warn(`[FileUpload] Invalid question: "${q.text?.slice(0, 30)}..." - ${validation.errors.join(', ')}`);
+            }
+            return validation.valid;
+          });
+
+          setParsedQuestions(validQuestions);
+
+          if (validQuestions.length < questions.length) {
+            setUploadError(`${questions.length - validQuestions.length} question(s) had validation errors and were skipped`);
+          }
         } else {
-          // Parse CSV
+          // Enhanced CSV parsing with proper quote handling
           const lines = content.split('\n').filter(line => line.trim());
-          const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+          const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ''));
           const questions: ParsedQuestion[] = [];
+          const parseErrors: string[] = [];
 
           for (let i = 1; i < lines.length; i++) {
-            const values = lines[i].split(',').map(v => v.trim());
-            const textIndex = headers.indexOf('text') !== -1 ? headers.indexOf('text') : headers.indexOf('question');
+            const values = parseCSVLine(lines[i]);
+
+            // Find column indices
+            const textIndex = headers.findIndex(h => h === 'text' || h === 'question');
             const optionsIndex = headers.indexOf('options');
-            const correctIndex = headers.indexOf('correctanswer') !== -1 ? headers.indexOf('correctanswer') : headers.indexOf('answer');
+            const correctIndex = headers.findIndex(h => h === 'correctanswer' || h === 'answer' || h === 'correct_answer');
+            const categoryIndex = headers.indexOf('category');
+            const rewardIndex = headers.findIndex(h => h === 'rewardamount' || h === 'reward' || h === 'points' || h === 'pointvalue');
+            const typeIndex = headers.indexOf('type');
+            const difficultyIndex = headers.indexOf('difficulty');
+            const explanationIndex = headers.indexOf('explanation');
+            const timeLimitIndex = headers.findIndex(h => h === 'timelimit' || h === 'time_limit');
 
             if (textIndex !== -1 && values[textIndex]) {
-              questions.push({
-                text: values[textIndex],
-                options: optionsIndex !== -1 ? values[optionsIndex]?.split('|') || [] : [],
-                correctAnswer: correctIndex !== -1 ? values[correctIndex] : undefined,
-              });
+              // Parse options (pipe-separated or JSON array)
+              let options: string[] = [];
+              if (optionsIndex !== -1 && values[optionsIndex]) {
+                const optVal = values[optionsIndex].replace(/^["']|["']$/g, '');
+                if (optVal.startsWith('[')) {
+                  try {
+                    options = JSON.parse(optVal);
+                  } catch {
+                    options = optVal.split('|').map(o => o.trim());
+                  }
+                } else {
+                  options = optVal.split('|').map(o => o.trim());
+                }
+              }
+
+              const correctAnswer = correctIndex !== -1 ? values[correctIndex]?.replace(/^["']|["']$/g, '') : undefined;
+              const questionType = typeIndex !== -1
+                ? (values[typeIndex] as QuestionType)
+                : detectQuestionType(options, correctAnswer);
+
+              const question: ParsedQuestion = {
+                text: values[textIndex].replace(/^["']|["']$/g, ''),
+                options,
+                correctAnswer,
+                category: categoryIndex !== -1 ? values[categoryIndex]?.replace(/^["']|["']$/g, '') : undefined,
+                rewardAmount: rewardIndex !== -1 && values[rewardIndex] ? Number(values[rewardIndex]) : undefined,
+                type: questionType,
+                difficulty: difficultyIndex !== -1 ? (values[difficultyIndex] as 'easy' | 'medium' | 'hard') : 'medium',
+                explanation: explanationIndex !== -1 ? values[explanationIndex]?.replace(/^["']|["']$/g, '') : undefined,
+                timeLimit: timeLimitIndex !== -1 && values[timeLimitIndex] ? Number(values[timeLimitIndex]) : 90,
+              };
+
+              const validation = validateQuestion(question);
+              if (validation.valid) {
+                questions.push(question);
+              } else {
+                parseErrors.push(`Row ${i + 1}: ${validation.errors.join(', ')}`);
+              }
             }
           }
+
           setParsedQuestions(questions);
+
+          if (parseErrors.length > 0) {
+            setUploadError(`${parseErrors.length} row(s) had validation errors. First: ${parseErrors[0]}`);
+          }
         }
       } catch {
         setUploadError(`Failed to parse ${fileType.toUpperCase()} file. Please check the format.`);
@@ -317,18 +534,48 @@ export default function FileUploadScreen(): React.ReactElement {
                   <View style={styles.previewHeader}>
                     <CheckCircle size={16} color={colors.success} strokeWidth={1.5} />
                     <Text style={[styles.previewTitle, { color: colors.success }]}>
-                      {parsedQuestions.length} questions found
-                    </Text>
+                        {parsedQuestions.length} questions validated
+                      </Text>
                   </View>
+
+                    {/* Question type summary */}
+                    <View style={[styles.typeSummary, { backgroundColor: colors.secondary }]}>
+                      {(() => {
+                        const typeCounts = parsedQuestions.reduce((acc, q) => {
+                          const type = q.type || 'single_choice';
+                          acc[type] = (acc[type] || 0) + 1;
+                          return acc;
+                        }, {} as Record<string, number>);
+
+                        return Object.entries(typeCounts).map(([type, count]) => (
+                          <Text key={type} style={[styles.typeBadge, { color: colors.textMuted }]}>
+                            {type.replace('_', ' ')}: {count}
+                          </Text>
+                        ));
+                      })()}
+                    </View>
+
                   <View style={styles.previewList}>
                     {parsedQuestions.slice(0, 3).map((q, index) => (
                       <View key={index} style={[styles.previewItem, { borderColor: colors.border }]}>
-                        <Text style={[styles.previewNumber, { color: colors.textMuted }]}>
-                          {index + 1}.
-                        </Text>
+                        <View style={styles.previewItemHeader}>
+                          <Text style={[styles.previewNumber, { color: colors.textMuted }]}>
+                            {index + 1}.
+                          </Text>
+                          <View style={[styles.questionTypeBadge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+                            <Text style={[styles.questionTypeText, { color: colors.primary }]}>
+                              {(q.type || 'single_choice').replace('_', ' ')}
+                            </Text>
+                          </View>
+                        </View>
                         <Text style={[styles.previewText, { color: colors.text }]} numberOfLines={2}>
                           {q.text}
                         </Text>
+                        {q.category && (
+                          <Text style={[styles.previewCategory, { color: colors.textMuted }]}>
+                            Category: {q.category}
+                          </Text>
+                        )}
                       </View>
                     ))}
                     {parsedQuestions.length > 3 && (
@@ -346,11 +593,11 @@ export default function FileUploadScreen(): React.ReactElement {
           <View style={[styles.instructionsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <SectionHeader
               title="File Format"
-              subtitle="Expected structure for your files"
+              subtitle="Supports multiple question types for enhanced experience"
             />
 
             <View style={styles.formatSection}>
-              <Text style={[styles.formatTitle, { color: colors.text }]}>JSON Format:</Text>
+              <Text style={[styles.formatTitle, { color: colors.text }]}>JSON Format (Recommended):</Text>
               <View style={[styles.codeBlock, { backgroundColor: colors.secondary }]}>
                 <Text style={[styles.codeText, { color: colors.textMuted }]}>
                   {`[
@@ -358,7 +605,18 @@ export default function FileUploadScreen(): React.ReactElement {
     "text": "Question text",
     "options": ["A", "B", "C", "D"],
     "correctAnswer": "A",
-    "category": "General"
+    "category": "General",
+    "type": "single_choice",
+    "difficulty": "medium",
+    "explanation": "Why A is correct",
+    "pointValue": 10,
+    "timeLimit": 90
+  },
+  {
+    "text": "True or False?",
+    "options": ["True", "False"],
+    "correctAnswer": "True",
+    "type": "boolean"
   }
 ]`}
                 </Text>
@@ -369,9 +627,19 @@ export default function FileUploadScreen(): React.ReactElement {
               <Text style={[styles.formatTitle, { color: colors.text }]}>CSV Format:</Text>
               <View style={[styles.codeBlock, { backgroundColor: colors.secondary }]}>
                 <Text style={[styles.codeText, { color: colors.textMuted }]}>
-                  text,options,correctAnswer,category{"\n"}
-                  &quot;Question text&quot;,&quot;A|B|C|D&quot;,&quot;A&quot;,&quot;General&quot;
+                  text,options,correctAnswer,category,type,difficulty{"\n"}
+                  &quot;Question?&quot;,&quot;A|B|C|D&quot;,&quot;A&quot;,&quot;Science&quot;,&quot;single_choice&quot;,&quot;easy&quot;
                 </Text>
+              </View>
+            </View>
+
+            <View style={styles.formatSection}>
+              <Text style={[styles.formatTitle, { color: colors.text }]}>Supported Question Types:</Text>
+              <View style={styles.typesList}>
+                <Text style={[styles.typeItem, { color: colors.textMuted }]}>• single_choice - Multiple options, one correct</Text>
+                <Text style={[styles.typeItem, { color: colors.textMuted }]}>• multiple_choice - Multiple options, many correct</Text>
+                <Text style={[styles.typeItem, { color: colors.textMuted }]}>• boolean - True/False or Yes/No</Text>
+                <Text style={[styles.typeItem, { color: colors.textMuted }]}>• text - Open-ended text answer</Text>
               </View>
             </View>
           </View>
@@ -518,12 +786,17 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
   previewList: {
-    gap: SPACING.xs,
+    gap: SPACING.sm,
   },
   previewItem: {
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+  },
+  previewItemHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: SPACING.xs,
-    paddingVertical: SPACING.xs,
+    marginBottom: SPACING.xs,
   },
   previewNumber: {
     fontSize: TYPOGRAPHY.fontSize.sm,
@@ -532,6 +805,35 @@ const styles = StyleSheet.create({
   previewText: {
     flex: 1,
     fontSize: TYPOGRAPHY.fontSize.sm,
+    marginLeft: SPACING.lg,
+  },
+  previewCategory: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginLeft: SPACING.lg,
+    marginTop: SPACING.xs,
+    fontStyle: 'italic',
+  },
+  typeSummary: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+    padding: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.sm,
+  },
+  typeBadge: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    paddingHorizontal: SPACING.xs,
+  },
+  questionTypeBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+  },
+  questionTypeText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    textTransform: 'capitalize',
   },
   moreText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
@@ -558,5 +860,13 @@ const styles = StyleSheet.create({
   codeText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: 'monospace',
+  },
+  typesList: {
+    gap: SPACING.xs,
+    marginTop: SPACING.xs,
+  },
+  typeItem: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: TYPOGRAPHY.lineHeight.relaxed * TYPOGRAPHY.fontSize.sm,
   },
 });

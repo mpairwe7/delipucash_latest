@@ -1038,6 +1038,7 @@ export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Err
 
 /**
  * Hook to bulk create questions from file upload
+ * Supports all question types: single_choice, multiple_choice, boolean, text
  */
 export function useBulkCreateQuestions(): UseMutationResult<
   { created: number; failed: number; questions: RewardQuestion[] },
@@ -1045,10 +1046,16 @@ export function useBulkCreateQuestions(): UseMutationResult<
   {
     questions: Array<{
       text: string;
-      options: string[];
-      correctAnswer?: string;
+      options: string[] | Record<string, string>;
+      correctAnswer?: string | string[];
       category?: string;
       rewardAmount?: number;
+      // Enhanced fields for different question types
+      type?: 'single_choice' | 'multiple_choice' | 'boolean' | 'text' | 'checkbox';
+      difficulty?: 'easy' | 'medium' | 'hard';
+      explanation?: string;
+      timeLimit?: number;
+      pointValue?: number;
     }>;
     userId: string;
   }
