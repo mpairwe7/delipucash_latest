@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,8 +10,8 @@ import {
   Animated,
   Platform,
   Modal,
-  Share,
   Clipboard,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -35,14 +35,21 @@ import {
   FileText,
   CircleDot,
   Download,
+  FileJson,
+  FileSpreadsheet,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, BORDER_WIDTH, withAlpha } from '@/utils/theme';
 import { useCreateSurvey } from '@/services/hooks';
 import { UploadSurvey } from '@/types';
 import useUser from '@/utils/useUser';
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 type QuestionType =
   | 'text'           // Short answer
@@ -74,6 +81,345 @@ interface SurveyFormProps {
   startWithImport?: boolean;
 }
 
+type ImportFileType = 'json' | 'csv' | 'excel';
+
+// ============================================================================
+// SAMPLE TEMPLATES
+// ============================================================================
+
+const SAMPLE_JSON_TEMPLATE = {
+  title: "Customer Feedback Survey",
+  description: "Help us improve our services by sharing your experience",
+  questions: [
+    {
+      text: "How would you rate our service?",
+      type: "rating",
+      required: true,
+      minValue: 1,
+      maxValue: 5
+    },
+    {
+      text: "Which features do you use most?",
+      type: "checkbox",
+      options: ["Speed", "Design", "Support", "Price"],
+      required: true
+    },
+    {
+      text: "How did you hear about us?",
+      type: "dropdown",
+      options: ["Social Media", "Friend", "Advertisement", "Search Engine"],
+      required: false
+    },
+    {
+      text: "Would you recommend us to a friend?",
+      type: "boolean",
+      required: true
+    },
+    {
+      text: "Your date of birth",
+      type: "date",
+      required: false
+    },
+    {
+      text: "What time works best for a call?",
+      type: "time",
+      required: false
+    },
+    {
+      text: "How many products do you own?",
+      type: "number",
+      minValue: 0,
+      maxValue: 100,
+      placeholder: "Enter a number",
+      required: false
+    },
+    {
+      text: "Any additional feedback?",
+      type: "paragraph",
+      placeholder: "Share your detailed thoughts...",
+      required: false
+    }
+  ],
+  metadata: {
+    version: "1.0",
+    supportedTypes: ["text", "paragraph", "radio", "checkbox", "dropdown", "rating", "boolean", "date", "time", "number"]
+  }
+};
+
+const SAMPLE_CSV_TEMPLATE = `text,type,options,required,minValue,maxValue,placeholder
+"How would you rate our service?",rating,,true,1,5,
+"Which features do you use most?",checkbox,"Speed|Design|Support|Price",true,,,
+"How did you hear about us?",dropdown,"Social Media|Friend|Advertisement|Search Engine",false,,,
+"Would you recommend us to a friend?",boolean,,true,,,
+"Your date of birth",date,,false,,,
+"What time works best for a call?",time,,false,,,
+"How many products do you own?",number,,false,0,100,"Enter a number"
+"Any additional feedback?",paragraph,,false,,,"Share your detailed thoughts..."`;
+
+const SAMPLE_EXCEL_TEMPLATE = `text\ttype\toptions\trequired\tminValue\tmaxValue\tplaceholder
+"How would you rate our service?"\trating\t\ttrue\t1\t5\t
+"Which features do you use most?"\tcheckbox\tSpeed|Design|Support|Price\ttrue\t\t\t
+"How did you hear about us?"\tdropdown\tSocial Media|Friend|Advertisement|Search Engine\tfalse\t\t\t
+"Would you recommend us to a friend?"\tboolean\t\ttrue\t\t\t
+"Your date of birth"\tdate\t\tfalse\t\t\t
+"What time works best for a call?"\ttime\t\tfalse\t\t\t
+"How many products do you own?"\tnumber\t\tfalse\t0\t100\tEnter a number
+"Any additional feedback?"\tparagraph\t\tfalse\t\t\tShare your detailed thoughts...`;
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Remove UTF-8 BOM (Byte Order Mark) from content
+ * BOM is common in files created by Excel or Windows applications
+ */
+function stripBOM(content: string): string {
+  // UTF-8 BOM is EF BB BF, which appears as \uFEFF in JavaScript
+  if (content.charCodeAt(0) === 0xFEFF) {
+    return content.slice(1);
+  }
+  return content;
+}
+
+/**
+ * Normalize line endings to Unix-style (\n)
+ * Handles Windows (\r\n) and old Mac (\r) line endings
+ */
+function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * Parse delimited line handling quoted values
+ * Supports CSV (comma), TSV (tab), and SSV (semicolon) formats
+ * Follows RFC 4180 standards for CSV parsing
+ */
+function parseDelimitedLine(line: string, delimiter: string = ','): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && !inQuotes) {
+      inQuotes = true;
+    } else if (char === '"' && inQuotes) {
+      if (nextChar === '"') {
+        // Escaped quote (RFC 4180: "" represents a single ")
+        current += '"';
+        i++;
+      } else {
+        inQuotes = false;
+      }
+    } else if (char === delimiter && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+    } else {
+      current += char;
+    }
+  }
+  values.push(current.trim());
+  return values;
+}
+
+/**
+ * Parse CSV line (comma-separated)
+ */
+function parseCSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ',');
+}
+
+/**
+ * Parse TSV line (tab-separated)
+ */
+function parseTSVLine(line: string): string[] {
+  return parseDelimitedLine(line, '\t');
+}
+
+/**
+ * Parse SSV line (semicolon-separated, common in European locales)
+ */
+function parseSSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ';');
+}
+
+/**
+ * Detect delimiter in content by analyzing the header row
+ * Uses heuristics: counts delimiters outside of quoted strings
+ */
+function detectDelimiter(content: string): ',' | '\t' | ';' {
+  const lines = content.split('\n');
+  const firstLine = lines[0] || '';
+
+  // Count delimiters outside of quotes
+  let tabCount = 0;
+  let commaCount = 0;
+  let semicolonCount = 0;
+  let inQuotes = false;
+
+  for (const char of firstLine) {
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (!inQuotes) {
+      if (char === '\t') tabCount++;
+      else if (char === ',') commaCount++;
+      else if (char === ';') semicolonCount++;
+    }
+  }
+
+  // Tab takes priority (most reliable), then compare comma vs semicolon
+  if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return '\t';
+  if (semicolonCount > commaCount) return ';';
+  return ',';
+}
+
+/**
+ * Detect file type from file name extension
+ */
+function detectFileTypeFromName(fileName: string): ImportFileType {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  switch (ext) {
+    case 'json':
+      return 'json';
+    case 'csv':
+      return 'csv';
+    case 'tsv':
+    case 'xls':
+    case 'xlsx':
+    case 'xlsb':
+      return 'excel';
+    default:
+      return 'csv'; // Default to CSV for unknown extensions
+  }
+}
+
+/**
+ * Validate question type
+ */
+function isValidQuestionType(type: string): type is QuestionType {
+  const validTypes = ['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number'];
+  return validTypes.includes(type?.toLowerCase());
+}
+
+/**
+ * Check if a question type requires options
+ */
+function requiresOptions(type: QuestionType): boolean {
+  return ['radio', 'checkbox', 'dropdown'].includes(type);
+}
+
+/**
+ * Validate a parsed question
+ */
+function validateQuestion(question: QuestionData): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (!question.text?.trim()) {
+    errors.push('Question text is required');
+  }
+
+  if (requiresOptions(question.type) && (!question.options || question.options.length < 2)) {
+    errors.push(`${question.type} questions require at least 2 options`);
+  }
+
+  if (question.type === 'rating') {
+    const min = question.minValue ?? 1;
+    const max = question.maxValue ?? 5;
+    if (min >= max) {
+      errors.push('Rating minValue must be less than maxValue');
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Parse spreadsheet content (CSV/TSV/Excel export)
+ * Handles BOM, different line endings, and various delimiters
+ * Returns validated questions with parse warnings
+ */
+function parseSpreadsheetContent(content: string): { questions: QuestionData[]; warnings: string[] } {
+  // Pre-process content: strip BOM and normalize line endings
+  const cleanContent = normalizeLineEndings(stripBOM(content));
+  const lines = cleanContent.split('\n').filter(line => line.trim());
+  const warnings: string[] = [];
+
+  if (lines.length < 2) {
+    return { questions: [], warnings: ['File must have a header row and at least one data row'] };
+  }
+
+  const delimiter = detectDelimiter(cleanContent);
+  const parseLine = delimiter === '\t'
+    ? parseTSVLine
+    : delimiter === ';'
+      ? parseSSVLine
+      : parseCSVLine;
+
+  const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim());
+  const questions: QuestionData[] = [];
+
+  // Find column indices
+  const textIndex = headers.findIndex(h => h === 'text' || h === 'question');
+  const typeIndex = headers.indexOf('type');
+  const optionsIndex = headers.indexOf('options');
+  const requiredIndex = headers.indexOf('required');
+  const minValueIndex = headers.findIndex(h => h === 'minvalue' || h === 'min_value' || h === 'min');
+  const maxValueIndex = headers.findIndex(h => h === 'maxvalue' || h === 'max_value' || h === 'max');
+  const placeholderIndex = headers.indexOf('placeholder');
+
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseLine(lines[i]);
+
+    if (textIndex !== -1 && values[textIndex]?.trim()) {
+      const rawType = typeIndex !== -1 ? values[typeIndex]?.toLowerCase().trim() : 'text';
+      const type: QuestionType = isValidQuestionType(rawType) ? rawType : 'text';
+
+      // Parse options
+      let options: string[] = [];
+      if (optionsIndex !== -1 && values[optionsIndex]) {
+        const optVal = values[optionsIndex].replace(/^["']|["']$/g, '');
+        if (optVal.startsWith('[')) {
+          try {
+            options = JSON.parse(optVal);
+          } catch {
+            options = optVal.split('|').map(o => o.trim()).filter(Boolean);
+          }
+        } else {
+          options = optVal.split('|').map(o => o.trim()).filter(Boolean);
+        }
+      }
+
+      const question: QuestionData = {
+        id: `q${i}`,
+        text: values[textIndex].replace(/^["']|["']$/g, ''),
+        type,
+        options,
+        required: requiredIndex !== -1 ? values[requiredIndex]?.toLowerCase() === 'true' : false,
+        minValue: minValueIndex !== -1 && values[minValueIndex] ? Number(values[minValueIndex]) : undefined,
+        maxValue: maxValueIndex !== -1 && values[maxValueIndex] ? Number(values[maxValueIndex]) : undefined,
+        placeholder: placeholderIndex !== -1 ? values[placeholderIndex]?.replace(/^["']|["']$/g, '') : undefined,
+      };
+
+      // Validate the question
+      const validation = validateQuestion(question);
+      if (validation.valid) {
+        questions.push(question);
+      } else {
+        warnings.push(`Row ${i + 1}: ${validation.errors.join(', ')}`);
+      }
+    }
+  }
+
+  return { questions, warnings };
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithImport }) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -100,9 +446,12 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [expandedQuestion, setExpandedQuestion] = useState<string | null>('q1');
-  const [showJsonModal, setShowJsonModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [uploadingJson, setUploadingJson] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [selectedImportType, setSelectedImportType] = useState<ImportFileType>('json');
+  const [importError, setImportError] = useState<string | null>(null);
   const hasAutoOpenedImport = useRef(false);
 
   // Animations
@@ -117,10 +466,10 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-open JSON import when the Import tab is active
+  // Auto-open import modal when the Import tab is active
   useEffect(() => {
     if (startWithImport && !hasAutoOpenedImport.current) {
-      setShowJsonModal(true);
+      setShowImportModal(true);
       hasAutoOpenedImport.current = true;
     }
 
@@ -128,6 +477,180 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       hasAutoOpenedImport.current = false;
     }
   }, [startWithImport]);
+
+  // ============================================================================
+  // TEMPLATE DOWNLOAD HANDLER
+  // ============================================================================
+
+  const handleDownloadTemplate = useCallback(async (templateType: ImportFileType) => {
+    setIsDownloading(true);
+    try {
+      let content: string;
+      let fileName: string;
+      let mimeType: string;
+
+      switch (templateType) {
+        case 'json':
+          content = JSON.stringify(SAMPLE_JSON_TEMPLATE, null, 2);
+          fileName = 'survey_template.json';
+          mimeType = 'application/json';
+          break;
+        case 'csv':
+          content = SAMPLE_CSV_TEMPLATE;
+          fileName = 'survey_template.csv';
+          mimeType = 'text/csv';
+          break;
+        case 'excel':
+          content = SAMPLE_EXCEL_TEMPLATE;
+          fileName = 'survey_template.tsv';
+          mimeType = 'text/tab-separated-values';
+          break;
+      }
+
+      const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+      const fileUri = `${baseDir}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, content, {
+        encoding: 'utf8',
+      });
+
+      // Check if sharing is available
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType,
+          dialogTitle: `Save ${templateType.toUpperCase()} Template`,
+          UTI: templateType === 'json' ? 'public.json' : 'public.comma-separated-values-text',
+        });
+
+        Alert.alert(
+          "Template Ready",
+          `Your ${templateType.toUpperCase()} template has been prepared. Open it with ${templateType === 'excel' ? 'Excel or Google Sheets' : templateType === 'json' ? 'a text editor' : 'Excel or any spreadsheet app'}.`,
+          [{ text: "OK" }]
+        );
+      } else {
+        // Fallback - copy to clipboard for JSON
+        if (templateType === 'json') {
+          Clipboard.setString(content);
+          Alert.alert('Copied!', 'Template copied to clipboard. Paste it into a .json file.');
+        } else {
+          Alert.alert('Template Created', `Template saved to: ${fileUri}`);
+        }
+      }
+    } catch (error) {
+      console.error('[SurveyForm] Error downloading template:', error);
+      Alert.alert("Error", "Failed to create template file. Please try again.");
+    } finally {
+      setIsDownloading(false);
+    }
+  }, []);
+
+  // ============================================================================
+  // FILE IMPORT HANDLER
+  // ============================================================================
+
+  const handleFileImport = useCallback(async (fileType: ImportFileType) => {
+    setIsUploading(true);
+    setImportError(null);
+    try {
+      // Define MIME types for each format
+      const mimeTypes: Record<ImportFileType, string[]> = {
+        json: ['application/json'],
+        csv: ['text/csv', 'text/comma-separated-values'],
+        excel: [
+          'application/vnd.ms-excel',
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'text/tab-separated-values',
+          'text/csv',
+        ],
+      };
+
+      const result = await DocumentPicker.getDocumentAsync({
+        type: mimeTypes[fileType],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.length) {
+        setIsUploading(false);
+        return;
+      }
+
+      const file = result.assets[0];
+      const content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
+
+      let parsedQuestions: QuestionData[] = [];
+      let surveyTitle = '';
+      let surveyDescription = '';
+
+      // Detect actual file type from extension (more reliable than MIME type)
+      const detectedType = detectFileTypeFromName(file.name);
+      const actualFileType = detectedType || fileType;
+
+      if (actualFileType === 'json') {
+        // Parse JSON
+        const cleanContent = stripBOM(content);
+        const parsed = JSON.parse(cleanContent);
+
+        if (!parsed.title || !Array.isArray(parsed.questions)) {
+          throw new Error('Invalid JSON format. Expected { title: string, description?: string, questions: array }');
+        }
+
+        surveyTitle = parsed.title;
+        surveyDescription = parsed.description || '';
+
+        parsedQuestions = parsed.questions.map((q: Record<string, unknown>, index: number) => ({
+          id: `q${index + 1}`,
+          text: (q.text as string) || '',
+          type: isValidQuestionType(q.type as string) ? (q.type as QuestionType) : 'text',
+          options: Array.isArray(q.options) ? q.options as string[] : [],
+          minValue: q.minValue as number | undefined,
+          maxValue: q.maxValue as number | undefined,
+          placeholder: (q.placeholder as string) || '',
+          required: (q.required as boolean) || false,
+        }));
+      } else {
+        // Parse CSV/TSV/Excel
+        const { questions: spreadsheetQuestions, warnings } = parseSpreadsheetContent(content);
+        parsedQuestions = spreadsheetQuestions;
+
+        if (parsedQuestions.length === 0) {
+          const warningMsg = warnings.length > 0
+            ? `\n\nValidation issues:\n${warnings.slice(0, 3).join('\n')}${warnings.length > 3 ? `\n...and ${warnings.length - 3} more` : ''}`
+            : '';
+          throw new Error(`No valid questions found in the file. Please check the format matches our template.${warningMsg}`);
+        }
+
+        // Log warnings but continue with valid questions
+        if (warnings.length > 0) {
+          console.warn('[SurveyForm] Parse warnings:', warnings);
+        }
+      }
+
+      // Validate questions
+      const validQuestions = parsedQuestions.filter(q => q.text.trim());
+      if (validQuestions.length === 0) {
+        throw new Error('No valid questions found. Each question must have text.');
+      }
+
+      // Update form state
+      if (surveyTitle) setTitle(surveyTitle);
+      if (surveyDescription) setDescription(surveyDescription);
+      setQuestions(validQuestions.length > 0 ? validQuestions : questions);
+      setExpandedQuestion(validQuestions[0]?.id || 'q1');
+
+      setShowImportModal(false);
+      Alert.alert(
+        'Success',
+        `Imported ${validQuestions.length} question${validQuestions.length !== 1 ? 's' : ''} successfully!${surveyTitle ? `\nSurvey: "${surveyTitle}"` : ''}`,
+        [{ text: 'OK' }]
+      );
+    } catch (error) {
+      console.error('[SurveyForm] Import error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to parse file';
+      setImportError(errorMessage);
+      Alert.alert('Import Error', errorMessage);
+    } finally {
+      setIsUploading(false);
+    }
+  }, [questions]);
 
   const addQuestion = () => {
     const newId = `q${questions.length + 1}`;
@@ -178,122 +701,6 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       const newOptions = [...question.options];
       newOptions[optionIndex] = value;
       updateQuestion(questionId, { options: newOptions });
-    }
-  };
-
-  const handleJsonUpload = async () => {
-    try {
-      setUploadingJson(true);
-      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
-      if (result.canceled || !result.assets?.length) {
-        setUploadingJson(false);
-        return;
-      }
-
-      const file = result.assets[0];
-      const content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
-      const parsed = JSON.parse(content);
-
-      // Validate JSON structure
-      if (!parsed.title || !Array.isArray(parsed.questions)) {
-        throw new Error('Invalid JSON format. Expected { title: string, description?: string, questions: array }');
-      }
-
-      // Update form with parsed data
-      setTitle(parsed.title);
-      if (parsed.description) setDescription(parsed.description);
-
-      // Convert questions
-      const convertedQuestions: QuestionData[] = parsed.questions.map((q: any, index: number) => ({
-        id: `q${index + 1}`,
-        text: q.text || '',
-        type: q.type || 'text',
-        options: Array.isArray(q.options) ? q.options : [],
-        minValue: q.minValue || 1,
-        maxValue: q.maxValue || 5,
-        placeholder: q.placeholder || '',
-        required: q.required || false,
-      }));
-
-      setQuestions(convertedQuestions.length > 0 ? convertedQuestions : [{
-        id: 'q1',
-        text: '',
-        type: 'text',
-        options: [],
-        placeholder: '',
-        required: false,
-      }]);
-
-      setShowJsonModal(false);
-      Alert.alert('Success', `Imported ${convertedQuestions.length} questions from JSON`);
-    } catch (error) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to parse JSON file');
-    } finally {
-      setUploadingJson(false);
-    }
-  };
-
-  // Sample JSON template for download
-  const sampleJsonTemplate = {
-    title: "Customer Feedback",
-    description: "Help us improve our services",
-    questions: [
-      { text: "Rate our service", type: "rating", required: true, minValue: 1, maxValue: 5 },
-      { text: "Select features you use", type: "checkbox", options: ["Speed", "Design", "Support"] },
-      { text: "Choose your preference", type: "dropdown", options: ["Option A", "Option B", "Option C"] },
-      { text: "Would you recommend us?", type: "boolean" },
-      { text: "Your birth date", type: "date" },
-      { text: "Detailed feedback", type: "paragraph", placeholder: "Share your thoughts..." }
-    ]
-  };
-
-  const handleDownloadSample = async () => {
-    try {
-      const jsonString = JSON.stringify(sampleJsonTemplate, null, 2);
-
-      if (Platform.OS === 'web') {
-        // For web, create a download link
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'survey-template.json';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        // For mobile, use Share API with copy to clipboard option
-        Alert.alert(
-          'Survey Template',
-          'How would you like to get the template?',
-          [
-            {
-              text: 'Copy to Clipboard',
-              onPress: () => {
-                Clipboard.setString(jsonString);
-                Alert.alert('Copied!', 'Template copied to clipboard. Paste it into a .json file.');
-              },
-            },
-            {
-              text: 'Share',
-              onPress: async () => {
-                try {
-                  await Share.share({
-                    message: jsonString,
-                    title: 'Survey Template JSON',
-                  });
-                } catch {
-                  Alert.alert('Error', 'Failed to share template');
-                }
-              },
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to export sample template');
     }
   };
 
@@ -828,12 +1235,12 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         />
       )}
 
-      {/* JSON Upload Modal - Improved Readability */}
+      {/* Import Survey Modal - Enhanced with JSON/CSV/Excel support */}
       <Modal
-        visible={showJsonModal}
+        visible={showImportModal}
         animationType="slide"
         transparent
-        onRequestClose={() => setShowJsonModal(false)}
+        onRequestClose={() => setShowImportModal(false)}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
@@ -846,12 +1253,12 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.modalHeaderText}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>Import Survey</Text>
                   <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
-                    Upload a JSON file with your questions
+                    Upload questions via JSON, CSV, or Excel
                   </Text>
                 </View>
               </View>
               <TouchableOpacity 
-                onPress={() => setShowJsonModal(false)}
+                onPress={() => setShowImportModal(false)}
                 style={[styles.modalCloseBtn, { backgroundColor: withAlpha(colors.text, 0.08) }]}
                 accessibilityLabel="Close modal"
               >
@@ -865,59 +1272,110 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.modalBodyContent}
             >
-              {/* Instructions Card */}
-              <View style={[styles.instructionCard, { backgroundColor: withAlpha(colors.info, 0.08), borderColor: withAlpha(colors.info, 0.2) }]}>
-                <Info size={20} color={colors.info} style={styles.instructionIcon} />
-                <Text style={[styles.instructionText, { color: colors.text }]}>
-                  Your JSON file should include a title and an array of questions. Each question needs a type, text, and optional properties.
-                </Text>
+              {/* File Format Selection */}
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>Choose File Format</Text>
+              <View style={styles.fileFormatGrid}>
+                {([
+                  { type: 'json' as ImportFileType, icon: <FileJson size={24} color={selectedImportType === 'json' ? colors.primaryText : colors.primary} />, label: 'JSON', desc: 'Structured data' },
+                  { type: 'csv' as ImportFileType, icon: <FileText size={24} color={selectedImportType === 'csv' ? colors.primaryText : colors.success} />, label: 'CSV', desc: 'Comma-separated' },
+                  { type: 'excel' as ImportFileType, icon: <FileSpreadsheet size={24} color={selectedImportType === 'excel' ? colors.primaryText : colors.info} />, label: 'Excel', desc: 'TSV / Spreadsheet' },
+                ]).map((format) => (
+                  <TouchableOpacity
+                    key={format.type}
+                    style={[
+                      styles.fileFormatCard,
+                      {
+                        backgroundColor: selectedImportType === format.type ? colors.primary : colors.background,
+                        borderColor: selectedImportType === format.type ? colors.primary : colors.border,
+                      }
+                    ]}
+                    onPress={() => setSelectedImportType(format.type)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: selectedImportType === format.type }}
+                  >
+                    <View style={[styles.fileFormatIcon, { backgroundColor: selectedImportType === format.type ? withAlpha(colors.primaryText, 0.2) : withAlpha(colors.primary, 0.08) }]}>
+                      {format.icon}
+                    </View>
+                    <Text style={[styles.fileFormatLabel, { color: selectedImportType === format.type ? colors.primaryText : colors.text }]}>
+                      {format.label}
+                    </Text>
+                    <Text style={[styles.fileFormatDesc, { color: selectedImportType === format.type ? withAlpha(colors.primaryText, 0.7) : colors.textMuted }]}>
+                      {format.desc}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
               </View>
 
-              {/* Example Section */}
-              <Text style={[styles.exampleLabel, { color: colors.text }]}>Example Format</Text>
-              <View style={[styles.codeBlock, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <Text style={[styles.codeText, { color: colors.text }]}>
-{`{
-  "title": "Customer Feedback",
-  "description": "Help us improve",
-  "questions": [
-    {
-      "text": "Rate our service",
-      "type": "rating",
-      "required": true,
-      "minValue": 1,
-      "maxValue": 5
-    },
-    {
-      "text": "Select features you use",
-      "type": "checkbox",
-      "options": ["Speed", "Design", "Support"]
-    },
-    {
-      "text": "Choose your preference",
-      "type": "dropdown",
-      "options": ["Option A", "Option B", "Option C"]
-    },
-    {
-      "text": "Would you recommend us?",
-      "type": "boolean"
-    },
-    {
-      "text": "Your birth date",
-      "type": "date"
-    },
-    {
-      "text": "Any suggestions?",
-      "type": "paragraph",
-      "placeholder": "Your detailed feedback..."
-    }
-  ]
-}`}
+              {/* Error Display */}
+              {importError && (
+                <View style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}>
+                  <Info size={16} color={colors.error} />
+                  <Text style={[styles.errorText, { color: colors.error }]}>{importError}</Text>
+                </View>
+              )}
+
+              {/* Download Templates Section */}
+              <View style={[styles.templateSection, { backgroundColor: withAlpha(colors.info, 0.06), borderColor: withAlpha(colors.info, 0.15) }]}>
+                <View style={styles.templateHeader}>
+                  <Download size={18} color={colors.info} />
+                  <Text style={[styles.templateTitle, { color: colors.text }]}>Download Templates</Text>
+                </View>
+                <Text style={[styles.templateDesc, { color: colors.textMuted }]}>
+                  Get a sample template to see the expected format
                 </Text>
+                <View style={styles.templateButtons}>
+                  {([
+                    { type: 'json' as ImportFileType, label: 'JSON', color: colors.primary },
+                    { type: 'csv' as ImportFileType, label: 'CSV', color: colors.success },
+                    { type: 'excel' as ImportFileType, label: 'TSV', color: colors.info },
+                  ]).map((template) => (
+                    <TouchableOpacity
+                      key={template.type}
+                      style={[styles.templateBtn, { borderColor: template.color, backgroundColor: withAlpha(template.color, 0.08) }]}
+                      onPress={() => handleDownloadTemplate(template.type)}
+                      disabled={isDownloading}
+                    >
+                      <Download size={14} color={template.color} />
+                      <Text style={[styles.templateBtnText, { color: template.color }]}>{template.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {isDownloading && (
+                  <View style={styles.downloadingIndicator}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={[styles.downloadingText, { color: colors.textMuted }]}>Preparing template...</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Column Reference Grid */}
+              <Text style={[styles.sectionLabel, { color: colors.text, marginTop: SPACING.lg }]}>Required Columns</Text>
+              <View style={[styles.columnGrid, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                {[
+                  { name: 'text', desc: 'Question text', required: true },
+                  { name: 'type', desc: 'Question type', required: true },
+                  { name: 'options', desc: 'Pipe-separated', required: false },
+                  { name: 'required', desc: 'true/false', required: false },
+                  { name: 'minValue', desc: 'For rating/number', required: false },
+                  { name: 'maxValue', desc: 'For rating/number', required: false },
+                  { name: 'placeholder', desc: 'Input hint text', required: false },
+                ].map((col, index) => (
+                  <View key={col.name} style={[styles.columnItem, { backgroundColor: index % 2 === 0 ? 'transparent' : withAlpha(colors.primary, 0.03) }]}>
+                    <View style={styles.columnNameRow}>
+                      <Text style={[styles.columnName, { color: colors.text }]}>{col.name}</Text>
+                      {col.required && (
+                        <View style={[styles.requiredBadge, { backgroundColor: colors.error }]}>
+                          <Text style={styles.requiredBadgeText}>*</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.columnDesc, { color: colors.textMuted }]}>{col.desc}</Text>
+                  </View>
+                ))}
               </View>
 
               {/* Question Types Reference */}
-              <Text style={[styles.exampleLabel, { color: colors.text }]}>Supported Question Types</Text>
+              <Text style={[styles.sectionLabel, { color: colors.text, marginTop: SPACING.lg }]}>Supported Question Types</Text>
               <View style={styles.typesGrid}>
                 {[
                   { type: 'text', desc: 'Short answer', icon: <Type size={18} color={colors.primary} /> },
@@ -951,12 +1409,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <Text style={[styles.tipsTitle, { color: colors.success }]}>Quick Tips</Text>
                 <View style={styles.tipsList}>
                   {[
-                    'Set "required": true for mandatory questions',
-                    'Radio/checkbox/dropdown need an "options" array',
-                    'Rating uses minValue & maxValue (default 1-5)',
-                    'Add "placeholder" for text/paragraph/number inputs',
-                    'Boolean defaults to Yes/No, customize via options',
-                    'Number type supports minValue & maxValue validation',
+                    'JSON files should have { title, description?, questions: [] }',
+                    'CSV/Excel: Use pipe | to separate options (e.g., "Yes|No|Maybe")',
+                    'Set "required" column to "true" for mandatory questions',
+                    'Rating type uses minValue & maxValue (default 1-5)',
+                    'Excel exports as TSV (tab-separated) work best',
                   ].map((tip, index) => (
                     <View key={index} style={styles.tipRow}>
                       <View style={[styles.tipBullet, { backgroundColor: colors.success }]} />
@@ -970,28 +1427,24 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             {/* Actions */}
             <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
-                style={[styles.modalDownloadBtn, { borderColor: colors.primary, backgroundColor: withAlpha(colors.primary, 0.08) }]}
-                onPress={handleDownloadSample}
-              >
-                <Download size={16} color={colors.primary} />
-                <Text style={[styles.modalDownloadText, { color: colors.primary }]}>Sample</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.modalCancelBtn, { borderColor: colors.border }]}
-                onPress={() => setShowJsonModal(false)}
+                onPress={() => setShowImportModal(false)}
               >
                 <Text style={[styles.modalCancelText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalUploadBtn, { backgroundColor: colors.primary }]}
-                onPress={handleJsonUpload}
-                disabled={uploadingJson}
+                onPress={() => handleFileImport(selectedImportType)}
+                disabled={isUploading}
               >
-                <Upload size={18} color={colors.primaryText} />
+                {isUploading ? (
+                  <ActivityIndicator size="small" color={colors.primaryText} />
+                ) : (
+                    <Upload size={18} color={colors.primaryText} />
+                )}
                 <Text style={[styles.modalUploadText, { color: colors.primaryText }]}>
-                  {uploadingJson ? 'Uploading...' : 'Choose File'}
+                  {isUploading ? 'Importing...' : `Choose ${selectedImportType.toUpperCase()} File`}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1619,6 +2072,139 @@ const styles = StyleSheet.create({
   modalUploadText: {
     fontSize: TYPOGRAPHY.fontSize.base,
     fontWeight: '600',
+  },
+  // File format selection styles
+  sectionLabel: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: '600',
+    marginBottom: SPACING.sm,
+  },
+  fileFormatGrid: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  fileFormatCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.xs,
+  },
+  fileFormatIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: RADIUS.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.xs,
+  },
+  fileFormatLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
+  },
+  fileFormatDesc: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'center',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  templateSection: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.sm,
+  },
+  templateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  templateTitle: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
+  },
+  templateDesc: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginBottom: SPACING.md,
+  },
+  templateButtons: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  templateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: 1,
+  },
+  templateBtnText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
+  },
+  downloadingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  downloadingText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  columnGrid: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  columnItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+  },
+  columnNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  columnName: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '600',
+    fontFamily: 'monospace',
+  },
+  columnDesc: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  requiredBadge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  requiredBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   previewContent: {
     width: '100%',
