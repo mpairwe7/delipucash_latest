@@ -257,55 +257,142 @@ function validateQuestion(q: ParsedQuestion): { valid: boolean; errors: string[]
   return { valid: errors.length === 0, errors };
 }
 
+// ============================================================================
+// INDUSTRY-STANDARD FILE PARSING UTILITIES
+// ============================================================================
+
 /**
- * Parse CSV content with proper handling of quoted values
+ * Remove UTF-8 BOM (Byte Order Mark) from content
+ * BOM is common in files created by Excel or Windows applications
  */
-function parseCSVLine(line: string): string[] {
+function stripBOM(content: string): string {
+  // UTF-8 BOM is EF BB BF, which appears as \uFEFF in JavaScript
+  if (content.charCodeAt(0) === 0xFEFF) {
+    return content.slice(1);
+  }
+  return content;
+}
+
+/**
+ * Normalize line endings to Unix-style (\n)
+ * Handles Windows (\r\n) and old Mac (\r) line endings
+ */
+function normalizeLineEndings(content: string): string {
+  return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+/**
+ * Pre-process file content for parsing
+ * Combines BOM stripping and line ending normalization
+ */
+function preprocessContent(content: string): string {
+  return normalizeLineEndings(stripBOM(content));
+}
+
+/**
+ * Parse delimited line handling quoted values
+ * Supports CSV (comma), TSV (tab), and SSV (semicolon) formats
+ * Follows RFC 4180 standards for CSV parsing
+ */
+function parseDelimitedLine(line: string, delimiter: string = ','): string[] {
   const values: string[] = [];
   let current = '';
   let inQuotes = false;
 
   for (let i = 0; i < line.length; i++) {
     const char = line[i];
+    const nextChar = line[i + 1];
 
-    if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
+    if (char === '"' && !inQuotes) {
+      inQuotes = true;
+    } else if (char === '"' && inQuotes) {
+      if (nextChar === '"') {
+    // Escaped quote (RFC 4180: "" represents a single ")
         current += '"';
-        i++; // Skip the escaped quote
+        i++;
       } else {
-        inQuotes = !inQuotes;
+        inQuotes = false;
       }
-    } else if (char === ',' && !inQuotes) {
+    } else if (char === delimiter && !inQuotes) {
       values.push(current.trim());
       current = '';
     } else {
       current += char;
     }
   }
-
   values.push(current.trim());
   return values;
 }
 
 /**
- * Parse TSV/Excel content (tab-separated)
+ * Parse CSV line (comma-separated)
  */
-function parseTSVLine(line: string): string[] {
-  return line.split('\t').map(v => v.trim().replace(/^["']|["']$/g, ''));
+function parseCSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ',');
 }
 
 /**
- * Detect delimiter in content (comma, tab, or semicolon)
+ * Parse TSV line (tab-separated)
+ */
+function parseTSVLine(line: string): string[] {
+  return parseDelimitedLine(line, '\t');
+}
+
+/**
+ * Parse SSV line (semicolon-separated, common in European locales)
+ */
+function parseSSVLine(line: string): string[] {
+  return parseDelimitedLine(line, ';');
+}
+
+/**
+ * Detect delimiter in content by analyzing the header row
+ * Uses heuristics: counts delimiters outside of quoted strings
  */
 function detectDelimiter(content: string): ',' | '\t' | ';' {
-  const firstLine = content.split('\n')[0] || '';
-  const tabCount = (firstLine.match(/\t/g) || []).length;
-  const commaCount = (firstLine.match(/,/g) || []).length;
-  const semicolonCount = (firstLine.match(/;/g) || []).length;
+  const lines = content.split('\n');
+  const firstLine = lines[0] || '';
 
-  if (tabCount >= commaCount && tabCount >= semicolonCount) return '\t';
-  if (semicolonCount >= commaCount) return ';';
+  // Count delimiters outside of quotes
+  let tabCount = 0;
+  let commaCount = 0;
+  let semicolonCount = 0;
+  let inQuotes = false;
+
+  for (const char of firstLine) {
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (!inQuotes) {
+      if (char === '\t') tabCount++;
+      else if (char === ',') commaCount++;
+      else if (char === ';') semicolonCount++;
+    }
+  }
+
+  // Tab takes priority (most reliable), then compare comma vs semicolon
+  if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return '\t';
+  if (semicolonCount > commaCount) return ';';
   return ',';
+}
+
+/**
+ * Detect file type from file name extension
+ */
+function detectFileTypeFromName(fileName: string): 'json' | 'csv' | 'excel' {
+  const ext = fileName.toLowerCase().split('.').pop() || '';
+  switch (ext) {
+    case 'json':
+      return 'json';
+    case 'csv':
+      return 'csv';
+    case 'tsv':
+    case 'xls':
+    case 'xlsx':
+    case 'xlsb':
+      return 'excel';
+    default:
+      return 'csv'; // Default to CSV for unknown extensions
+  }
 }
 
 export default function FileUploadScreen(): React.ReactElement {
@@ -390,17 +477,28 @@ export default function FileUploadScreen(): React.ReactElement {
 
   /**
    * Parse spreadsheet content (CSV, TSV, Excel-exported)
+   * Handles BOM, different line endings, and various delimiters
+   * Returns validated questions with parse warnings
    */
-  const parseSpreadsheetContent = useCallback((content: string, isExcel: boolean): ParsedQuestion[] => {
-    const lines = content.split('\n').filter(line => line.trim());
-    if (lines.length < 2) return [];
+  const parseSpreadsheetContent = useCallback((content: string, _isExcel: boolean): { questions: ParsedQuestion[]; warnings: string[] } => {
+    // Pre-process content: strip BOM and normalize line endings
+    const cleanContent = preprocessContent(content);
+    const lines = cleanContent.split('\n').filter(line => line.trim());
+    const warnings: string[] = [];
 
-    const delimiter = detectDelimiter(content);
-    const parseLine = delimiter === '\t' ? parseTSVLine : parseCSVLine;
+    if (lines.length < 2) {
+      return { questions: [], warnings: ['File must have a header row and at least one data row'] };
+    }
+
+    const delimiter = detectDelimiter(cleanContent);
+    const parseLine = delimiter === '\t'
+      ? parseTSVLine
+      : delimiter === ';'
+        ? parseSSVLine
+        : parseCSVLine;
 
     const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, '').trim());
     const questions: ParsedQuestion[] = [];
-    const parseErrors: string[] = [];
 
     // Find column indices
     const textIndex = headers.findIndex(h => h === 'text' || h === 'question');
@@ -453,16 +551,12 @@ export default function FileUploadScreen(): React.ReactElement {
         if (validation.valid) {
           questions.push(question);
         } else {
-          parseErrors.push(`Row ${i + 1}: ${validation.errors.join(', ')}`);
+          warnings.push(`Row ${i + 1}: ${validation.errors.join(', ')}`);
         }
       }
     }
 
-    if (parseErrors.length > 0) {
-      setUploadError(`${parseErrors.length} row(s) had validation errors. First: ${parseErrors[0]}`);
-    }
-
-    return questions;
+    return { questions, warnings };
   }, []);
 
   const handleFilePick = async (fileType: 'json' | 'csv' | 'excel') => {
@@ -491,11 +585,9 @@ export default function FileUploadScreen(): React.ReactElement {
       }
 
       const file = result.assets[0];
-      const detectedType = file.name.endsWith('.json')
-        ? 'json'
-        : file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.tsv')
-          ? 'excel'
-          : 'csv';
+
+      // Detect actual file type from extension (more reliable than MIME type)
+      const detectedType = detectFileTypeFromName(file.name);
 
       setUploadedFile({
         name: file.name,
@@ -508,7 +600,10 @@ export default function FileUploadScreen(): React.ReactElement {
       setIsProcessing(true);
       try {
         const response = await fetch(file.uri);
-        const content = await response.text();
+        const rawContent = await response.text();
+
+        // Pre-process content: strip BOM and normalize line endings
+        const content = preprocessContent(rawContent);
 
         if (detectedType === 'json') {
           const parsed = JSON.parse(content);
@@ -557,8 +652,21 @@ export default function FileUploadScreen(): React.ReactElement {
           }
         } else {
           // Parse CSV or Excel/TSV using the unified function
-          const questions = parseSpreadsheetContent(content, detectedType === 'excel');
+          const { questions, warnings } = parseSpreadsheetContent(content, detectedType === 'excel');
           setParsedQuestions(questions);
+
+          // Show warnings if any
+          if (warnings.length > 0) {
+            const warningMsg = warnings.length > 3
+              ? `${warnings.slice(0, 3).join('\n')}\n...and ${warnings.length - 3} more`
+              : warnings.join('\n');
+            setUploadError(`${warnings.length} row(s) had validation errors:\n${warningMsg}`);
+            console.warn('[FileUpload] Parse warnings:', warnings);
+          }
+
+          if (questions.length === 0 && warnings.length > 0) {
+            setUploadError(`No valid questions found. Please check your file format.\n\nFirst issue: ${warnings[0]}`);
+          }
         }
       } catch (parseError) {
         console.error('[FileUpload] Parse error:', parseError);
