@@ -507,6 +507,188 @@ export const incrementVideoViews = asyncHandler(async (req, res) => {
   }
 });
 
+// Share a Video (Track share action for analytics)
+export const shareVideo = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { platform, userId } = req.body;
+
+    // Validate platform
+    const validPlatforms = ['copy', 'twitter', 'facebook', 'whatsapp', 'instagram', 'telegram', 'email', 'sms'];
+    if (!platform || !validPlatforms.includes(platform)) {
+      return res.status(400).json({ 
+        message: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` 
+      });
+    }
+
+    // Check if video exists
+    const video = await prisma.video.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true
+          }
+        }
+      }
+    });
+
+    if (!video) {
+      return res.status(404).json({ message: 'Video not found' });
+    }
+
+    // Log share event for analytics (in a real app, this would be stored in an analytics table)
+    console.log(`Video ${id} shared via ${platform} by user ${userId || 'anonymous'}`);
+
+    // Optionally track in a VideoShare table if needed for analytics
+    // await prisma.videoShare.create({
+    //   data: { videoId: id, userId, platform, sharedAt: new Date() }
+    // });
+
+    res.json({ 
+      success: true,
+      message: `Video shared successfully via ${platform}`,
+      data: {
+        shared: true,
+        platform,
+        videoId: id,
+        videoTitle: video.title,
+        sharedAt: new Date().toISOString(),
+      }
+    });
+  } catch (error) {
+    console.error('Error sharing video:', error);
+    res.status(500).json({ message: 'Failed to track share action' });
+  }
+});
+
+// Get Video Comments
+export const getVideoComments = asyncHandler(async (req, res) => {
+  try {
+    const { id: videoId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Verify video exists
+    const video = await prisma.video.findUnique({
+      where: { id: videoId },
+    });
+
+    if (!video) {
+      return res.status(404).json({ message: 'Video not found' });
+    }
+
+    // Get comments with pagination
+    const skip = (Number(page) - 1) * Number(limit);
+    const comments = await prisma.comment.findMany({
+      where: { videoId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: Number(limit),
+    });
+
+    // Get total count for pagination
+    const totalComments = await prisma.comment.count({
+      where: { videoId }
+    });
+
+    res.json({
+      success: true,
+      message: 'Comments fetched successfully',
+      data: {
+        comments: comments.map(comment => ({
+          id: comment.id,
+          text: comment.text,
+          mediaUrls: comment.mediaUrls || [],
+          userId: comment.userId,
+          videoId: comment.videoId,
+          createdAt: comment.createdAt.toISOString(),
+          user: {
+            id: comment.user.id,
+            firstName: comment.user.firstName,
+            lastName: comment.user.lastName,
+            avatar: comment.user.avatar
+          }
+        })),
+        pagination: {
+          page: Number(page),
+          limit: Number(limit),
+          total: totalComments,
+          totalPages: Math.ceil(totalComments / Number(limit)),
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching video comments:', error);
+    res.status(500).json({ message: 'Failed to fetch comments' });
+  }
+});
+
+// Unlike a Video (Toggle like - decrement)
+export const unlikeVideo = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if video exists
+    const video = await prisma.video.findUnique({
+      where: { id },
+    });
+
+    if (!video) {
+      return res.status(404).json({ message: 'Video not found' });
+    }
+
+    // Atomically decrement likes count (minimum 0)
+    const updatedVideo = await prisma.video.update({
+      where: { id },
+      data: {
+        likes: {
+          decrement: video.likes > 0 ? 1 : 0,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true
+          }
+        }
+      }
+    });
+
+    res.json({ 
+      message: 'Video unliked successfully', 
+      video: {
+        ...updatedVideo,
+        isLiked: false,
+        user: {
+          id: updatedVideo.user.id,
+          firstName: updatedVideo.user.firstName,
+          lastName: updatedVideo.user.lastName,
+          avatar: updatedVideo.user.avatar
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error unliking video:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
 // ============================================================================
 // VIDEO PREMIUM & LIMITS ENDPOINTS
 // ============================================================================

@@ -6,9 +6,12 @@ import {
   updateVideo,
   deleteVideo,
   likeVideo,
+  unlikeVideo,
   commentPost,
+  getVideoComments,
   bookmarkVideo,
   incrementVideoViews,
+  shareVideo,
   // Video premium & limits endpoints
   getVideoLimits,
   validateUpload,
@@ -35,8 +38,17 @@ router.get('/all', getAllVideos);
 // Route to like video
 router.post('/:id/like', likeVideo);
 
+// Route to unlike video
+router.post('/:id/unlike', unlikeVideo);
+
 // Route to post comments
 router.post('/:id/comments', commentPost);
+
+// Route to get video comments
+router.get('/:id/comments', getVideoComments);
+
+// Route to share video (track share action)
+router.post('/:id/share', shareVideo);
 
 // Route to bookmark video
 router.post('/:id/bookmark', bookmarkVideo);

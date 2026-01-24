@@ -206,6 +206,7 @@ export {
   selectUploadProgress,
   selectRecordingProgress,
   selectLivestreamProgress,
+  selectLivestreamStatus,
 } from './VideoStore';
 export type {
   UploadStatus,

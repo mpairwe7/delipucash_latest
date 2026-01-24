@@ -1049,7 +1049,7 @@ export const videoApi = {
       if (response.success) {
         return { success: true, data: response.data.data };
       }
-      return response as ApiResponse<VideoPremiumLimits>;
+      return { success: false, data: {} as VideoPremiumLimits, error: response.error };
     }
 
     // Mock response for development
@@ -1137,7 +1137,7 @@ export const videoApi = {
       if (response.success) {
         return { success: true, data: response.data.data };
       }
-      return response as ApiResponse<LivestreamSessionResponse>;
+      return { success: false, data: {} as LivestreamSessionResponse, error: response.error };
     }
 
     // Mock response for development
@@ -1176,7 +1176,7 @@ export const videoApi = {
       if (response.success) {
         return { success: true, data: response.data.data };
       }
-      return response as ApiResponse<{ endedAt: string }>;
+      return { success: false, data: { endedAt: '' }, error: response.error };
     }
 
     // Mock response for development
@@ -1202,7 +1202,7 @@ export const videoApi = {
       if (response.success) {
         return { success: true, data: response.data.data };
       }
-      return response as ApiResponse<ValidateSessionResponse>;
+      return { success: false, data: {} as ValidateSessionResponse, error: response.error };
     }
 
     // Mock response for development

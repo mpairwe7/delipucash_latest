@@ -80,6 +80,67 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiRespon
 }
 
 // ===========================================
+// HTTP Client (axios-like interface)
+// ===========================================
+export const api = {
+  async get<T = any>(url: string, config?: { params?: Record<string, string> }): Promise<{ data: T }> {
+    let fullUrl = url;
+    if (config?.params) {
+      const searchParams = new URLSearchParams(config.params);
+      fullUrl = `${url}?${searchParams.toString()}`;
+    }
+    const response = await fetchJson<T>(fullUrl);
+    if (!response.success) {
+      throw new Error(response.error || 'Request failed');
+    }
+    return { data: response.data };
+  },
+
+  async post<T = any>(url: string, data?: any): Promise<{ data: T }> {
+    const response = await fetchJson<T>(url, {
+      method: 'POST',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Request failed');
+    }
+    return { data: response.data };
+  },
+
+  async put<T = any>(url: string, data?: any): Promise<{ data: T }> {
+    const response = await fetchJson<T>(url, {
+      method: 'PUT',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Request failed');
+    }
+    return { data: response.data };
+  },
+
+  async patch<T = any>(url: string, data?: any): Promise<{ data: T }> {
+    const response = await fetchJson<T>(url, {
+      method: 'PATCH',
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Request failed');
+    }
+    return { data: response.data };
+  },
+
+  async delete<T = any>(url: string): Promise<{ data: T }> {
+    const response = await fetchJson<T>(url, {
+      method: 'DELETE',
+    });
+    if (!response.success) {
+      throw new Error(response.error || 'Request failed');
+    }
+    return { data: response.data };
+  },
+};
+
+// ===========================================
 // API Configuration
 // ===========================================
 export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.example.com";
@@ -1296,7 +1357,7 @@ export const adsApi = {
 // ===========================================
 // Default Export - All APIs
 // ===========================================
-const api = {
+const mockApis = {
   user: userApi,
   videos: videosApi,
   surveys: surveysApi,
@@ -1309,4 +1370,4 @@ const api = {
   ads: adsApi,
 };
 
-export default api;
+export default mockApis;

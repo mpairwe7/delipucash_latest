@@ -116,6 +116,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 892,
     views: 12450,
+    duration: 645, // 10:45
     isBookmarked: false,
     commentsCount: 45,
     createdAt: "2026-01-02T08:00:00Z",
@@ -130,6 +131,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 456,
     views: 3240,
+    duration: 1800, // 30:00
     isBookmarked: true,
     commentsCount: 128,
     createdAt: "2026-01-04T14:00:00Z",
@@ -144,6 +146,7 @@ export const mockVideos: Video[] = [
     userId: "user_004",
     likes: 721,
     views: 8920,
+    duration: 420, // 7:00
     isBookmarked: false,
     commentsCount: 32,
     createdAt: "2026-01-03T16:30:00Z",
@@ -158,6 +161,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 1204,
     views: 15680,
+    duration: 312, // 5:12
     isBookmarked: true,
     commentsCount: 67,
     createdAt: "2026-01-01T12:00:00Z",
@@ -172,6 +176,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 543,
     views: 1200,
+    duration: 540, // 9:00
     isBookmarked: false,
     commentsCount: 21,
     createdAt: "2025-12-28T10:00:00Z",
@@ -186,6 +191,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 387,
     views: 850,
+    duration: 780, // 13:00
     isBookmarked: false,
     commentsCount: 15,
     createdAt: "2025-12-25T14:00:00Z",

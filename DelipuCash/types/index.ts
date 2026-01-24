@@ -111,6 +111,7 @@ export interface Video {
   user?: AppUser;
   likes: number;
   views: number;
+  duration?: number; // Duration in seconds
   isBookmarked: boolean;
   comments?: Comment[];
   commentsCount: number;
@@ -275,6 +276,7 @@ export interface Question {
   rewardAmount?: number;
   isInstantReward?: boolean;
   totalAnswers?: number;
+  viewCount?: number;
 }
 
 export interface Response {

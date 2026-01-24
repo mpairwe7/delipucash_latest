@@ -16,10 +16,10 @@ import {
   Alert,
   Animated,
   StatusBar,
-  SafeAreaView,
   Platform,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Crown } from 'lucide-react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { router, Href } from 'expo-router';
@@ -104,7 +104,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const { 
     startRecording: storeStartRecording, 
     stopRecording: storeStopRecording,
-    updateRecordingTime,
+    updateRecordingDuration,
     startLivestream: storeStartLivestream,
     endLivestream: storeEndLivestream,
     setPremiumStatus,
@@ -122,7 +122,12 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
 
   // Sync premium status with store
   useEffect(() => {
-    setPremiumStatus(hasVideoPremium);
+    setPremiumStatus({
+      hasVideoPremium,
+      maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 20 * 1024 * 1024,
+      maxRecordingDuration: hasVideoPremium ? 1800 : 300,
+      maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
+    });
   }, [hasVideoPremium, setPremiumStatus]);
 
   // Use premium limits or prop override
@@ -212,7 +217,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
           const newTime = prev + 1;
           
           // Sync with store
-          updateRecordingTime(newTime);
+          updateRecordingDuration(newTime);
 
           // Show warning 30 seconds before limit (for free users)
           if (!hasVideoPremium && newTime === effectiveMaxDuration - 30) {
@@ -257,7 +262,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         clearInterval(recordingTimerRef.current);
       }
     };
-  }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade, updateRecordingTime]);
+  }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade, updateRecordingDuration]);
 
   // Handlers
   const toggleCamera = useCallback(() => {
@@ -316,7 +321,8 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     // Start server-side livestream session
     try {
       const response = await startLivestreamMutation.mutateAsync({
-        isLivestream: true,
+        userId: 'current-user', // TODO: Get actual user ID from auth context
+        title: 'Live Recording',
       });
       sessionIdRef.current = response.sessionId;
       storeStartLivestream(response.sessionId);

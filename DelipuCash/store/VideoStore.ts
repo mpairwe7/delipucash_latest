@@ -95,6 +95,33 @@ export interface VideoLimitsWarning {
   dismissedAt?: string;
 }
 
+/** Trending video slider state */
+export interface TrendingSliderState {
+  activeIndex: number;
+  isAutoScrolling: boolean;
+  lastInteractionAt: string | null;
+}
+
+/** Video player state for global control */
+export interface VideoPlayerState {
+  currentVideoId: string | null;
+  isPlaying: boolean;
+  isMuted: boolean;
+  progress: number;
+  duration: number;
+  isFullscreen: boolean;
+  playbackSpeed: number;
+  quality: 'auto' | '1080p' | '720p' | '480p' | '360p';
+}
+
+/** Watch history entry */
+export interface WatchHistoryEntry {
+  videoId: string;
+  watchedAt: string;
+  progressPercent: number;
+  duration: number;
+}
+
 export interface VideoState {
   // Premium status (synced from backend/RevenueCat)
   premiumStatus: VideoPremiumStatus;
@@ -111,6 +138,21 @@ export interface VideoState {
   currentLivestream: LivestreamSession | null;
   livestreamHistory: LivestreamSession[];
   
+  // Trending slider state
+  trendingSlider: TrendingSliderState;
+
+  // Video player state
+  player: VideoPlayerState;
+
+  // Watch history
+  watchHistory: WatchHistoryEntry[];
+
+  // Video queue for auto-play
+  videoQueue: string[];
+
+  // Liked videos (local cache)
+  likedVideoIds: string[];
+
   // Warnings & prompts
   activeWarning: VideoLimitsWarning | null;
   showUpgradePrompt: boolean;
@@ -160,6 +202,36 @@ export interface VideoActions {
   setUploadModalVisible: (visible: boolean) => void;
   setLivestreamModalVisible: (visible: boolean) => void;
   
+  // Trending slider
+  setTrendingSliderIndex: (index: number) => void;
+  setTrendingAutoScroll: (enabled: boolean) => void;
+  recordSliderInteraction: () => void;
+
+  // Video player
+  setCurrentVideo: (videoId: string | null) => void;
+  setPlayerState: (state: Partial<VideoPlayerState>) => void;
+  togglePlay: () => void;
+  toggleMute: () => void;
+  setProgress: (progress: number) => void;
+  setPlaybackSpeed: (speed: number) => void;
+  setQuality: (quality: VideoPlayerState['quality']) => void;
+
+  // Watch history
+  addToWatchHistory: (videoId: string, duration: number, progressPercent?: number) => void;
+  clearWatchHistory: () => void;
+  getRecentlyWatched: (limit?: number) => WatchHistoryEntry[];
+
+  // Video queue
+  setVideoQueue: (videoIds: string[]) => void;
+  addToQueue: (videoId: string) => void;
+  removeFromQueue: (videoId: string) => void;
+  playNextInQueue: () => string | null;
+  clearQueue: () => void;
+
+  // Liked videos
+  toggleLikeVideo: (videoId: string) => boolean;
+  isVideoLiked: (videoId: string) => boolean;
+
   // Validation helpers
   validateFileSize: (sizeBytes: number) => { valid: boolean; error?: string };
   validateRecordingDuration: (seconds: number) => { valid: boolean; warning?: string; limitReached: boolean };
@@ -177,6 +249,23 @@ export interface VideoActions {
 // INITIAL STATE
 // ============================================================================
 
+const initialPlayerState: VideoPlayerState = {
+  currentVideoId: null,
+  isPlaying: false,
+  isMuted: false,
+  progress: 0,
+  duration: 0,
+  isFullscreen: false,
+  playbackSpeed: 1,
+  quality: 'auto',
+};
+
+const initialTrendingSliderState: TrendingSliderState = {
+  activeIndex: 0,
+  isAutoScrolling: false,
+  lastInteractionAt: null,
+};
+
 const initialState: VideoState = {
   premiumStatus: {
     hasVideoPremium: false,
@@ -190,6 +279,11 @@ const initialState: VideoState = {
   recordingHistory: [],
   currentLivestream: null,
   livestreamHistory: [],
+  trendingSlider: initialTrendingSliderState,
+  player: initialPlayerState,
+  watchHistory: [],
+  videoQueue: [],
+  likedVideoIds: [],
   activeWarning: null,
   showUpgradePrompt: false,
   isUploadModalVisible: false,
@@ -472,6 +566,145 @@ export const useVideoStore = create<VideoState & VideoActions>()(
       setUploadModalVisible: (visible) => set({ isUploadModalVisible: visible }),
       setLivestreamModalVisible: (visible) => set({ isLivestreamModalVisible: visible }),
 
+      // Trending slider
+      setTrendingSliderIndex: (index) => set((state) => ({
+        trendingSlider: { ...state.trendingSlider, activeIndex: index },
+      })),
+
+      setTrendingAutoScroll: (enabled) => set((state) => ({
+        trendingSlider: { ...state.trendingSlider, isAutoScrolling: enabled },
+      })),
+
+      recordSliderInteraction: () => set((state) => ({
+        trendingSlider: {
+          ...state.trendingSlider,
+          lastInteractionAt: new Date().toISOString(),
+          isAutoScrolling: false, // Pause auto-scroll on user interaction
+        },
+      })),
+
+      // Video player
+      setCurrentVideo: (videoId) => set((state) => ({
+        player: {
+          ...state.player,
+          currentVideoId: videoId,
+          progress: 0,
+          isPlaying: videoId !== null,
+        },
+      })),
+
+      setPlayerState: (playerState) => set((state) => ({
+        player: { ...state.player, ...playerState },
+      })),
+
+      togglePlay: () => set((state) => ({
+        player: { ...state.player, isPlaying: !state.player.isPlaying },
+      })),
+
+      toggleMute: () => set((state) => ({
+        player: { ...state.player, isMuted: !state.player.isMuted },
+      })),
+
+      setProgress: (progress) => set((state) => ({
+        player: { ...state.player, progress },
+      })),
+
+      setPlaybackSpeed: (speed) => set((state) => ({
+        player: { ...state.player, playbackSpeed: speed },
+      })),
+
+      setQuality: (quality) => set((state) => ({
+        player: { ...state.player, quality },
+      })),
+
+      // Watch history
+      addToWatchHistory: (videoId, duration, progressPercent = 0) => {
+        const { watchHistory } = get();
+        const existingIndex = watchHistory.findIndex(h => h.videoId === videoId);
+
+        const entry: WatchHistoryEntry = {
+          videoId,
+          watchedAt: new Date().toISOString(),
+          progressPercent,
+          duration,
+        };
+
+        let newHistory: WatchHistoryEntry[];
+        if (existingIndex >= 0) {
+          // Update existing entry and move to front
+          newHistory = [
+            entry,
+            ...watchHistory.filter((_, i) => i !== existingIndex),
+          ];
+        } else {
+          // Add new entry to front
+          newHistory = [entry, ...watchHistory];
+        }
+
+        // Keep only last 100 entries
+        set({ watchHistory: newHistory.slice(0, 100) });
+      },
+
+      clearWatchHistory: () => set({ watchHistory: [] }),
+
+      getRecentlyWatched: (limit = 10) => {
+        const { watchHistory } = get();
+        return watchHistory.slice(0, limit);
+      },
+
+      // Video queue
+      setVideoQueue: (videoIds) => set({ videoQueue: videoIds }),
+
+      addToQueue: (videoId) => {
+        const { videoQueue } = get();
+        if (!videoQueue.includes(videoId)) {
+          set({ videoQueue: [...videoQueue, videoId] });
+        }
+      },
+
+      removeFromQueue: (videoId) => {
+        const { videoQueue } = get();
+        set({ videoQueue: videoQueue.filter(id => id !== videoId) });
+      },
+
+      playNextInQueue: () => {
+        const { videoQueue, player } = get();
+        if (videoQueue.length === 0) return null;
+
+        const nextVideoId = videoQueue[0];
+        set({
+          videoQueue: videoQueue.slice(1),
+          player: {
+            ...player,
+            currentVideoId: nextVideoId,
+            progress: 0,
+            isPlaying: true,
+          },
+        });
+        return nextVideoId;
+      },
+
+      clearQueue: () => set({ videoQueue: [] }),
+
+      // Liked videos
+      toggleLikeVideo: (videoId) => {
+        const { likedVideoIds } = get();
+        const isLiked = likedVideoIds.includes(videoId);
+
+        if (isLiked) {
+          set({ likedVideoIds: likedVideoIds.filter(id => id !== videoId) });
+        } else {
+          set({ likedVideoIds: [...likedVideoIds, videoId] });
+        }
+
+        return !isLiked; // Return new like state
+      },
+
+      isVideoLiked: (videoId) => {
+        const { likedVideoIds } = get();
+        return likedVideoIds.includes(videoId);
+      },
+
       // Validation helpers
       validateFileSize: (sizeBytes) => {
         const { premiumStatus } = get();
@@ -559,6 +792,8 @@ export const useVideoStore = create<VideoState & VideoActions>()(
         uploadHistory: state.uploadHistory.slice(-10), // Keep last 10
         recordingHistory: state.recordingHistory.slice(-10),
         livestreamHistory: state.livestreamHistory.slice(-10),
+        watchHistory: state.watchHistory.slice(-50), // Keep last 50
+        likedVideoIds: state.likedVideoIds, // Persist liked videos
       }),
     }
   )
@@ -591,6 +826,27 @@ export const selectShowUpgradePrompt = (state: VideoState) => state.showUpgradeP
 
 export const selectLastError = (state: VideoState) => state.lastError;
 
+// Trending slider selectors
+export const selectTrendingSlider = (state: VideoState) => state.trendingSlider;
+export const selectTrendingSliderIndex = (state: VideoState) => state.trendingSlider.activeIndex;
+
+// Video player selectors
+export const selectPlayer = (state: VideoState) => state.player;
+export const selectCurrentVideoId = (state: VideoState) => state.player.currentVideoId;
+export const selectIsPlaying = (state: VideoState) => state.player.isPlaying;
+export const selectIsMuted = (state: VideoState) => state.player.isMuted;
+
+// Watch history selectors
+export const selectWatchHistory = (state: VideoState) => state.watchHistory;
+export const selectRecentlyWatched = (state: VideoState) => state.watchHistory.slice(0, 10);
+
+// Video queue selectors
+export const selectVideoQueue = (state: VideoState) => state.videoQueue;
+export const selectQueueLength = (state: VideoState) => state.videoQueue.length;
+
+// Liked videos selectors
+export const selectLikedVideoIds = (state: VideoState) => state.likedVideoIds;
+
 // ============================================================================
 // COMPUTED SELECTORS
 // ============================================================================
@@ -608,9 +864,39 @@ export const selectUploadProgress = (state: VideoState) => {
   };
 };
 
+// Stable default objects to prevent infinite re-renders
+const DEFAULT_RECORDING_PROGRESS = {
+  sessionId: '',
+  duration: 0,
+  maxDuration: 0,
+  status: 'idle' as RecordingStatus,
+  formattedDuration: '0:00',
+  formattedMaxDuration: '0:00',
+  formattedRemaining: '0:00',
+  progressPercent: 0,
+  isNearLimit: false,
+  isRecording: false,
+};
+
+const DEFAULT_LIVESTREAM_STATUS = {
+  sessionId: '',
+  duration: 0,
+  maxDuration: 0,
+  viewerCount: 0,
+  status: 'idle' as LivestreamStatus,
+  formattedDuration: '0:00',
+  formattedMaxDuration: '0:00',
+  formattedRemaining: '0:00',
+  progressPercent: 0,
+  isNearLimit: false,
+  isActive: false,
+};
+
 export const selectRecordingProgress = (state: VideoState) => {
   const recording = state.currentRecording;
-  if (!recording) return null;
+  if (!recording) {
+    return DEFAULT_RECORDING_PROGRESS;
+  }
   
   const remainingSeconds = recording.maxDuration - recording.duration;
   const progressPercent = (recording.duration / recording.maxDuration) * 100;
@@ -622,6 +908,27 @@ export const selectRecordingProgress = (state: VideoState) => {
     formattedRemaining: formatDuration(remainingSeconds),
     progressPercent,
     isNearLimit: remainingSeconds <= 30,
+    isRecording: recording.status === 'recording',
+  };
+};
+
+export const selectLivestreamStatus = (state: VideoState) => {
+  const livestream = state.currentLivestream;
+  if (!livestream) {
+    return DEFAULT_LIVESTREAM_STATUS;
+  }
+
+  const remainingSeconds = livestream.maxDuration - livestream.duration;
+  const progressPercent = (livestream.duration / livestream.maxDuration) * 100;
+
+  return {
+    ...livestream,
+    formattedDuration: formatDuration(livestream.duration),
+    formattedMaxDuration: formatDuration(livestream.maxDuration),
+    formattedRemaining: formatDuration(remainingSeconds),
+    progressPercent,
+    isNearLimit: remainingSeconds <= 30,
+    isActive: livestream.status === 'live',
   };
 };
 

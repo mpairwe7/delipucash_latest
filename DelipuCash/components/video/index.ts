@@ -24,3 +24,7 @@ export type { UploadModalProps, UploadFormData } from './UploadModal';
 // Search Components
 export { SearchResults } from './SearchResults';
 export type { SearchResultsProps } from './SearchResults';
+
+// Slider Components
+export { TrendingVideoSlider } from './TrendingVideoSlider';
+export type { TrendingVideoSliderProps } from './TrendingVideoSlider';
