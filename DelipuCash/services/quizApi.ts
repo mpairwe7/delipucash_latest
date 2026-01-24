@@ -12,6 +12,7 @@ import {
   RewardRedemptionResult,
   PaymentStatus,
 } from '@/types';
+import { mockQuizQuestions } from '@/data/mockData';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -21,32 +22,66 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000';
 
 /**
  * Fetch uploaded questions for quiz session
+ * Falls back to mock data if API is unavailable
  */
 async function fetchQuizQuestions(limit: number = 10, category?: string): Promise<QuizQuestion[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (category) params.append('category', category);
-  
-  const response = await fetch(`${API_BASE_URL}/api/quiz/questions?${params}`);
-  
-  if (!response.ok) {
-    throw new Error('Failed to fetch quiz questions');
+  try {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (category) params.append('category', category);
+
+    const response = await fetch(`${API_BASE_URL}/api/quiz/questions?${params}`);
+
+    if (!response.ok) {
+      console.warn('[QuizAPI] API returned non-OK status, falling back to mock data');
+      return getMockQuizQuestions(limit, category);
+    }
+
+    const data = await response.json();
+
+    // Check if we got valid data
+    const questions = data.questions || data;
+    if (!Array.isArray(questions) || questions.length === 0) {
+      console.warn('[QuizAPI] No questions from API, falling back to mock data');
+      return getMockQuizQuestions(limit, category);
+    }
+
+    // Transform to QuizQuestion format
+    return questions.map((q: Record<string, unknown>): QuizQuestion => ({
+      id: String(q.id || ''),
+      text: String(q.text || q.question || ''),
+      options: q.options as Record<string, string> | string[] | undefined,
+      correctAnswer: (q.correctAnswer || q.answer) as string | string[],
+      explanation: q.explanation as string | undefined,
+      category: q.category as string | undefined,
+      difficulty: (q.difficulty || 'medium') as 'easy' | 'medium' | 'hard',
+      pointValue: Number(q.pointValue || q.rewardAmount || 10),
+      timeLimit: Number(q.timeLimit || 90),
+      type: determineQuestionType(q.options),
+    }));
+  } catch (error) {
+    console.warn('[QuizAPI] Failed to fetch from API, falling back to mock data:', error);
+    return getMockQuizQuestions(limit, category);
   }
-  
-  const data = await response.json();
-  
-  // Transform to QuizQuestion format
-  return (data.questions || data).map((q: Record<string, unknown>) => ({
-    id: q.id,
-    text: q.text || q.question,
-    options: q.options,
-    correctAnswer: q.correctAnswer || q.answer,
-    explanation: q.explanation,
-    category: q.category,
-    difficulty: q.difficulty || 'medium',
-    pointValue: q.pointValue || q.rewardAmount || 10,
-    timeLimit: q.timeLimit || 90,
-    type: determineQuestionType(q.options),
-  }));
+}
+
+/**
+ * Get mock quiz questions with optional filtering
+ */
+function getMockQuizQuestions(limit: number = 10, category?: string): QuizQuestion[] {
+  let questions = [...mockQuizQuestions];
+
+  // Filter by category if provided
+  if (category) {
+    questions = questions.filter(q =>
+      q.category?.toLowerCase() === category.toLowerCase()
+    );
+  }
+
+  // Shuffle questions for variety
+  questions = questions.sort(() => Math.random() - 0.5);
+
+  // Return limited number
+  return questions.slice(0, limit);
 }
 
 /**
