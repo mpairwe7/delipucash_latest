@@ -2,23 +2,36 @@
  * LiveStreamScreen Component
  * Full-featured live stream/recording screen
  * Design System Compliant - Inspired by TikTok/Instagram/YouTube
+ * 
+ * Free users: 5 minute max livestream/recording
+ * Premium users: Up to 2 hours livestream/recording
  */
 
 import React, { memo, useRef, useState, useEffect, useCallback } from 'react';
 import {
   View,
+  Text,
   StyleSheet,
   TouchableOpacity,
   Alert,
   Animated,
   StatusBar,
-  SafeAreaView,
   Platform,
   Modal,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Crown } from 'lucide-react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useTheme } from '@/utils/theme';
-import { MAX_RECORDING_DURATION } from '@/utils/video-utils';
+import { router, Href } from 'expo-router';
+import { useTheme, SPACING, TYPOGRAPHY, RADIUS, withAlpha } from '@/utils/theme';
+import {
+  MAX_RECORDING_DURATION,
+  MAX_LIVESTREAM_DURATION_PREMIUM,
+  formatDuration,
+} from '@/utils/video-utils';
+import { useVideoPremiumAccess } from '@/services/purchasesHooks';
+import { useVideoStore, selectRecordingProgress, selectLivestreamStatus } from '@/store/VideoStore';
+import { useStartLivestream, useEndLivestream } from '@/services/hooks';
 
 // Components
 import { CameraControls } from './CameraControls';
@@ -43,6 +56,8 @@ export interface LiveStreamScreenProps {
   maxDuration?: number;
   /** Whether to show as modal */
   asModal?: boolean;
+  /** Callback when user needs to upgrade for extended streaming */
+  onUpgradeRequired?: () => void;
 }
 
 export interface RecordedVideo {
@@ -76,13 +91,51 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   visible = true,
   onClose,
   onVideoUploaded,
-  maxDuration = MAX_RECORDING_DURATION,
+  maxDuration: propMaxDuration,
   asModal = false,
+  onUpgradeRequired,
 }) => {
-  useTheme(); // For theme context
+  const { colors } = useTheme();
+  const { hasVideoPremium, maxRecordingDuration } = useVideoPremiumAccess();
+
+  // Video store for state management (selectors available for UI display if needed)
+  const storeRecordingProgress = useVideoStore(selectRecordingProgress);
+  const storeLivestreamStatus = useVideoStore(selectLivestreamStatus);
+  const { 
+    startRecording: storeStartRecording, 
+    stopRecording: storeStopRecording,
+    updateRecordingDuration,
+    startLivestream: storeStartLivestream,
+    endLivestream: storeEndLivestream,
+    setPremiumStatus,
+  } = useVideoStore();
+
+  // Use store state for display (exposed for parent components if needed)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const isStoreRecording = storeRecordingProgress.isRecording;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const isStoreLive = storeLivestreamStatus.isActive;
+
+  // API hooks for server-side session management
+  const startLivestreamMutation = useStartLivestream();
+  const endLivestreamMutation = useEndLivestream();
+
+  // Sync premium status with store
+  useEffect(() => {
+    setPremiumStatus({
+      hasVideoPremium,
+      maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 20 * 1024 * 1024,
+      maxRecordingDuration: hasVideoPremium ? 1800 : 300,
+      maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
+    });
+  }, [hasVideoPremium, setPremiumStatus]);
+
+  // Use premium limits or prop override
+  const effectiveMaxDuration = propMaxDuration ?? (hasVideoPremium ? maxRecordingDuration : MAX_RECORDING_DURATION);
   
   // Refs
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -96,6 +149,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const [recordingTime, setRecordingTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [showLimitWarning, setShowLimitWarning] = useState(false);
   
   // Permissions (mock for demo)
   const { hasPermission, requestPermissions } = useMockCameraPermissions();
@@ -103,6 +157,12 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Orientation state for landscape recording support
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isLandscape, setIsLandscape] = useState(false);
+
+  // Navigate to subscription screen for upgrade
+  const handleUpgrade = useCallback(() => {
+    onUpgradeRequired?.();
+    router.push('/subscription' as Href);
+  }, [onUpgradeRequired]);
 
   // Handle orientation changes and cleanup
   useEffect(() => {
@@ -147,18 +207,46 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Recording timer with ref-based stop to avoid circular dependency
   const stopRecordingRef = useRef<(() => void) | null>(null);
 
-  // Recording timer
+  // Recording timer with limit warning and auto-stop
   useEffect(() => {
     if (isRecording) {
       setRecordingTime(0);
+      setShowLimitWarning(false);
       recordingTimerRef.current = setInterval(() => {
         setRecordingTime(prev => {
-          if (prev >= maxDuration) {
-            // Use ref to call stopRecording
-            stopRecordingRef.current?.();
-            return maxDuration;
+          const newTime = prev + 1;
+          
+          // Sync with store
+          updateRecordingDuration(newTime);
+
+          // Show warning 30 seconds before limit (for free users)
+          if (!hasVideoPremium && newTime === effectiveMaxDuration - 30) {
+            setShowLimitWarning(true);
           }
-          return prev + 1;
+
+          // Stop at limit
+          if (newTime >= effectiveMaxDuration) {
+            stopRecordingRef.current?.();
+
+            // Show upgrade prompt for free users
+            if (!hasVideoPremium) {
+              Alert.alert(
+                'Recording Limit Reached',
+                `Free users can record up to ${formatDuration(MAX_RECORDING_DURATION)}. Upgrade to Video Premium for recordings up to ${formatDuration(MAX_LIVESTREAM_DURATION_PREMIUM)}.`,
+                [
+                  { text: 'Later', style: 'cancel' },
+                  {
+                    text: 'Upgrade Now',
+                    onPress: handleUpgrade,
+                  },
+                ]
+              );
+            }
+
+            return effectiveMaxDuration;
+          }
+
+          return newTime;
         });
       }, 1000);
     } else {
@@ -166,6 +254,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         clearInterval(recordingTimerRef.current);
         recordingTimerRef.current = null;
       }
+      setShowLimitWarning(false);
     }
     
     return () => {
@@ -173,7 +262,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         clearInterval(recordingTimerRef.current);
       }
     };
-  }, [isRecording, maxDuration]);
+  }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade, updateRecordingDuration]);
 
   // Handlers
   const toggleCamera = useCallback(() => {
@@ -226,6 +315,21 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [showControls, fadeAnim]);
   
   const startRecording = useCallback(async () => {
+    // Update store state
+    storeStartRecording();
+    
+    // Start server-side livestream session
+    try {
+      const response = await startLivestreamMutation.mutateAsync({
+        userId: 'current-user', // TODO: Get actual user ID from auth context
+        title: 'Live Recording',
+      });
+      sessionIdRef.current = response.sessionId;
+      storeStartLivestream(response.sessionId);
+    } catch {
+      console.warn('Failed to start server session, continuing locally');
+    }
+
     setIsRecording(true);
     setShowControls(true);
     
@@ -234,9 +338,26 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [fadeAnim]);
+  }, [fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream]);
   
   const stopRecording = useCallback(async () => {
+    // Update store state
+    storeStopRecording();
+    
+    // End server-side session
+    if (sessionIdRef.current) {
+      try {
+        await endLivestreamMutation.mutateAsync({
+          sessionId: sessionIdRef.current,
+          duration: recordingTime,
+        });
+        storeEndLivestream();
+      } catch {
+        console.warn('Failed to end server session');
+      }
+      sessionIdRef.current = null;
+    }
+
     setIsRecording(false);
     setIsUploading(true);
     
@@ -271,7 +392,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       }
       setUploadProgress(Math.min(Math.round(progress), 100));
     }, 200);
-  }, [recordingTime, onVideoUploaded, onClose]);
+  }, [recordingTime, onVideoUploaded, onClose, storeStopRecording, endLivestreamMutation, storeEndLivestream]);
 
   // Update ref when stopRecording changes
   useEffect(() => {
@@ -335,9 +456,27 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
           {/* Recording Progress Bar */}
           <RecordingProgressBar
             isRecording={isRecording}
-            maxDuration={maxDuration * 1000}
+            maxDuration={effectiveMaxDuration * 1000}
           />
           
+          {/* Limit Warning Banner */}
+          {showLimitWarning && !hasVideoPremium && (
+            <View style={[styles.limitWarningBanner, { backgroundColor: withAlpha(colors.warning, 0.95) }]}>
+              <Text style={styles.limitWarningText}>
+                ⏱️ Recording ends in {formatDuration(effectiveMaxDuration - recordingTime)}
+              </Text>
+              <TouchableOpacity
+                style={[styles.upgradeBannerButton, { backgroundColor: colors.card }]}
+                onPress={handleUpgrade}
+              >
+                <Crown size={14} color={colors.warning} strokeWidth={2} />
+                <Text style={[styles.upgradeBannerText, { color: colors.warning }]}>
+                  Extend
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Gradient Overlays */}
           <GradientOverlay position="top" />
           <GradientOverlay position="bottom" height={200} />
@@ -361,7 +500,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
           {/* Recording Timer */}
           <RecordingTimer
             currentTime={recordingTime}
-            maxDuration={maxDuration}
+            maxDuration={effectiveMaxDuration}
             isRecording={isRecording}
           />
           
@@ -417,6 +556,36 @@ const styles = StyleSheet.create({
   mockCamera: {
     flex: 1,
     backgroundColor: '#1a1a2e', // Dark background to simulate camera
+  },
+  limitWarningBanner: {
+    position: 'absolute',
+    top: 60,
+    left: SPACING.lg,
+    right: SPACING.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+    zIndex: 100,
+  },
+  limitWarningText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: '#000',
+  },
+  upgradeBannerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    gap: 4,
+  },
+  upgradeBannerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });
 

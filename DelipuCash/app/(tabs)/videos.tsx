@@ -52,6 +52,9 @@ import {
   useTrendingVideos,
   useVideos,
   useLikeVideo,
+  useUnlikeVideo,
+  useBookmarkVideo,
+  useShareVideo,
   useUserStats,
   useUnreadCount,
 } from "@/services/hooks";
@@ -68,6 +71,7 @@ import {
   SearchResults,
   FloatingActionButton,
   LiveStreamScreen,
+  TrendingVideoSlider,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
 import {
@@ -78,6 +82,7 @@ import {
 } from "@/services/adHooksRefactored";
 import { BannerAd, NativeAd, CompactAd, FeaturedAd } from "@/components/ads";
 import { Video } from "@/types";
+import { useVideoStore, selectLikedVideoIds } from "@/store/VideoStore";
 import * as Haptics from "expo-haptics";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -98,6 +103,16 @@ export default function VideosScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const scrollViewRef = useRef<ScrollView>(null);
 
+  // Video Store for state management
+  const likedVideoIds = useVideoStore(selectLikedVideoIds);
+  const {
+    addToWatchHistory,
+    toggleLikeVideo,
+    setVideoQueue: storeSetVideoQueue,
+    setCurrentVideo: storeSetCurrentVideo,
+    setPlayerState,
+  } = useVideoStore();
+
   // UI State
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -113,7 +128,7 @@ export default function VideosScreen(): React.ReactElement {
   const [showMiniPlayer, setShowMiniPlayer] = useState(false);
   const [videoQueue, setVideoQueue] = useState<Video[]>([]);
   const [watchHistory, setWatchHistory] = useState<string[]>([]);
-  const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set());
+  const [likedVideos, setLikedVideos] = useState<Set<string>>(new Set(likedVideoIds));
   const [progress, setProgress] = useState(0);
 
   // Data Hooks
@@ -122,6 +137,9 @@ export default function VideosScreen(): React.ReactElement {
   const { data: userStats } = useUserStats();
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideo } = useLikeVideo();
+  const { mutate: unlikeVideo } = useUnlikeVideo();
+  const { mutate: bookmarkVideo } = useBookmarkVideo();
+  const { mutate: shareVideo } = useShareVideo();
   
   // Ad data using TanStack Query for optimized caching
   const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds();
@@ -197,26 +215,54 @@ export default function VideosScreen(): React.ReactElement {
 
   const handleShare = useCallback(async (video: Video): Promise<void> => {
     try {
-      await Share.share({
+      const result = await Share.share({
         message: `Check out this video: ${video.title}\n${video.videoUrl}`,
         title: video.title || "Shared Video",
       });
+      
+      // Track share on backend after successful native share
+      if (result.action === Share.sharedAction) {
+        // Map activity type to platform if available (iOS provides activityType)
+        let platform: 'copy' | 'twitter' | 'facebook' | 'whatsapp' | 'instagram' | 'telegram' | 'email' | 'sms' | 'other' = 'other';
+        const activityType = result.activityType?.toLowerCase() || '';
+        
+        if (activityType.includes('copy')) platform = 'copy';
+        else if (activityType.includes('twitter') || activityType.includes('x.com')) platform = 'twitter';
+        else if (activityType.includes('facebook')) platform = 'facebook';
+        else if (activityType.includes('whatsapp')) platform = 'whatsapp';
+        else if (activityType.includes('instagram')) platform = 'instagram';
+        else if (activityType.includes('telegram')) platform = 'telegram';
+        else if (activityType.includes('mail')) platform = 'email';
+        else if (activityType.includes('message') || activityType.includes('sms')) platform = 'sms';
+        
+        shareVideo({ videoId: video.id, platform });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
     } catch (error) {
       console.error("Share error:", error);
     }
-  }, []);
+  }, [shareVideo]);
 
   const handleBookmark = useCallback((video: Video): void => {
-    Alert.alert(
-      "Bookmark",
-      video.isBookmarked ? "Removed from bookmarks" : "Added to bookmarks"
-    );
-  }, []);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    bookmarkVideo(video.id, {
+      onSuccess: () => {
+        Alert.alert(
+          "Bookmark",
+          video.isBookmarked ? "Removed from bookmarks" : "Added to bookmarks"
+        );
+      },
+      onError: () => {
+        Alert.alert("Error", "Failed to update bookmark. Please try again.");
+      },
+    });
+  }, [bookmarkVideo]);
 
   const handleVideoSelect = useCallback((video: Video): void => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Track watch history (YouTube-like)
+    // Track watch history in store and local state
+    addToWatchHistory(video.id, video.duration || 0, 0);
     setWatchHistory((prev) => {
       const filtered = prev.filter((id) => id !== video.id);
       return [video.id, ...filtered].slice(0, 50); // Keep last 50 videos
@@ -230,6 +276,11 @@ export default function VideosScreen(): React.ReactElement {
       )
     ).slice(0, 10);
     setVideoQueue(relatedVideos);
+    storeSetVideoQueue(relatedVideos.map(v => v.id));
+
+    // Update store with current video
+    storeSetCurrentVideo(video.id);
+    setPlayerState({ isPlaying: true, progress: 0 });
 
     // Open player
     setCurrentVideo(video);
@@ -237,7 +288,7 @@ export default function VideosScreen(): React.ReactElement {
     setIsPlaying(true);
     setShowMiniPlayer(false);
     setProgress(0);
-  }, [videos]);
+  }, [videos, addToWatchHistory, storeSetVideoQueue, storeSetCurrentVideo, setPlayerState]);
 
   const handleSearch = useCallback((query: string) => {
     setSearchQuery(query);
@@ -280,6 +331,13 @@ export default function VideosScreen(): React.ReactElement {
   // YouTube-like: Handle video like with visual feedback
   const handleVideoLike = useCallback((videoId: string): void => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    const isCurrentlyLiked = likedVideos.has(videoId);
+    
+    // Toggle like in store (persisted)
+    toggleLikeVideo(videoId);
+    
+    // Update local state for immediate UI feedback (optimistic update)
     setLikedVideos((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(videoId)) {
@@ -289,8 +347,14 @@ export default function VideosScreen(): React.ReactElement {
       }
       return newSet;
     });
-    likeVideo(videoId);
-  }, [likeVideo]);
+    
+    // Sync with backend - call unlike if already liked, like if not
+    if (isCurrentlyLiked) {
+      unlikeVideo(videoId);
+    } else {
+      likeVideo(videoId);
+    }
+  }, [likeVideo, unlikeVideo, toggleLikeVideo, likedVideos]);
 
   // YouTube-like: Auto-play next video in queue
   const playNextVideo = useCallback(() => {
@@ -459,6 +523,18 @@ export default function VideosScreen(): React.ReactElement {
           />
         ) : (
           <>
+            {/* Trending Videos Slider - Featured at top */}
+            {trendingVideos && trendingVideos.length > 0 && (
+              <TrendingVideoSlider
+                videos={trendingVideos}
+                onVideoPress={handleVideoSelect}
+                onLikePress={(video) => handleVideoLike(video.id)}
+                showRanking={true}
+                autoScroll={false}
+                testID="trending-video-slider"
+              />
+            )}
+
             {/* Quick Actions */}
             <View style={styles.quickActions}>
               <PrimaryButton

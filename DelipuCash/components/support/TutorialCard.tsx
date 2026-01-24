@@ -171,10 +171,8 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
   });
 
   return (
-    <Animated.View
+    <AnimatedPressable
       entering={FadeInUp.delay(index * 70).duration(ANIMATION.duration.normal)}
-    >
-      <AnimatedPressable
         style={[styles.container, animatedStyle]}
         onPress={handlePress}
         onPressIn={handlePressIn}
@@ -227,8 +225,7 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
           </View>
         )}
       </View>
-      </AnimatedPressable>
-    </Animated.View>
+    </AnimatedPressable>
   );
 };
 

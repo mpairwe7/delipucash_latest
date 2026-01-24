@@ -31,6 +31,9 @@ import {
   Zap,
   AlertTriangle,
   Crown,
+  Video,
+  Upload,
+  Wifi,
 } from 'lucide-react-native';
 
 // Components
@@ -327,10 +330,15 @@ const SubscriptionScreen: React.FC = () => {
     }
   }, [restorePurchases, refetchSubscription]);
 
-  // Get badge for package
-  const getPackageBadge = (pkg: PurchasesPackage): 'popular' | 'best-value' | undefined => {
-    if (pkg.packageType === 'MONTHLY') return 'popular';
-    if (pkg.packageType === 'ANNUAL') return 'best-value';
+  // Get badge for package (RevenueCat uses PACKAGE_TYPE enum)
+  const getPackageBadge = (pkg: PurchasesPackage): 'popular' | 'best-value' | 'recommended' | undefined => {
+    const pkgType = pkg.packageType;
+    // MONTHLY is most popular
+    if (pkgType === 'MONTHLY') return 'popular';
+    // SIX_MONTH (half yearly) is best value
+    if (pkgType === 'SIX_MONTH') return 'best-value';
+    // ANNUAL (yearly) is recommended for long-term
+    if (pkgType === 'ANNUAL') return 'recommended';
     return undefined;
   };
 
@@ -377,17 +385,49 @@ const SubscriptionScreen: React.FC = () => {
     section: {
       marginBottom: SPACING.xl,
     },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: SPACING.base,
+    },
     sectionTitle: {
       fontFamily: TYPOGRAPHY.fontFamily.bold,
       fontSize: TYPOGRAPHY.fontSize.lg,
       color: colors.text,
-      marginBottom: SPACING.base,
     },
     featuresCard: {
       backgroundColor: colors.card,
       borderRadius: RADIUS.lg,
       padding: SPACING.lg,
       ...SHADOWS.sm,
+    },
+    videoPremiumHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: SPACING.xs,
+      gap: SPACING.sm,
+    },
+    videoPremiumTitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: TYPOGRAPHY.fontSize.base,
+    },
+    videoPremiumDescription: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+      marginBottom: SPACING.base,
+    },
+    videoPremiumFeatures: {
+      gap: SPACING.sm,
+    },
+    videoPremiumFeatureRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.sm,
+    },
+    videoPremiumFeatureText: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+      flex: 1,
     },
     footer: {
       marginTop: SPACING.lg,
@@ -534,6 +574,45 @@ const SubscriptionScreen: React.FC = () => {
             <FeatureItem text="Export data to CSV/Excel" />
             <FeatureItem text="Priority support" />
             <FeatureItem text="No watermarks on surveys" />
+          </View>
+        </View>
+
+        {/* Video Premium Features */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Video size={20} color={colors.warning} style={{ marginRight: SPACING.sm }} />
+            <Text style={styles.sectionTitle}>Video Premium</Text>
+          </View>
+          <View style={[styles.featuresCard, { borderWidth: 1, borderColor: withAlpha(colors.warning, 0.3) }]}>
+            <View style={styles.videoPremiumHeader}>
+              <Crown size={24} color={colors.warning} />
+              <Text style={[styles.videoPremiumTitle, { color: colors.warning }]}>
+                Extended Video Features
+              </Text>
+            </View>
+            <Text style={[styles.videoPremiumDescription, { color: colors.textSecondary }]}>
+              Upgrade for more video capabilities
+            </Text>
+            <View style={styles.videoPremiumFeatures}>
+              <View style={styles.videoPremiumFeatureRow}>
+                <Upload size={16} color={colors.success} />
+                <Text style={[styles.videoPremiumFeatureText, { color: colors.text }]}>
+                  Upload videos up to 500MB (vs 20MB free)
+                </Text>
+              </View>
+              <View style={styles.videoPremiumFeatureRow}>
+                <Wifi size={16} color={colors.success} />
+                <Text style={[styles.videoPremiumFeatureText, { color: colors.text }]}>
+                  Livestream up to 2 hours (vs 5 min free)
+                </Text>
+              </View>
+              <View style={styles.videoPremiumFeatureRow}>
+                <Video size={16} color={colors.success} />
+                <Text style={[styles.videoPremiumFeatureText, { color: colors.text }]}>
+                  Record videos up to 30 minutes
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
 

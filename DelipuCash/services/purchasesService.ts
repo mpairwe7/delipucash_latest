@@ -52,6 +52,7 @@ const REVENUECAT_API_KEYS = {
 export const ENTITLEMENTS = {
   SURVEY_CREATOR: 'survey_creator', // Access to create surveys
   PREMIUM: 'premium', // Premium features
+  VIDEO_PREMIUM: 'video_premium', // Extended video upload (>20MB) and livestream (>5min)
 } as const;
 
 /**
@@ -60,13 +61,22 @@ export const ENTITLEMENTS = {
  */
 export const PRODUCTS = {
   // Subscription products
+  SURVEY_DAILY: 'survey_subscription_daily',
   SURVEY_WEEKLY: 'survey_subscription_weekly',
   SURVEY_MONTHLY: 'survey_subscription_monthly',
+  SURVEY_QUARTERLY: 'survey_subscription_quarterly',
+  SURVEY_HALF_YEARLY: 'survey_subscription_half_yearly',
   SURVEY_YEARLY: 'survey_subscription_yearly',
   
   // One-time purchases
   SURVEY_SINGLE: 'survey_single_access',
   SURVEY_LIFETIME: 'survey_lifetime_access',
+
+  // Video premium products
+  VIDEO_PREMIUM_WEEKLY: 'video_premium_weekly',
+  VIDEO_PREMIUM_MONTHLY: 'video_premium_monthly',
+  VIDEO_UPLOAD_SINGLE: 'video_upload_single', // Single large upload (up to 500MB)
+  VIDEO_LIVESTREAM_EXTENDED: 'video_livestream_extended', // Single extended livestream session
 } as const;
 
 // ============================================================================

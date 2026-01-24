@@ -44,18 +44,24 @@ import {
     Clock3,
     Coins,
   CreditCard,
+  Flame,
+  Gift,
   Lock,
   MessageCircle,
+  Play,
     Plus,
     Search,
     ShieldCheck,
     Sparkles,
+  Star,
   TrendingUp,
+  Zap,
 } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import {
     ActivityIndicator,
     Alert,
+  Animated,
   Modal,
     RefreshControl,
     ScrollView,
@@ -66,6 +72,8 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import QuizSessionScreen from "@/app/quiz-session";
+import { triggerHaptic } from "@/utils/quiz-utils";
 
 /**
  * Question Screen
@@ -84,6 +92,52 @@ export default function QuestionsScreen(): React.ReactElement {
     const [searchQuery, setSearchQuery] = useState("");
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [showQuizSession, setShowQuizSession] = useState(false);
+
+  // Animation for the "Answer & Earn" card
+  const giftPulseAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  // Start gift animation on mount
+  useEffect(() => {
+    const pulseAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(giftPulseAnim, {
+          toValue: 1.15,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(giftPulseAnim, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    const glowAnimation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: false,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 0,
+          duration: 1500,
+          useNativeDriver: false,
+        }),
+      ])
+    );
+
+    pulseAnimation.start();
+    glowAnimation.start();
+
+    return () => {
+      pulseAnimation.stop();
+      glowAnimation.stop();
+    };
+  }, []);
 
     const { data: questionsData, isLoading, refetch } = useQuestions();
     const { data: instantQuestions } = useInstantRewardQuestions(5);
@@ -397,10 +451,9 @@ export default function QuestionsScreen(): React.ReactElement {
 
           {/* Action cards for core flows */}
           <View style={styles.actionGrid}>
-            <ActionCard
-              title="Answer questions & earn"
-              subtitle="Browse open questions and share knowledge"
-              icon={<Award size={18} color={colors.success} strokeWidth={1.5} />}
+            {/* Enhanced "Answer Questions & Earn Rewards" Card */}
+            <TouchableOpacity
+              style={[styles.earnRewardsCard, { backgroundColor: colors.card }]}
               onPress={() => {
                 if (!isAuthenticated) {
                   Alert.alert(
@@ -413,13 +466,51 @@ export default function QuestionsScreen(): React.ReactElement {
                   );
                   return;
                 }
-                // Navigate to questions list where they can pick one to answer
-                if (questions.length > 0) {
-                  router.push(`/question-answer/${questions[0].id}` as Href);
-                }
+                triggerHaptic('medium');
+                setShowQuizSession(true);
               }}
-              colors={colors}
-            />
+              accessibilityLabel="Start answering questions to earn rewards"
+              accessibilityRole="button"
+            >
+              <Animated.View
+                style={[
+                  styles.giftIconContainer,
+                  {
+                    backgroundColor: withAlpha(colors.primary, 0.15),
+                    transform: [{ scale: giftPulseAnim }],
+                  }
+                ]}
+              >
+                <Gift size={32} color={colors.primary} strokeWidth={1.5} />
+              </Animated.View>
+              <View style={styles.earnRewardsContent}>
+                <Text style={[styles.earnRewardsTitle, { color: colors.text }]}>
+                  Answer Questions & Earn Rewards!
+                </Text>
+                <Text style={[styles.earnRewardsSubtitle, { color: colors.textMuted }]}>
+                  Complete surveys and questions to earn points
+                </Text>
+                <View style={styles.earnRewardsStats}>
+                  <View style={[styles.earnRewardsStat, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+                    <Star size={12} color={colors.warning} strokeWidth={2} />
+                    <Text style={[styles.earnRewardsStatText, { color: colors.warning }]}>
+                      10 pts/question
+                    </Text>
+                  </View>
+                  <View style={[styles.earnRewardsStat, { backgroundColor: withAlpha(colors.error, 0.15) }]}>
+                    <Flame size={12} color={colors.error} strokeWidth={2} />
+                    <Text style={[styles.earnRewardsStatText, { color: colors.error }]}>
+                      Streak bonus
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              <View style={[styles.startButton, { backgroundColor: colors.primary }]}>
+                <Play size={16} color={colors.primaryText} strokeWidth={2} />
+                <Text style={[styles.startButtonText, { color: colors.primaryText }]}>Start</Text>
+              </View>
+            </TouchableOpacity>
+
             <ActionCard
               title="Answer Instant Reward Questions!"
               subtitle="Earn instant payouts for quality answers"
@@ -630,6 +721,16 @@ export default function QuestionsScreen(): React.ReactElement {
             </View>
           )}
         </ScrollView>
+
+        {/* Quiz Session Modal */}
+        <Modal
+          visible={showQuizSession}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={() => setShowQuizSession(false)}
+        >
+          <QuizSessionScreen onClose={() => setShowQuizSession(false)} />
+        </Modal>
 
         {/* Payment Required Modal */}
         <Modal
@@ -906,6 +1007,67 @@ function ActionCard({
     actionBadgeText: {
       fontFamily: TYPOGRAPHY.fontFamily.medium,
       fontSize: TYPOGRAPHY.fontSize.xs,
+    },
+    // Enhanced "Answer Questions & Earn Rewards" Card Styles
+    earnRewardsCard: {
+      borderRadius: RADIUS.lg,
+      padding: SPACING.lg,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: SPACING.md,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    giftIconContainer: {
+      width: 56,
+      height: 56,
+      borderRadius: RADIUS.lg,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    earnRewardsContent: {
+      flex: 1,
+      gap: SPACING.xs,
+    },
+    earnRewardsTitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: TYPOGRAPHY.fontSize.md,
+    },
+    earnRewardsSubtitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    earnRewardsStats: {
+      flexDirection: "row",
+      gap: SPACING.sm,
+      marginTop: SPACING.xs,
+    },
+    earnRewardsStat: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 2,
+      borderRadius: RADIUS.full,
+    },
+    earnRewardsStatText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.xs,
+    },
+    startButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: SPACING.md,
+      paddingVertical: SPACING.sm,
+      borderRadius: RADIUS.md,
+    },
+    startButtonText: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: TYPOGRAPHY.fontSize.sm,
     },
     actionTitle: {
       fontFamily: TYPOGRAPHY.fontFamily.bold,

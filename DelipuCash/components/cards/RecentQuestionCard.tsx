@@ -146,8 +146,8 @@ export function RecentQuestionCard({
   const userName = question.user?.firstName || "Anonymous";
 
   return (
-    <Animated.View entering={FadeIn.delay(index * 80).duration(400)}>
       <AnimatedPressable
+      entering={FadeIn.delay(index * 80).duration(400)}
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -321,8 +321,7 @@ export function RecentQuestionCard({
             color={colors.textMuted}
           />
         </View>
-      </AnimatedPressable>
-    </Animated.View>
+    </AnimatedPressable>
   );
 }
 

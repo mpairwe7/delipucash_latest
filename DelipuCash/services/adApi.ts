@@ -283,9 +283,8 @@ export const recordAdClick = async (payload: AdClickPayload): Promise<{ success:
   try {
     const response = await api.post(AD_ENDPOINTS.click(payload.adId), payload);
     return response.data;
-  } catch (error: any) {
-    console.error('Error recording ad click:', error);
-    // Don't throw - analytics shouldn't block user experience
+  } catch {
+  // Silently fail - analytics shouldn't block user experience or spam logs
     return { success: false };
   }
 };
@@ -297,9 +296,8 @@ export const recordAdImpression = async (payload: AdImpressionPayload): Promise<
   try {
     const response = await api.post(AD_ENDPOINTS.impression(payload.adId), payload);
     return response.data;
-  } catch (error: any) {
-    console.error('Error recording ad impression:', error);
-    // Don't throw - analytics shouldn't block user experience
+  } catch {
+  // Silently fail - analytics shouldn't block user experience or spam logs
     return { success: false };
   }
 };
@@ -311,9 +309,8 @@ export const recordVideoProgress = async (payload: AdVideoProgressPayload): Prom
   try {
     const response = await api.post(AD_ENDPOINTS.videoProgress(payload.adId), payload);
     return response.data;
-  } catch (error: any) {
-    console.error('Error recording video progress:', error);
-    // Don't throw - analytics shouldn't block user experience
+  } catch {
+  // Silently fail - analytics shouldn't block user experience or spam logs
     return { success: false };
   }
 };

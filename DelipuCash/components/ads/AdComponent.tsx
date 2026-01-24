@@ -137,7 +137,13 @@ const useThumbnail = (ad: Ad | null) => {
       if (ad.videoUrl && ad.videoUrl.trim() !== '') {
         setIsLoadingThumbnail(true);
         try {
-          const generatedThumbnail = await getBestThumbnailUrl(ad);
+          // Convert Ad to AdWithMedia format (null -> undefined)
+          const adWithMedia = {
+            thumbnailUrl: ad.thumbnailUrl ?? undefined,
+            videoUrl: ad.videoUrl ?? undefined,
+            imageUrl: ad.imageUrl ?? undefined,
+          };
+          const generatedThumbnail = await getBestThumbnailUrl(adWithMedia);
           setThumbnailUrl(generatedThumbnail);
         } catch (error) {
           console.error('useThumbnail: Error generating thumbnail:', error);

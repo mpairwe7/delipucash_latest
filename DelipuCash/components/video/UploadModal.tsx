@@ -1,6 +1,7 @@
 /**
  * UploadModal Component
  * A modal for uploading videos with form validation
+ * Includes 20MB file size limit for free users with premium upgrade option
  * 
  * @example
  * ```tsx
@@ -32,8 +33,13 @@ import {
   Image as ImageIcon,
   Smile,
   MapPin,
+  AlertTriangle,
+  Crown,
+  CheckCircle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import * as DocumentPicker from 'expo-document-picker';
+import { router, Href } from 'expo-router';
 import {
   useTheme,
   SPACING,
@@ -42,6 +48,14 @@ import {
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
+import {
+  MAX_UPLOAD_SIZE_FREE,
+  MAX_UPLOAD_SIZE_PREMIUM,
+  formatFileSize,
+} from '@/utils/video-utils';
+import { useVideoPremiumAccess } from '@/services/purchasesHooks';
+import { useVideoStore, selectUploadProgress, selectCurrentUpload } from '@/store/VideoStore';
+import { useValidateUpload } from '@/services/hooks';
 
 /**
  * Upload form data
@@ -50,6 +64,19 @@ export interface UploadFormData {
   title: string;
   description: string;
   isPrivate: boolean;
+  fileUri?: string;
+  fileSize?: number;
+  fileName?: string;
+}
+
+/**
+ * Selected file info
+ */
+interface SelectedFileInfo {
+  uri: string;
+  name: string;
+  size: number;
+  type: string;
 }
 
 /**
@@ -66,6 +93,8 @@ export interface UploadModalProps {
   maxTitleLength?: number;
   /** Maximum description length */
   maxDescriptionLength?: number;
+  /** Callback when user needs to upgrade for larger files */
+  onUpgradeRequired?: () => void;
   /** Test ID for testing */
   testID?: string;
 }
@@ -76,14 +105,43 @@ function UploadModalComponent({
   onUpload,
   maxTitleLength = 100,
   maxDescriptionLength = 500,
+  onUpgradeRequired,
   testID,
 }: UploadModalProps): React.ReactElement {
   const { colors } = useTheme();
+  const { hasVideoPremium, maxUploadSize } = useVideoPremiumAccess();
+  
+  // Video store for state management (selectors available for UI display if needed)
+  const storeUploadProgress = useVideoStore(selectUploadProgress);
+  const storeCurrentUpload = useVideoStore(selectCurrentUpload);
+  const { 
+    setUploadFile, 
+    setUploadProgress, 
+    cancelUpload, 
+    clearUpload,
+    setPremiumStatus 
+  } = useVideoStore();
+
+  // Use store progress for display when available (exposed for parent components)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const displayProgress = storeUploadProgress > 0 ? storeUploadProgress : 0;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const hasActiveUpload = storeCurrentUpload !== null;
+
+  // API validation hook
+  const validateUploadMutation = useValidateUpload();
+
+  // Sync premium status with store
+  useEffect(() => {
+    setPremiumStatus(hasVideoPremium);
+  }, [hasVideoPremium, setPremiumStatus]);
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
+  const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -98,10 +156,89 @@ function UploadModalComponent({
     setTitle('');
     setDescription('');
     setIsUploading(false);
-  }, []);
+    setSelectedFile(null);
+    setFileSizeError(null);
+    clearUpload(); // Clear store state
+  }, [clearUpload]);
+
+  // Handle file selection with size validation (client + server)
+  const handleSelectFile = useCallback(async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['video/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled || !result.assets?.[0]) {
+        return;
+      }
+
+      const file = result.assets[0];
+      const fileSize = file.size || 0;
+      const fileName = file.name || 'video.mp4';
+      const mimeType = file.mimeType || 'video/mp4';
+
+      // Client-side validation first (faster UX)
+      if (fileSize > maxUploadSize) {
+        setFileSizeError(
+          hasVideoPremium
+            ? `File size (${formatFileSize(fileSize)}) exceeds maximum of ${formatFileSize(MAX_UPLOAD_SIZE_PREMIUM)}`
+            : `File size (${formatFileSize(fileSize)}) exceeds free limit of ${formatFileSize(MAX_UPLOAD_SIZE_FREE)}. Upgrade to Video Premium for up to ${formatFileSize(MAX_UPLOAD_SIZE_PREMIUM)}.`
+        );
+        setSelectedFile(null);
+        return;
+      }
+
+      // Server-side validation for additional checks
+      try {
+        const validationResult = await validateUploadMutation.mutateAsync({
+          fileSize,
+          mimeType,
+          fileName,
+        });
+
+        if (!validationResult.allowed) {
+          setFileSizeError(validationResult.reason || 'File validation failed');
+          setSelectedFile(null);
+          return;
+        }
+      } catch {
+        // Continue if server validation fails (offline support)
+        console.warn('Server validation failed, using client-side validation only');
+      }
+
+      setFileSizeError(null);
+      
+      // Update store with file info
+      setUploadFile({
+        uri: file.uri,
+        name: fileName,
+        size: fileSize,
+        mimeType,
+      });
+
+      setSelectedFile({
+        uri: file.uri,
+        name: fileName,
+        size: fileSize,
+        type: mimeType,
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert('Error', 'Failed to select video file. Please try again.');
+    }
+  }, [maxUploadSize, hasVideoPremium, validateUploadMutation, setUploadFile]);
+
+  // Navigate to subscription screen for upgrade
+  const handleUpgrade = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onUpgradeRequired?.();
+    router.push('/subscription' as Href);
+  }, [onUpgradeRequired]);
 
   const handleClose = useCallback(() => {
-    if (title || description) {
+    if (title || description || selectedFile) {
       Alert.alert(
         'Discard Changes?',
         'You have unsaved changes. Are you sure you want to close?',
@@ -120,7 +257,7 @@ function UploadModalComponent({
     } else {
       onClose();
     }
-  }, [title, description, resetForm, onClose]);
+  }, [title, description, selectedFile, resetForm, onClose]);
 
   const handleUpload = useCallback(async () => {
     if (!title.trim()) {
@@ -128,25 +265,46 @@ function UploadModalComponent({
       return;
     }
 
+    if (!selectedFile) {
+      Alert.alert('Error', 'Please select a video to upload');
+      return;
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsUploading(true);
+    setUploadProgress(0);
 
     try {
+      // Simulate progress updates during upload
+      const progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          const next = prev + Math.random() * 15;
+          return next > 90 ? 90 : next;
+        });
+      }, 300);
+
       await onUpload?.({
         title: title.trim(),
         description: description.trim(),
         isPrivate: false,
+        fileUri: selectedFile.uri,
+        fileSize: selectedFile.size,
+        fileName: selectedFile.name,
       });
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
       resetForm();
       onClose();
     } catch {
+      cancelUpload();
       Alert.alert('Error', 'Failed to upload video. Please try again.');
     } finally {
       setIsUploading(false);
     }
-  }, [title, description, onUpload, resetForm, onClose]);
+  }, [title, description, selectedFile, onUpload, resetForm, onClose, setUploadProgress, cancelUpload]);
 
-  const isValid = title.trim().length > 0;
+  const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
 
   return (
     <Modal
@@ -212,23 +370,92 @@ function UploadModalComponent({
             style={[
               styles.videoSelector,
               {
-                borderColor: colors.border,
-                backgroundColor: withAlpha(colors.card, 0.5),
+                borderColor: selectedFile
+                  ? colors.success
+                  : fileSizeError
+                    ? colors.error
+                    : colors.border,
+                backgroundColor: selectedFile
+                  ? withAlpha(colors.success, 0.1)
+                  : fileSizeError
+                    ? withAlpha(colors.error, 0.1)
+                    : withAlpha(colors.card, 0.5),
               },
             ]}
+            onPress={handleSelectFile}
             accessibilityLabel="Select video to upload"
             accessibilityRole="button"
           >
-            <View style={[styles.selectorIcon, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-              <Film size={32} color={colors.primary} strokeWidth={1.5} />
-            </View>
-            <Text style={[styles.selectorTitle, { color: colors.text }]}>
-              Tap to select video
-            </Text>
-            <Text style={[styles.selectorSubtitle, { color: colors.textMuted }]}>
-              MP4, MOV • Max 500MB
-            </Text>
+            {selectedFile ? (
+              <>
+                <View style={[styles.selectorIcon, { backgroundColor: withAlpha(colors.success, 0.2) }]}>
+                  <CheckCircle size={32} color={colors.success} strokeWidth={1.5} />
+                </View>
+                <Text style={[styles.selectorTitle, { color: colors.text }]} numberOfLines={1}>
+                  {selectedFile.name}
+                </Text>
+                <Text style={[styles.selectorSubtitle, { color: colors.success }]}>
+                  {formatFileSize(selectedFile.size)} • Tap to change
+                </Text>
+              </>
+            ) : (
+              <>
+                  <View style={[styles.selectorIcon, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+                    <Film size={32} color={colors.primary} strokeWidth={1.5} />
+                  </View>
+                  <Text style={[styles.selectorTitle, { color: colors.text }]}>
+                    Tap to select video
+                  </Text>
+                  <Text style={[styles.selectorSubtitle, { color: colors.textMuted }]}>
+                  MP4, MOV • Max {formatFileSize(maxUploadSize)}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
+
+          {/* File Size Error & Upgrade Prompt */}
+          {fileSizeError && (
+            <View style={[styles.errorContainer, { backgroundColor: withAlpha(colors.error, 0.1) }]}>
+              <View style={styles.errorHeader}>
+                <AlertTriangle size={20} color={colors.error} strokeWidth={2} />
+                <Text style={[styles.errorTitle, { color: colors.error }]}>
+                  File Too Large
+                </Text>
+              </View>
+              <Text style={[styles.errorText, { color: colors.textMuted }]}>
+                {fileSizeError}
+              </Text>
+              {!hasVideoPremium && (
+                <TouchableOpacity
+                  style={[styles.upgradeButton, { backgroundColor: colors.warning }]}
+                  onPress={handleUpgrade}
+                  accessibilityLabel="Upgrade to Video Premium"
+                  accessibilityRole="button"
+                >
+                  <Crown size={18} color={colors.primaryText} strokeWidth={2} />
+                  <Text style={[styles.upgradeButtonText, { color: colors.primaryText }]}>
+                    Upgrade to Video Premium
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {/* Free User Limit Notice */}
+          {!hasVideoPremium && !fileSizeError && (
+            <View style={[styles.limitNotice, { backgroundColor: withAlpha(colors.info, 0.1) }]}>
+              <Text style={[styles.limitNoticeText, { color: colors.info }]}>
+                📹 Free users can upload videos up to {formatFileSize(MAX_UPLOAD_SIZE_FREE)}.
+                {' '}
+                <Text
+                  style={{ textDecorationLine: 'underline' }}
+                  onPress={handleUpgrade}
+                >
+                  Upgrade for larger uploads
+                </Text>
+              </Text>
+            </View>
+          )}
 
           {/* Title input */}
           <View style={styles.inputGroup}>
@@ -434,6 +661,47 @@ const styles = StyleSheet.create({
   },
   toolbarButton: {
     padding: SPACING.md,
+  },
+  errorContainer: {
+    padding: SPACING.lg,
+    borderRadius: RADIUS.md,
+    gap: SPACING.sm,
+  },
+  errorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  errorTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  errorText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
+  },
+  upgradeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  upgradeButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  limitNotice: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+  },
+  limitNoticeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: 'center',
   },
 });
 

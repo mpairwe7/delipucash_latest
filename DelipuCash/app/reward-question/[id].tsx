@@ -1,6 +1,6 @@
 import { PrimaryButton } from "@/components";
 import { formatCurrency } from "@/data/mockData";
-import { useRewardQuestion, useSubmitRewardAnswer } from "@/services/hooks";
+import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
 import { RewardAnswerResult } from "@/types";
 import {
     BORDER_WIDTH,
@@ -46,6 +46,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
 
   const { data: question, isLoading, error } = useRewardQuestion(id || "");
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   const options = useMemo(() => {
@@ -67,12 +68,37 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     }
 
     submitAnswer.mutate(
-      { questionId: question.id, answer },
+      {
+        questionId: question.id,
+        answer,
+        phoneNumber: user?.phone,
+        userEmail: user?.email,
+      },
       {
         onSuccess: (payload) => {
           setResult(payload);
           if (payload.isCorrect) {
-            Alert.alert("Correct!", payload.message || "Reward unlocked.");
+            // Check if this is a reward winner with instant payout
+            if (payload.isWinner && payload.paymentStatus) {
+              const position = payload.position || 0;
+              const paymentStatus = payload.paymentStatus;
+
+              let paymentMessage = "";
+              if (paymentStatus === "SUCCESSFUL") {
+                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(question.rewardAmount || 0)} has been sent to your mobile money account!`;
+              } else if (paymentStatus === "PENDING") {
+                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(question.rewardAmount || 0)} is being processed and will be sent shortly.`;
+              } else if (paymentStatus === "FAILED") {
+                paymentMessage = `\n\n⚠️ There was an issue processing your reward. Please contact support.`;
+              }
+
+              Alert.alert(
+                "🎉 Congratulations!",
+                `You're winner #${position}! ${payload.message || "Reward unlocked."}${paymentMessage}`
+              );
+            } else {
+              Alert.alert("Correct!", payload.message || "Reward unlocked.");
+            }
           } else if (payload.isExpired || payload.isCompleted) {
             Alert.alert("Unavailable", payload.message || "Rewards are no longer available.");
           } else {

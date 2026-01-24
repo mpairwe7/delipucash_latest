@@ -111,6 +111,59 @@ export function useSurveyCreatorAccess() {
 }
 
 /**
+ * Hook to check if user has video premium entitlement
+ * 
+ * Video premium allows:
+ * - Upload videos larger than 20MB (up to 500MB)
+ * - Livestream longer than 5 minutes (up to 2 hours)
+ * 
+ * This hook combines RevenueCat subscription status with backend API limits.
+ * The backend is the source of truth for actual limits.
+ * 
+ * @example
+ * ```tsx
+ * const { hasVideoPremium, maxUploadSize, maxLivestreamDuration } = useVideoPremiumAccess();
+ * 
+ * if (!hasVideoPremium && fileSize > 20MB) {
+ *   return <UpgradePrompt />;
+ * }
+ * ```
+ */
+export function useVideoPremiumAccess() {
+  const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
+
+  // Check if user has video_premium entitlement from RevenueCat
+  // Also consider general premium/active subscription for video features
+  const hasVideoPremium = (
+    subscription?.entitlements?.includes(ENTITLEMENTS.VIDEO_PREMIUM) ||
+    subscription?.entitlements?.includes(ENTITLEMENTS.PREMIUM) ||
+    subscription?.isActive
+  ) ?? false;
+
+  // Constants for limits (synced with backend/VideoStore)
+  const FREE_UPLOAD_LIMIT = 20 * 1024 * 1024; // 20MB
+  const PREMIUM_UPLOAD_LIMIT = 500 * 1024 * 1024; // 500MB
+  const FREE_DURATION_LIMIT = 300; // 5 minutes
+  const PREMIUM_LIVESTREAM_LIMIT = 7200; // 2 hours
+  const PREMIUM_RECORDING_LIMIT = 1800; // 30 minutes
+
+  return {
+    hasVideoPremium,
+    isLoading,
+    subscription,
+    refetch,
+    // Return limits based on premium status
+    maxUploadSize: hasVideoPremium ? PREMIUM_UPLOAD_LIMIT : FREE_UPLOAD_LIMIT,
+    maxLivestreamDuration: hasVideoPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
+    maxRecordingDuration: hasVideoPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
+    // Formatted versions for display
+    maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '20 MB',
+    maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
+    maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
+  };
+}
+
+/**
  * Hook to purchase a package
  * 
  * @example
@@ -267,6 +320,8 @@ export function usePackageFormatter() {
   }, []);
 
   const formatPeriod = useCallback((pkg: PurchasesPackage): string => {
+    // RevenueCat PACKAGE_TYPE values:
+    // UNKNOWN, CUSTOM, LIFETIME, ANNUAL, SIX_MONTH, THREE_MONTH, TWO_MONTH, MONTHLY, WEEKLY
     const packageType = pkg.packageType;
     
     switch (packageType) {
@@ -284,6 +339,14 @@ export function usePackageFormatter() {
         return 'year';
       case 'LIFETIME':
         return 'lifetime';
+      case 'CUSTOM':
+        // For custom packages, try to infer from product identifier
+        const productId = pkg.product.identifier.toLowerCase();
+        if (productId.includes('daily')) return 'day';
+        if (productId.includes('quarterly')) return '3 months';
+        if (productId.includes('half_yearly') || productId.includes('half-yearly')) return '6 months';
+        if (productId.includes('yearly')) return 'year';
+        return '';
       default:
         return '';
     }

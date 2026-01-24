@@ -155,8 +155,8 @@ export function VideoCard({
   // Horizontal variant
   if (variant === "horizontal") {
     return (
-      <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
         <AnimatedPressable
+        entering={FadeIn.delay(index * 50).duration(300)}
           onPress={onPress}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
@@ -214,15 +214,14 @@ export function VideoCard({
               </View>
             </View>
           </View>
-        </AnimatedPressable>
-      </Animated.View>
+      </AnimatedPressable>
     );
   }
 
   // Default and compact variants
   return (
-    <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
       <AnimatedPressable
+      entering={FadeIn.delay(index * 50).duration(300)}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -323,8 +322,7 @@ export function VideoCard({
             </View>
           </View>
         </View>
-      </AnimatedPressable>
-    </Animated.View>
+    </AnimatedPressable>
   );
 }
 

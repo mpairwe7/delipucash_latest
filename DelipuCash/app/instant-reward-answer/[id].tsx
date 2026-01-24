@@ -1,6 +1,7 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { formatCurrency } from "@/data/mockData";
-import { useRewardQuestion, useSubmitRewardAnswer } from "@/services/hooks";
+import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
+import { useInstantRewardStore } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
     BORDER_WIDTH,
@@ -12,13 +13,20 @@ import {
     useTheme,
     withAlpha,
 } from "@/utils/theme";
+import {
+  normalizeText,
+  triggerHaptic,
+  getEncouragingFeedback,
+} from "@/utils/quiz-utils";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
+  AlertCircle,
     ArrowLeft,
     CheckCircle2,
     Clock3,
+  Lock,
     PartyPopper,
     RefreshCcw,
     ShieldCheck,
@@ -26,7 +34,7 @@ import {
     Users,
     Zap,
 } from "lucide-react-native";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -49,7 +57,35 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
+
+  // Instant Reward Store - Attempt Tracking
+  const {
+    initializeAttemptHistory,
+    hasAttemptedQuestion,
+    getAttemptedQuestion,
+    markQuestionAttempted,
+    updateWalletBalance,
+    confirmReward,
+  } = useInstantRewardStore();
+
+  // Initialize attempt history for the user
+  useEffect(() => {
+    if (user?.email) {
+      initializeAttemptHistory(user.email);
+    }
+  }, [user?.email, initializeAttemptHistory]);
+
+  // Check if user has already attempted this question
+  const previousAttempt = useMemo(() => {
+    if (!questionId) return null;
+    return getAttemptedQuestion(questionId);
+  }, [questionId, getAttemptedQuestion]);
+
+  const hasAlreadyAttempted = useMemo(() => {
+    return hasAttemptedQuestion(questionId);
+  }, [questionId, hasAttemptedQuestion]);
 
   useEffect(() => {
     if (!question?.expiryTime) {
@@ -89,41 +125,112 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       spotsLeft <= 0 ||
       result?.isCorrect ||
       result?.isExpired ||
-      result?.isCompleted
+    result?.isCompleted ||
+    hasAlreadyAttempted // Prevent re-attempts
   );
 
-  const handleBack = (): void => {
+  const handleBack = useCallback((): void => {
     router.back();
-  };
+  }, []);
 
-  const handleSubmit = (): void => {
+  const handleSelectOption = useCallback((optionKey: string) => {
+    if (isClosed || hasAlreadyAttempted) return;
+    triggerHaptic('selection');
+    setSelectedOption(optionKey);
+  }, [isClosed, hasAlreadyAttempted]);
+
+  const handleSubmit = useCallback((): void => {
     const answer = selectedOption || "";
 
     if (!question) return;
+
+    // Prevent re-attempts
+    if (hasAlreadyAttempted) {
+      Alert.alert(
+        "Already Attempted",
+        "You have already attempted this question. Each question can only be attempted once."
+      );
+      return;
+    }
+
     if (!answer) {
       Alert.alert("Choose an answer", "Select the option you think is correct.");
       return;
     }
 
+    triggerHaptic('medium');
+
     submitAnswer.mutate(
-      { questionId: question.id, answer },
+      {
+        questionId: question.id,
+        answer,
+        phoneNumber: user?.phone,
+        userEmail: user?.email,
+      },
       {
         onSuccess: (payload) => {
           setResult(payload);
+
+          // Mark question as attempted in store (single attempt enforcement)
+          markQuestionAttempted({
+            questionId: question.id,
+            isCorrect: payload.isCorrect,
+            selectedAnswer: answer,
+            rewardEarned: payload.rewardEarned || 0,
+            isWinner: payload.isWinner || false,
+            position: payload.position || null,
+            paymentStatus: payload.paymentStatus || null,
+          });
+
           if (payload.isCorrect) {
-            Alert.alert("Correct!", payload.message || "Reward unlocked.");
+            triggerHaptic('success');
+
+            // Update wallet if reward earned
+            if (payload.rewardEarned && payload.rewardEarned > 0) {
+              if (payload.paymentStatus === 'SUCCESSFUL') {
+                confirmReward(payload.rewardEarned);
+              }
+            }
+
+            // Check if this is an instant reward winner
+            if (payload.isWinner) {
+              const position = payload.position || 0;
+              const paymentStatus = payload.paymentStatus || 'PENDING';
+
+              let paymentMessage = "";
+              if (paymentStatus === "SUCCESSFUL") {
+                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(question.rewardAmount || 0)} has been sent to your mobile money account!`;
+              } else if (paymentStatus === "PENDING") {
+                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(question.rewardAmount || 0)} is being processed and will be sent shortly.`;
+              } else if (paymentStatus === "FAILED") {
+                paymentMessage = `\n\n⚠️ There was an issue processing your reward. Please contact support.`;
+              }
+
+              Alert.alert(
+                "🎉 Congratulations!",
+                `You're winner #${position}! ${payload.message || "Reward unlocked."}${paymentMessage}`
+              );
+            } else {
+              Alert.alert("Correct! 🎯", getEncouragingFeedback(100, true));
+            }
           } else if (payload.isExpired || payload.isCompleted) {
+            triggerHaptic('warning');
             Alert.alert("Unavailable", payload.message || "Rewards are no longer available.");
           } else {
-            Alert.alert("Try again", payload.message || "That was not correct.");
+            triggerHaptic('error');
+            Alert.alert(
+              "Incorrect 😢",
+              `${payload.message || "That was not correct."}\n\nNote: Each question can only be attempted once.`
+            );
           }
         },
         onError: () => {
+          triggerHaptic('error');
           Alert.alert("Error", "Unable to submit your answer. Please try again.");
         },
       }
     );
-  };
+  }, [question, selectedOption, user, hasAlreadyAttempted, submitAnswer, markQuestionAttempted, confirmReward]);
 
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
@@ -236,6 +343,31 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           </View>
         </LinearGradient>
 
+        {/* Already Attempted Warning */}
+        {hasAlreadyAttempted && previousAttempt && (
+          <View
+            style={[
+              styles.attemptedBanner,
+              {
+                backgroundColor: withAlpha(previousAttempt.isCorrect ? colors.success : colors.warning, 0.12),
+                borderColor: withAlpha(previousAttempt.isCorrect ? colors.success : colors.warning, 0.5),
+              },
+            ]}
+          >
+            <Lock size={ICON_SIZE.sm} color={previousAttempt.isCorrect ? colors.success : colors.warning} strokeWidth={1.5} />
+            <View style={styles.attemptedBannerContent}>
+              <Text style={[styles.attemptedBannerTitle, { color: previousAttempt.isCorrect ? colors.success : colors.warning }]}>
+                {previousAttempt.isCorrect ? "You answered correctly! 🎉" : "Already attempted"}
+              </Text>
+              <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
+                {previousAttempt.isCorrect
+                  ? `You earned ${formatCurrency(previousAttempt.rewardEarned)}`
+                  : "Each question can only be attempted once."}
+              </Text>
+            </View>
+          </View>
+        )}
+
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
           <View style={styles.cardHeader}>
             <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}> 
@@ -253,12 +385,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
           <View style={styles.optionsList}>
             {options.map((option) => {
-              const isSelected = selectedOption === option.key;
+              const isSelected = selectedOption === option.key ||
+                (previousAttempt?.selectedAnswer === option.key); // Show previous selection
               const isCorrect = Boolean(
-                result?.isCorrect &&
-                  result &&
-                  question.correctAnswer.trim().toLowerCase() === option.key.trim().toLowerCase()
+                (result?.isCorrect || previousAttempt?.isCorrect) &&
+                normalizeText(question.correctAnswer) === normalizeText(option.key)
               );
+              const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
+              const isDisabled = isClosed || hasAlreadyAttempted;
 
               return (
                 <TouchableOpacity
@@ -267,13 +401,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
                     styles.option,
                     {
                       borderColor: isSelected ? colors.primary : colors.border,
-                      backgroundColor: isSelected ? withAlpha(colors.primary, 0.08) : colors.secondary,
+                      backgroundColor: isSelected
+                        ? withAlpha(colors.primary, 0.08)
+                        : isDisabled
+                          ? withAlpha(colors.secondary, 0.5)
+                          : colors.secondary,
+                      opacity: isDisabled && !wasSelectedPreviously ? 0.6 : 1,
                     },
                   ]}
-                  onPress={() => setSelectedOption(option.key)}
-                  disabled={isClosed}
+                  onPress={() => handleSelectOption(option.key)}
+                  disabled={isDisabled}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
+                  accessibilityState={{ selected: isSelected, disabled: isDisabled }}
+                  accessibilityHint={hasAlreadyAttempted ? "You have already attempted this question" : undefined}
                 >
                   <View style={styles.optionLeft}>
                     <View
@@ -285,39 +425,56 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
                         },
                       ]}
                     />
-                    <Text style={[styles.optionLabel, { color: colors.text }]}>{`${option.key.toUpperCase()}. ${option.label}`}</Text>
+                    <Text style={[styles.optionLabel, { color: isDisabled && !wasSelectedPreviously ? colors.textMuted : colors.text }]}>
+                      {`${option.key.toUpperCase()}. ${option.label}`}
+                    </Text>
                   </View>
                   {isCorrect && <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+                  {wasSelectedPreviously && !isCorrect && (
+                    <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
+                  )}
                 </TouchableOpacity>
               );
             })}
           </View>
 
-          {result && (
+          {(result || previousAttempt) && (
             <View
               style={[
                 styles.feedback,
                 {
-                  backgroundColor: withAlpha(result.isCorrect ? colors.success : colors.error, 0.12),
-                  borderColor: withAlpha(result.isCorrect ? colors.success : colors.error, 0.5),
+                  backgroundColor: withAlpha((result?.isCorrect || previousAttempt?.isCorrect) ? colors.success : colors.error, 0.12),
+                  borderColor: withAlpha((result?.isCorrect || previousAttempt?.isCorrect) ? colors.success : colors.error, 0.5),
                 },
               ]}
             >
               <View style={styles.feedbackRow}>
-                <CheckCircle2 size={ICON_SIZE.sm} color={result.isCorrect ? colors.success : colors.error} strokeWidth={1.5} />
+                <CheckCircle2 size={ICON_SIZE.sm} color={(result?.isCorrect || previousAttempt?.isCorrect) ? colors.success : colors.error} strokeWidth={1.5} />
                 <Text
                   style={[
                     styles.feedbackTitle,
-                    { color: result.isCorrect ? colors.success : colors.error },
+                    { color: (result?.isCorrect || previousAttempt?.isCorrect) ? colors.success : colors.error },
                   ]}
                 >
-                  {result.isCorrect ? "Correct answer" : result.isExpired || result.isCompleted ? "Unavailable" : "Incorrect answer"}
+                  {(result?.isCorrect || previousAttempt?.isCorrect)
+                    ? "Correct answer"
+                    : (result?.isExpired || result?.isCompleted)
+                      ? "Unavailable"
+                      : "Incorrect answer"}
                 </Text>
               </View>
-              <Text style={[styles.feedbackText, { color: colors.text }]}>{result.message || "Submission processed."}</Text>
-              <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>Remaining spots: {result.remainingSpots}</Text>
-              {result.rewardEarned > 0 && (
-                <Text style={[styles.feedbackReward, { color: colors.success }]}>You earned {formatCurrency(result.rewardEarned)}</Text>
+              <Text style={[styles.feedbackText, { color: colors.text }]}>
+                {result?.message || previousAttempt?.isCorrect
+                  ? "You answered this question correctly!"
+                  : "This question has already been attempted."}
+              </Text>
+              {result?.remainingSpots !== undefined && (
+                <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>Remaining spots: {result.remainingSpots}</Text>
+              )}
+              {((result?.rewardEarned ?? 0) > 0 || (previousAttempt?.rewardEarned ?? 0) > 0) && (
+                <Text style={[styles.feedbackReward, { color: colors.success }]}>
+                  You earned {formatCurrency(result?.rewardEarned || previousAttempt?.rewardEarned || 0)}
+                </Text>
               )}
             </View>
           )}
@@ -362,10 +519,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         ]}
       >
         <PrimaryButton
-          title={result?.isCorrect ? "Done" : isClosed ? "Closed" : "Submit answer"}
-          onPress={result?.isCorrect ? handleBack : handleSubmit}
+          title={
+            hasAlreadyAttempted
+              ? (previousAttempt?.isCorrect ? "Done ✓" : "Already Attempted")
+              : result?.isCorrect
+                ? "Done ✓"
+                : isClosed
+                  ? "Closed"
+                  : "Submit Answer"
+          }
+          onPress={(result?.isCorrect || hasAlreadyAttempted) ? handleBack : handleSubmit}
           loading={submitAnswer.isPending}
-          disabled={isClosed}
+          disabled={isClosed && !hasAlreadyAttempted}
+          variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
         />
       </View>
     </View>
@@ -426,6 +592,27 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH.thin,
     marginBottom: SPACING.lg,
     gap: SPACING.sm,
+  },
+  attemptedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.md,
+  },
+  attemptedBannerContent: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  attemptedBannerTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  attemptedBannerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   heroTop: {
     flexDirection: "row",

@@ -162,8 +162,8 @@ export function QuestionCard({
   const categoryColor = getCategoryColor(question.category, colors);
 
   return (
-    <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
       <AnimatedPressable
+      entering={FadeIn.delay(index * 50).duration(300)}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -263,8 +263,7 @@ export function QuestionCard({
             <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
           </Animated.View>
         </View>
-      </AnimatedPressable>
-    </Animated.View>
+    </AnimatedPressable>
   );
 }
 

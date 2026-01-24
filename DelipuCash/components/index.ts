@@ -95,6 +95,7 @@ export {
   VideoActions,
   UploadModal,
   SearchResults,
+  TrendingVideoSlider,
 } from './video';
 export type {
   VideoPlayerProps,
@@ -104,6 +105,7 @@ export type {
   UploadModalProps,
   UploadFormData,
   SearchResultsProps,
+  TrendingVideoSliderProps,
 } from './video';
 
 // LiveStream Components
@@ -163,3 +165,14 @@ export {
   SmartAd,
 } from './ads';
 export type { AdComponentProps, AdVariant } from './ads';
+
+// Quiz Components
+export {
+  QuizProgressBar,
+  CircularTimer,
+  ScoreBadge,
+  OptionButton,
+  TextInputAnswer,
+  AnswerFeedback,
+  SessionSummaryCard,
+} from './quiz';
