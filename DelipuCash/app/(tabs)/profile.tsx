@@ -170,38 +170,39 @@ const QuickAccessCard = memo<{
   };
 
   return (
-    <AnimatedPressable
-      style={[
-        styles.quickAccessCard,
-        {
-          backgroundColor: colors.card,
-          borderColor: colors.border,
-          width: isTablet ? '23%' : '48%',
-        },
-        animatedStyle,
-      ]}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      onPress={handlePress}
-      entering={FadeInDown.delay(100 + index * 50).springify()}
-      accessibilityLabel={item.title}
-      accessibilityRole="button"
-    >
-      <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
-        <Icon size={getResponsiveSize(20, 24, 28)} color={item.iconColor} strokeWidth={1.5} />
-        {item.badge !== undefined && item.badge > 0 && (
-          <View style={styles.badgeContainer}>
-            <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
-          </View>
-        )}
-      </View>
-      <Text
-        style={[styles.quickAccessText, { color: colors.text, fontSize: getResponsiveSize(12, 14, 16) }]}
-        numberOfLines={2}
+    <Animated.View entering={FadeInDown.delay(100 + index * 50).springify()}>
+      <AnimatedPressable
+        style={[
+          styles.quickAccessCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            width: isTablet ? '23%' : '48%',
+          },
+          animatedStyle,
+        ]}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        onPress={handlePress}
+        accessibilityLabel={item.title}
+        accessibilityRole="button"
       >
-        {item.title}
-      </Text>
-    </AnimatedPressable>
+        <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
+          <Icon size={getResponsiveSize(20, 24, 28)} color={item.iconColor} strokeWidth={1.5} />
+          {item.badge !== undefined && item.badge > 0 && (
+            <View style={styles.badgeContainer}>
+              <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
+            </View>
+          )}
+        </View>
+        <Text
+          style={[styles.quickAccessText, { color: colors.text, fontSize: getResponsiveSize(12, 14, 16) }]}
+          numberOfLines={2}
+        >
+          {item.title}
+        </Text>
+      </AnimatedPressable>
+    </Animated.View>
   );
 });
 
