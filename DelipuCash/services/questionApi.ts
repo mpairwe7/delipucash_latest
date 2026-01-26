@@ -22,12 +22,46 @@ import {
   getResponsesForQuestion,
 } from "@/data/mockData";
 
+// ===========================================
+// API Configuration
+// ===========================================
+
 // Simulate network delay
 const delay = (ms: number = 500): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
 const isBackendConfigured = Boolean(API_BASE_URL);
+
+// API Version for future compatibility
+const API_VERSION = "v1";
+const API_VERSION_HEADER = "X-API-Version";
+const CLIENT_VERSION_HEADER = "X-Client-Version";
+const CLIENT_PLATFORM_HEADER = "X-Client-Platform";
+const REQUEST_ID_HEADER = "X-Request-ID";
+
+// Client info for debugging and analytics
+const CLIENT_VERSION = "1.0.0";
+const CLIENT_PLATFORM = "expo-react-native";
+
+/**
+ * Generate a unique request ID for tracing
+ */
+const generateRequestId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
+/**
+ * Get default headers for API requests
+ */
+const getDefaultHeaders = (): Record<string, string> => ({
+  "Content-Type": "application/json",
+  [API_VERSION_HEADER]: API_VERSION,
+  [CLIENT_VERSION_HEADER]: CLIENT_VERSION,
+  [CLIENT_PLATFORM_HEADER]: CLIENT_PLATFORM,
+  [REQUEST_ID_HEADER]: generateRequestId(),
+  "Accept": "application/json",
+});
 
 // API Routes
 const QUESTION_ROUTES = {
@@ -50,7 +84,7 @@ const QUESTION_ROUTES = {
   submitRewardAnswer: (id: string) => `/api/rewards/questions/${id}/answer`,
 } as const;
 
-// Helper to fetch JSON
+// Helper to fetch JSON with versioning headers
 async function fetchJson<T>(
   path: string,
   init?: RequestInit
@@ -59,7 +93,7 @@ async function fetchJson<T>(
   try {
     const response = await fetch(url, {
       headers: {
-        "Content-Type": "application/json",
+        ...getDefaultHeaders(),
         ...(init?.headers || {}),
       },
       ...init,

@@ -9,6 +9,7 @@
  * - Prevent repeated attempts on questions
  * - Track attempted questions with persistence
  * - Wallet/points tracking
+ * - Offline queue for pending submissions
  */
 
 import { create } from 'zustand';
@@ -28,6 +29,18 @@ export interface AttemptedRewardQuestion {
   isWinner: boolean;
   position: number | null;
   paymentStatus: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | null;
+}
+
+/** Pending submission for offline queue */
+export interface PendingSubmission {
+  id: string;
+  questionId: string;
+  answer: string;
+  phoneNumber?: string;
+  userEmail?: string;
+  createdAt: string;
+  retryCount: number;
+  lastRetryAt: string | null;
 }
 
 export interface InstantRewardAttemptHistory {
@@ -55,6 +68,10 @@ export interface InstantRewardUIState {
   
   // Loading/Error States
   error: string | null;
+
+  // Offline Queue
+  pendingSubmissions: PendingSubmission[];
+  isOnline: boolean;
 }
 
 export interface InstantRewardUIActions {
@@ -80,6 +97,14 @@ export interface InstantRewardUIActions {
   setLastResult: (result: AttemptedRewardQuestion | null) => void;
   setError: (error: string | null) => void;
   
+  // Offline Queue Management
+  addPendingSubmission: (submission: Omit<PendingSubmission, 'id' | 'createdAt' | 'retryCount' | 'lastRetryAt'>) => void;
+  removePendingSubmission: (id: string) => void;
+  updatePendingSubmissionRetry: (id: string) => void;
+  getPendingSubmissions: () => PendingSubmission[];
+  hasPendingSubmission: (questionId: string) => boolean;
+  setOnlineStatus: (isOnline: boolean) => void;
+
   // Reset
   resetCurrentQuestion: () => void;
 }
@@ -97,6 +122,8 @@ const initialState: InstantRewardUIState = {
   isSubmitting: false,
   lastResult: null,
   error: null,
+  pendingSubmissions: [],
+  isOnline: true,
 };
 
 // ===========================================
@@ -213,6 +240,54 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       },
 
       // ========================================
+      // Offline Queue Management
+      // ========================================
+
+      addPendingSubmission: (submission) => {
+        const now = new Date().toISOString();
+        const newSubmission: PendingSubmission = {
+          ...submission,
+          id: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          createdAt: now,
+          retryCount: 0,
+          lastRetryAt: null,
+        };
+
+        set(state => ({
+          pendingSubmissions: [...state.pendingSubmissions, newSubmission],
+        }));
+      },
+
+      removePendingSubmission: (id) => {
+        set(state => ({
+          pendingSubmissions: state.pendingSubmissions.filter(s => s.id !== id),
+        }));
+      },
+
+      updatePendingSubmissionRetry: (id) => {
+        const now = new Date().toISOString();
+        set(state => ({
+          pendingSubmissions: state.pendingSubmissions.map(s =>
+            s.id === id
+              ? { ...s, retryCount: s.retryCount + 1, lastRetryAt: now }
+              : s
+          ),
+        }));
+      },
+
+      getPendingSubmissions: () => {
+        return get().pendingSubmissions;
+      },
+
+      hasPendingSubmission: (questionId) => {
+        return get().pendingSubmissions.some(s => s.questionId === questionId);
+      },
+
+      setOnlineStatus: (isOnline) => {
+        set({ isOnline });
+      },
+
+      // ========================================
       // Current Question State
       // ========================================
 
@@ -261,6 +336,7 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       partialize: (state) => ({
         attemptHistory: state.attemptHistory,
         walletBalance: state.walletBalance,
+        pendingSubmissions: state.pendingSubmissions,
       }),
     }
   )
@@ -294,6 +370,15 @@ export const selectCurrentQuestionState = (state: InstantRewardUIState) => ({
   lastResult: state.lastResult,
   error: state.error,
 });
+
+export const selectOfflineQueueState = (state: InstantRewardUIState) => ({
+  pendingCount: state.pendingSubmissions.length,
+  isOnline: state.isOnline,
+  hasPending: state.pendingSubmissions.length > 0,
+});
+
+export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>
+  state.pendingSubmissions.find(s => s.questionId === questionId) ?? null;
 
 // ===========================================
 // Default Export

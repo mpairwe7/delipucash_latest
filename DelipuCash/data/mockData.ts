@@ -531,21 +531,39 @@ export const mockResponseReplies: ResponseReply[] = [
 // ===========================================
 // Mock Reward Questions
 // ===========================================
+
+/**
+ * Generate a future date for expiry (days from now)
+ */
+const getFutureDate = (daysFromNow: number): string => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(23, 59, 59, 0);
+  return date.toISOString();
+};
+
+/**
+ * Get today's date in ISO format
+ */
+const getTodayDate = (): string => {
+  return new Date().toISOString();
+};
+
 export const mockRewardQuestions: RewardQuestion[] = [
   {
     id: "rq_001",
     text: "What is the capital of France?",
     options: { a: "London", b: "Berlin", c: "Paris", d: "Madrid" },
     correctAnswer: "c",
-    rewardAmount: 5,
-    expiryTime: "2026-01-10T23:59:59Z",
+    rewardAmount: 5000,
+    expiryTime: getFutureDate(7), // 7 days from now
     isActive: true,
     userId: "user_002",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
     isInstantReward: true,
-    maxWinners: 2,
-    winnersCount: 1,
+    maxWinners: 10,
+    winnersCount: 3,
     isCompleted: false,
     paymentProvider: "MTN",
     phoneNumber: "+256 700 123 456",
@@ -555,18 +573,126 @@ export const mockRewardQuestions: RewardQuestion[] = [
     text: "Which planet is known as the Red Planet?",
     options: { a: "Venus", b: "Mars", c: "Jupiter", d: "Saturn" },
     correctAnswer: "b",
-    rewardAmount: 10,
-    expiryTime: "2026-01-15T23:59:59Z",
+    rewardAmount: 10000,
+    expiryTime: getFutureDate(14), // 14 days from now
     isActive: true,
     userId: "user_003",
-    createdAt: "2026-01-02T00:00:00Z",
-    updatedAt: "2026-01-02T00:00:00Z",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
     isInstantReward: true,
-    maxWinners: 5,
-    winnersCount: 2,
+    maxWinners: 20,
+    winnersCount: 5,
     isCompleted: false,
     paymentProvider: "AIRTEL",
     phoneNumber: "+256 700 234 567",
+  },
+  {
+    id: "rq_003",
+    text: "What is the largest ocean on Earth?",
+    options: { a: "Atlantic Ocean", b: "Indian Ocean", c: "Pacific Ocean", d: "Arctic Ocean" },
+    correctAnswer: "c",
+    rewardAmount: 7500,
+    expiryTime: getFutureDate(5), // 5 days from now
+    isActive: true,
+    userId: "user_001",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 15,
+    winnersCount: 2,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 345 678",
+  },
+  {
+    id: "rq_004",
+    text: "Who painted the Mona Lisa?",
+    options: { a: "Vincent van Gogh", b: "Pablo Picasso", c: "Leonardo da Vinci", d: "Michelangelo" },
+    correctAnswer: "c",
+    rewardAmount: 15000,
+    expiryTime: getFutureDate(10), // 10 days from now
+    isActive: true,
+    userId: "user_002",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 5,
+    winnersCount: 1,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 456 789",
+  },
+  {
+    id: "rq_005",
+    text: "What is the chemical symbol for Gold?",
+    options: { a: "Go", b: "Gd", c: "Au", d: "Ag" },
+    correctAnswer: "c",
+    rewardAmount: 8000,
+    expiryTime: getFutureDate(3), // 3 days from now
+    isActive: true,
+    userId: "user_003",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 25,
+    winnersCount: 8,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 567 890",
+  },
+  {
+    id: "rq_006",
+    text: "In which year did World War II end?",
+    options: { a: "1943", b: "1944", c: "1945", d: "1946" },
+    correctAnswer: "c",
+    rewardAmount: 12000,
+    expiryTime: getFutureDate(21), // 21 days from now
+    isActive: true,
+    userId: "user_001",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 8,
+    winnersCount: 0,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 678 901",
+  },
+  {
+    id: "rq_007",
+    text: "What is the smallest country in the world?",
+    options: { a: "Monaco", b: "San Marino", c: "Vatican City", d: "Liechtenstein" },
+    correctAnswer: "c",
+    rewardAmount: 6000,
+    expiryTime: getFutureDate(12), // 12 days from now
+    isActive: true,
+    userId: "user_002",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 30,
+    winnersCount: 12,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 789 012",
+  },
+  {
+    id: "rq_008",
+    text: "Which programming language was created by Guido van Rossum?",
+    options: { a: "Java", b: "C++", c: "Python", d: "Ruby" },
+    correctAnswer: "c",
+    rewardAmount: 20000,
+    expiryTime: getFutureDate(30), // 30 days from now
+    isActive: true,
+    userId: "user_003",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 3,
+    winnersCount: 0,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 890 123",
   },
 ];
 

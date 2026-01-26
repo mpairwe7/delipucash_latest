@@ -379,7 +379,12 @@ function VideoPlayerComponent({
       if (tapTimeoutRef.current) {
         clearTimeout(tapTimeoutRef.current);
       }
-      player?.pause();
+      // Safely pause player - wrap in try-catch to handle released player
+      try {
+        player?.pause();
+      } catch {
+        // Player may have been released already, ignore
+      }
       // Reset orientation to portrait when closing
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
     };
@@ -573,21 +578,25 @@ function VideoPlayerComponent({
   // Play/Pause toggle
   const togglePlayPause = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    if (hasEnded) {
-      // Replay from beginning
-      if (player) {
-        player.currentTime = 0;
-        player.play();
+    try {
+      if (hasEnded) {
+        // Replay from beginning
+        if (player) {
+          player.currentTime = 0;
+          player.play();
+          setPlaybackState(PlaybackState.Playing);
+          setProgress(0);
+          setCurrentTime(0);
+        }
+      } else if (isPlaying) {
+        player?.pause();
+        setPlaybackState(PlaybackState.Paused);
+      } else {
+        player?.play();
         setPlaybackState(PlaybackState.Playing);
-        setProgress(0);
-        setCurrentTime(0);
       }
-    } else if (isPlaying) {
-      player?.pause();
-      setPlaybackState(PlaybackState.Paused);
-    } else {
-      player?.play();
-      setPlaybackState(PlaybackState.Playing);
+    } catch {
+    // Player may have been released, ignore
     }
     showControls();
   }, [hasEnded, isPlaying, player, showControls]);
@@ -701,7 +710,12 @@ function VideoPlayerComponent({
   // Handle close
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    player?.pause();
+    // Safely pause player - wrap in try-catch to handle released player
+    try {
+      player?.pause();
+    } catch {
+      // Player may have been released already, ignore
+    }
     onClose();
   }, [player, onClose]);
 
@@ -860,7 +874,7 @@ function VideoPlayerComponent({
             <VideoView
               style={styles.video}
               player={player}
-              allowsFullscreen
+              fullscreenOptions={{ enable: true }}
               allowsPictureInPicture
               contentFit="contain"
               nativeControls={false}

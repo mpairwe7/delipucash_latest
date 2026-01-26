@@ -9,6 +9,8 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 
 import NotificationProvider from '@/utils/usePushNotifications';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { onlineManager } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/utils/auth/useAuth';
@@ -22,8 +24,44 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
+// Configure online manager for network awareness
+if (Platform.OS !== 'web') {
+  onlineManager.setEventListener((setOnline) => {
+    return NetInfo.addEventListener((state) => {
+      setOnline(!!state.isConnected);
+    });
+  });
+}
+
+// Create QueryClient with retry and caching configuration for network resilience
+const createQueryClient = () => new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Retry configuration for network resilience
+      retry: 3,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+      // Stale time defaults
+      staleTime: 1000 * 60 * 2, // 2 minutes
+      // Cache time (garbage collection)
+      gcTime: 1000 * 60 * 30, // 30 minutes
+      // Refetch settings
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+      // Network mode - fetch when online, use cache when offline
+      networkMode: 'offlineFirst',
+    },
+    mutations: {
+      // Retry mutations up to 2 times for failed network requests
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+      // Network mode for mutations
+      networkMode: 'offlineFirst',
+    },
+  },
+});
+
 export default function RootLayout() {
-  const queryClient = useRef(new QueryClient()).current;
+  const queryClient = useRef(createQueryClient()).current;
   const colorScheme = useColorScheme();
   const { initiate, isReady } = useAuth();
 
