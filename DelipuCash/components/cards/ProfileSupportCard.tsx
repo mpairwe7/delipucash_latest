@@ -128,13 +128,13 @@ export const ProfileSupportCard: React.FC<ProfileSupportCardProps> = ({
   ];
 
   return (
-    <AnimatedPressable
-      entering={FadeInDown.delay(index * 50).duration(ANIMATION.duration.normal)}
-      style={[styles.container, animatedStyle]}
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-    >
+    <Animated.View entering={FadeInDown.delay(index * 50).duration(ANIMATION.duration.normal)}>
+      <AnimatedPressable
+        style={[styles.container, animatedStyle]}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
       <View style={styles.header}>
         <View style={styles.iconContainer}>
           <HelpCircle size={ICON_SIZE.md} color={colors.primary} />
@@ -161,7 +161,8 @@ export const ProfileSupportCard: React.FC<ProfileSupportCardProps> = ({
           );
         })}
       </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 };
 
