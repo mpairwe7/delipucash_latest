@@ -255,57 +255,60 @@ export const NotificationItemComponent: React.FC<NotificationItemProps> = ({
   });
 
   return (
-    <AnimatedPressable
+    <Animated.View
       entering={FadeInDown.delay(index * 40).duration(ANIMATION.duration.normal)}
-      style={[styles.container, animatedStyle]}
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
     >
-      <View style={styles.iconContainer}>
-        <Icon size={ICON_SIZE.sm + 2} color={iconConfig.color} />
-      </View>
-      
-      <View style={styles.contentContainer}>
-        <View style={styles.headerRow}>
-          {!notification.read && <View style={styles.unreadDot} />}
-          <ThemedText style={styles.title} numberOfLines={1}>
-            {notification.title}
-          </ThemedText>
-          {isUrgent && (
-            <View style={styles.urgentBadge}>
-              <ThemedText style={styles.urgentText}>Urgent</ThemedText>
-            </View>
-          )}
+      <AnimatedPressable
+        style={[styles.container, animatedStyle]}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <View style={styles.iconContainer}>
+          <Icon size={ICON_SIZE.sm + 2} color={iconConfig.color} />
         </View>
-        
-        <ThemedText style={styles.body} numberOfLines={2}>
-          {notification.body}
-        </ThemedText>
-        
-        <View style={styles.footer}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <ThemedText style={styles.timeText}>
-              {formatTimeAgo(notification.createdAt)}
+
+        <View style={styles.contentContainer}>
+          <View style={styles.headerRow}>
+            {!notification.read && <View style={styles.unreadDot} />}
+            <ThemedText style={styles.title} numberOfLines={1}>
+              {notification.title}
             </ThemedText>
-            <View style={styles.categoryBadge}>
-              <ThemedText style={styles.categoryText}>
-                {notification.category}
-              </ThemedText>
-            </View>
+            {isUrgent && (
+              <View style={styles.urgentBadge}>
+                <ThemedText style={styles.urgentText}>Urgent</ThemedText>
+              </View>
+            )}
           </View>
-          
-          {notification.actionText && (
-            <View style={styles.actionContainer}>
-              <ThemedText style={styles.actionText}>
-                {notification.actionText}
+
+          <ThemedText style={styles.body} numberOfLines={2}>
+            {notification.body}
+          </ThemedText>
+
+          <View style={styles.footer}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <ThemedText style={styles.timeText}>
+                {formatTimeAgo(notification.createdAt)}
               </ThemedText>
-              <ChevronRight size={12} color={colors.primary} />
+              <View style={styles.categoryBadge}>
+                <ThemedText style={styles.categoryText}>
+                  {notification.category}
+                </ThemedText>
+              </View>
             </View>
-          )}
+
+            {notification.actionText && (
+              <View style={styles.actionContainer}>
+                <ThemedText style={styles.actionText}>
+                  {notification.actionText}
+                </ThemedText>
+                <ChevronRight size={12} color={colors.primary} />
+              </View>
+            )}
+          </View>
         </View>
-      </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 };
 

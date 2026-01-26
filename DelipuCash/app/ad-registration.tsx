@@ -20,8 +20,7 @@ import {
     Alert,
     Image,
     KeyboardAvoidingView,
-    Platform,
-    SafeAreaView,
+  Platform,
     ScrollView,
     StyleSheet,
     Switch,
@@ -30,7 +29,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface FormState {
   title: string;

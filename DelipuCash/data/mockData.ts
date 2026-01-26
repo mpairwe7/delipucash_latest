@@ -105,19 +105,59 @@ export const mockUsers: AppUser[] = [
 export const mockCurrentUser: AppUser = mockUsers[0];
 
 // ===========================================
-// Mock Videos
+// Mock Videos - Using real sample videos from public sources
 // ===========================================
+
+/**
+ * Sample video URLs from public sources for testing
+ * These are royalty-free/public domain sample videos
+ */
+const SAMPLE_VIDEOS = {
+  // Google/Sample video sources (public domain)
+  bigBuckBunny: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+  elephantsDream: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+  forBiggerBlazes: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+  forBiggerEscapes: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+  forBiggerFun: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
+  forBiggerJoyrides: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+  forBiggerMeltdowns: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4",
+  sintel: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+  subaru: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4",
+  tearsOfSteel: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+  volkswagenGTI: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/VolkswagenGTIReview.mp4",
+  weAreGoingOnBullrun: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WeAreGoingOnBullrun.mp4",
+  whatCarCanYouGetForAGrand: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4",
+};
+
+/**
+ * High-quality thumbnail URLs from picsum.photos (random images)
+ */
+const SAMPLE_THUMBNAILS = {
+  finance: "https://picsum.photos/seed/finance/400/225",
+  tech: "https://picsum.photos/seed/tech/400/225",
+  money: "https://picsum.photos/seed/money/400/225",
+  business: "https://picsum.photos/seed/business/400/225",
+  tips: "https://picsum.photos/seed/tips/400/225",
+  savings: "https://picsum.photos/seed/savings/400/225",
+  investment: "https://picsum.photos/seed/investment/400/225",
+  tutorial: "https://picsum.photos/seed/tutorial/400/225",
+  survey: "https://picsum.photos/seed/survey/400/225",
+  earnings: "https://picsum.photos/seed/earnings/400/225",
+  mobile: "https://picsum.photos/seed/mobile/400/225",
+  rewards: "https://picsum.photos/seed/rewards/400/225",
+};
+
 export const mockVideos: Video[] = [
   {
     id: "video_001",
     title: "How to Earn $100 Daily on Delipucash",
-    description: "Complete guide to maximizing your earnings on the platform",
-    videoUrl: "https://example.com/videos/earn-100-daily.mp4",
-    thumbnail: "https://via.placeholder.com/400x225/4F46E5/FFFFFF?text=Earn+Daily",
+    description: "Complete guide to maximizing your earnings on the platform. Learn the secrets of top earners and how you can replicate their success.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerFun,
+    thumbnail: SAMPLE_THUMBNAILS.earnings,
     userId: "user_002",
     likes: 892,
     views: 12450,
-    duration: 645, // 10:45
+    duration: 60, // 1:00
     isBookmarked: false,
     commentsCount: 45,
     createdAt: "2026-01-02T08:00:00Z",
@@ -126,13 +166,13 @@ export const mockVideos: Video[] = [
   {
     id: "video_002",
     title: "Live Q&A: Making Money Online",
-    description: "Join us for tips and tricks on maximizing your online income",
-    videoUrl: "https://example.com/live/qa-session.m3u8",
-    thumbnail: "https://via.placeholder.com/400x225/EF4444/FFFFFF?text=LIVE",
+    description: "Join us for tips and tricks on maximizing your online income. Our experts answer your burning questions about earning from home.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerJoyrides,
+    thumbnail: SAMPLE_THUMBNAILS.money,
     userId: "user_003",
     likes: 456,
     views: 3240,
-    duration: 1800, // 30:00
+    duration: 15, // 0:15
     isBookmarked: true,
     commentsCount: 128,
     createdAt: "2026-01-04T14:00:00Z",
@@ -141,13 +181,13 @@ export const mockVideos: Video[] = [
   {
     id: "video_003",
     title: "Survey Tips for Maximum Rewards",
-    description: "How to qualify for high-paying surveys every time",
-    videoUrl: "https://example.com/videos/survey-tips.mp4",
-    thumbnail: "https://via.placeholder.com/400x225/10B981/FFFFFF?text=Survey+Tips",
+    description: "How to qualify for high-paying surveys every time. These proven strategies will help you maximize your survey earnings.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerBlazes,
+    thumbnail: SAMPLE_THUMBNAILS.survey,
     userId: "user_004",
     likes: 721,
     views: 8920,
-    duration: 420, // 7:00
+    duration: 15, // 0:15
     isBookmarked: false,
     commentsCount: 32,
     createdAt: "2026-01-03T16:30:00Z",
@@ -156,13 +196,13 @@ export const mockVideos: Video[] = [
   {
     id: "video_004",
     title: "Airtel Money Withdrawal Guide",
-    description: "Step-by-step tutorial for withdrawing your earnings",
-    videoUrl: "https://example.com/videos/withdrawal-guide.mp4",
-    thumbnail: "https://via.placeholder.com/400x225/F59E0B/FFFFFF?text=Withdrawal",
+    description: "Step-by-step tutorial for withdrawing your earnings to Airtel Money. Quick, easy, and secure transactions explained.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerEscapes,
+    thumbnail: SAMPLE_THUMBNAILS.mobile,
     userId: "user_002",
     likes: 1204,
     views: 15680,
-    duration: 312, // 5:12
+    duration: 15, // 0:15
     isBookmarked: true,
     commentsCount: 67,
     createdAt: "2026-01-01T12:00:00Z",
@@ -171,13 +211,13 @@ export const mockVideos: Video[] = [
   {
     id: "video_005",
     title: "How to Save Money in 2026",
-    description: "Practical tips for saving money this year",
-    videoUrl: "https://example.com/videos/save-money.mp4",
-    thumbnail: "https://via.placeholder.com/400x225/8B5CF6/FFFFFF?text=Save+Money",
+    description: "Practical tips for saving money this year. Start building your financial future with these simple yet effective strategies.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerMeltdowns,
+    thumbnail: SAMPLE_THUMBNAILS.savings,
     userId: "user_003",
     likes: 543,
     views: 1200,
-    duration: 540, // 9:00
+    duration: 13, // 0:13
     isBookmarked: false,
     commentsCount: 21,
     createdAt: "2025-12-28T10:00:00Z",
@@ -186,17 +226,77 @@ export const mockVideos: Video[] = [
   {
     id: "video_006",
     title: "Investment Tips for Beginners",
-    description: "Start your investment journey with these essential tips",
-    videoUrl: "https://example.com/videos/investment-tips.mp4",
-    thumbnail: "https://via.placeholder.com/400x225/06B6D4/FFFFFF?text=Investment",
+    description: "Start your investment journey with these essential tips. Learn how to grow your money wisely even with a small starting capital.",
+    videoUrl: SAMPLE_VIDEOS.volkswagenGTI,
+    thumbnail: SAMPLE_THUMBNAILS.investment,
     userId: "user_002",
     likes: 387,
     views: 850,
-    duration: 780, // 13:00
+    duration: 160, // 2:40
     isBookmarked: false,
     commentsCount: 15,
     createdAt: "2025-12-25T14:00:00Z",
     updatedAt: "2025-12-25T14:00:00Z",
+  },
+  {
+    id: "video_007",
+    title: "Complete Platform Tutorial",
+    description: "A comprehensive walkthrough of all Delipucash features. From signing up to cashing out, we cover everything you need to know.",
+    videoUrl: SAMPLE_VIDEOS.weAreGoingOnBullrun,
+    thumbnail: SAMPLE_THUMBNAILS.tutorial,
+    userId: "user_003",
+    likes: 1567,
+    views: 25000,
+    duration: 48, // 0:48
+    isBookmarked: true,
+    commentsCount: 89,
+    createdAt: "2026-01-05T09:00:00Z",
+    updatedAt: "2026-01-05T09:00:00Z",
+  },
+  {
+    id: "video_008",
+    title: "Top 10 Earning Strategies",
+    description: "Discover the top 10 strategies used by our highest earners. These methods have been proven to generate consistent income.",
+    videoUrl: SAMPLE_VIDEOS.whatCarCanYouGetForAGrand,
+    thumbnail: SAMPLE_THUMBNAILS.business,
+    userId: "user_004",
+    likes: 2340,
+    views: 45000,
+    duration: 165, // 2:45
+    isBookmarked: false,
+    commentsCount: 156,
+    createdAt: "2026-01-06T11:30:00Z",
+    updatedAt: "2026-01-06T11:30:00Z",
+  },
+  {
+    id: "video_009",
+    title: "Understanding Instant Rewards",
+    description: "Everything you need to know about our instant reward system. Answer questions correctly and get paid instantly to your mobile money.",
+    videoUrl: SAMPLE_VIDEOS.subaru,
+    thumbnail: SAMPLE_THUMBNAILS.rewards,
+    userId: "user_002",
+    likes: 678,
+    views: 8900,
+    duration: 59, // 0:59
+    isBookmarked: false,
+    commentsCount: 42,
+    createdAt: "2026-01-07T15:00:00Z",
+    updatedAt: "2026-01-07T15:00:00Z",
+  },
+  {
+    id: "video_010",
+    title: "Mobile App Features Deep Dive",
+    description: "Explore all the features of our mobile app. Tips and tricks to navigate the app like a pro and maximize your experience.",
+    videoUrl: SAMPLE_VIDEOS.forBiggerFun,
+    thumbnail: SAMPLE_THUMBNAILS.tech,
+    userId: "user_003",
+    likes: 445,
+    views: 6200,
+    duration: 60, // 1:00
+    isBookmarked: true,
+    commentsCount: 28,
+    createdAt: "2026-01-08T10:00:00Z",
+    updatedAt: "2026-01-08T10:00:00Z",
   },
 ];
 
@@ -531,21 +631,39 @@ export const mockResponseReplies: ResponseReply[] = [
 // ===========================================
 // Mock Reward Questions
 // ===========================================
+
+/**
+ * Generate a future date for expiry (days from now)
+ */
+const getFutureDate = (daysFromNow: number): string => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(23, 59, 59, 0);
+  return date.toISOString();
+};
+
+/**
+ * Get today's date in ISO format
+ */
+const getTodayDate = (): string => {
+  return new Date().toISOString();
+};
+
 export const mockRewardQuestions: RewardQuestion[] = [
   {
     id: "rq_001",
     text: "What is the capital of France?",
     options: { a: "London", b: "Berlin", c: "Paris", d: "Madrid" },
     correctAnswer: "c",
-    rewardAmount: 5,
-    expiryTime: "2026-01-10T23:59:59Z",
+    rewardAmount: 5000,
+    expiryTime: getFutureDate(7), // 7 days from now
     isActive: true,
     userId: "user_002",
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
     isInstantReward: true,
-    maxWinners: 2,
-    winnersCount: 1,
+    maxWinners: 10,
+    winnersCount: 3,
     isCompleted: false,
     paymentProvider: "MTN",
     phoneNumber: "+256 700 123 456",
@@ -555,18 +673,126 @@ export const mockRewardQuestions: RewardQuestion[] = [
     text: "Which planet is known as the Red Planet?",
     options: { a: "Venus", b: "Mars", c: "Jupiter", d: "Saturn" },
     correctAnswer: "b",
-    rewardAmount: 10,
-    expiryTime: "2026-01-15T23:59:59Z",
+    rewardAmount: 10000,
+    expiryTime: getFutureDate(14), // 14 days from now
     isActive: true,
     userId: "user_003",
-    createdAt: "2026-01-02T00:00:00Z",
-    updatedAt: "2026-01-02T00:00:00Z",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
     isInstantReward: true,
-    maxWinners: 5,
-    winnersCount: 2,
+    maxWinners: 20,
+    winnersCount: 5,
     isCompleted: false,
     paymentProvider: "AIRTEL",
     phoneNumber: "+256 700 234 567",
+  },
+  {
+    id: "rq_003",
+    text: "What is the largest ocean on Earth?",
+    options: { a: "Atlantic Ocean", b: "Indian Ocean", c: "Pacific Ocean", d: "Arctic Ocean" },
+    correctAnswer: "c",
+    rewardAmount: 7500,
+    expiryTime: getFutureDate(5), // 5 days from now
+    isActive: true,
+    userId: "user_001",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 15,
+    winnersCount: 2,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 345 678",
+  },
+  {
+    id: "rq_004",
+    text: "Who painted the Mona Lisa?",
+    options: { a: "Vincent van Gogh", b: "Pablo Picasso", c: "Leonardo da Vinci", d: "Michelangelo" },
+    correctAnswer: "c",
+    rewardAmount: 15000,
+    expiryTime: getFutureDate(10), // 10 days from now
+    isActive: true,
+    userId: "user_002",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 5,
+    winnersCount: 1,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 456 789",
+  },
+  {
+    id: "rq_005",
+    text: "What is the chemical symbol for Gold?",
+    options: { a: "Go", b: "Gd", c: "Au", d: "Ag" },
+    correctAnswer: "c",
+    rewardAmount: 8000,
+    expiryTime: getFutureDate(3), // 3 days from now
+    isActive: true,
+    userId: "user_003",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 25,
+    winnersCount: 8,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 567 890",
+  },
+  {
+    id: "rq_006",
+    text: "In which year did World War II end?",
+    options: { a: "1943", b: "1944", c: "1945", d: "1946" },
+    correctAnswer: "c",
+    rewardAmount: 12000,
+    expiryTime: getFutureDate(21), // 21 days from now
+    isActive: true,
+    userId: "user_001",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 8,
+    winnersCount: 0,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 678 901",
+  },
+  {
+    id: "rq_007",
+    text: "What is the smallest country in the world?",
+    options: { a: "Monaco", b: "San Marino", c: "Vatican City", d: "Liechtenstein" },
+    correctAnswer: "c",
+    rewardAmount: 6000,
+    expiryTime: getFutureDate(12), // 12 days from now
+    isActive: true,
+    userId: "user_002",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 30,
+    winnersCount: 12,
+    isCompleted: false,
+    paymentProvider: "MTN",
+    phoneNumber: "+256 700 789 012",
+  },
+  {
+    id: "rq_008",
+    text: "Which programming language was created by Guido van Rossum?",
+    options: { a: "Java", b: "C++", c: "Python", d: "Ruby" },
+    correctAnswer: "c",
+    rewardAmount: 20000,
+    expiryTime: getFutureDate(30), // 30 days from now
+    isActive: true,
+    userId: "user_003",
+    createdAt: getTodayDate(),
+    updatedAt: getTodayDate(),
+    isInstantReward: true,
+    maxWinners: 3,
+    winnersCount: 0,
+    isCompleted: false,
+    paymentProvider: "AIRTEL",
+    phoneNumber: "+256 700 890 123",
   },
 ];
 

@@ -51,18 +51,54 @@ import {
     Video,
 } from "@/types";
 
+// ===========================================
+// API Configuration
+// ===========================================
+
 // Simulate network delay
 const delay = (ms: number = 500): Promise<void> => 
   new Promise(resolve => setTimeout(resolve, ms));
 
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
 const isBackendConfigured = Boolean(process.env.EXPO_PUBLIC_API_URL);
+
+// API Version for future compatibility
+const API_VERSION = "v1";
+const API_VERSION_HEADER = "X-API-Version";
+const CLIENT_VERSION_HEADER = "X-Client-Version";
+const CLIENT_PLATFORM_HEADER = "X-Client-Platform";
+const REQUEST_ID_HEADER = "X-Request-ID";
+
+// Client info for debugging and analytics
+const CLIENT_VERSION = "1.0.0"; // Should match app.json version
+const CLIENT_PLATFORM = "expo-react-native";
+
+/**
+ * Generate a unique request ID for tracing
+ */
+const generateRequestId = (): string => {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
+/**
+ * Get default headers for API requests
+ * Includes versioning and client identification for future compatibility
+ */
+const getDefaultHeaders = (): Record<string, string> => ({
+  "Content-Type": "application/json",
+  [API_VERSION_HEADER]: API_VERSION,
+  [CLIENT_VERSION_HEADER]: CLIENT_VERSION,
+  [CLIENT_PLATFORM_HEADER]: CLIENT_PLATFORM,
+  [REQUEST_ID_HEADER]: generateRequestId(),
+  "Accept": "application/json",
+});
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${path}`;
   try {
     const response = await fetch(url, {
       headers: {
-        "Content-Type": "application/json",
+        ...getDefaultHeaders(),
         ...(init?.headers || {}),
       },
       ...init,
@@ -141,9 +177,8 @@ export const api = {
 };
 
 // ===========================================
-// API Configuration
+// API Routes Configuration
 // ===========================================
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://api.example.com";
 
 export const API_ROUTES = {
   // Auth
@@ -1096,8 +1131,30 @@ export const rewardsApi = {
 
   /**
    * Get reward questions
+   * Tries backend API first, falls back to mock data
    */
   async getQuestions(): Promise<ApiResponse<RewardQuestion[]>> {
+    // Try backend API first if configured
+    if (isBackendConfigured && API_BASE_URL) {
+      try {
+        const response = await fetchJson<RewardQuestion[]>(
+          '/api/reward-questions'
+        );
+
+        if (response.success && response.data && Array.isArray(response.data)) {
+          return {
+            success: true,
+            data: response.data,
+          };
+        }
+        // If backend returns error or empty, fall through to mock data
+        console.log('[RewardsAPI] Backend returned no data, using mock data fallback');
+      } catch (error) {
+        console.log('[RewardsAPI] Backend error, using mock data fallback:', error);
+      }
+    }
+
+    // Fallback to mock data
     await delay();
     return {
       success: true,

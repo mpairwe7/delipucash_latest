@@ -191,14 +191,16 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     contact.workingHours?.toLowerCase().includes('24/7');
 
   return (
-    <AnimatedPressable
+    <Animated.View
       entering={FadeInDown.delay(index * 50).duration(ANIMATION.duration.normal)}
-      style={[styles.container, animatedStyle]}
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
     >
-      <View style={styles.iconContainer}>
+      <AnimatedPressable
+        style={[styles.container, animatedStyle]}
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+      >
+        <View style={styles.iconContainer}>
         <Icon 
           size={ICON_SIZE.md} 
           color={contact.available ? colors.primary : colors.textSecondary} 
@@ -235,7 +237,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
       <View style={styles.arrowContainer}>
         <ExternalLink size={ICON_SIZE.sm} color={colors.textMuted} />
       </View>
-    </AnimatedPressable>
+      </AnimatedPressable>
+    </Animated.View>
   );
 };
 

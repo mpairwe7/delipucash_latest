@@ -23,7 +23,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Crown } from 'lucide-react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { router, Href } from 'expo-router';
+import { CameraView } from 'expo-camera';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, withAlpha } from '@/utils/theme';
+import { useCamera } from '@/hooks/useCamera';
 import {
   MAX_RECORDING_DURATION,
   MAX_LIVESTREAM_DURATION_PREMIUM,
@@ -67,21 +69,6 @@ export interface RecordedVideo {
   thumbnailUri?: string;
   title?: string;
 }
-
-// Mock camera permissions for demo
-const useMockCameraPermissions = () => {
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
-  
-  useEffect(() => {
-    // Simulate permission check
-    setTimeout(() => setHasPermission(true), 500);
-  }, []);
-  
-  return {
-    hasPermission,
-    requestPermissions: () => setHasPermission(true),
-  };
-};
 
 // ============================================================================
 // COMPONENT
@@ -141,9 +128,6 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const fadeAnim = useRef(new Animated.Value(1)).current;
   
   // State
-  const [isFrontCamera, setIsFrontCamera] = useState(false);
-  const [isTorchOn, setIsTorchOn] = useState(false);
-  const [zoomLevel, setZoomLevel] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -151,8 +135,29 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showLimitWarning, setShowLimitWarning] = useState(false);
   
-  // Permissions (mock for demo)
-  const { hasPermission, requestPermissions } = useMockCameraPermissions();
+  // Camera hook - industry standard camera initialization
+  const {
+    hasPermission,
+    requestPermissions,
+    cameraRef,
+    facing,
+    torchEnabled,
+    toggleFacing,
+    toggleTorch,
+    zoom,
+    setZoom,
+    isReady,
+    markReady,
+  } = useCamera({
+    autoRequest: true,
+    pauseOnBackground: true,
+    initialFacing: 'back',
+  });
+
+  // Sync camera state with local state for UI compatibility
+  const isFrontCamera = facing === 'front';
+  const isTorchOn = torchEnabled;
+  const zoomLevel = zoom;
 
   // Orientation state for landscape recording support
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -264,22 +269,22 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     };
   }, [isRecording, effectiveMaxDuration, hasVideoPremium, handleUpgrade, updateRecordingDuration]);
 
-  // Handlers
+  // Handlers - delegating to useCamera hook
   const toggleCamera = useCallback(() => {
-    setIsFrontCamera(prev => !prev);
-  }, []);
+    toggleFacing();
+  }, [toggleFacing]);
   
-  const toggleTorch = useCallback(() => {
-    setIsTorchOn(prev => !prev);
-  }, []);
+  const handleTorchToggle = useCallback(() => {
+    toggleTorch();
+  }, [toggleTorch]);
   
   const handleZoomIn = useCallback(() => {
-    setZoomLevel(prev => Math.min(prev + 0.1, 0.8));
-  }, []);
+    setZoom(Math.min(zoom + 0.1, 0.8));
+  }, [zoom, setZoom]);
   
   const handleZoomOut = useCallback(() => {
-    setZoomLevel(prev => Math.max(prev - 0.1, 0));
-  }, []);
+    setZoom(Math.max(zoom - 0.1, 0));
+  }, [zoom, setZoom]);
   
   const handleClose = useCallback(() => {
     if (isRecording) {
@@ -451,8 +456,25 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         style={styles.cameraContainer}
         onPress={toggleControls}
       >
-        {/* Mock Camera View */}
-        <View style={styles.mockCamera}>
+        {/* Real Camera View */}
+        <View style={styles.cameraWrapper}>
+          <CameraView
+            ref={cameraRef}
+            style={StyleSheet.absoluteFill}
+            facing={facing}
+            enableTorch={torchEnabled}
+            zoom={zoom}
+            onCameraReady={markReady}
+            mode="video"
+          />
+
+          {/* Loading overlay while camera initializes */}
+          {!isReady && (
+            <View style={styles.cameraLoadingOverlay}>
+              <Text style={styles.cameraLoadingText}>Initializing camera...</Text>
+            </View>
+          )}
+
           {/* Recording Progress Bar */}
           <RecordingProgressBar
             isRecording={isRecording}
@@ -486,7 +508,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
             isFrontCamera={isFrontCamera}
             onToggleCamera={toggleCamera}
             isTorchOn={isTorchOn}
-            onToggleTorch={toggleTorch}
+            onToggleTorch={handleTorchToggle}
             zoomLevel={zoomLevel}
             onZoomIn={handleZoomIn}
             onZoomOut={handleZoomOut}
@@ -553,9 +575,21 @@ const styles = StyleSheet.create({
   cameraContainer: {
     flex: 1,
   },
-  mockCamera: {
+  cameraWrapper: {
     flex: 1,
-    backgroundColor: '#1a1a2e', // Dark background to simulate camera
+    backgroundColor: '#000', // Black background while camera loads
+  },
+  cameraLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  cameraLoadingText: {
+    color: '#fff',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   limitWarningBanner: {
     position: 'absolute',

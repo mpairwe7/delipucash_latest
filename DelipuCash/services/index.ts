@@ -57,6 +57,13 @@ export {
 export * from "./surveyResponseHooks";
 
 // ============================================================================
+// Video TanStack Query Hooks (Industry Standard)
+// Centralized video hooks with optimistic updates and caching
+// ============================================================================
+export * from "./videoHooks";
+export { default as videoHooks } from "./videoHooks";
+
+// ============================================================================
 // RevenueCat Purchases (Google Play Billing / App Store)
 // ============================================================================
 export * from "./purchasesService";

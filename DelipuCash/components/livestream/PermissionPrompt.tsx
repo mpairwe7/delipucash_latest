@@ -9,10 +9,10 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Video, Mic, Image as ImageIcon } from 'lucide-react-native';
 import { SPACING, TYPOGRAPHY, RADIUS, useTheme, withAlpha } from '@/utils/theme';
 import { PrimaryButton } from '@/components/PrimaryButton';
