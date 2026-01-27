@@ -77,11 +77,17 @@ import type { RecordedVideo } from "@/components";
 import {
   useBannerAds,
   useAdsForPlacement,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { BannerAd, NativeAd, CompactAd, FeaturedAd } from "@/components/ads";
-import { Video } from "@/types";
+import {
+  AdPlacementWrapper,
+  BetweenContentAd,
+  InFeedAd,
+  AdCarousel,
+} from "@/components/ads";
+import { Video, Ad } from "@/types";
 import { useVideoStore, selectLikedVideoIds } from "@/store/VideoStore";
 import * as Haptics from "expo-haptics";
 
@@ -142,19 +148,29 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: shareVideo } = useShareVideo();
   
   // Ad data using TanStack Query for optimized caching
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds();
-  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video');
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
   const { mutate: recordAdClick } = useRecordAdClick();
   const { mutate: recordAdImpression } = useRecordAdImpression();
 
-  // Ad handlers for analytics tracking
-  const handleAdClick = useCallback((ad: any) => {
+  // Ad handlers for analytics tracking - Following IAB Standards
+  const handleAdClick = useCallback((ad: Ad) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    recordAdClick(ad.id);
+    recordAdClick({
+      adId: ad.id,
+      placement: 'video',
+    });
   }, [recordAdClick]);
 
-  const handleAdImpression = useCallback((ad: any) => {
-    recordAdImpression(ad.id);
+  const handleAdImpression = useCallback((ad: Ad) => {
+    recordAdImpression({
+      adId: ad.id,
+      placement: 'video',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
   }, [recordAdImpression]);
 
   // Memoized Data
@@ -205,9 +221,9 @@ export default function VideosScreen(): React.ReactElement {
   const onRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
-    await Promise.all([refetch(), refetchBannerAds(), refetchVideoAds()]);
+    await Promise.all([refetch(), refetchBannerAds(), refetchVideoAds(), refetchFeaturedAds()]);
     setRefreshing(false);
-  }, [refetch, refetchBannerAds, refetchVideoAds]);
+  }, [refetch, refetchBannerAds, refetchVideoAds, refetchFeaturedAds]);
 
   const handleComment = useCallback((video: Video): void => {
     router.push(`/question-comments/${video.id}` as Href);
@@ -575,16 +591,28 @@ export default function VideosScreen(): React.ReactElement {
                 />
               </View>
 
-              {/* Banner Ad - High visibility after stats */}
-              {bannerAds && bannerAds.length > 0 && (
-                <View style={styles.adContainer}>
-                  <BannerAd
-                    ad={bannerAds[0]}
+              {/* Featured Ad Carousel - High visibility after stats (YouTube-like) */}
+              {featuredAds && featuredAds.length > 0 && (
+                <View style={styles.featuredAdContainer}>
+                  <AdCarousel
+                    ads={featuredAds}
                     onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(bannerAds[0])}
-                    style={styles.bannerAd}
+                    onAdLoad={() => featuredAds[0] && handleAdImpression(featuredAds[0])}
+                    autoScrollInterval={7000}
+                    style={styles.featuredAdCarousel}
                   />
                 </View>
+              )}
+
+              {/* Banner Ad - Secondary placement */}
+              {bannerAds && bannerAds.length > 0 && (
+                <AdPlacementWrapper
+                  ad={bannerAds[0]}
+                  placement="banner-top"
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(bannerAds[0])}
+                  style={styles.bannerAdPlacement}
+                />
               )}
 
               {/* Up Next Section - YouTube-like auto-play queue */}
@@ -719,16 +747,15 @@ export default function VideosScreen(): React.ReactElement {
                 )}
               </ScrollView>
 
-              {/* Featured Ad - Premium placement after live content */}
+              {/* Featured Ad - Premium placement after live content (Industry Standard: Natural break) */}
               {videoAds && videoAds.length > 1 && (
-                <View style={styles.adContainer}>
-                  <FeaturedAd
-                    ad={videoAds[1]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(videoAds[1])}
-                    style={styles.featuredAd}
-                  />
-                </View>
+                <BetweenContentAd
+                  ad={videoAds[1]}
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(videoAds[1])}
+                  variant="featured"
+                  style={styles.betweenContentAd}
+                />
               )}
 
               {/* Trending Section */}
@@ -762,16 +789,15 @@ export default function VideosScreen(): React.ReactElement {
                 ))}
               </ScrollView>
 
-              {/* Native Ad - Blends naturally after trending content */}
+              {/* In-Feed Native Ad - Blends naturally after trending content (YouTube/Instagram style) */}
               {videoAds && videoAds.length > 0 && (
-                <View style={styles.adContainer}>
-                  <NativeAd
-                    ad={videoAds[0]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(videoAds[0])}
-                    style={styles.nativeAd}
-                  />
-                </View>
+                <InFeedAd
+                  ad={videoAds[0]}
+                  index={0}
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(videoAds[0])}
+                  style={styles.inFeedAd}
+                />
               )}
 
               {/* Popular Section */}
@@ -797,14 +823,13 @@ export default function VideosScreen(): React.ReactElement {
 
               {/* Compact Ad - Minimal footprint before sponsored content */}
               {bannerAds && bannerAds.length > 1 && (
-                <View style={styles.adContainer}>
-                  <CompactAd
-                    ad={bannerAds[1]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(bannerAds[1])}
-                    style={styles.compactAd}
-                  />
-                </View>
+                <AdPlacementWrapper
+                  ad={bannerAds[1]}
+                  placement="inline"
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(bannerAds[1])}
+                  style={styles.compactAdPlacement}
+                />
               )}
 
               {/* Sponsored Section */}
@@ -1177,11 +1202,32 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: "center",
   },
-  // Ad Styles
+  // Ad Styles - Industry Standard Placements with Proper Transitions
   adContainer: {
     marginVertical: SPACING.md,
     borderRadius: RADIUS.lg,
     overflow: "hidden",
+  },
+  featuredAdContainer: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.base,
+  },
+  featuredAdCarousel: {
+    paddingHorizontal: SPACING.base,
+  },
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
+  },
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  inFeedAd: {
+    marginVertical: SPACING.md,
+    marginHorizontal: -SPACING.xs,
+  },
+  compactAdPlacement: {
+    marginVertical: SPACING.sm,
   },
   bannerAd: {
     borderRadius: RADIUS.lg,

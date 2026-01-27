@@ -8,10 +8,14 @@ import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
 import {
   useAdsForPlacement,
   useBannerAds,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { NativeAd, BannerAd } from "@/components/ads";
+import {
+  AdPlacementWrapper,
+  BetweenContentAd,
+} from "@/components/ads";
 import { useAuth, useAuthModal } from "@/utils/auth";
 import { Survey, Ad } from "@/types";
 import {
@@ -102,6 +106,7 @@ export default function SurveysScreen(): React.ReactElement {
   // Following industry best practices: ads are contextually placed and non-intrusive
   const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 3);
   const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(2);
+  const { refetch: refetchFeaturedAds } = useFeaturedAds(1);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
@@ -169,9 +174,16 @@ export default function SurveysScreen(): React.ReactElement {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchRunning(), refetchUpcoming(), refetchSubscription(), refetchSurveyAds(), refetchBannerAds()]);
+    await Promise.all([
+      refetchRunning(),
+      refetchUpcoming(),
+      refetchSubscription(),
+      refetchSurveyAds(),
+      refetchBannerAds(),
+      refetchFeaturedAds(),
+    ]);
     setRefreshing(false);
-  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds]);
+  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds, refetchFeaturedAds]);
 
   // Ad interaction handlers - Following IAB standards
   const handleAdClick = useCallback((ad: Ad) => {
@@ -549,14 +561,13 @@ export default function SurveysScreen(): React.ReactElement {
           {/* ==================== NATIVE AD - Between Sections ==================== */}
           {/* Industry Standard: Native ads blend with content, placed at natural break points */}
           {surveyAds.length > 0 && (
-            <View style={styles.adContainer}>
-              <NativeAd
-                ad={surveyAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(surveyAds[0])}
-                style={styles.nativeAd}
-              />
-            </View>
+            <BetweenContentAd
+              ad={surveyAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(surveyAds[0])}
+              variant="native"
+              style={styles.betweenContentAd}
+            />
           )}
 
         {/* ==================== UPCOMING SURVEYS ==================== */}
@@ -600,14 +611,13 @@ export default function SurveysScreen(): React.ReactElement {
           {/* ==================== COMPACT BANNER AD - Before Tips ==================== */}
           {/* Industry Standard: Banner ads at natural content boundaries, minimal disruption */}
           {bannerAds.length > 0 && (
-            <View style={styles.bannerAdContainer}>
-              <BannerAd
-                ad={bannerAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(bannerAds[0])}
-                style={styles.bannerAd}
-              />
-            </View>
+            <AdPlacementWrapper
+              ad={bannerAds[0]}
+              placement="banner-bottom"
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[0])}
+              style={styles.bannerAdPlacement}
+            />
           )}
 
         {/* ==================== PRO TIPS ==================== */}
@@ -975,10 +985,17 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
 
-  // Ad Containers - Industry Standard: Non-intrusive, clearly labeled
+  // Ad Containers - Industry Standard: Non-intrusive, clearly labeled, smooth transitions
   adContainer: {
     marginVertical: SPACING.lg,
     marginHorizontal: -SPACING.xs,
+  },
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
   },
   nativeAd: {
     borderRadius: RADIUS.lg,

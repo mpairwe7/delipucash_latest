@@ -18,11 +18,20 @@ import {
 import {
     useBannerAds,
     useAdsForPlacement,
+  useFeaturedAds,
     useRecordAdClick,
     useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { BannerAd, NativeAd, CompactAd } from "@/components/ads";
-import { SubscriptionStatus, UserRole } from "@/types";
+import {
+  BannerAd,
+  NativeAd,
+  CompactAd,
+  AdPlacementWrapper,
+  BetweenContentAd,
+  InFeedAd,
+  AdCarousel,
+} from "@/components/ads";
+import { SubscriptionStatus, UserRole, Ad } from "@/types";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -147,13 +156,14 @@ export default function QuestionsScreen(): React.ReactElement {
     const { data: unreadCount } = useUnreadCount();
 
     // Ad hooks - TanStack Query for intelligent ad loading
-    const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
-    const { data: questionAds, refetch: refetchQuestionAds } = useAdsForPlacement('question', 3);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: questionAds, refetch: refetchQuestionAds } = useAdsForPlacement('question', 4);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
     const recordAdClick = useRecordAdClick();
     const recordAdImpression = useRecordAdImpression();
 
     // Ad click handler with analytics tracking
-    const handleAdClick = useCallback((ad: any) => {
+  const handleAdClick = useCallback((ad: Ad) => {
       recordAdClick.mutate({
         adId: ad.id,
         placement: 'question',
@@ -162,7 +172,7 @@ export default function QuestionsScreen(): React.ReactElement {
     }, [recordAdClick]);
 
     // Ad impression tracking
-    const handleAdImpression = useCallback((ad: any, duration: number = 1000) => {
+  const handleAdImpression = useCallback((ad: Ad, duration: number = 1000) => {
       recordAdImpression.mutate({
         adId: ad.id,
         placement: 'question',
@@ -261,9 +271,9 @@ export default function QuestionsScreen(): React.ReactElement {
 
     const onRefresh = useCallback(async () => {
       setRefreshing(true);
-      await Promise.all([refetch(), refetchBannerAds(), refetchQuestionAds()]);
+      await Promise.all([refetch(), refetchBannerAds(), refetchQuestionAds(), refetchFeaturedAds()]);
       setRefreshing(false);
-    }, [refetch]);
+    }, [refetch, refetchBannerAds, refetchQuestionAds, refetchFeaturedAds]);
 
   /**
    * Navigate to question answer screen with proper checks
@@ -569,14 +579,13 @@ export default function QuestionsScreen(): React.ReactElement {
 
           {/* Smart Banner Ad - Non-intrusive placement after stats */}
           {bannerAds && bannerAds.length > 0 && (
-            <View style={styles.adContainer}>
-              <BannerAd
-                ad={bannerAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(bannerAds[0])}
-                style={styles.bannerAd}
-              />
-            </View>
+            <AdPlacementWrapper
+              ad={bannerAds[0]}
+              placement="banner-top"
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[0])}
+              style={styles.bannerAdPlacement}
+            />
           )}
 
           {/* Instant Reward Questions */}
@@ -630,16 +639,15 @@ export default function QuestionsScreen(): React.ReactElement {
             )}
           </View>
 
-          {/* Native Ad - Blends with content between sections */}
+          {/* In-Feed Native Ad - Blends with content between sections (Industry Standard) */}
           {questionAds && questionAds.length > 0 && (
-            <View style={styles.adContainer}>
-              <NativeAd
-                ad={questionAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(questionAds[0])}
-                style={styles.nativeAd}
-              />
-            </View>
+            <BetweenContentAd
+              ad={questionAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(questionAds[0])}
+              variant="native"
+              style={styles.betweenContentAd}
+            />
           )}
 
           {/* Recent Questions - Quora-like discussion feed */}
@@ -686,16 +694,15 @@ export default function QuestionsScreen(): React.ReactElement {
             </View>
           </View>
 
-          {/* Compact Ad - Minimal footprint before all questions */}
+          {/* Compact Ad - Minimal footprint before all questions (Industry Standard) */}
           {bannerAds && bannerAds.length > 1 && (
-            <View style={styles.adContainer}>
-              <CompactAd
-                ad={bannerAds[1]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(bannerAds[1])}
-                style={styles.compactAd}
-              />
-            </View>
+            <InFeedAd
+              ad={bannerAds[1]}
+              index={1}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[1])}
+              style={styles.inFeedAd}
+            />
           )}
 
           {/* All Questions List */}
@@ -1288,11 +1295,21 @@ function ActionCard({
       fontFamily: TYPOGRAPHY.fontFamily.medium,
       fontSize: TYPOGRAPHY.fontSize.sm,
     },
-    // Ad Styles
+    // Ad Styles - Industry Standard Placements with Smooth Transitions
     adContainer: {
       marginVertical: SPACING.md,
       borderRadius: RADIUS.lg,
       overflow: "hidden",
+    },
+    bannerAdPlacement: {
+      marginVertical: SPACING.md,
+    },
+    betweenContentAd: {
+      marginVertical: SPACING.lg,
+      marginHorizontal: -SPACING.sm,
+    },
+    inFeedAd: {
+      marginVertical: SPACING.md,
     },
     bannerAd: {
       borderRadius: RADIUS.lg,

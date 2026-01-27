@@ -152,7 +152,7 @@ export type {
   PlanConfig,
 } from './payment';
 
-// Ad Components
+// Ad Components - Industry Standard Ad Placement System
 export {
   AdComponent,
   VideoAdComponent,
@@ -163,8 +163,23 @@ export {
   NativeAd,
   CardAd,
   SmartAd,
+  // Placement & Transition Components
+  AdPlacementWrapper,
+  InterstitialAd,
+  StickyBanner,
+  InFeedAd,
+  BetweenContentAd,
+  AdCarousel,
 } from './ads';
-export type { AdComponentProps, AdVariant } from './ads';
+export type {
+  AdComponentProps,
+  AdVariant,
+  AdPlacementType,
+  AdPlacementWrapperProps,
+  InterstitialAdProps,
+  StickyBannerProps,
+  InFeedAdProps,
+} from './ads';
 
 // Quiz Components
 export {

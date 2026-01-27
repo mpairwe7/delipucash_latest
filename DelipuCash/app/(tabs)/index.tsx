@@ -19,7 +19,22 @@ import {
   useUnreadCount,
   useUpcomingSurveys,
 } from "@/services/hooks";
-import type { Question, Survey, Video } from "@/types";
+import {
+  useBannerAds,
+  useFeaturedAds,
+  useAdsForPlacement,
+  useRecordAdClick,
+  useRecordAdImpression,
+} from "@/services/adHooksRefactored";
+import {
+  BannerAd,
+  NativeAd,
+  FeaturedAd,
+  AdPlacementWrapper,
+  AdCarousel,
+  BetweenContentAd,
+} from "@/components/ads";
+import type { Question, Survey, Video, Ad } from "@/types";
 import {
   RADIUS,
   SPACING,
@@ -50,6 +65,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 /**
  * Home screen component (Dashboard)
@@ -59,12 +75,20 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
  * - Search bar
  * - Daily rewards card
  * - Wallet & quick stats
+ * - Featured ads carousel (industry standard placement)
  * - Trending videos
  * - Questions & rewards section
+ * - Native ads between sections
  * - Recent questions
  * - Running surveys
  * - Upcoming surveys
  * - Statistics cards (Earnings, Engagement, Rewards progress)
+ * 
+ * Ad Placement Strategy (Industry Standards):
+ * 1. Featured carousel after wallet (high visibility, non-intrusive)
+ * 2. Native ad between trending videos and questions (blends with content)
+ * 3. Banner ad between surveys sections (natural content break)
+ * 4. Compact ad before statistics (minimal footprint)
  */
 export default function HomePage(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -83,6 +107,32 @@ export default function HomePage(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
+  // Ad hooks - TanStack Query for optimal caching and deduplication
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(3);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
+  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement('home', 3);
+  const recordAdClick = useRecordAdClick();
+  const recordAdImpression = useRecordAdImpression();
+
+  // Ad interaction handlers with analytics
+  const handleAdClick = useCallback((ad: Ad) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    recordAdClick.mutate({
+      adId: ad.id,
+      placement: 'home',
+    });
+  }, [recordAdClick]);
+
+  const handleAdImpression = useCallback((ad: Ad) => {
+    recordAdImpression.mutate({
+      adId: ad.id,
+      placement: 'home',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
+  }, [recordAdImpression]);
+
   const onRefresh = useCallback(async (): Promise<void> => {
     setRefreshing(true);
     await Promise.all([
@@ -93,9 +143,12 @@ export default function HomePage(): React.ReactElement {
       refetchUpcomingSurveys(),
       refetchDailyReward(),
       refetchStats(),
+      refetchFeaturedAds(),
+      refetchBannerAds(),
+      refetchHomeAds(),
     ]);
     setRefreshing(false);
-  }, [refetch, refetchVideos, refetchQuestions, refetchRunningSurveys, refetchUpcomingSurveys, refetchDailyReward, refetchStats]);
+  }, [refetch, refetchVideos, refetchQuestions, refetchRunningSurveys, refetchUpcomingSurveys, refetchDailyReward, refetchStats, refetchFeaturedAds, refetchBannerAds, refetchHomeAds]);
 
   const handleClaimDailyReward = useCallback(async () => {
     try {
@@ -212,6 +265,19 @@ export default function HomePage(): React.ReactElement {
           />
         </View>
 
+        {/* Featured Ad Carousel - Industry Standard: High visibility after key content */}
+        {featuredAds && featuredAds.length > 0 && (
+          <View style={styles.adSection}>
+            <AdCarousel
+              ads={featuredAds}
+              onAdClick={handleAdClick}
+              onAdLoad={() => featuredAds[0] && handleAdImpression(featuredAds[0])}
+              autoScrollInterval={6000}
+              style={styles.featuredAdCarousel}
+            />
+          </View>
+        )}
+
         {/* Trending Videos Section */}
         <SectionHeader
           title="Trending Videos"
@@ -253,6 +319,17 @@ export default function HomePage(): React.ReactElement {
             />
           ))}
         </View>
+
+        {/* Native Ad - Between Questions & Surveys (Industry Standard: Blends with content) */}
+        {homeAds && homeAds.length > 0 && (
+          <BetweenContentAd
+            ad={homeAds[0]}
+            onAdClick={handleAdClick}
+            onAdLoad={() => handleAdImpression(homeAds[0])}
+            variant="native"
+            style={styles.betweenContentAd}
+          />
+        )}
 
         {/* Running Surveys Section */}
         <SectionHeader
@@ -302,6 +379,18 @@ export default function HomePage(): React.ReactElement {
             </View>
           )}
         </View>
+
+        {/* Banner Ad - Before Statistics (Industry Standard: Natural content break) */}
+        {bannerAds && bannerAds.length > 0 && (
+          <View style={styles.bannerAdContainer}>
+            <BannerAd
+              ad={bannerAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[0])}
+              style={styles.bannerAd}
+            />
+          </View>
+        )}
 
         {/* Statistics Section */}
         <SectionHeader
@@ -459,6 +548,25 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  // Ad placement styles - Industry standard spacing and presentation
+  adSection: {
+    marginVertical: SPACING.md,
+  },
+  featuredAdCarousel: {
+    marginHorizontal: -SPACING.base,
+  },
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  bannerAdContainer: {
+    marginVertical: SPACING.md,
+    marginHorizontal: -SPACING.sm,
+  },
+  bannerAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
   },
   progressCard: {
     marginBottom: SPACING.md,
