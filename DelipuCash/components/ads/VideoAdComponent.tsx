@@ -65,6 +65,32 @@ const FONTS = {
 };
 
 // ============================================================================
+// CTA CONFIGURATION - Industry Standard Call-to-Action Mapping
+// ============================================================================
+
+type CTAType = 'learn_more' | 'shop_now' | 'sign_up' | 'download' | 'book_now' |
+  'contact_us' | 'get_quote' | 'subscribe' | 'watch_now' | 'play_now' | 'apply_now';
+
+interface CTAConfig {
+  label: string;
+  icon: string;
+}
+
+const CTA_CONFIG: Record<CTAType, CTAConfig> = {
+  learn_more: { label: 'Learn More', icon: 'information-circle-outline' },
+  shop_now: { label: 'Shop Now', icon: 'cart-outline' },
+  sign_up: { label: 'Sign Up', icon: 'person-add-outline' },
+  download: { label: 'Download', icon: 'download-outline' },
+  book_now: { label: 'Book Now', icon: 'calendar-outline' },
+  contact_us: { label: 'Contact Us', icon: 'mail-outline' },
+  get_quote: { label: 'Get Quote', icon: 'document-text-outline' },
+  subscribe: { label: 'Subscribe', icon: 'notifications-outline' },
+  watch_now: { label: 'Watch Now', icon: 'play-circle-outline' },
+  play_now: { label: 'Play Now', icon: 'game-controller-outline' },
+  apply_now: { label: 'Apply Now', icon: 'checkmark-circle-outline' },
+};
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -171,9 +197,9 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
 
   // ========== REFS ==========
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const skipTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipTimeoutRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ========== ANIMATIONS ==========
   const controlsOpacity = useSharedValue(1);
@@ -223,7 +249,13 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
       if (ad.videoUrl) {
         setIsLoadingThumbnail(true);
         try {
-          const generated = await getBestThumbnailUrl(ad);
+          // Convert Ad to AdWithMedia format (null -> undefined)
+          const adWithMedia = {
+            thumbnailUrl: ad.thumbnailUrl ?? undefined,
+            videoUrl: ad.videoUrl ?? undefined,
+            imageUrl: ad.imageUrl ?? undefined,
+          };
+          const generated = await getBestThumbnailUrl(adWithMedia);
           setThumbnailUrl(generated);
         } catch (err) {
           console.error('Error generating thumbnail:', err);
@@ -241,7 +273,8 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
   useEffect(() => {
     if (!videoPlayer || !isValidAd) return;
 
-    const statusSubscription = videoPlayer.addListener('statusChange', (status) => {
+    const statusSubscription = videoPlayer.addListener('statusChange', (event) => {
+      const status = event.status;
       if (status === 'readyToPlay') {
         setIsBuffering(false);
         onAdLoad?.();
@@ -253,8 +286,8 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
       }
     });
 
-    const playingSubscription = videoPlayer.addListener('playingChange', (playing) => {
-      setIsPlaying(playing);
+    const playingSubscription = videoPlayer.addListener('playingChange', (event) => {
+      setIsPlaying(event.isPlaying);
     });
 
     return () => {
@@ -536,9 +569,16 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
                   <Text style={styles.sponsoredText}>Ad</Text>
                 </View>
               )}
-              <Text style={styles.adTitle} numberOfLines={1}>
-                {ad.title}
-              </Text>
+              <View style={styles.topTitleContainer}>
+                {ad.headline && (
+                  <Text style={styles.adHeadline} numberOfLines={1}>
+                    {ad.headline}
+                  </Text>
+                )}
+                <Text style={styles.adTitle} numberOfLines={1}>
+                  {ad.title}
+                </Text>
+              </View>
               <TouchableOpacity
                 style={styles.infoButton}
                 onPress={handleAdClick}
@@ -602,17 +642,24 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
               </View>
 
               <View style={styles.rightControls}>
-                {/* Learn More Button */}
-                <TouchableOpacity
-                  style={styles.learnMoreButton}
-                  onPress={handleAdClick}
-                  accessible
-                  accessibilityLabel={`Learn more about ${ad.title}`}
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.learnMoreText}>Learn More</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
-                </TouchableOpacity>
+                {/* Dynamic CTA Button */}
+                {(() => {
+                  const ctaType = (ad.callToAction as CTAType) || 'learn_more';
+                  const ctaConfig = CTA_CONFIG[ctaType] || CTA_CONFIG.learn_more;
+                  return (
+                    <TouchableOpacity
+                      style={styles.learnMoreButton}
+                      onPress={handleAdClick}
+                      accessible
+                      accessibilityLabel={`${ctaConfig.label}: ${ad.title}`}
+                      accessibilityRole="button"
+                    >
+                      <Ionicons name={ctaConfig.icon as any} size={14} color="#FFFFFF" style={{ marginRight: 4 }} />
+                      <Text style={styles.learnMoreText}>{ctaConfig.label}</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  );
+                })()}
 
                 <ControlButton
                   icon="expand"
@@ -818,12 +865,22 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textTransform: 'uppercase',
   },
-  adTitle: {
+  topTitleContainer: {
     flex: 1,
+    marginRight: 8,
+  },
+  adHeadline: {
+    color: COLORS.primary,
+    fontFamily: FONTS.medium,
+    fontSize: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  adTitle: {
     color: '#FFFFFF',
     fontFamily: FONTS.medium,
     fontSize: 14,
-    marginRight: 8,
   },
   infoButton: {
     padding: 4,

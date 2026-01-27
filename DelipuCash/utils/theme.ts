@@ -1,4 +1,6 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StatusBarStyle } from 'expo-status-bar';
 import { Platform, Dimensions } from 'react-native';
 
@@ -409,12 +411,22 @@ const LIGHT_COLORS: ThemeColors = {
 // ============================================================================
 
 /**
- * Theme store for global theme management
+ * Theme store for global theme management with persistence
+ * Theme preference is saved to AsyncStorage and restored on app launch
  */
-export const useThemeStore = create<ThemeState>((set) => ({
-  isDark: true, // Default to dark mode for fintech aesthetic
-  toggleTheme: () => set((state) => ({ isDark: !state.isDark })),
-}));
+export const useThemeStore = create<ThemeState>()(
+  persist(
+    (set) => ({
+      isDark: true, // Default to dark mode for fintech aesthetic
+      toggleTheme: () => set((state) => ({ isDark: !state.isDark })),
+    }),
+    {
+      name: 'theme-storage', // Unique key for AsyncStorage
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({ isDark: state.isDark }), // Only persist isDark, not the function
+    }
+  )
+);
 
 /**
  * Hook to get current theme colors and status bar style

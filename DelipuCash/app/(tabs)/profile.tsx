@@ -33,11 +33,13 @@ import Animated, {
 import {
   ArrowUpRight,
   BadgeCheck,
+  Bell,
   ChevronRight,
   CreditCard,
   Edit,
   Eye,
   Gift,
+  Globe,
   HelpCircle,
   History,
   KeyRound,
@@ -45,11 +47,15 @@ import {
   LucideIcon,
   Megaphone,
   MessageSquare,
+  Moon,
+  Palette,
   PlusCircle,
+  Settings,
   Shield,
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Sun,
   TrendingUp,
   Upload,
   Wallet,
@@ -78,6 +84,7 @@ import {
   ThemeColors,
   TYPOGRAPHY,
   useTheme,
+  useThemeStore,
   withAlpha,
 } from '@/utils/theme';
 
@@ -326,8 +333,12 @@ export default function ProfileScreen(): React.ReactElement {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(Boolean(user?.twoFactorEnabled));
   const [changePassword, setChangePassword] = useState({ current: '', next: '', confirm: '' });
   const [privacy, setPrivacy] = useState({ shareProfile: true, shareActivity: false });
-  const [activeTab, setActiveTab] = useState<'shortcuts' | 'security' | 'payments'>('shortcuts');
+  const [activeTab, setActiveTab] = useState<'shortcuts' | 'security' | 'payments' | 'preferences'>('shortcuts');
   const [isEditing, setIsEditing] = useState(false);
+
+  // Theme store for dark/light mode toggle
+  const { isDark, toggleTheme } = useThemeStore();
+
   const [editForm, setEditForm] = useState({
     firstName: user?.firstName || 'John',
     lastName: user?.lastName || 'Doe',
@@ -482,6 +493,7 @@ export default function ProfileScreen(): React.ReactElement {
     { key: 'shortcuts', label: 'Shortcuts', icon: Zap },
     { key: 'security', label: 'Security', icon: Shield },
     { key: 'payments', label: 'Payments', icon: CreditCard },
+    { key: 'preferences', label: 'Preferences', icon: Settings },
   ] as const;
 
   // Handlers
@@ -1252,6 +1264,152 @@ export default function ProfileScreen(): React.ReactElement {
                   colors={colors}
                 />
               ))}
+            </Animated.View>
+          </Animated.View>
+        )}
+
+        {activeTab === 'preferences' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Preferences"
+              subtitle="Customize your experience"
+              icon={<Settings size={ICON_SIZE.base} color={colors.info} />}
+            />
+            <Animated.View
+              entering={FadeInUp.delay(100).springify()}
+              style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              {/* Theme Toggle Section */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Palette size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Appearance</Text>
+                  </View>
+                  <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                    Choose your preferred theme for a comfortable viewing experience.
+                  </Text>
+                </View>
+
+                {/* Dark/Light Mode Toggle */}
+                <View style={[styles.themeToggleContainer, { borderColor: colors.border }]}>
+                  <View style={styles.themeInfo}>
+                    <View style={[styles.themeIconWrapper, { backgroundColor: withAlpha(isDark ? colors.primary : colors.warning, 0.12) }]}>
+                      {isDark ? (
+                        <Moon size={ICON_SIZE.base} color={colors.primary} />
+                      ) : (
+                        <Sun size={ICON_SIZE.base} color={colors.warning} />
+                      )}
+                    </View>
+                    <View style={styles.themeLabelContainer}>
+                      <Text style={[styles.securityTitle, { color: colors.text }]}>
+                        {isDark ? 'Dark Mode' : 'Light Mode'}
+                      </Text>
+                      <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                        {isDark ? 'Easier on your eyes in low light' : 'Better visibility in bright environments'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={isDark}
+                    onValueChange={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      toggleTheme();
+                    }}
+                    thumbColor={isDark ? colors.primary : colors.warning}
+                    trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
+                  />
+                </View>
+
+                {/* Theme Preview Cards */}
+                <View style={styles.themePreviewRow}>
+                  <Pressable
+                    style={[
+                      styles.themePreviewCard,
+                      { backgroundColor: '#1A1A2E', borderColor: isDark ? colors.primary : colors.border },
+                      isDark && styles.themePreviewCardActive,
+                    ]}
+                    onPress={() => {
+                      if (!isDark) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        toggleTheme();
+                      }
+                    }}
+                  >
+                    <Moon size={ICON_SIZE.sm} color="#8B5CF6" />
+                    <Text style={[styles.themePreviewLabel, { color: '#FFFFFF' }]}>Dark</Text>
+                    {isDark && (
+                      <View style={[styles.themeCheckmark, { backgroundColor: colors.primary }]}>
+                        <BadgeCheck size={12} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.themePreviewCard,
+                      { backgroundColor: '#F8F9FA', borderColor: !isDark ? colors.primary : colors.border },
+                      !isDark && styles.themePreviewCardActive,
+                    ]}
+                    onPress={() => {
+                      if (isDark) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        toggleTheme();
+                      }
+                    }}
+                  >
+                    <Sun size={ICON_SIZE.sm} color="#F59E0B" />
+                    <Text style={[styles.themePreviewLabel, { color: '#1A1A2E' }]}>Light</Text>
+                    {!isDark && (
+                      <View style={[styles.themeCheckmark, { backgroundColor: colors.primary }]}>
+                        <BadgeCheck size={12} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Notification Preferences */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Bell size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Notifications</Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={[styles.preferenceItem, { borderColor: colors.border }]}
+                  onPress={() => router.push('/notifications' as Href)}
+                >
+                  <View style={styles.preferenceItemContent}>
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Manage Notifications</Text>
+                    <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                      Control push notifications and alerts
+                    </Text>
+                  </View>
+                  <ChevronRight size={ICON_SIZE.base} color={colors.textMuted} />
+                </Pressable>
+              </View>
+
+              {/* Language & Region */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border, borderBottomWidth: 0 }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Globe size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Language & Region</Text>
+                  </View>
+                </View>
+                <View style={[styles.preferenceItem, { borderColor: colors.border, borderBottomWidth: 0 }]}>
+                  <View style={styles.preferenceItemContent}>
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Language</Text>
+                    <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                      English (Default)
+                    </Text>
+                  </View>
+                  <View style={[styles.comingSoonBadge, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+                    <Text style={[styles.comingSoonText, { color: colors.warning }]}>Coming Soon</Text>
+                  </View>
+                </View>
+              </View>
             </Animated.View>
           </Animated.View>
         )}
@@ -2067,5 +2225,84 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
     marginTop: SPACING.md,
+  },
+  // Preferences Tab Styles
+  themeToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  themeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: SPACING.md,
+  },
+  themeIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  themeLabelContainer: {
+    flex: 1,
+  },
+  themePreviewRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  themePreviewCard: {
+    flex: 1,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+    position: 'relative',
+  },
+  themePreviewCardActive: {
+    borderWidth: 2,
+  },
+  themePreviewLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xs,
+  },
+  themeCheckmark: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preferenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+  },
+  preferenceItemContent: {
+    flex: 1,
+    marginRight: SPACING.md,
+  },
+  comingSoonBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  comingSoonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });

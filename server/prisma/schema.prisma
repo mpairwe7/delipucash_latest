@@ -148,33 +148,63 @@ model UploadSurvey {
 }
 
 model Ad {
-  id          String   @id @default(uuid()) @db.Uuid
-  title       String
-  description String
-  imageUrl    String?
-  videoUrl    String?
-  thumbnailUrl String?
-  type        String   @default("regular") // 'regular', 'featured', 'banner', 'compact'
-  sponsored   Boolean  @default(false)
-  views       Int      @default(0)
-  clicks      Int      @default(0)
-  isActive    Boolean  @default(true)
-  startDate   DateTime?
-  endDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String   @db.Uuid
-  user        AppUser     @relation(fields: [userId], references: [id])
-  priority    Int      @default(0)
-  frequency   Int?
-  lastShown   DateTime?
-  targetUrl   String?
+  id            String   @id @default(uuid()) @db.Uuid
+  title         String
+  description   String
+  headline      String?  // Short attention-grabbing headline
+  imageUrl      String?
+  videoUrl      String?
+  thumbnailUrl  String?
+  type          String   @default("regular") // 'regular', 'featured', 'banner', 'compact'
+  placement     String   @default("feed") // 'feed', 'interstitial', 'native', 'rewarded', 'story'
+  sponsored     Boolean  @default(false)
+  views         Int      @default(0)
+  clicks        Int      @default(0)
+  impressions   Int      @default(0) // Total impressions served
+  conversions   Int      @default(0) // Total conversions tracked
+  isActive      Boolean  @default(true)
+  startDate     DateTime?
+  endDate       DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  userId        String   @db.Uuid
+  user          AppUser  @relation(fields: [userId], references: [id])
+  priority      Int      @default(5) // 1-10 priority scale
+  frequency     Int?     // Frequency cap per user per day
+  lastShown     DateTime?
+  targetUrl     String?
+  
+  // Call-to-Action
+  callToAction  String   @default("learn_more") // CTA button type
+  
+  // Budget & Bidding
+  pricingModel  String   @default("cpm") // 'cpm', 'cpc', 'cpa', 'flat'
+  totalBudget   Float    @default(0) // Total campaign budget in UGX
+  bidAmount     Float    @default(0) // Bid amount per CPM/CPC/CPA
+  dailyBudgetLimit Float? // Optional daily spending limit
+  amountSpent   Float    @default(0) // Total amount spent so far
+  
+  // Targeting - stored as JSON for flexibility
+  targetAgeRanges   Json?  // Array of age ranges: ["18-24", "25-34"]
+  targetGender      String @default("all") // 'all', 'male', 'female', 'other'
+  targetLocations   Json?  // Array of location strings
+  targetInterests   Json?  // Array of interest categories
+  enableRetargeting Boolean @default(false) // Enable retargeting
+  
+  // Campaign Status
+  status        String   @default("pending") // 'pending', 'approved', 'rejected', 'paused', 'completed'
+  rejectionReason String? // Reason if ad was rejected
+  approvedAt    DateTime? // When ad was approved
+  approvedBy    String?  @db.Uuid // Admin who approved
 
   @@index([userId])
   @@index([type])
+  @@index([placement])
   @@index([isActive])
   @@index([priority])
   @@index([lastShown])
+  @@index([status])
+  @@index([pricingModel])
 }
 
 model SurveyResponse {

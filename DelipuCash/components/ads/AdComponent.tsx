@@ -60,6 +60,135 @@ const FONTS = {
   bold: Platform.OS === 'ios' ? 'Avenir-Heavy' : 'sans-serif-medium',
 };
 
+// ============================================================================
+// CTA CONFIGURATION - Industry Standard Call-to-Action Mapping
+// ============================================================================
+
+type CTAType = 'learn_more' | 'shop_now' | 'sign_up' | 'download' | 'book_now' |
+  'contact_us' | 'get_quote' | 'subscribe' | 'watch_now' | 'play_now' | 'apply_now';
+
+interface CTAConfig {
+  label: string;
+  icon: string;
+  accessibilityHint: string;
+  variant: 'default' | 'primary' | 'outline';
+}
+
+const CTA_CONFIG: Record<CTAType, CTAConfig> = {
+  learn_more: {
+    label: 'Learn More',
+    icon: 'information-circle-outline',
+    accessibilityHint: 'Opens more information about this product or service',
+    variant: 'primary',
+  },
+  shop_now: {
+    label: 'Shop Now',
+    icon: 'cart-outline',
+    accessibilityHint: 'Opens the shopping page for this product',
+    variant: 'primary',
+  },
+  sign_up: {
+    label: 'Sign Up',
+    icon: 'person-add-outline',
+    accessibilityHint: 'Opens registration page',
+    variant: 'primary',
+  },
+  download: {
+    label: 'Download',
+    icon: 'download-outline',
+    accessibilityHint: 'Downloads the app or file',
+    variant: 'primary',
+  },
+  book_now: {
+    label: 'Book Now',
+    icon: 'calendar-outline',
+    accessibilityHint: 'Opens booking page',
+    variant: 'primary',
+  },
+  contact_us: {
+    label: 'Contact Us',
+    icon: 'mail-outline',
+    accessibilityHint: 'Opens contact page',
+    variant: 'outline',
+  },
+  get_quote: {
+    label: 'Get Quote',
+    icon: 'document-text-outline',
+    accessibilityHint: 'Opens quote request page',
+    variant: 'outline',
+  },
+  subscribe: {
+    label: 'Subscribe',
+    icon: 'notifications-outline',
+    accessibilityHint: 'Opens subscription page',
+    variant: 'primary',
+  },
+  watch_now: {
+    label: 'Watch Now',
+    icon: 'play-circle-outline',
+    accessibilityHint: 'Plays video content',
+    variant: 'primary',
+  },
+  play_now: {
+    label: 'Play Now',
+    icon: 'game-controller-outline',
+    accessibilityHint: 'Opens game or interactive content',
+    variant: 'primary',
+  },
+  apply_now: {
+    label: 'Apply Now',
+    icon: 'checkmark-circle-outline',
+    accessibilityHint: 'Opens application form',
+    variant: 'primary',
+  },
+};
+
+// ============================================================================
+// STATUS CONFIGURATION - Ad Approval Status Styling
+// ============================================================================
+
+type AdStatus = 'pending' | 'approved' | 'rejected' | 'paused' | 'completed';
+
+interface StatusConfig {
+  label: string;
+  icon: string;
+  color: string;
+  backgroundColor: string;
+}
+
+const STATUS_CONFIG: Record<AdStatus, StatusConfig> = {
+  pending: {
+    label: 'Pending',
+    icon: 'time-outline',
+    color: '#F57C00',
+    backgroundColor: 'rgba(245, 124, 0, 0.1)',
+  },
+  approved: {
+    label: 'Approved',
+    icon: 'checkmark-circle',
+    color: '#388E3C',
+    backgroundColor: 'rgba(56, 142, 60, 0.1)',
+  },
+  rejected: {
+    label: 'Rejected',
+    icon: 'close-circle',
+    color: '#D32F2F',
+    backgroundColor: 'rgba(211, 47, 47, 0.1)',
+  },
+  paused: {
+    label: 'Paused',
+    icon: 'pause-circle',
+    color: '#607D8B',
+    backgroundColor: 'rgba(96, 125, 139, 0.1)',
+  },
+  completed: {
+    label: 'Completed',
+    icon: 'checkmark-done-circle',
+    color: '#1976D2',
+    backgroundColor: 'rgba(25, 118, 210, 0.1)',
+  },
+};
+
 const SHADOWS = {
   small: {
     shadowColor: '#000',
@@ -334,6 +463,189 @@ const ImagePlaceholder = memo(({
 });
 ImagePlaceholder.displayName = 'ImagePlaceholder';
 
+/**
+ * Dynamic CTA Button - Renders appropriate CTA based on ad.callToAction
+ */
+const DynamicCTAButton = memo(({
+  callToAction,
+  onPress,
+  size = 'medium',
+  fullWidth = false,
+}: {
+  callToAction?: CTAType;
+  onPress: () => void;
+  size?: 'small' | 'medium' | 'large';
+  fullWidth?: boolean;
+}) => {
+  const ctaType = callToAction || 'learn_more';
+  const config = CTA_CONFIG[ctaType] || CTA_CONFIG.learn_more;
+
+  const fontSize = size === 'small' ? 12 : size === 'large' ? 16 : 14;
+  const iconSize = size === 'small' ? 14 : size === 'large' ? 20 : 16;
+  const paddingVertical = size === 'small' ? 8 : size === 'large' ? 14 : 11;
+  const paddingHorizontal = size === 'small' ? 12 : size === 'large' ? 22 : 16;
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.dynamicCtaButton,
+        config.variant === 'primary' && styles.dynamicCtaButtonPrimary,
+        config.variant === 'outline' && styles.dynamicCtaButtonOutline,
+        { paddingVertical, paddingHorizontal },
+        fullWidth && styles.dynamicCtaButtonFullWidth,
+      ]}
+      onPress={onPress}
+      accessible
+      accessibilityLabel={config.label}
+      accessibilityRole="button"
+      accessibilityHint={config.accessibilityHint}
+    >
+      <Ionicons
+        name={config.icon as any}
+        size={iconSize}
+        color={config.variant === 'primary' ? '#FFFFFF' : COLORS.primary}
+        style={styles.dynamicCtaIcon}
+      />
+      <Text
+        style={[
+          styles.dynamicCtaText,
+          config.variant === 'primary' && styles.dynamicCtaTextPrimary,
+          config.variant === 'outline' && styles.dynamicCtaTextOutline,
+          { fontSize },
+        ]}
+      >
+        {config.label}
+      </Text>
+      <Ionicons
+        name="chevron-forward"
+        size={iconSize}
+        color={config.variant === 'primary' ? '#FFFFFF' : COLORS.primary}
+      />
+    </TouchableOpacity>
+  );
+});
+DynamicCTAButton.displayName = 'DynamicCTAButton';
+
+/**
+ * Status Badge Component - Shows ad approval/status state
+ */
+const StatusBadge = memo(({
+  status,
+  showLabel = true,
+  size = 'medium',
+}: {
+  status?: AdStatus;
+  showLabel?: boolean;
+  size?: 'small' | 'medium' | 'large';
+}) => {
+  const statusType = status || 'pending';
+  const config = STATUS_CONFIG[statusType] || STATUS_CONFIG.pending;
+
+  const iconSize = size === 'small' ? 12 : size === 'large' ? 18 : 14;
+  const fontSize = size === 'small' ? 9 : size === 'large' ? 12 : 10;
+  const paddingVertical = size === 'small' ? 3 : size === 'large' ? 6 : 4;
+  const paddingHorizontal = size === 'small' ? 6 : size === 'large' ? 12 : 8;
+
+  return (
+    <View
+      style={[
+        styles.statusBadge,
+        { backgroundColor: config.backgroundColor, paddingVertical, paddingHorizontal },
+      ]}
+      accessible
+      accessibilityLabel={`Ad status: ${config.label}`}
+      accessibilityRole="text"
+    >
+      <Ionicons
+        name={config.icon as any}
+        size={iconSize}
+        color={config.color}
+      />
+      {showLabel && (
+        <Text style={[styles.statusBadgeText, { color: config.color, fontSize }]}>
+          {config.label}
+        </Text>
+      )}
+    </View>
+  );
+});
+StatusBadge.displayName = 'StatusBadge';
+
+/**
+ * Headline Component - Displays ad headline/tagline
+ */
+const AdHeadline = memo(({
+  headline,
+  style,
+}: {
+  headline?: string | null;
+  style?: any;
+}) => {
+  if (!headline) return null;
+
+  return (
+    <Text
+      style={[styles.adHeadline, style]}
+      numberOfLines={1}
+      accessible
+      accessibilityRole="header"
+    >
+      {headline}
+    </Text>
+  );
+});
+AdHeadline.displayName = 'AdHeadline';
+
+/**
+ * Performance Metrics Badge - Shows impressions/CTR for transparency
+ */
+const PerformanceMetrics = memo(({
+  impressions,
+  clicks,
+  conversions,
+  compact = false,
+}: {
+  impressions?: number;
+  clicks?: number;
+  conversions?: number;
+  compact?: boolean;
+}) => {
+  if (!impressions && impressions !== 0) return null;
+
+  const ctr = impressions > 0 && clicks ? ((clicks / impressions) * 100).toFixed(1) : '0.0';
+
+  const formatNumber = (num: number) => {
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}K`;
+    return num.toString();
+  };
+
+  if (compact) {
+    return (
+      <View style={styles.performanceMetricsCompact} accessible accessibilityLabel={`${formatNumber(impressions)} impressions`}>
+        <Ionicons name="eye-outline" size={12} color={COLORS.textMuted} />
+        <Text style={styles.performanceMetricsTextCompact}>{formatNumber(impressions)}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.performanceMetrics} accessible accessibilityLabel={`${formatNumber(impressions)} impressions, ${ctr}% click rate`}>
+      <View style={styles.performanceMetricsItem}>
+        <Ionicons name="eye-outline" size={14} color={COLORS.textMuted} />
+        <Text style={styles.performanceMetricsText}>{formatNumber(impressions)}</Text>
+      </View>
+      {clicks !== undefined && (
+        <View style={styles.performanceMetricsItem}>
+          <Ionicons name="trending-up-outline" size={14} color={COLORS.textMuted} />
+          <Text style={styles.performanceMetricsText}>{ctr}%</Text>
+        </View>
+      )}
+    </View>
+  );
+});
+PerformanceMetrics.displayName = 'PerformanceMetrics';
+
 // ============================================================================
 // AD VARIANT COMPONENTS
 // ============================================================================
@@ -411,15 +723,20 @@ const StandardAdComponent = ({
 
           {/* Text Content */}
           <View style={styles.standardAdTextContent}>
+            <AdHeadline headline={ad.headline} style={styles.standardAdHeadline} />
             <Text style={styles.standardAdTitle} numberOfLines={2}>
               {ad.title}
             </Text>
             <Text style={styles.standardAdDescription} numberOfLines={2}>
               {ad.description}
             </Text>
-            <View style={styles.adActionContainer}>
-              <Text style={styles.learnMoreText}>Learn More</Text>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.success} />
+            <View style={styles.standardAdFooter}>
+              <PerformanceMetrics impressions={ad.impressions} clicks={ad.clicks} compact />
+              <DynamicCTAButton
+                callToAction={ad.callToAction as CTAType}
+                onPress={handlePress}
+                size="small"
+              />
             </View>
           </View>
         </View>
@@ -484,16 +801,17 @@ const FeaturedAdComponent = ({
         
         {/* Featured Ad Content Below Video */}
         <View style={styles.featuredAdContent}>
+          <AdHeadline headline={ad.headline} style={styles.featuredAdHeadline} />
           <Text style={styles.featuredAdTitle}>{ad.title}</Text>
           <Text style={styles.featuredAdDescription} numberOfLines={2}>
             {ad.description}
           </Text>
-          <View style={styles.featuredAdActionContainer}>
-            <AdActionButton
-              label="Learn More"
+          <View style={styles.featuredAdFooter}>
+            <PerformanceMetrics impressions={ad.impressions} clicks={ad.clicks} />
+            <DynamicCTAButton
+              callToAction={ad.callToAction as CTAType} 
               onPress={handlePress}
-              variant="primary"
-              icon="arrow-forward"
+              size="medium"
             />
           </View>
         </View>
@@ -552,16 +870,17 @@ const FeaturedAdComponent = ({
 
         {/* Content */}
         <View style={styles.featuredAdContent}>
+          <AdHeadline headline={ad.headline} style={styles.featuredAdHeadline} />
           <Text style={styles.featuredAdTitle}>{ad.title}</Text>
           <Text style={styles.featuredAdDescription} numberOfLines={2}>
             {ad.description}
           </Text>
-          <View style={styles.featuredAdActionContainer}>
-            <AdActionButton
-              label="Learn More"
+          <View style={styles.featuredAdFooter}>
+            <PerformanceMetrics impressions={ad.impressions} clicks={ad.clicks} />
+            <DynamicCTAButton
+              callToAction={ad.callToAction as CTAType} 
               onPress={handlePress}
-              variant="primary"
-              icon="arrow-forward"
+              size="medium"
             />
           </View>
         </View>
@@ -641,14 +960,27 @@ const BannerAdComponent = ({
 
           {/* Text Content */}
           <View style={styles.bannerTextContent}>
-            <Text style={styles.bannerTitle} numberOfLines={1}>
-              {ad.title}
-            </Text>
-            <Text style={styles.bannerDescription} numberOfLines={2}>
+            <View style={styles.bannerHeader}>
+              <Text style={styles.bannerTitle} numberOfLines={1}>
+                {ad.title}
+              </Text>
+              {ad.headline && (
+                <Text style={styles.bannerHeadline} numberOfLines={1}>
+                  {ad.headline}
+                </Text>
+              )}
+            </View>
+            <Text style={styles.bannerDescription} numberOfLines={1}>
               {ad.description}
             </Text>
-
-            {ad.sponsored && <SponsoredBadge variant="small" style={styles.bannerSponsoredPosition} />}
+            <View style={styles.bannerFooter}>
+              {ad.sponsored && <SponsoredBadge variant="small" />}
+              <DynamicCTAButton
+                callToAction={ad.callToAction as CTAType}
+                onPress={handlePress}
+                size="small"
+              />
+            </View>
           </View>
 
           {/* Dismiss Button */}
@@ -847,20 +1179,22 @@ const NativeAdComponent = ({
         {/* CTA Section */}
         <View style={styles.nativeAdCta}>
           <View style={styles.nativeAdCtaInfo}>
+            <AdHeadline headline={ad.headline} style={styles.nativeAdHeadline} />
             <Text style={styles.nativeAdCtaTitle}>{ad.title}</Text>
             <Text style={styles.nativeAdCtaDescription} numberOfLines={1}>
               {ad.targetUrl || 'Learn more'}
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.nativeAdCtaButton}
+          <DynamicCTAButton
+            callToAction={ad.callToAction as CTAType} 
             onPress={handlePress}
-            accessible
-            accessibilityLabel={`Learn more about ${ad.title}`}
-            accessibilityRole="button"
-          >
-            <Text style={styles.nativeAdCtaButtonText}>Learn More</Text>
-          </TouchableOpacity>
+            size="medium"
+          />
+        </View>
+
+        {/* Performance Footer */}
+        <View style={styles.nativeAdFooter}>
+          <PerformanceMetrics impressions={ad.impressions} clicks={ad.clicks} />
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -937,18 +1271,21 @@ const CardAdComponent = ({
 
         {/* Content */}
         <View style={styles.cardAdContent}>
+          <AdHeadline headline={ad.headline} style={styles.cardAdHeadline} />
           <Text style={styles.cardAdTitle} numberOfLines={2}>
             {ad.title}
           </Text>
           <Text style={styles.cardAdDescription} numberOfLines={2}>
             {ad.description}
           </Text>
-          <AdActionButton
-            label="Shop Now"
-            onPress={handlePress}
-            variant="outline"
-            icon="arrow-forward"
-          />
+          <View style={styles.cardAdFooter}>
+            <PerformanceMetrics impressions={ad.impressions} clicks={ad.clicks} compact />
+            <DynamicCTAButton
+              callToAction={ad.callToAction as CTAType}
+              onPress={handlePress}
+              size="small"
+            />
+          </View>
         </View>
       </TouchableOpacity>
     </Animated.View>
@@ -1146,6 +1483,151 @@ const styles = StyleSheet.create({
   actionButtonTextOutline: {
     color: COLORS.primary,
     fontFamily: FONTS.medium,
+  },
+
+  // Dynamic CTA Button
+  dynamicCtaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    gap: 6,
+  },
+  dynamicCtaButtonPrimary: {
+    backgroundColor: COLORS.success,
+  },
+  dynamicCtaButtonOutline: {
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: 'transparent',
+  },
+  dynamicCtaButtonFullWidth: {
+    flex: 1,
+  },
+  dynamicCtaIcon: {
+    marginRight: 2,
+  },
+  dynamicCtaText: {
+    fontFamily: FONTS.medium,
+    color: COLORS.primary,
+  },
+  dynamicCtaTextPrimary: {
+    color: '#FFFFFF',
+    fontFamily: FONTS.bold,
+  },
+  dynamicCtaTextOutline: {
+    color: COLORS.primary,
+  },
+
+  // Status Badge
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    gap: 4,
+  },
+  statusBadgeText: {
+    fontFamily: FONTS.medium,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+
+  // Ad Headline
+  adHeadline: {
+    fontSize: 11,
+    fontFamily: FONTS.medium,
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+
+  // Performance Metrics
+  performanceMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  performanceMetricsCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  performanceMetricsItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  performanceMetricsText: {
+    fontSize: 12,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+  },
+  performanceMetricsTextCompact: {
+    fontSize: 11,
+    fontFamily: FONTS.regular,
+    color: COLORS.textMuted,
+  },
+
+  // Standard Ad Footer
+  standardAdFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  standardAdHeadline: {
+    marginBottom: 2,
+  },
+
+  // Featured Ad Footer
+  featuredAdFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+  },
+  featuredAdHeadline: {
+    marginBottom: 4,
+  },
+
+  // Banner Ad Updates
+  bannerHeader: {
+    marginBottom: 2,
+  },
+  bannerHeadline: {
+    fontSize: 10,
+    fontFamily: FONTS.medium,
+    color: COLORS.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  bannerFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+
+  // Native Ad Updates
+  nativeAdHeadline: {
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  nativeAdFooter: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+
+  // Card Ad Updates
+  cardAdHeadline: {
+    marginBottom: 4,
+  },
+  cardAdFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
   },
 
   // Standard Ad

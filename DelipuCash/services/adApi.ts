@@ -2,6 +2,7 @@
  * Ad API Service
  * REST API integration for advertisement management
  * Design System Compliant - Consistent with app API patterns
+ * Enhanced with industry-standard ad management features
  */
 
 import { api } from './api';
@@ -9,14 +10,42 @@ import type { Ad } from '../types';
 import type { AdPlacement, AdType } from '../store/AdStore';
 
 // ============================================================================
-// TYPES
+// TYPES - Industry Standard Ad Configuration
 // ============================================================================
+
+// Pricing models following IAB standards
+export type PricingModel = 'cpm' | 'cpc' | 'cpa' | 'flat';
+
+// Call-to-action button types
+export type CTAType = 
+  | 'learn_more' 
+  | 'shop_now' 
+  | 'sign_up' 
+  | 'download' 
+  | 'contact_us' 
+  | 'get_offer' 
+  | 'book_now' 
+  | 'watch_more' 
+  | 'apply_now' 
+  | 'subscribe' 
+  | 'get_quote';
+
+// Age range targeting options
+export type AgeRange = '13-17' | '18-24' | '25-34' | '35-44' | '45-54' | '55-64' | '65+';
+
+// Gender targeting options
+export type Gender = 'all' | 'male' | 'female' | 'other';
+
+// Ad status types
+export type AdStatus = 'pending' | 'approved' | 'rejected' | 'paused' | 'completed';
 
 export interface AdFilters {
   type?: AdType;
   placement?: AdPlacement;
+  status?: AdStatus;
   isActive?: boolean;
   sponsored?: boolean;
+  userId?: string;
   limit?: number;
   offset?: number;
 }
@@ -51,19 +80,54 @@ export interface AdVideoProgressPayload {
   wasMuted: boolean;
 }
 
+export interface AdConversionPayload {
+  adId: string;
+  conversionType?: string;
+  value?: number;
+}
+
+// Enhanced CreateAdPayload with industry-standard fields
 export interface CreateAdPayload {
+  // Basic info
   title: string;
+  headline?: string;
   description: string;
+  
+  // Media
   imageUrl?: string;
   videoUrl?: string;
   thumbnailUrl?: string;
+  
+  // Ad configuration
   type: AdType;
+  placement: AdPlacement;
   sponsored?: boolean;
   targetUrl?: string;
+  callToAction: CTAType;
+  
+  // Scheduling
   startDate?: string;
   endDate?: string;
+  
+  // Budget & Bidding
+  pricingModel: PricingModel;
+  totalBudget: number;
+  bidAmount: number;
+  dailyBudgetLimit?: number;
+  
+  // Targeting
+  targetAgeRanges?: AgeRange[];
+  targetGender: Gender;
+  targetLocations?: string[];
+  targetInterests?: string[];
+  enableRetargeting?: boolean;
+  
+  // Priority & Frequency
   priority?: number;
   frequency?: number;
+  
+  // User ID
+  userId: string;
 }
 
 export interface UpdateAdPayload extends Partial<CreateAdPayload> {
@@ -79,44 +143,84 @@ export interface AdResponse {
 export interface AdsListResponse {
   success: boolean;
   data: Ad[];
-  total: number;
-  page: number;
-  limit: number;
+  pagination?: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
   message?: string;
 }
 
 export interface AdAnalyticsResponse {
   success: boolean;
   data: {
+    id: string;
+    title: string;
+    status: AdStatus;
+    // Performance metrics
     impressions: number;
-    clicks: number;
-    ctr: number;
     views: number;
-    completionRate: number;
-    avgViewDuration: number;
-    revenue?: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    conversionRate: number;
+    // Budget metrics
+    totalBudget: number;
+    amountSpent: number;
+    budgetRemaining: number;
+    budgetUtilization: number;
+    // Cost metrics
+    costPerClick: number;
+    costPerMille: number;
+    costPerConversion: number;
+    // Schedule
+    startDate?: string;
+    endDate?: string;
+    daysRunning: number;
+    // Targeting
+    targetAgeRanges?: AgeRange[];
+    targetGender: Gender;
+    targetLocations?: string[];
+    targetInterests?: string[];
   };
   message?: string;
 }
 
 // ============================================================================
-// API ENDPOINTS
+// API ENDPOINTS - Updated to match backend routes
 // ============================================================================
 
 const AD_ENDPOINTS = {
-  list: '/ads',
+  // Public
+  list: '/ads/all',
+  userAds: (userId: string) => `/ads/user/${userId}`,
+  create: '/ads/create',
+  
+  // Management
+  update: (id: string) => `/ads/${id}/update`,
+  delete: (id: string) => `/ads/${id}/delete`,
+  analytics: (id: string) => `/ads/${id}/analytics`,
+  pause: (id: string) => `/ads/${id}/pause`,
+  resume: (id: string) => `/ads/${id}/resume`,
+  
+  // Admin
+  pending: '/ads/admin/pending',
+  approve: (id: string) => `/ads/${id}/approve`,
+  reject: (id: string) => `/ads/${id}/reject`,
+  
+  // Tracking
+  view: (id: string) => `/ads/${id}/view`,
+  impression: (id: string) => `/ads/${id}/impression`,
+  click: (id: string) => `/ads/${id}/click`,
+  conversion: (id: string) => `/ads/${id}/conversion`,
+  
+  // Legacy endpoints (for backward compatibility)
   featured: '/ads/featured',
   banners: '/ads/banners',
   videos: '/ads/videos',
   detail: (id: string) => `/ads/${id}`,
-  create: '/ads',
-  update: (id: string) => `/ads/${id}`,
-  delete: (id: string) => `/ads/${id}`,
-  click: (id: string) => `/ads/${id}/click`,
-  impression: (id: string) => `/ads/${id}/impression`,
   videoProgress: (id: string) => `/ads/${id}/video-progress`,
-  analytics: (id: string) => `/ads/${id}/analytics`,
-  userAds: '/ads/user',
   random: '/ads/random',
   forPlacement: (placement: string) => `/ads/placement/${placement}`,
 };
@@ -331,15 +435,15 @@ export const fetchAdAnalytics = async (adId: string): Promise<AdAnalyticsRespons
 /**
  * Fetch user's ads (for advertisers)
  */
-export const fetchUserAds = async (filters?: AdFilters): Promise<AdsListResponse> => {
+export const fetchUserAds = async (userId: string, filters?: AdFilters): Promise<AdsListResponse> => {
   try {
     const params = new URLSearchParams();
-    if (filters?.isActive !== undefined) params.append('isActive', String(filters.isActive));
+    if (filters?.status) params.append('status', filters.status);
     if (filters?.limit) params.append('limit', String(filters.limit));
     if (filters?.offset) params.append('offset', String(filters.offset));
 
     const queryString = params.toString();
-    const url = queryString ? `${AD_ENDPOINTS.userAds}?${queryString}` : AD_ENDPOINTS.userAds;
+    const url = queryString ? `${AD_ENDPOINTS.userAds(userId)}?${queryString}` : AD_ENDPOINTS.userAds(userId);
     
     const response = await api.get(url);
     return response.data;
@@ -350,10 +454,121 @@ export const fetchUserAds = async (filters?: AdFilters): Promise<AdsListResponse
 };
 
 // ============================================================================
-// EXPORT
+// AD MANAGEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * Pause an ad campaign
+ */
+export const pauseAd = async (adId: string): Promise<AdResponse> => {
+  try {
+    const response = await api.put(AD_ENDPOINTS.pause(adId));
+    return response.data;
+  } catch (error: any) {
+    console.error('Error pausing ad:', error);
+    throw new Error(error.response?.data?.message || 'Failed to pause ad');
+  }
+};
+
+/**
+ * Resume an ad campaign
+ */
+export const resumeAd = async (adId: string): Promise<AdResponse> => {
+  try {
+    const response = await api.put(AD_ENDPOINTS.resume(adId));
+    return response.data;
+  } catch (error: any) {
+    console.error('Error resuming ad:', error);
+    throw new Error(error.response?.data?.message || 'Failed to resume ad');
+  }
+};
+
+// ============================================================================
+// ADMIN FUNCTIONS
+// ============================================================================
+
+/**
+ * Fetch pending ads for admin review
+ */
+export const fetchPendingAds = async (limit?: number, offset?: number): Promise<AdsListResponse> => {
+  try {
+    const params = new URLSearchParams();
+    if (limit) params.append('limit', String(limit));
+    if (offset) params.append('offset', String(offset));
+
+    const queryString = params.toString();
+    const url = queryString ? `${AD_ENDPOINTS.pending}?${queryString}` : AD_ENDPOINTS.pending;
+    
+    const response = await api.get(url);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error fetching pending ads:', error);
+    throw new Error(error.response?.data?.message || 'Failed to fetch pending ads');
+  }
+};
+
+/**
+ * Approve an ad (Admin only)
+ */
+export const approveAd = async (adId: string, adminUserId: string): Promise<AdResponse> => {
+  try {
+    const response = await api.put(AD_ENDPOINTS.approve(adId), { adminUserId });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error approving ad:', error);
+    throw new Error(error.response?.data?.message || 'Failed to approve ad');
+  }
+};
+
+/**
+ * Reject an ad (Admin only)
+ */
+export const rejectAd = async (adId: string, reason: string, adminUserId?: string): Promise<AdResponse> => {
+  try {
+    const response = await api.put(AD_ENDPOINTS.reject(adId), { reason, adminUserId });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error rejecting ad:', error);
+    throw new Error(error.response?.data?.message || 'Failed to reject ad');
+  }
+};
+
+// ============================================================================
+// TRACKING FUNCTIONS - Enhanced with budget tracking
+// ============================================================================
+
+/**
+ * Record an ad view
+ */
+export const recordAdView = async (adId: string): Promise<{ success: boolean; views?: number }> => {
+  try {
+    const response = await api.post(AD_ENDPOINTS.view(adId));
+    return response.data;
+  } catch {
+    // Silently fail - analytics shouldn't block user experience
+    return { success: false };
+  }
+};
+
+/**
+ * Record an ad conversion
+ */
+export const recordAdConversion = async (payload: AdConversionPayload): Promise<{ success: boolean; conversions?: number; amountSpent?: number }> => {
+  try {
+    const response = await api.post(AD_ENDPOINTS.conversion(payload.adId), payload);
+    return response.data;
+  } catch {
+    // Silently fail - analytics shouldn't block user experience
+    return { success: false };
+  }
+};
+
+// ============================================================================
+// EXPORT - Complete API object
 // ============================================================================
 
 export const adApi = {
+  // Public
   fetchAds,
   fetchFeaturedAds,
   fetchBannerAds,
@@ -361,14 +576,29 @@ export const adApi = {
   fetchAdById,
   fetchAdsForPlacement,
   fetchRandomAd,
+  fetchUserAds,
+  
+  // CRUD
   createAd,
   updateAd,
   deleteAd,
+  
+  // Management
+  pauseAd,
+  resumeAd,
+  fetchAdAnalytics,
+  
+  // Admin
+  fetchPendingAds,
+  approveAd,
+  rejectAd,
+  
+  // Tracking
+  recordAdView,
   recordAdClick,
   recordAdImpression,
+  recordAdConversion,
   recordVideoProgress,
-  fetchAdAnalytics,
-  fetchUserAds,
 };
 
 export default adApi;
