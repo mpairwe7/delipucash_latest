@@ -960,13 +960,16 @@ export default function VideosScreen(): React.ReactElement {
         onClose={() => setUploadModalVisible(false)}
       />
 
-      {/* LiveStream Screen */}
-      <LiveStreamScreen
-        visible={liveStreamVisible}
-        onClose={closeLiveStream}
-        onVideoUploaded={handleVideoUploaded}
-        asModal={true}
-      />
+      {/* LiveStream Screen - Lazy loaded for performance optimization
+          Only mount when user explicitly requests camera access (industry standard) */}
+      {liveStreamVisible && (
+        <LiveStreamScreen
+          visible={liveStreamVisible}
+          onClose={closeLiveStream}
+          onVideoUploaded={handleVideoUploaded}
+          asModal={true}
+        />
+      )}
     </View>
   );
 }
