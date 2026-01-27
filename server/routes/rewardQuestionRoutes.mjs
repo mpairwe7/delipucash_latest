@@ -32,4 +32,7 @@ router.delete('/:id/delete', deleteRewardQuestion);
 // Submit an answer to a reward question (matches frontend: POST /reward-questions/:id/answer)
 router.post('/:id/answer', submitRewardQuestionAnswer);
 
+// Alternative route for frontend compatibility (POST /reward-questions/submit-answer)
+router.post('/submit-answer', submitRewardQuestionAnswer);
+
 export default router; 

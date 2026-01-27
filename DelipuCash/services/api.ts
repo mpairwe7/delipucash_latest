@@ -1209,9 +1209,9 @@ export const rewardsApi = {
             success: true,
             data: {
               isCorrect: response.data.isCorrect ?? false,
-              rewardEarned: response.data.pointsAwarded ?? 0,
-              remainingSpots: 0,
-              isExpired: false,
+              rewardEarned: response.data.rewardEarned ?? response.data.pointsAwarded ?? 0,
+              remainingSpots: response.data.remainingSpots ?? 0,
+              isExpired: response.data.isExpired ?? false,
               isCompleted: response.data.isCompleted ?? false,
               message: response.data.message ?? '',
               isWinner: response.data.isWinner ?? false,

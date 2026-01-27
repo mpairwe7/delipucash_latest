@@ -363,12 +363,30 @@ export const deleteRewardQuestion = asyncHandler(async (req, res) => {
 // Submit an answer to a reward question
 export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
   try {
-    const { rewardQuestionId, userEmail, selectedAnswer, phoneNumber } = req.body;
+    // Support both body-based and URL param-based questionId
+    const rewardQuestionId = req.body.rewardQuestionId || req.params.id;
+    const { userEmail, selectedAnswer, phoneNumber } = req.body;
 
     // Validate required fields
     if (!rewardQuestionId || !userEmail || !selectedAnswer) {
       return res.status(400).json({ 
         message: "Reward question ID, user email, and selected answer are required" 
+      });
+    }
+
+    // SINGLE ATTEMPT ENFORCEMENT: Check if user has already attempted this question
+    const existingAttempt = await prisma.questionAttempt.findFirst({
+      where: {
+        userEmail,
+        questionId: rewardQuestionId,
+      }
+    });
+
+    if (existingAttempt) {
+      return res.status(400).json({
+        message: "You have already attempted this question. Each question can only be answered once.",
+        isCorrect: existingAttempt.isCorrect,
+        alreadyAttempted: true
       });
     }
 
@@ -387,12 +405,18 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     }
 
     if (rewardQuestion.expiryTime && new Date() > rewardQuestion.expiryTime) {
-      return res.status(400).json({ message: "This reward question has expired" });
+      return res.status(400).json({
+        message: "This reward question has expired",
+        isExpired: true
+      });
     }
 
     // Check if question is completed (all winners found)
     if (rewardQuestion.isCompleted) {
-      return res.status(400).json({ message: "This question has already been completed. All winners have been found." });
+      return res.status(400).json({
+        message: "This question has already been completed. All winners have been found.",
+        isCompleted: true
+      });
     }
 
     // Check if user has already won this question
@@ -432,16 +456,21 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     });
 
     let response = {
-      message: isCorrect ? "Correct answer! Points awarded." : "Incorrect answer. Try again!",
+      message: isCorrect ? "Correct answer! Points awarded." : "Incorrect answer. This question can only be attempted once.",
       isCorrect,
       pointsAwarded: 0,
+      rewardEarned: 0, // Frontend compatibility
       isWinner: false,
       position: null,
-      paymentStatus: null
+      paymentStatus: null,
+      remainingSpots: Math.max(rewardQuestion.maxWinners - rewardQuestion.winnersCount, 0)
     };
 
     // If answer is correct, handle instant reward logic
     if (isCorrect) {
+      // Fixed reward amount: 500 UGX (5 points) per correct answer
+      const INSTANT_REWARD_AMOUNT = 500;
+
       if (rewardQuestion.isInstantReward) {
         // Handle instant reward question
         const currentWinnersCount = rewardQuestion.winnersCount;
@@ -451,13 +480,13 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           // User is a winner!
           const position = currentWinnersCount + 1;
           
-          // Create winner record
+          // Create winner record with fixed reward amount
           const winner = await prisma.instantRewardWinner.create({
             data: {
               rewardQuestionId,
               userEmail,
               position,
-              amountAwarded: rewardQuestion.rewardAmount,
+              amountAwarded: INSTANT_REWARD_AMOUNT,
               paymentStatus: 'PENDING',
               paymentProvider: rewardQuestion.paymentProvider,
               phoneNumber: phoneNumber || rewardQuestion.phoneNumber,
@@ -475,6 +504,16 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             }
           });
 
+          // Update user points
+          await prisma.appUser.update({
+            where: { email: userEmail },
+            data: {
+              points: {
+                increment: 5 // 5 points = 500 UGX
+              }
+            }
+          });
+
           // Process automatic payment
           let paymentResult = null;
           try {
@@ -485,32 +524,47 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           }
 
           response = {
-            message: `🎉 Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner!`,
+            message: `🎉 Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${INSTANT_REWARD_AMOUNT} UGX (5 points)!`,
             isCorrect: true,
-            pointsAwarded: rewardQuestion.rewardAmount,
+            pointsAwarded: INSTANT_REWARD_AMOUNT,
+            rewardEarned: INSTANT_REWARD_AMOUNT,
             isWinner: true,
             position,
             paymentStatus: paymentResult?.status || 'PENDING',
-            paymentReference: paymentResult?.reference
+            paymentReference: paymentResult?.reference,
+            remainingSpots: Math.max(maxWinners - (currentWinnersCount + 1), 0)
           };
         } else {
-          // Question is full, but answer is correct
+          // Question is full, but answer is correct - still award points but no payment
           response = {
-            message: "Correct answer! However, all winners have already been found for this question.",
+            message: "Correct answer! However, all winners have already been found for this question. You still earned 5 points!",
             isCorrect: true,
-            pointsAwarded: 0,
+            pointsAwarded: INSTANT_REWARD_AMOUNT,
+            rewardEarned: INSTANT_REWARD_AMOUNT,
             isWinner: false,
             position: null,
-            paymentStatus: null
+            paymentStatus: null,
+            remainingSpots: 0,
+            isCompleted: true
           };
+
+          // Still award points for correct answer
+          await prisma.appUser.update({
+            where: { email: userEmail },
+            data: {
+              points: {
+                increment: 5
+              }
+            }
+          });
         }
       } else {
-        // Regular reward question - award points
+        // Regular reward question - award fixed points (500 UGX / 5 points)
         await prisma.appUser.update({
           where: { email: userEmail },
           data: {
             points: {
-              increment: rewardQuestion.rewardAmount
+              increment: 5
             }
           }
         });
@@ -519,12 +573,14 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
         await prisma.reward.create({
           data: {
             userEmail,
-            points: rewardQuestion.rewardAmount,
+            points: INSTANT_REWARD_AMOUNT,
             description: `Correct answer to reward question: ${rewardQuestion.text.substring(0, 50)}...`
           }
         });
 
-        response.pointsAwarded = rewardQuestion.rewardAmount;
+        response.pointsAwarded = INSTANT_REWARD_AMOUNT;
+        response.rewardEarned = INSTANT_REWARD_AMOUNT;
+        response.message = `Correct! You earned ${INSTANT_REWARD_AMOUNT} UGX (5 points)!`;
       }
     }
 
