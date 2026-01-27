@@ -1,7 +1,7 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { formatCurrency } from "@/data/mockData";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
-import { useInstantRewardStore } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
     BORDER_WIDTH,
@@ -171,12 +171,15 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         onSuccess: (payload) => {
           setResult(payload);
 
+          // Calculate reward amount: 500 shs (5 points) for correct answers
+          const rewardAmount = payload.isCorrect ? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT : 0;
+
           // Mark question as attempted in store (single attempt enforcement)
           markQuestionAttempted({
             questionId: question.id,
             isCorrect: payload.isCorrect,
             selectedAnswer: answer,
-            rewardEarned: payload.rewardEarned || 0,
+            rewardEarned: rewardAmount,
             isWinner: payload.isWinner || false,
             position: payload.position || null,
             paymentStatus: payload.paymentStatus || null,
@@ -186,10 +189,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             triggerHaptic('success');
 
             // Update wallet if reward earned
-            if (payload.rewardEarned && payload.rewardEarned > 0) {
-              if (payload.paymentStatus === 'SUCCESSFUL') {
-                confirmReward(payload.rewardEarned);
-              }
+            if (payload.isCorrect) {
+              confirmReward(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT);
             }
 
             // Check if this is an instant reward winner
@@ -199,19 +200,22 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
               let paymentMessage = "";
               if (paymentStatus === "SUCCESSFUL") {
-                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(question.rewardAmount || 0)} has been sent to your mobile money account!`;
+                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points) has been credited!`;
               } else if (paymentStatus === "PENDING") {
-                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(question.rewardAmount || 0)} is being processed and will be sent shortly.`;
+                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} is being processed.`;
               } else if (paymentStatus === "FAILED") {
                 paymentMessage = `\n\n⚠️ There was an issue processing your reward. Please contact support.`;
               }
 
               Alert.alert(
                 "🎉 Congratulations!",
-                `You're winner #${position}! ${payload.message || "Reward unlocked."}${paymentMessage}`
+                `You're winner #${position}! You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!${paymentMessage}`
               );
             } else {
-              Alert.alert("Correct! 🎯", getEncouragingFeedback(100, true));
+              Alert.alert(
+                "Correct! 🎯",
+                `You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!`
+              );
             }
           } else if (payload.isExpired || payload.isCompleted) {
             triggerHaptic('warning');
@@ -324,8 +328,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             )}
           </View>
 
-          <Text style={[styles.heroTitle, { color: colors.text }]}>{formatCurrency(question.rewardAmount)}</Text>
-          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>First {question.maxWinners} correct winners</Text>
+          <Text style={[styles.heroTitle, { color: colors.text }]}>{formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}</Text>
+          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>
+            Earn {REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points per correct answer • One attempt only
+          </Text>
 
           <View style={styles.heroStats}>
             <StatCard
@@ -361,7 +367,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               </Text>
               <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                 {previousAttempt.isCorrect
-                  ? `You earned ${formatCurrency(previousAttempt.rewardEarned)}`
+                  ? `You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)`
                   : "Each question can only be attempted once."}
               </Text>
             </View>
@@ -464,16 +470,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
                 </Text>
               </View>
               <Text style={[styles.feedbackText, { color: colors.text }]}>
-                {result?.message || previousAttempt?.isCorrect
-                  ? "You answered this question correctly!"
-                  : "This question has already been attempted."}
+                {(result?.isCorrect || previousAttempt?.isCorrect)
+                  ? `You answered correctly and earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!`
+                  : "This question has already been attempted. Each question can only be answered once."}
               </Text>
               {result?.remainingSpots !== undefined && (
                 <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>Remaining spots: {result.remainingSpots}</Text>
               )}
-              {((result?.rewardEarned ?? 0) > 0 || (previousAttempt?.rewardEarned ?? 0) > 0) && (
+              {(result?.isCorrect || previousAttempt?.isCorrect) && (
                 <Text style={[styles.feedbackReward, { color: colors.success }]}>
-                  You earned {formatCurrency(result?.rewardEarned || previousAttempt?.rewardEarned || 0)}
+                  +{formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} ({REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)
                 </Text>
               )}
             </View>

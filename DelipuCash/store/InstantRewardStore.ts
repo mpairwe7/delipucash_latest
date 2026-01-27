@@ -17,6 +17,23 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ===========================================
+// Constants
+// ===========================================
+
+/**
+ * Reward constants for instant reward questions
+ * Each correct answer earns 500 UGX (equivalent to 5 points)
+ */
+export const REWARD_CONSTANTS = {
+  /** Amount in UGX for each correct answer */
+  INSTANT_REWARD_AMOUNT: 500,
+  /** Points equivalent (1 point = 100 UGX) */
+  INSTANT_REWARD_POINTS: 5,
+  /** Conversion rate: points to UGX */
+  POINTS_TO_UGX_RATE: 100,
+} as const;
+
+// ===========================================
 // Types
 // ===========================================
 
