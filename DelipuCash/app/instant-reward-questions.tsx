@@ -6,7 +6,8 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/data/mockData";
-import { useRewardQuestions } from "@/services/hooks";
+import { useRewardQuestions, useUserProfile } from "@/services/hooks";
+import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -21,8 +22,8 @@ import useUser from "@/utils/useUser";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ArrowLeft, Plus, RefreshCcw, Sparkles, Zap } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import { ArrowLeft, CheckCircle2, Circle, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     ActivityIndicator,
     RefreshControl,
@@ -43,15 +44,34 @@ interface RewardListItem {
   winnersCount: number;
   isInstantReward: boolean;
   createdAt: string;
+  isAnswered?: boolean;
+  isCorrect?: boolean;
+  rewardEarned?: number;
 }
 
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
   const { data: user } = useUser();
+  const { data: userProfile } = useUserProfile();
   const [showUploadModal, setShowUploadModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'unanswered' | 'completed'>('unanswered');
 
   const { data: rewardQuestions, isLoading, refetch, isFetching } = useRewardQuestions();
+
+  // Access instant reward store for attempt tracking
+  const {
+    initializeAttemptHistory,
+    hasAttemptedQuestion,
+    getAttemptedQuestion,
+  } = useInstantRewardStore();
+
+  // Initialize attempt history for current user
+  useEffect(() => {
+    if (userProfile?.email) {
+      initializeAttemptHistory(userProfile.email);
+    }
+  }, [userProfile?.email, initializeAttemptHistory]);
 
   /**
    * Role-based access control: Check user's role field from backend
@@ -67,21 +87,41 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         if (!q.expiryTime) return true;
         return new Date(q.expiryTime) > now;
       })
-      .map((q) => ({
-        id: q.id,
-        text: q.text,
-        rewardAmount: q.rewardAmount,
-        expiryTime: q.expiryTime,
-        maxWinners: q.maxWinners,
-        winnersCount: q.winnersCount,
-        isInstantReward: true,
-        createdAt: q.createdAt,
-      }));
-  }, [rewardQuestions]);
+      .map((q) => {
+        const attemptedQuestion = getAttemptedQuestion(q.id);
+        return {
+          id: q.id,
+          text: q.text,
+          rewardAmount: REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT, // Fixed reward: 500 shs
+          expiryTime: q.expiryTime,
+          maxWinners: q.maxWinners,
+          winnersCount: q.winnersCount,
+          isInstantReward: true,
+          createdAt: q.createdAt,
+          isAnswered: hasAttemptedQuestion(q.id),
+          isCorrect: attemptedQuestion?.isCorrect ?? false,
+          rewardEarned: attemptedQuestion?.rewardEarned ?? 0,
+        };
+      });
+  }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion]);
 
-  const topReward = useMemo(() => {
-    return activeQuestions.reduce((max, q) => (q.rewardAmount > max ? q.rewardAmount : max), 0);
+  // Separate questions into unanswered and completed
+  const unansweredQuestions = useMemo(() => {
+    return activeQuestions.filter(q => !q.isAnswered);
   }, [activeQuestions]);
+
+  const completedQuestions = useMemo(() => {
+    return activeQuestions.filter(q => q.isAnswered);
+  }, [activeQuestions]);
+
+  // Stats
+  const totalRewardsEarned = useMemo(() => {
+    return completedQuestions.reduce((sum, q) => sum + (q.rewardEarned || 0), 0);
+  }, [completedQuestions]);
+
+  const correctAnswersCount = useMemo(() => {
+    return completedQuestions.filter(q => q.isCorrect).length;
+  }, [completedQuestions]);
 
   const handleRefresh = useCallback(async () => {
     await refetch();
@@ -158,28 +198,72 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           <View style={[styles.heroIcon, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
             <Zap size={ICON_SIZE['4xl']} color={colors.primary} strokeWidth={1.5} />
           </View>
-          <Text style={[styles.heroTitle, { color: colors.text }]}>Answer fast. Earn instantly.</Text>
-          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>Top rewards up to {formatCurrency(topReward)}. First correct answers win.</Text>
+          <Text style={[styles.heroTitle, { color: colors.text }]}>Answer fast. Earn {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}</Text>
+          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>Earn {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} ({REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points) per correct answer. One attempt only!</Text>
           <View style={styles.heroStats}>
             <StatCard
-              icon={<Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-              title="Active"
-              value={activeQuestions.length}
-              subtitle="Questions live"
+              icon={<Circle size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
+              title="Unanswered"
+              value={unansweredQuestions.length}
+              subtitle="Questions available"
             />
             <StatCard
-              icon={<Zap size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-              title="Max reward"
-              value={formatCurrency(topReward)}
-              subtitle="Potential payout"
+              icon={<Trophy size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+              title="Earned"
+              value={formatCurrency(totalRewardsEarned)}
+              subtitle={`${correctAnswersCount} correct`}
             />
           </View>
         </LinearGradient>
 
+        {/* Tab Switcher */}
+        <View style={[styles.tabContainer, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === 'unanswered' && { backgroundColor: colors.card },
+            ]}
+            onPress={() => setActiveTab('unanswered')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'unanswered' }}
+          >
+            <Circle size={ICON_SIZE.xs} color={activeTab === 'unanswered' ? colors.primary : colors.textMuted} strokeWidth={2} />
+            <Text style={[
+              styles.tabText,
+              { color: activeTab === 'unanswered' ? colors.text : colors.textMuted }
+            ]}>
+              Unanswered ({unansweredQuestions.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.tab,
+              activeTab === 'completed' && { backgroundColor: colors.card },
+            ]}
+            onPress={() => setActiveTab('completed')}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'completed' }}
+          >
+            <CheckCircle2 size={ICON_SIZE.xs} color={activeTab === 'completed' ? colors.success : colors.textMuted} strokeWidth={2} />
+            <Text style={[
+              styles.tabText,
+              { color: activeTab === 'completed' ? colors.text : colors.textMuted }
+            ]}>
+              Completed ({completedQuestions.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <SectionHeader
-          title="Live now"
-          subtitle="Instant payout questions"
-          icon={<Zap size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
+          title={activeTab === 'unanswered' ? "Answer to earn" : "Your completed questions"}
+          subtitle={activeTab === 'unanswered'
+            ? `${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} per correct answer`
+            : `${correctAnswersCount} correct out of ${completedQuestions.length}`
+          }
+          icon={activeTab === 'unanswered'
+            ? <Zap size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
+            : <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
+          }
         />
 
         {isLoading ? (
@@ -187,33 +271,92 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading instant reward questions...</Text>
           </View>
-        ) : activeQuestions.length === 0 ? (
-          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No instant reward questions</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Check back soon or refresh to see new questions.</Text>
-            <PrimaryButton title="Refresh" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
-          </View>
-        ) : (
-          <View style={styles.list}>
-            {activeQuestions.map((q) => (
-              <QuestionCard
-                key={q.id}
-                question={{
-                  id: q.id,
-                  text: q.text,
-                  userId: null,
-                  createdAt: q.createdAt,
-                  updatedAt: q.createdAt,
-                  rewardAmount: q.rewardAmount,
-                  isInstantReward: true,
-                  totalAnswers: q.winnersCount,
-                  category: "Rewards",
-                }}
-                variant="default"
-                onPress={() => handleOpenQuestion(q.id)}
-              />
-            ))}
-          </View>
+        ) : activeTab === 'unanswered' ? (
+          unansweredQuestions.length === 0 ? (
+            <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <CheckCircle2 size={ICON_SIZE['2xl']} color={colors.success} strokeWidth={1.5} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>All caught up! 🎉</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>You&apos;ve answered all available questions. Check back soon for new ones!</Text>
+                <PrimaryButton title="Refresh" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
+              </View>
+            ) : (
+              <View style={styles.list}>
+                  {unansweredQuestions.map((q) => (
+                    <QuestionCard
+                      key={q.id}
+                      question={{
+                        id: q.id,
+                        text: q.text,
+                        userId: null,
+                        createdAt: q.createdAt,
+                        updatedAt: q.createdAt,
+                        rewardAmount: REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT,
+                        isInstantReward: true,
+                        totalAnswers: q.winnersCount,
+                        category: "Rewards",
+                      }}
+                      variant="default"
+                      onPress={() => handleOpenQuestion(q.id)}
+                    />
+                  ))}
+                </View>
+            )
+          ) : (
+            completedQuestions.length === 0 ? (
+              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Circle size={ICON_SIZE['2xl']} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No completed questions</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Answer some questions to see them here!</Text>
+              </View>
+            ) : (
+              <View style={styles.list}>
+                {completedQuestions.map((q) => (
+                  <TouchableOpacity
+                    key={q.id}
+                    style={[
+                      styles.completedCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: withAlpha(q.isCorrect ? colors.success : colors.error, 0.3),
+                      },
+                    ]}
+                    onPress={() => handleOpenQuestion(q.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${q.isCorrect ? 'correct' : 'incorrect'} answer for: ${q.text}`}
+                  >
+                    <View style={styles.completedCardHeader}>
+                      <View style={[
+                        styles.statusBadge,
+                        { backgroundColor: withAlpha(q.isCorrect ? colors.success : colors.error, 0.12) }
+                      ]}>
+                        {q.isCorrect ? (
+                          <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={2} />
+                        ) : (
+                          <Circle size={ICON_SIZE.sm} color={colors.error} strokeWidth={2} />
+                        )}
+                        <Text style={[
+                          styles.statusText,
+                          { color: q.isCorrect ? colors.success : colors.error }
+                        ]}>
+                          {q.isCorrect ? 'Correct' : 'Incorrect'}
+                        </Text>
+                      </View>
+                      {q.isCorrect && (q.rewardEarned ?? 0) > 0 && (
+                        <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
+                          <Trophy size={ICON_SIZE.xs} color={colors.success} strokeWidth={2} />
+                          <Text style={[styles.rewardText, { color: colors.success }]}>
+                            +{formatCurrency(q.rewardEarned ?? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={[styles.completedCardText, { color: colors.text }]} numberOfLines={2}>
+                      {q.text}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )
         )}
 
         <View style={{ height: SPACING.xl }} />
@@ -310,5 +453,65 @@ const styles = StyleSheet.create({
   headerActions: {
     flexDirection: "row",
     gap: SPACING.sm,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    borderRadius: RADIUS.md,
+    padding: SPACING.xs,
+    marginBottom: SPACING.lg,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.sm,
+  },
+  tabText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  completedCard: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.sm,
+  },
+  completedCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  statusText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  rewardBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  rewardText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  completedCardText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    lineHeight: TYPOGRAPHY.fontSize.base * 1.4,
   },
 });

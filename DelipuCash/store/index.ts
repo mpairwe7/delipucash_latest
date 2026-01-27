@@ -157,6 +157,7 @@ export type {
 // ============================================================================
 export {
   useInstantRewardStore,
+  REWARD_CONSTANTS,
   // Selectors
   selectAttemptHistory as selectInstantRewardAttemptHistory,
   selectHasAttempted,
