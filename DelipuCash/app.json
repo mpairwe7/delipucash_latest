@@ -28,7 +28,8 @@
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO"
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "blockedPermissions": [
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -62,7 +63,7 @@
           }
         }
       ],
-       "expo-audio",
+      "expo-audio",
       [
         "expo-build-properties",
         {
@@ -92,7 +93,6 @@
           "supportsPictureInPicture": true
         }
       ],
-      
       [
         "expo-camera",
         {
@@ -117,15 +117,16 @@
       "expo-font",
       "expo-screen-orientation"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "your-eas-project-id"
-      }
-    },
-    "owner": "arolainc",
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3d907cc1-a01f-435d-b9f4-7cfd7d9ef7c5"
+      }
+    },
+    "owner": "landwind"
   }
 }

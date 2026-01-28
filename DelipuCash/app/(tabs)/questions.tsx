@@ -3,6 +3,7 @@ import {
     PrimaryButton,
     QuestionCard,
     SearchBar,
+  SearchOverlay,
     SectionHeader,
     StatCard,
 } from "@/components";
@@ -31,7 +32,8 @@ import {
   InFeedAd,
   AdCarousel,
 } from "@/components/ads";
-import { SubscriptionStatus, UserRole, Ad } from "@/types";
+import { useSearch } from "@/hooks/useSearch";
+import { SubscriptionStatus, UserRole, Ad, Question } from "@/types";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -98,7 +100,7 @@ export default function QuestionsScreen(): React.ReactElement {
     const [refreshing, setRefreshing] = useState(false);
     const [questionText, setQuestionText] = useState("");
     const [category, setCategory] = useState("");
-    const [searchQuery, setSearchQuery] = useState("");
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showQuizSession, setShowQuizSession] = useState(false);
@@ -182,12 +184,55 @@ export default function QuestionsScreen(): React.ReactElement {
       });
     }, [recordAdImpression]);
 
-    const questions = useMemo(() => {
+  // Use the search hook for question search
+  const allQuestions = useMemo(() => {
       const list = questionsData?.questions || [];
-      if (!searchQuery) return list;
-      const lower = searchQuery.toLowerCase();
-      return list.filter((q) => q.text.toLowerCase().includes(lower));
-    }, [questionsData, searchQuery]);
+    return list;
+  }, [questionsData]);
+
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: questions,
+    isSearching,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+    hasNoResults,
+  } = useSearch({
+    data: allQuestions,
+    searchFields: ['text', 'category'],
+    storageKey: '@questions_search_history',
+    debounceMs: 250,
+    customFilter: (question: Question, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        (question.text || '').toLowerCase().includes(lower) ||
+        (question.category || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from question texts
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return allQuestions
+      .filter((q: Question) => (q.text || '').toLowerCase().includes(lowerQuery))
+      .map((q: Question) => q.text?.slice(0, 50) + (q.text && q.text.length > 50 ? '...' : ''))
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [searchQuery, allQuestions, recentSearches]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    if (query.trim()) {
+      triggerHaptic('light');
+    }
+  }, [submitSearch]);
 
     const rewardQuestionCards = useMemo(() => {
       return (rewardQuestions || []).map((rq) => ({
@@ -450,14 +495,55 @@ export default function QuestionsScreen(): React.ReactElement {
           </View>
 
           {/* Search */}
-          <SearchBar
+          <TouchableOpacity
+            onPress={() => setSearchOverlayVisible(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Open search"
+          >
+            <SearchBar
+              placeholder="Search questions..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={{ marginBottom: SPACING.lg }}
+              onSubmit={handleSearchSubmit}
+              onFocus={() => setSearchOverlayVisible(true)}
+              icon={<Search size={18} color={colors.textMuted} />}
+            />
+          </TouchableOpacity>
+
+          {/* Search Overlay */}
+          <SearchOverlay
+            visible={searchOverlayVisible}
+            onClose={() => setSearchOverlayVisible(false)}
+            query={searchQuery}
+            onChangeQuery={setSearchQuery}
+            onSubmit={handleSearchSubmit}
+            recentSearches={recentSearches}
+            onRemoveFromHistory={removeFromHistory}
+            onClearHistory={clearHistory}
+            suggestions={searchSuggestions}
             placeholder="Search questions..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={{ marginBottom: SPACING.lg }}
-            onSubmit={() => {}}
-            icon={<Search size={18} color={colors.textMuted} />}
+            searchContext="Questions"
+            trendingSearches={['How to earn', 'Rewards', 'Survey tips', 'Cash out']}
           />
+
+          {/* Search Results Feedback */}
+          {isSearching && (
+            <View style={styles.searchFeedback}>
+              <Text style={[styles.searchFeedbackText, { color: colors.textMuted }]}>
+                {hasNoResults
+                  ? `No questions found for "${searchQuery}"`
+                  : `Found ${questions.length} question${questions.length !== 1 ? 's' : ''}`
+                }
+              </Text>
+              {isSearching && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Text style={[styles.clearSearchText, { color: colors.primary }]}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Action cards for core flows */}
           <View style={styles.actionGrid}>
@@ -1322,5 +1408,21 @@ function ActionCard({
     compactAd: {
       borderRadius: RADIUS.md,
       overflow: "hidden",
+    },
+    // Search feedback styles
+    searchFeedback: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: SPACING.md,
+      paddingHorizontal: SPACING.xs,
+    },
+    searchFeedbackText: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    clearSearchText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.sm,
     },
   });

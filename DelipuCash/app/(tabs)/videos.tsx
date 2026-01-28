@@ -14,7 +14,6 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
-  TextInput,
   Dimensions,
   Share,
   ActivityIndicator,
@@ -72,6 +71,7 @@ import {
   FloatingActionButton,
   LiveStreamScreen,
   TrendingVideoSlider,
+  SearchOverlay,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
 import {
@@ -89,6 +89,7 @@ import {
 } from "@/components/ads";
 import { Video, Ad } from "@/types";
 import { useVideoStore, selectLikedVideoIds } from "@/store/VideoStore";
+import { useSearch } from "@/hooks/useSearch";
 import * as Haptics from "expo-haptics";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -121,8 +122,8 @@ export default function VideosScreen(): React.ReactElement {
 
   // UI State
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
@@ -176,15 +177,54 @@ export default function VideosScreen(): React.ReactElement {
   // Memoized Data
   const videos = useMemo(() => videosData?.videos ?? [], [videosData?.videos]);
 
-  const filteredVideos = useMemo(() => {
-    if (!searchQuery) return videos;
-    const lower = searchQuery.toLowerCase();
-    return videos.filter(
-      (video) =>
-        (video.title || "").toLowerCase().includes(lower) ||
-        (video.description || "").toLowerCase().includes(lower)
-    );
-  }, [videos, searchQuery]);
+  // Use the search hook for video search
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: filteredVideos,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+  } = useSearch({
+    data: videos,
+    searchFields: ['title', 'description'],
+    storageKey: '@videos_search_history',
+    debounceMs: 250,
+    customFilter: (video: Video, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        (video.title || '').toLowerCase().includes(lower) ||
+        (video.description || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from video titles
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return videos
+      .filter((v: Video) => (v.title || '').toLowerCase().includes(lowerQuery))
+      .map((v: Video) => v.title || '')
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [searchQuery, videos, recentSearches]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    setShowSearchResults(query.length > 0);
+    if (query.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [submitSearch]);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
+    setShowSearchResults(false);
+  }, [setSearchQuery]);
 
   const liveVideos = useMemo(
     () => videos.filter((video) =>
@@ -305,16 +345,6 @@ export default function VideosScreen(): React.ReactElement {
     setShowMiniPlayer(false);
     setProgress(0);
   }, [videos, addToWatchHistory, storeSetVideoQueue, storeSetCurrentVideo, setPlayerState]);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    setShowSearchResults(query.length > 0);
-  }, []);
-
-  const clearSearch = useCallback(() => {
-    setSearchQuery("");
-    setShowSearchResults(false);
-  }, []);
 
   const closePlayer = useCallback(() => {
     // YouTube-like behavior: minimize to mini player instead of closing
@@ -486,17 +516,20 @@ export default function VideosScreen(): React.ReactElement {
         </View>
 
         {/* Search Bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setSearchOverlayVisible(true)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open search"
+        >
           <Search size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search videos..."
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={handleSearch}
-            accessibilityLabel="Search videos"
-            returnKeyType="search"
-          />
+          <Text
+            style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : colors.textMuted }]}
+            numberOfLines={1}
+          >
+            {searchQuery || "Search videos..."}
+          </Text>
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={clearSearch} accessibilityLabel="Clear search">
               <X size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={2} />
@@ -509,7 +542,23 @@ export default function VideosScreen(): React.ReactElement {
           >
             <Filter size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+
+        {/* Search Overlay */}
+        <SearchOverlay
+          visible={searchOverlayVisible}
+          onClose={() => setSearchOverlayVisible(false)}
+          query={searchQuery}
+          onChangeQuery={setSearchQuery}
+          onSubmit={handleSearchSubmit}
+          recentSearches={recentSearches}
+          onRemoveFromHistory={removeFromHistory}
+          onClearHistory={clearHistory}
+          suggestions={searchSuggestions}
+          placeholder="Search videos..."
+          searchContext="Videos"
+          trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial']}
+        />
       </View>
 
       {/* Main Content */}
@@ -1247,5 +1296,12 @@ const styles = StyleSheet.create({
   compactAd: {
     borderRadius: RADIUS.md,
     overflow: "hidden",
+  },
+  // Search placeholder style
+  searchPlaceholder: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    paddingVertical: SPACING.sm,
   },
 });

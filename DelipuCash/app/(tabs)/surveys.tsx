@@ -1,6 +1,7 @@
 import {
   NotificationBell,
   SearchBar,
+  SearchOverlay,
   SurveyCard,
 } from "@/components";
 import { useRunningSurveys, useUnreadCount, useUpcomingSurveys } from "@/services/hooks";
@@ -17,6 +18,7 @@ import {
   BetweenContentAd,
 } from "@/components/ads";
 import { useAuth, useAuthModal } from "@/utils/auth";
+import { useSearch } from "@/hooks/useSearch";
 import { Survey, Ad } from "@/types";
 import {
   BORDER_WIDTH,
@@ -62,6 +64,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 interface QuestionType {
   key: string;
@@ -86,7 +89,7 @@ export default function SurveysScreen(): React.ReactElement {
   const { open: openAuth } = useAuthModal();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [search, setSearch] = useState("");
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
 
   // Subscription status
   const {
@@ -112,17 +115,81 @@ export default function SurveysScreen(): React.ReactElement {
 
   const isLoading = loadingRunning || loadingUpcoming || loadingSubscription;
 
+  // Combine all surveys for search
+  const allSurveys = useMemo(() => {
+    return [...(runningSurveys || []), ...(upcomingSurveys || [])];
+  }, [runningSurveys, upcomingSurveys]);
+
+  // Use the search hook for survey search
+  const {
+    query: search,
+    setQuery: setSearch,
+    filteredResults: searchedSurveys,
+    isSearching,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+    hasNoResults,
+  } = useSearch({
+    data: allSurveys,
+    searchFields: ['title', 'description'],
+    storageKey: '@surveys_search_history',
+    debounceMs: 250,
+    customFilter: (survey: Survey, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        survey.title.toLowerCase().includes(lower) ||
+        (survey.description || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from survey titles
+  const searchSuggestions = useMemo(() => {
+    if (!search) return recentSearches.slice(0, 5);
+    const lowerQuery = search.toLowerCase();
+    return allSurveys
+      .filter((s: Survey) => s.title.toLowerCase().includes(lowerQuery))
+      .map((s: Survey) => s.title)
+      .slice(0, 5);
+  }, [search, allSurveys, recentSearches]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    if (query.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [submitSearch]);
+
+  // Filtered surveys based on search
+  const filteredRunning = useMemo(
+    () => isSearching
+      ? searchedSurveys.filter((s: Survey) => runningSurveys.some((r: Survey) => r.id === s.id))
+      : runningSurveys,
+    [searchedSurveys, runningSurveys, isSearching],
+  );
+
+  const filteredUpcoming = useMemo(
+    () => isSearching
+      ? searchedSurveys.filter((s: Survey) => upcomingSurveys.some((u: Survey) => u.id === s.id))
+      : upcomingSurveys,
+    [searchedSurveys, upcomingSurveys, isSearching],
+  );
+
   // Stats for quick overview
   const stats: StatItem[] = useMemo(() => [
     {
       label: "Active",
-      value: String(runningSurveys.length),
+      value: String(filteredRunning.length),
       icon: <Play size={18} color={colors.success} strokeWidth={2} />,
       color: colors.success,
     },
     {
       label: "Upcoming",
-      value: String(upcomingSurveys.length),
+      value: String(filteredUpcoming.length),
       icon: <Clock size={18} color={colors.warning} strokeWidth={2} />,
       color: colors.warning,
     },
@@ -132,7 +199,7 @@ export default function SurveysScreen(): React.ReactElement {
       icon: <BarChart3 size={18} color={colors.info} strokeWidth={2} />,
       color: colors.info,
     },
-  ], [runningSurveys.length, upcomingSurveys.length, colors]);
+  ], [filteredRunning.length, filteredUpcoming.length, colors]);
 
   // Question type chips for visual reference
   const questionTypes: QuestionType[] = useMemo(() => [
@@ -161,16 +228,6 @@ export default function SurveysScreen(): React.ReactElement {
       icon: <Star size={18} color={colors.warning} strokeWidth={2} />,
     },
   ], [colors]);
-
-  const filteredRunning = useMemo(
-    () => runningSurveys.filter((survey: Survey) => survey.title.toLowerCase().includes(search.toLowerCase())),
-    [runningSurveys, search],
-  );
-
-  const filteredUpcoming = useMemo(
-    () => upcomingSurveys.filter((survey: Survey) => survey.title.toLowerCase().includes(search.toLowerCase())),
-    [upcomingSurveys, search],
-  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -310,15 +367,54 @@ export default function SurveysScreen(): React.ReactElement {
           <View style={styles.searchHeaderRow}>
             <Text style={[styles.searchTitle, { color: colors.text }]}>Find a survey</Text>
             <View style={[styles.searchBadge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-              <Text style={[styles.searchBadgeText, { color: colors.primary }]}>Active {runningSurveys.length}</Text>
+                <Text style={[styles.searchBadgeText, { color: colors.primary }]}>Active {filteredRunning.length}</Text>
             </View>
           </View>
-          <SearchBar
-            placeholder="Search by title or topic"
-            value={search}
-            onChangeText={setSearch}
-            style={styles.searchBar}
-          />
+            <TouchableOpacity
+              onPress={() => setSearchOverlayVisible(true)}
+              activeOpacity={0.8}
+            >
+              <SearchBar
+                placeholder="Search by title or topic"
+                value={search}
+                onChangeText={setSearch}
+                style={styles.searchBar}
+                onFocus={() => setSearchOverlayVisible(true)}
+                onSubmit={handleSearchSubmit}
+              />
+            </TouchableOpacity>
+
+            {/* Search Overlay */}
+            <SearchOverlay
+              visible={searchOverlayVisible}
+              onClose={() => setSearchOverlayVisible(false)}
+              query={search}
+              onChangeQuery={setSearch}
+              onSubmit={handleSearchSubmit}
+              recentSearches={recentSearches}
+              onRemoveFromHistory={removeFromHistory}
+              onClearHistory={clearHistory}
+              suggestions={searchSuggestions}
+              placeholder="Search surveys..."
+              searchContext="Surveys"
+              trendingSearches={['Market research', 'Customer feedback', 'Product survey', 'Opinion poll']}
+            />
+
+            {/* Search Feedback */}
+            {isSearching && (
+              <View style={styles.searchFeedbackRow}>
+                <Text style={[styles.searchFeedbackText, { color: colors.textMuted }]}>
+                  {hasNoResults
+                    ? `No surveys found for "${search}"`
+                    : `Found ${searchedSurveys.length} survey${searchedSurveys.length !== 1 ? 's' : ''}`
+                  }
+                </Text>
+                <TouchableOpacity onPress={() => setSearch('')}>
+                  <Text style={[styles.clearSearchText, { color: colors.primary }]}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
           <View style={styles.searchMetaRow}>
             <Text style={[styles.searchHint, { color: colors.textMuted }]}>Tip: start with short surveys to boost completion.</Text>
             <TouchableOpacity onPress={handleCreateSurvey} accessibilityRole="button">
@@ -1009,5 +1105,21 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     overflow: "hidden",
     width: "100%",
+  },
+  // Search feedback styles
+  searchFeedbackRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.xs,
+  },
+  searchFeedbackText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  clearSearchText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

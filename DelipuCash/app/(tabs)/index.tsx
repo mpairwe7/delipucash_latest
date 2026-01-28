@@ -4,6 +4,7 @@ import {
   ProgressCard,
   QuestionCard,
   SearchBar,
+  SearchOverlay,
   SectionHeader,
   StatCard,
   SurveyCard,
@@ -34,6 +35,7 @@ import {
   AdCarousel,
   BetweenContentAd,
 } from "@/components/ads";
+import { useSearch } from "@/hooks/useSearch";
 import type { Question, Survey, Video, Ad } from "@/types";
 import {
   RADIUS,
@@ -55,7 +57,7 @@ import {
   Wallet,
   Zap,
 } from "lucide-react-native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useMemo } from "react";
 import {
   RefreshControl,
   ScrollView,
@@ -66,6 +68,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+
+// Search result type for combined data
+interface SearchableItem {
+  id: string;
+  type: 'video' | 'question' | 'survey';
+  title: string;
+  description?: string;
+  data: Video | Question | Survey;
+}
 
 /**
  * Home screen component (Dashboard)
@@ -95,7 +106,7 @@ export default function HomePage(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const { data: user, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState<boolean>(false);
 
   // Data hooks
   const { data: trendingVideos, refetch: refetchVideos } = useTrendingVideos(5);
@@ -106,6 +117,75 @@ export default function HomePage(): React.ReactElement {
   const { data: dashboardStats, refetch: refetchStats } = useDashboardStats();
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
+
+  // Combine all searchable content for unified search
+  const searchableData = useMemo<SearchableItem[]>(() => {
+    const items: SearchableItem[] = [];
+
+    // Add videos
+    trendingVideos?.forEach((video: Video) => {
+      items.push({
+        id: video.id,
+        type: 'video',
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        data: video,
+      });
+    });
+
+    // Add questions
+    recentQuestions?.forEach((question: Question) => {
+      items.push({
+        id: question.id,
+        type: 'question',
+        title: question.text || 'Question',
+        description: question.category || '',
+        data: question,
+      });
+    });
+
+    // Add running surveys
+    runningSurveys?.forEach((survey: Survey) => {
+      items.push({
+        id: survey.id,
+        type: 'survey',
+        title: survey.title,
+        description: survey.description || '',
+        data: survey,
+      });
+    });
+
+    // Add upcoming surveys
+    upcomingSurveys?.forEach((survey: Survey) => {
+      items.push({
+        id: survey.id,
+        type: 'survey',
+        title: survey.title,
+        description: survey.description || '',
+        data: survey,
+      });
+    });
+
+    return items;
+  }, [trendingVideos, recentQuestions, runningSurveys, upcomingSurveys]);
+
+  // Use the search hook for home screen search
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: searchResults,
+    isSearching,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+    suggestions,
+  } = useSearch({
+    data: searchableData,
+    searchFields: ['title', 'description'],
+    storageKey: '@home_search_history',
+    debounceMs: 250,
+  });
 
   // Ad hooks - TanStack Query for optimal caching and deduplication
   const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(3);
@@ -158,10 +238,44 @@ export default function HomePage(): React.ReactElement {
     }
   }, [claimDailyReward]);
 
-  const handleSearch = useCallback((query: string) => {
-    // Navigate to search results or filter content
-    console.log("Search:", query);
+  // Handle search submission and navigation
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+
+    // If searching, filter and navigate based on results
+    if (query.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [submitSearch]);
+
+  // Handle pressing on a search result
+  const handleSearchResultPress = useCallback((item: SearchableItem) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSearchOverlayVisible(false);
+
+    switch (item.type) {
+      case 'video':
+        router.push(`/(tabs)/videos`);
+        break;
+      case 'question':
+        router.push(`/question/${item.id}` as Href);
+        break;
+      case 'survey':
+        router.push(`/survey/${item.id}` as Href);
+        break;
+    }
   }, []);
+
+  // Generate suggestions from searchable data titles
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return searchableData
+      .filter(item => item.title.toLowerCase().includes(lowerQuery))
+      .map(item => item.title)
+      .slice(0, 5);
+  }, [searchQuery, searchableData, recentSearches]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -196,13 +310,87 @@ export default function HomePage(): React.ReactElement {
         </View>
 
         {/* Search Bar */}
-        <SearchBar
+        <TouchableOpacity
+          onPress={() => setSearchOverlayVisible(true)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open search"
+        >
+          <SearchBar
+            placeholder="Search videos, surveys, questions..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmit={handleSearchSubmit}
+            onFocus={() => setSearchOverlayVisible(true)}
+            style={styles.searchBar}
+          />
+        </TouchableOpacity>
+
+        {/* Search Overlay for full-screen search experience */}
+        <SearchOverlay
+          visible={searchOverlayVisible}
+          onClose={() => setSearchOverlayVisible(false)}
+          query={searchQuery}
+          onChangeQuery={setSearchQuery}
+          onSubmit={handleSearchSubmit}
+          recentSearches={recentSearches}
+          onRemoveFromHistory={removeFromHistory}
+          onClearHistory={clearHistory}
+          suggestions={searchSuggestions}
           placeholder="Search videos, surveys, questions..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmit={handleSearch}
-          style={styles.searchBar}
+          searchContext="Home"
+          trendingSearches={['Earn money', 'Surveys', 'Videos', 'Quiz rewards']}
         />
+
+        {/* Search Results - Show when actively searching */}
+        {isSearching && searchResults.length > 0 && (
+          <View style={styles.searchResultsContainer}>
+            <Text style={[styles.searchResultsTitle, { color: colors.text }]}>
+              Search Results ({searchResults.length})
+            </Text>
+            {searchResults.slice(0, 5).map((item) => (
+              <TouchableOpacity
+                key={`${item.type}-${item.id}`}
+                style={[styles.searchResultItem, { backgroundColor: colors.card }]}
+                onPress={() => handleSearchResultPress(item)}
+                activeOpacity={0.7}
+              >
+                <View style={[
+                  styles.searchResultBadge,
+                  {
+                    backgroundColor: item.type === 'video'
+                      ? colors.error
+                      : item.type === 'question'
+                        ? colors.primary
+                        : colors.success
+                  }
+                ]}>
+                  <Text style={styles.searchResultBadgeText}>
+                    {item.type.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.searchResultContent}>
+                  <Text
+                    style={[styles.searchResultTitle, { color: colors.text }]}
+                    numberOfLines={1}
+                  >
+                    {item.title}
+                  </Text>
+                  <Text
+                    style={[styles.searchResultType, { color: colors.textMuted }]}
+                  >
+                    {item.type.charAt(0).toUpperCase() + item.type.slice(1)}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {searchResults.length > 5 && (
+              <Text style={[styles.moreResults, { color: colors.primary }]}>
+                +{searchResults.length - 5} more results
+              </Text>
+            )}
+          </View>
+        )}
 
         {/* Daily Rewards Card */}
         {dailyReward && (
@@ -483,6 +671,54 @@ const styles = StyleSheet.create({
   },
   searchBar: {
     marginBottom: SPACING.lg,
+  },
+  searchResultsContainer: {
+    marginBottom: SPACING.lg,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+  },
+  searchResultsTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    marginBottom: SPACING.md,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.sm,
+  },
+  searchResultBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  searchResultBadgeText: {
+    color: '#FFFFFF',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  searchResultContent: {
+    flex: 1,
+  },
+  searchResultTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  searchResultType: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginTop: 2,
+  },
+  moreResults: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: 'center',
+    marginTop: SPACING.sm,
   },
   walletCard: {
     borderRadius: RADIUS.xl,

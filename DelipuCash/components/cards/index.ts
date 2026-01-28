@@ -42,3 +42,6 @@ export type { RecentQuestionCardProps } from './RecentQuestionCard';
 
 export { ExploreModal } from './ExploreModal';
 export type { ExploreModalProps, ExploreFeature } from './ExploreModal';
+
+export { SearchOverlay } from './SearchOverlay';
+export type { SearchOverlayProps } from './SearchOverlay';
