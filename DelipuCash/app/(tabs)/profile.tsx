@@ -1054,7 +1054,8 @@ export default function ProfileScreen(): React.ReactElement {
                 key={tab.key}
                 style={[
                   styles.tabButton,
-                  isActive && [styles.tabButtonActive, { backgroundColor: withAlpha(colors.primary, 0.12) }],
+                  { backgroundColor: isActive ? withAlpha(colors.primary, 0.12) : withAlpha(colors.text, 0.05) },
+                  { borderWidth: 1, borderColor: isActive ? withAlpha(colors.primary, 0.2) : withAlpha(colors.border, 0.5) },
                 ]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1063,13 +1064,13 @@ export default function ProfileScreen(): React.ReactElement {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
               >
-                <View style={[styles.tabIconContainer, isActive && { backgroundColor: colors.primary }]}>
-                  <Icon size={ICON_SIZE.sm} color={isActive ? '#FFFFFF' : colors.textMuted} strokeWidth={2} />
+                <View style={[styles.tabIconContainer, isActive ? { backgroundColor: colors.primary } : { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
+                  <Icon size={ICON_SIZE.sm} color={isActive ? '#FFFFFF' : colors.text} strokeWidth={2} />
                 </View>
                 <Text
                   style={[
                     styles.tabLabel,
-                    { color: isActive ? colors.primary : colors.textMuted },
+                    { color: isActive ? colors.primary : colors.text },
                     isActive && styles.tabLabelActive,
                   ]}
                 >
