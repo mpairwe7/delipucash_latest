@@ -4,6 +4,8 @@
  * Design System Compliant - Consistent error handling and fallbacks
  */
 
+import * as VideoThumbnails from 'expo-video-thumbnails';
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -31,7 +33,7 @@ export interface AdWithMedia {
 // CONSTANTS
 // ============================================================================
 
-const DEFAULT_THUMBNAIL_TIME = 1000; // 1 second into video
+const DEFAULT_THUMBNAIL_TIME = 0; // Beginning of video
 const DEFAULT_THUMBNAIL_QUALITY = 0.8;
 
 // Fallback placeholder images
@@ -62,8 +64,8 @@ const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.wmv', '.flv', '.webm', '.mkv
 // ============================================================================
 
 /**
- * Generate a thumbnail from a video URL
- * Uses expo-video-thumbnails when available, falls back to placeholder
+ * Generate a thumbnail URL from video URL using expo-video-thumbnails
+ * Creates an actual thumbnail from the video when thumbnailUrl is not available
  */
 export const generateThumbnailFromVideo = async (
   videoUrl: string,
@@ -75,65 +77,54 @@ export const generateThumbnailFromVideo = async (
   } = options || {};
 
   try {
-    // Try to use expo-video-thumbnails if available
-    // Note: expo-video-thumbnails must be installed separately: npx expo install expo-video-thumbnails
-    let VideoThumbnails: any = null;
-    try {
-      // Dynamic require for optional dependency
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      VideoThumbnails = require('expo-video-thumbnails');
-    } catch {
-      VideoThumbnails = null;
-    }
-    
-    if (VideoThumbnails?.getThumbnailAsync) {
-      const result = await VideoThumbnails.getThumbnailAsync(videoUrl, {
-        time,
-        quality,
-      });
-      return result?.uri ?? PLACEHOLDER_IMAGES.video;
-    }
-    
-    // Fallback to placeholder if video-thumbnails not available
-    console.log('[Thumbnail] expo-video-thumbnails not available, using placeholder');
-    return PLACEHOLDER_IMAGES.video;
+    // Generate thumbnail from video URL using expo-video-thumbnails
+    const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
+      time,
+      quality,
+    });
+
+    console.log('[Thumbnail] Successfully generated thumbnail:', uri);
+    return uri;
   } catch (error) {
-    console.error('[Thumbnail] Error generating thumbnail:', error);
+    console.error('[Thumbnail] Error generating thumbnail from video:', error);
+    // Return a fallback placeholder if thumbnail generation fails
     return PLACEHOLDER_IMAGES.video;
   }
 };
 
 /**
  * Get the best available thumbnail URL for media content
- * Priority: thumbnailUrl > imageUrl > generated from videoUrl > fallback
+ * Priority: thumbnailUrl > imageUrl > generated from videoUrl (only if thumbnailUrl is empty) > fallback placeholder
+ * Handles Firebase Storage URLs and other video URLs without extensions
  */
 export const getBestThumbnailUrl = async (
   media: AdWithMedia,
-  generateFromVideo: boolean = false
+  generateFromVideo: boolean = true
 ): Promise<string | null> => {
-  // Priority 1: Use existing thumbnailUrl
+  // First priority: use existing thumbnailUrl
   if (media.thumbnailUrl && media.thumbnailUrl.trim() !== '') {
-    console.log('[Thumbnail] Using existing thumbnailUrl');
+    console.log('[Thumbnail] Using existing thumbnailUrl:', media.thumbnailUrl);
     return media.thumbnailUrl;
   }
-  
-  // Priority 2: Use imageUrl as fallback
+
+  // Second priority: use imageUrl as fallback
   if (media.imageUrl && media.imageUrl.trim() !== '') {
-    console.log('[Thumbnail] Using imageUrl as fallback');
+    console.log('[Thumbnail] Using imageUrl as fallback:', media.imageUrl);
     return media.imageUrl;
   }
-  
-  // Priority 3: Generate from videoUrl (only if explicitly requested)
-  if (generateFromVideo && media.videoUrl && media.videoUrl.trim() !== '') {
+
+  // Third priority: generate from videoUrl ONLY if thumbnailUrl is empty
+  if (generateFromVideo && media.videoUrl && media.videoUrl.trim() !== '' && (!media.thumbnailUrl || media.thumbnailUrl.trim() === '')) {
     try {
-      console.log('[Thumbnail] Generating from video URL');
+      console.log('[Thumbnail] Generating thumbnail from video URL (thumbnailUrl is empty):', media.videoUrl);
       return await generateThumbnailFromVideo(media.videoUrl);
     } catch (error) {
-      console.error('[Thumbnail] Failed to generate from video:', error);
+      console.error('[Thumbnail] Failed to generate thumbnail from video URL:', media.videoUrl, error);
+      // Continue to next priority if thumbnail generation fails
     }
   }
-  
-  // No suitable source found
+
+  // Final fallback: return null
   console.log('[Thumbnail] No suitable thumbnail source found');
   return null;
 };
@@ -153,33 +144,36 @@ export const getPlaceholderImage = (
 
 /**
  * Check if a URL is a video URL
- * Handles various video hosting services and file extensions
+ * Handles Firebase Storage URLs and other video URLs without extensions
  */
 export const isVideoUrl = (url: string): boolean => {
   if (!url) return false;
-  
+
   const lowerUrl = url.toLowerCase();
-  
+
   // Check for video file extensions
   if (VIDEO_EXTENSIONS.some(ext => lowerUrl.includes(ext))) {
     return true;
   }
-  
-  // Check for Firebase Storage URLs (assume video if in videos path)
-  if (lowerUrl.includes('firebasestorage.googleapis.com') && lowerUrl.includes('videos')) {
+
+  // Check for Firebase Storage URLs (they don't have extensions)
+  // Firebase Storage URLs typically contain video content types
+  // We can't determine this from URL alone, so we'll assume it's a video
+  // if it's being used as videoUrl in the ad
+  if (lowerUrl.includes('firebasestorage.googleapis.com')) {
     return true;
   }
-  
+
   // Check for video hosting services
   if (VIDEO_HOSTING_DOMAINS.some(domain => lowerUrl.includes(domain))) {
     return true;
   }
-  
+
   // Check for video content types in URL parameters
   if (lowerUrl.includes('video/') || lowerUrl.includes('video%2F')) {
     return true;
   }
-  
+
   return false;
 };
 
@@ -188,9 +182,9 @@ export const isVideoUrl = (url: string): boolean => {
  */
 export const isLiveStreamUrl = (url: string): boolean => {
   if (!url) return false;
-  
+
   const lowerUrl = url.toLowerCase();
-  
+
   // Common live stream indicators
   return (
     lowerUrl.includes('.m3u8') ||
@@ -208,7 +202,7 @@ export const isLiveStreamUrl = (url: string): boolean => {
 export const getYouTubeThumbnail = (url: string): string | null => {
   try {
     let videoId: string | null = null;
-    
+
     // Extract video ID from various YouTube URL formats
     const patterns = [
       /youtube\.com\/watch\?v=([^&]+)/,
@@ -216,7 +210,7 @@ export const getYouTubeThumbnail = (url: string): string | null => {
       /youtu\.be\/([^?]+)/,
       /youtube\.com\/v\/([^?]+)/,
     ];
-    
+
     for (const pattern of patterns) {
       const match = url.match(pattern);
       if (match) {
@@ -224,12 +218,12 @@ export const getYouTubeThumbnail = (url: string): string | null => {
         break;
       }
     }
-    
+
     if (videoId) {
       // Return high-quality thumbnail
       return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
     }
-    
+
     return null;
   } catch (error) {
     console.error('[Thumbnail] Error extracting YouTube thumbnail:', error);
@@ -245,9 +239,9 @@ export const getVimeoThumbnail = async (url: string): Promise<string | null> => 
   try {
     const videoIdMatch = url.match(/vimeo\.com\/(\d+)/);
     if (!videoIdMatch) return null;
-    
+
     const videoId = videoIdMatch[1];
-    
+
     // In production, you would call the Vimeo oEmbed API
     // For now, return a placeholder
     console.log(`[Thumbnail] Vimeo video ID: ${videoId}`);

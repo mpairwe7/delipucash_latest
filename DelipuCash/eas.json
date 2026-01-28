@@ -12,7 +12,15 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
+        "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
+      }
     }
   },
   "submit": {

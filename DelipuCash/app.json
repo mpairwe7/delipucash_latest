@@ -51,6 +51,7 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/withDisableLint.js",
       [
         "expo-splash-screen",
         {
@@ -71,7 +72,10 @@
             "compileSdkVersion": 35,
             "targetSdkVersion": 35,
             "minSdkVersion": 24,
-            "buildToolsVersion": "35.0.0"
+            "buildToolsVersion": "35.0.0",
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "extraProguardRules": "-dontwarn **"
           },
           "ios": {
             "useFrameworks": "static",
@@ -115,7 +119,8 @@
         }
       ],
       "expo-font",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

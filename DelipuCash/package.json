@@ -16,7 +16,7 @@
     "@expo/ngrok": "4.1.3",
     "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "5.2.6",
-    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "11.4.1",
     "@react-native-community/slider": "5.0.1",
@@ -33,6 +33,7 @@
     "color2k": "^2.0.3",
     "date-fns": "^4.1.0",
     "expo": "~54.0.32",
+    "expo-asset": "~12.0.12",
     "expo-audio": "~1.1.1",
     "expo-blur": "~15.0.8",
     "expo-build-properties": "~1.0.10",
@@ -43,6 +44,7 @@
     "expo-contacts": "~15.0.11",
     "expo-device": "~8.0.10",
     "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.21",
     "expo-font": "~14.0.11",
     "expo-gl": "~16.0.10",
     "expo-haptics": "~15.0.8",
@@ -99,6 +101,10 @@
     "three": "^0.166.1",
     "yup": "^1.7.1",
     "zustand": "5.0.3"
+  },
+  "overrides": {
+    "expo-location": "~19.0.8",
+    "react-native-safe-area-context": "~5.6.2"
   },
   "devDependencies": {
     "@types/react": "~19.1.17",
