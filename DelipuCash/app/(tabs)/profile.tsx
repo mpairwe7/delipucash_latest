@@ -184,7 +184,6 @@ const QuickAccessCard = memo<{
           {
             backgroundColor: colors.card,
             borderColor: colors.border,
-            width: isTablet ? '23%' : isSmallScreen ? '47%' : '47.5%',
           },
           animatedStyle,
         ]}
@@ -195,7 +194,7 @@ const QuickAccessCard = memo<{
         accessibilityRole="button"
       >
         <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
-          <Icon size={getResponsiveSize(26, 30, 34)} color={item.iconColor} strokeWidth={1.8} />
+          <Icon size={ICON_SIZE.md} color={item.iconColor} strokeWidth={1.5} />
           {item.badge !== undefined && item.badge > 0 && (
             <View style={styles.badgeContainer}>
               <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
@@ -203,7 +202,7 @@ const QuickAccessCard = memo<{
           )}
         </View>
         <Text
-          style={[styles.quickAccessText, { color: colors.text, fontSize: getResponsiveSize(13, 15, 17) }]}
+          style={[styles.quickAccessText, { color: colors.text }]}
           numberOfLines={2}
         >
           {item.title}
@@ -1646,38 +1645,36 @@ const styles = StyleSheet.create({
   quickAccessGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: SPACING.md,
     marginTop: SPACING.base,
-    gap: SPACING.sm,
   },
   quickAccessCard: {
-    borderRadius: RADIUS.xl,
+    flex: 1,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
-    marginBottom: SPACING.sm,
     borderWidth: 1,
-    padding: getResponsiveSize(16, 20, 24),
+    padding: SPACING.md,
+    gap: SPACING.xs,
+    minWidth: '45%',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-    minHeight: getResponsiveSize(120, 140, 160),
-    justifyContent: 'center',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   quickAccessIcon: {
-    width: getResponsiveSize(56, 64, 72),
-    height: getResponsiveSize(56, 64, 72),
-    borderRadius: getResponsiveSize(28, 32, 36),
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.base,
+    marginBottom: SPACING.xs,
     position: 'relative',
   },
   quickAccessText: {
     textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-    fontWeight: '600',
-    lineHeight: getResponsiveSize(18, 20, 22),
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   badgeContainer: {
     position: 'absolute',
