@@ -19,7 +19,7 @@ import {
 } from "@/components/ads";
 import { useAuth, useAuthModal } from "@/utils/auth";
 import { useSearch } from "@/hooks/useSearch";
-import { Survey, Ad } from "@/types";
+import { Survey, Ad, UserRole } from "@/types";
 import {
   BORDER_WIDTH,
   RADIUS,
@@ -100,6 +100,11 @@ export default function SurveysScreen(): React.ReactElement {
 
   const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
   const remainingDays = subscriptionStatus?.remainingDays ?? 0;
+
+  // Check if user is admin - admins can create surveys without subscription
+  const isAdmin = useMemo(() => {
+    return auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
+  }, [auth?.user?.role]);
 
   const { data: runningSurveys = [], isLoading: loadingRunning, refetch: refetchRunning } = useRunningSurveys();
   const { data: upcomingSurveys = [], isLoading: loadingUpcoming, refetch: refetchUpcoming } = useUpcomingSurveys();
@@ -284,7 +289,13 @@ export default function SurveysScreen(): React.ReactElement {
       return;
     }
 
-    // Check subscription status
+    // Admin users can create surveys without subscription
+    if (isAdmin) {
+      router.push("/create-survey" as Href);
+      return;
+    }
+
+    // Check subscription status for non-admin users
     if (!hasActiveSubscription) {
       Alert.alert(
         "Subscription Required",
@@ -301,9 +312,9 @@ export default function SurveysScreen(): React.ReactElement {
       return;
     }
 
-  // Navigate to create survey
+    // Navigate to create survey
     router.push("/create-survey" as Href);
-  }, [isAuthenticated, hasActiveSubscription, openAuth]);
+  }, [isAuthenticated, hasActiveSubscription, isAdmin, openAuth]);
 
   /**
    * Navigate to payment screen

@@ -56,6 +56,7 @@ import {
 } from '@/utils/theme';
 import { useAuth, useAuthModal } from '@/utils/auth';
 import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
+import { UserRole } from '@/types';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -122,7 +123,7 @@ const CreateSurveyScreen: React.FC = () => {
   const responsive = useResponsive();
 
   // Auth & Subscription state
-  const { isAuthenticated, isReady: authReady } = useAuth();
+  const { isAuthenticated, isReady: authReady, auth } = useAuth();
   const { open: openAuth } = useAuthModal();
   const {
     data: subscriptionStatus,
@@ -131,6 +132,9 @@ const CreateSurveyScreen: React.FC = () => {
 
   const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
   const remainingDays = subscriptionStatus?.remainingDays ?? 0;
+
+  // Admin bypass - admins can create surveys without subscription
+  const isAdmin = auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
 
   // State
   const [activeTab, setActiveTab] = useState<TabKey>('build');
@@ -174,9 +178,9 @@ const CreateSurveyScreen: React.FC = () => {
     }
   }, [authReady, isAuthenticated, router, openAuth]);
 
-  // Check subscription status
+  // Check subscription status (admins bypass this check)
   useEffect(() => {
-    if (authReady && isAuthenticated && !loadingSubscription && !hasActiveSubscription) {
+    if (authReady && isAuthenticated && !loadingSubscription && !isAdmin && !hasActiveSubscription) {
       Alert.alert(
         "Subscription Required",
         "You need an active subscription to create surveys. Subscribe now to unlock survey creation.",
@@ -194,7 +198,7 @@ const CreateSurveyScreen: React.FC = () => {
         ]
       );
     }
-  }, [authReady, isAuthenticated, loadingSubscription, hasActiveSubscription, router]);
+  }, [authReady, isAuthenticated, loadingSubscription, isAdmin, hasActiveSubscription, router]);
 
   // Entrance animation
   useEffect(() => {

@@ -78,6 +78,7 @@ import {
   useUserStats,
   useVerify2FACode,
 } from '@/services/hooks';
+import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
@@ -170,6 +171,10 @@ interface QuickAccessItem {
   onPress?: () => void;
   badge?: number;
   adminOnly?: boolean;
+  /** If true, requires subscription for non-admin users */
+  requiresSubscription?: boolean;
+  /** Description shown below title (e.g., subscription status) */
+  description?: string;
 }
 
 interface MenuItem {
@@ -187,7 +192,9 @@ const QuickAccessCard = memo<{
   index: number;
   colors: ThemeColors;
   isAdmin?: boolean;
-}>(({ item, index, colors, isAdmin }) => {
+  hasSubscription?: boolean;
+  onSubscriptionRequired?: () => void;
+}>(({ item, index, colors, isAdmin, hasSubscription, onSubscriptionRequired }) => {
   const scale = useSharedValue(1);
   const Icon = item.icon;
 
@@ -208,6 +215,13 @@ const QuickAccessCard = memo<{
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Check if subscription is required for non-admin users
+    if (item.requiresSubscription && !isAdmin && !hasSubscription) {
+      onSubscriptionRequired?.();
+      return;
+    }
+
     if (item.onPress) {
       item.onPress();
     } else if (item.route) {
@@ -216,39 +230,47 @@ const QuickAccessCard = memo<{
   };
 
   return (
-    <Animated.View entering={FadeInDown.delay(100 + index * 50).springify()}>
-      <AnimatedPressable
-        style={[
-          styles.quickAccessCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-          },
-          animatedStyle,
-        ]}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
-        hitSlop={getHitSlop()}
-        accessibilityLabel={item.title}
-        accessibilityRole="button"
+    <View style={styles.quickAccessCardWrapper}>
+      <Animated.View
+        entering={FadeInDown.delay(100 + index * 50).springify()}
+        style={{ flex: 1 }}
       >
-        <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
-          <Icon size={ICON_SIZE.md} color={item.iconColor} strokeWidth={1.5} />
-          {item.badge !== undefined && item.badge > 0 && (
-            <View style={styles.badgeContainer}>
-              <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
-            </View>
-          )}
-        </View>
-        <Text
-          style={[styles.quickAccessText, { color: colors.text }]}
-          numberOfLines={2}
+        <AnimatedPressable
+          style={[
+            styles.quickAccessCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+            getPlatformShadow(2),
+            animatedStyle,
+          ]}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={handlePress}
+          hitSlop={getHitSlop()}
+          accessibilityLabel={item.title}
+          accessibilityRole="button"
         >
-          {item.title}
-        </Text>
-      </AnimatedPressable>
-    </Animated.View>
+          <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
+            <Icon size={ICON_SIZE.lg} color={item.iconColor} strokeWidth={1.5} />
+            {item.badge !== undefined && item.badge > 0 && (
+              <View style={styles.badgeContainer}>
+                <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
+              </View>
+            )}
+          </View>
+          <Text
+            style={[styles.quickAccessText, { color: colors.text }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          >
+            {item.title}
+          </Text>
+        </AnimatedPressable>
+      </Animated.View>
+    </View>
   );
 });
 
@@ -361,6 +383,10 @@ export default function ProfileScreen(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const { data: userStats, isLoading: statsLoading } = useUserStats();
   const { data: sessions = [], isLoading: sessionsLoading, refetch: refetchSessions } = useUserSessions();
+
+  // Survey subscription status for non-admin users
+  const { data: surveySubscription } = useSurveySubscriptionStatus();
+  const hasSurveySubscription = surveySubscription?.hasActiveSubscription ?? false;
 
   // Mutations
   const updateProfileMutation = useUpdateProfile();
@@ -574,7 +600,8 @@ export default function ProfileScreen(): React.ReactElement {
         iconColor: '#FF9800',
         iconBgColor: 'rgba(255, 152, 0, 0.1)',
         route: '/create-survey',
-        adminOnly: true,
+        // Visible to all users but requires subscription for non-admins
+        requiresSubscription: true,
       },
     ],
     []
@@ -586,6 +613,22 @@ export default function ProfileScreen(): React.ReactElement {
     { key: 'payments', label: 'Payments', icon: CreditCard },
     { key: 'preferences', label: 'Preferences', icon: Settings },
   ] as const;
+
+  // Handler for subscription required (shown when non-admin users try to access subscription features)
+  const handleSubscriptionRequired = useCallback((): void => {
+    Alert.alert(
+      'Subscription Required',
+      'You need an active subscription to create surveys. Subscribe now to unlock this feature.',
+      [
+        { text: 'Maybe Later', style: 'cancel' },
+        {
+          text: 'Subscribe',
+          onPress: () => router.push('/survey-payment' as Href),
+          style: 'default',
+        },
+      ]
+    );
+  }, []);
 
   // Handlers
   const handleSignOut = useCallback((): void => {
@@ -1177,6 +1220,8 @@ export default function ProfileScreen(): React.ReactElement {
                 index={index}
                 colors={colors}
                 isAdmin={isAdmin}
+                hasSubscription={hasSurveySubscription}
+                onSubscriptionRequired={handleSubscriptionRequired}
               />
             ))}
           </View>
@@ -1976,36 +2021,46 @@ const styles = StyleSheet.create({
   quickAccessGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: SPACING.md,
     marginTop: SPACING.base,
+    // Using negative margin trick for consistent gutters (industry standard approach)
+    marginHorizontal: -SPACING.xs,
+  },
+  quickAccessCardWrapper: {
+    // 2-column layout: each card takes exactly 50% width
+    width: '50%',
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: SPACING.xs,
   },
   quickAccessCard: {
-    flex: 1,
+    width: '100%',
+    aspectRatio: 1.1, // Slightly taller than wide for better visual balance
     borderRadius: RADIUS.lg,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
     padding: SPACING.md,
-    gap: SPACING.xs,
-    minWidth: '45%',
+    // Shadow for depth (platform-specific applied in component)
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   quickAccessIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.sm,
     position: 'relative',
   },
   quickAccessText: {
     textAlign: 'center',
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: TYPOGRAPHY.fontSize.sm * 1.3,
+    paddingHorizontal: SPACING.xs,
   },
   badgeContainer: {
     position: 'absolute',
