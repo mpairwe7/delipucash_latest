@@ -1,5 +1,5 @@
 import express from 'express';
-import { verifyToken } from '../utils/authToken.mjs';
+import { verifyToken } from '../utils/verifyUser.mjs';
 import {
   getUploadedQuestions,
   getUserPoints,

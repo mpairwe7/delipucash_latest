@@ -7,10 +7,17 @@
  * Or manually: node prisma/seed.mjs
  */
 
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+// Use direct database connection for seeding (bypasses Accelerate cache)
+const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+const pool = new pg.Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 // Default admin credentials
 const DEFAULT_ADMIN = {
@@ -85,4 +92,5 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await pool.end();
   });
