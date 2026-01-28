@@ -386,12 +386,14 @@ const SurveyPaymentScreen: React.FC = () => {
   const {
     plans,
     isLoadingPlans,
+    plansError,
     hasActiveSubscription,
     currentSubscription,
     remainingDays,
     initiatePaymentAsync,
     isInitiating,
     refreshStatus,
+    refreshPlans,
   } = useSurveyPaymentFlow();
 
   const { mutateAsync: checkPaymentStatus } = useCheckSurveyPaymentStatus();
@@ -617,9 +619,13 @@ const SurveyPaymentScreen: React.FC = () => {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await refreshStatus();
+    await Promise.all([refreshStatus(), refreshPlans()]);
     setIsRefreshing(false);
-  }, [refreshStatus]);
+  }, [refreshStatus, refreshPlans]);
+
+  const handleRetryPlans = useCallback(async () => {
+    await refreshPlans();
+  }, [refreshPlans]);
 
   const handleCancel = useCallback(() => {
     if (pollingRef.current) {
@@ -768,6 +774,28 @@ const SurveyPaymentScreen: React.FC = () => {
       color: colors.textMuted,
       marginTop: SPACING.md,
     },
+    errorContainer: {
+      padding: SPACING.xl,
+      alignItems: 'center',
+    },
+    errorText: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.base,
+      color: colors.error,
+      marginTop: SPACING.md,
+      textAlign: 'center',
+    },
+    emptyContainer: {
+      padding: SPACING.xl,
+      alignItems: 'center',
+    },
+    emptyText: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.base,
+      color: colors.warning,
+      marginTop: SPACING.md,
+      textAlign: 'center',
+    },
     // Dev tools (remove in production)
     devTools: {
       marginTop: SPACING.lg,
@@ -869,7 +897,36 @@ const SurveyPaymentScreen: React.FC = () => {
               >
                 {isLoadingPlans ? (
                   <View style={styles.loadingContainer}>
+                    <RefreshCw size={ICON_SIZE.xl} color={colors.primary} />
                     <Text style={styles.loadingText}>Loading plans...</Text>
+                  </View>
+                ) : plansError ? (
+                  <View style={styles.errorContainer}>
+                    <AlertCircle size={ICON_SIZE.xl} color={colors.error} />
+                    <Text style={styles.errorText}>
+                      {plansError.message || 'Failed to load subscription plans'}
+                    </Text>
+                    <PrimaryButton
+                      title="Retry"
+                      onPress={handleRetryPlans}
+                      variant="outline"
+                      size="small"
+                      style={{ marginTop: SPACING.base }}
+                    />
+                  </View>
+                ) : plans.length === 0 ? (
+                  <View style={styles.emptyContainer}>
+                    <AlertCircle size={ICON_SIZE.xl} color={colors.warning} />
+                    <Text style={styles.emptyText}>
+                      No subscription plans available at the moment
+                    </Text>
+                    <PrimaryButton
+                      title="Refresh"
+                      onPress={handleRetryPlans}
+                      variant="outline"
+                      size="small"
+                      style={{ marginTop: SPACING.base }}
+                    />
                   </View>
                 ) : (
                   <View style={styles.plansGrid}>

@@ -320,8 +320,21 @@ const CreateSurveyScreen: React.FC = () => {
         <View style={styles.headerSide} />
       </View>
 
-      {/* Subscription Status Badge */}
-      {hasActiveSubscription && (
+      {/* Subscription Status Badge / Admin Badge */}
+      {isAdmin ? (
+        <View style={[
+          styles.subscriptionBadge,
+          {
+            backgroundColor: withAlpha(colors.primary, 0.1),
+            borderColor: withAlpha(colors.primary, 0.2),
+          }
+        ]}>
+          <ShieldCheck size={14} color={colors.primary} strokeWidth={2} />
+          <Text style={[styles.subscriptionBadgeText, { color: colors.primary }]}>
+            Admin Access
+          </Text>
+        </View>
+      ) : hasActiveSubscription && (
         <View style={[
           styles.subscriptionBadge,
           {
@@ -345,7 +358,7 @@ const CreateSurveyScreen: React.FC = () => {
     <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
       <ActivityIndicator size="large" color={colors.primary} />
       <Text style={[styles.loadingText, { color: colors.textMuted }]}>
-        Checking your subscription...
+        Checking access permissions...
       </Text>
     </View>
   );
@@ -594,8 +607,8 @@ const CreateSurveyScreen: React.FC = () => {
   // MAIN RENDER
   // ============================================================================
 
-  // Show loading state while checking auth/subscription
-  if (!authReady || loadingSubscription) {
+  // Show loading state while checking auth (admins skip subscription loading)
+  if (!authReady || (!isAdmin && loadingSubscription)) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -622,8 +635,8 @@ const CreateSurveyScreen: React.FC = () => {
     );
   }
 
-  // Show access denied if no subscription
-  if (!hasActiveSubscription) {
+  // Show access denied if no subscription (admins bypass this check)
+  if (!isAdmin && !hasActiveSubscription) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
