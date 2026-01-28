@@ -130,11 +130,10 @@ const CreateSurveyScreen: React.FC = () => {
     isLoading: loadingSubscription
   } = useSurveySubscriptionStatus();
 
-  const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
-  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
-
-  // Admin bypass - admins can create surveys without subscription
+  // Admin bypass - admins have active subscription by default
   const isAdmin = auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
+  const hasActiveSubscription = isAdmin || (subscriptionStatus?.hasActiveSubscription ?? false);
+  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
 
   // State
   const [activeTab, setActiveTab] = useState<TabKey>('build');
