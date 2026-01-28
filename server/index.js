@@ -5,6 +5,7 @@ import cors from 'cors';
 import path from 'path';
 import bodyParser from 'body-parser';
 import connectDB from './config/db.mjs';
+import { ensureDefaultAdminExists } from './utils/adminInit.mjs';
 
 // Import routes
 import authRouter from './routes/auth.route.mjs';
@@ -124,10 +125,13 @@ app.use('/api/*', (req, res) => {
 console.log('VERCEL env:', process.env.VERCEL);
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
+  app.listen(PORT, async () => {
     console.log(` Server running on port ${PORT}`);
     console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(` Health check: http://localhost:${PORT}/api/health`);
+
+    // Ensure default admin user exists
+    await ensureDefaultAdminExists();
   });
 }
 

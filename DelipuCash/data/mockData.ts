@@ -99,10 +99,26 @@ export const mockUsers: AppUser[] = [
     createdAt: "2025-04-20T00:00:00Z",
     updatedAt: "2026-01-04T00:00:00Z",
   },
+  {
+    id: "user_admin",
+    email: "admin@delipucash.com",
+    firstName: "Admin",
+    lastName: "User",
+    phone: "+256 700 000 001",
+    points: 100000,
+    avatar: "https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true",
+    role: UserRole.ADMIN,
+    subscriptionStatus: SubscriptionStatus.ACTIVE,
+    surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
+    currentSubscriptionId: "sub_admin",
+    privacySettings: { showEmail: false, showPhone: false },
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2026-01-28T00:00:00Z",
+  },
 ];
 
-// Current logged in user
-export const mockCurrentUser: AppUser = mockUsers[0];
+// Current logged in user (use admin for development)
+export const mockCurrentUser: AppUser = mockUsers[4]; // Admin user
 
 // ===========================================
 // Mock Videos - Using real sample videos from public sources

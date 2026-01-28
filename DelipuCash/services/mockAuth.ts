@@ -37,6 +37,8 @@ const mockPasswords: Record<string, string> = {
   "jane.smith@example.com": "password123",
   "mike.wilson@example.com": "password123",
   "sarah.johnson@example.com": "password123",
+  "alice.smith@example.com": "password123",
+  "admin@delipucash.com": "admin123456",
 };
 
 /**
