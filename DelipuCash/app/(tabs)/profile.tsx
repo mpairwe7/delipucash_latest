@@ -4,7 +4,7 @@
  * Quick Access section with Help Support, My Rewards, Create Ad, Create Question cards
  */
 
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,9 @@ import {
   Pressable,
   Platform,
   Dimensions,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -65,6 +68,7 @@ import {
 import { FormInput, NotificationBell, PrimaryButton, SectionHeader } from '@/components';
 import {
   useChangePassword,
+  useResend2FACode,
   useRevokeSession,
   useUnreadCount,
   useUpdatePrivacySettings,
@@ -72,6 +76,7 @@ import {
   useUpdateTwoFactor,
   useUserSessions,
   useUserStats,
+  useVerify2FACode,
 } from '@/services/hooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
@@ -88,13 +93,20 @@ import {
   withAlpha,
 } from '@/utils/theme';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-// Responsive helpers
+// Platform-specific constants for industry-standard responsive design
+const isIOS = Platform.OS === 'ios';
+const isAndroid = Platform.OS === 'android';
+const isWeb = Platform.OS === 'web';
+
+// Screen size breakpoints (following Material Design & iOS HIG guidelines)
 const isTablet = width >= 768;
 const isLargeScreen = width >= 1024;
 const isSmallScreen = width < 375;
+const isLandscape = width > height;
 
+// Platform-aware responsive helpers
 const getResponsiveSize = (small: number, medium: number, large: number) => {
   if (isLargeScreen) return large;
   if (isTablet) return medium;
@@ -102,11 +114,38 @@ const getResponsiveSize = (small: number, medium: number, large: number) => {
 };
 
 const getResponsivePadding = () => {
-  if (isLargeScreen) return 32;
-  if (isTablet) return 24;
+  // iOS typically uses more generous padding
+  const basePadding = isIOS ? 2 : 0;
+  // Adjust padding for landscape and web
+  const landscapeAdjust = isLandscape ? 8 : 0;
+  const webAdjust = isWeb ? 4 : 0;
+
+  if (isLargeScreen) return 32 + basePadding + webAdjust;
+  if (isTablet) return 24 + basePadding + landscapeAdjust;
   if (isSmallScreen) return 16;
-  return 20;
+  return 20 + basePadding;
 };
+
+// Platform-specific shadow styles (Android uses elevation, iOS uses shadow properties)
+const getPlatformShadow = (elevation: number = 4) => {
+  if (isAndroid) {
+    return { elevation };
+  }
+  return {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: elevation / 2 },
+    shadowOpacity: 0.1 + elevation * 0.02,
+    shadowRadius: elevation,
+  };
+};
+
+// Platform-specific hit slop for touch targets (following platform guidelines)
+const getHitSlop = () => ({
+  top: isIOS ? 10 : 8,
+  bottom: isIOS ? 10 : 8,
+  left: isIOS ? 10 : 8,
+  right: isIOS ? 10 : 8,
+});
 
 // Interface definitions
 interface ProfileData {
@@ -190,6 +229,7 @@ const QuickAccessCard = memo<{
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         onPress={handlePress}
+        hitSlop={getHitSlop()}
         accessibilityLabel={item.title}
         accessibilityRole="button"
       >
@@ -325,11 +365,21 @@ export default function ProfileScreen(): React.ReactElement {
   // Mutations
   const updateProfileMutation = useUpdateProfile();
   const updateTwoFactorMutation = useUpdateTwoFactor();
+  const verify2FAMutation = useVerify2FACode();
+  const resend2FAMutation = useResend2FACode();
   const changePasswordMutation = useChangePassword();
   const updatePrivacyMutation = useUpdatePrivacySettings();
   const revokeSessionMutation = useRevokeSession();
 
   const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(Boolean(user?.twoFactorEnabled));
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [showDisable2FAModal, setShowDisable2FAModal] = useState(false);
   const [changePassword, setChangePassword] = useState({ current: '', next: '', confirm: '' });
   const [privacy, setPrivacy] = useState({ shareProfile: true, shareActivity: false });
   const [activeTab, setActiveTab] = useState<'shortcuts' | 'security' | 'payments' | 'preferences'>('shortcuts');
@@ -357,6 +407,48 @@ export default function ProfileScreen(): React.ReactElement {
       setTwoFactorEnabled(Boolean(user.twoFactorEnabled));
     }
   }, [user]);
+
+  // OTP countdown timer effect
+  useEffect(() => {
+    if (show2FAModal && otpExpiresAt) {
+      // Clear any existing interval
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+
+      // Start countdown
+      countdownRef.current = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+        setOtpCountdown(remaining);
+
+        if (remaining <= 0) {
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+          }
+        }
+      }, 1000);
+
+      return () => {
+        if (countdownRef.current) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+      };
+    }
+  }, [show2FAModal, otpExpiresAt]);
+
+  // Cleanup countdown on modal close
+  useEffect(() => {
+    if (!show2FAModal) {
+      setOtpExpiresAt(null);
+      setOtpCountdown(0);
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    }
+  }, [show2FAModal]);
 
   const responsivePadding = getResponsivePadding();
 
@@ -540,23 +632,112 @@ export default function ProfileScreen(): React.ReactElement {
   }, [changePassword, changePasswordMutation]);
 
   const toggleTwoFactor = useCallback((): void => {
-    const nextValue = !twoFactorEnabled;
+    if (twoFactorEnabled) {
+      // Disabling 2FA - show password modal
+      setShowDisable2FAModal(true);
+    } else {
+      // Enabling 2FA - request verification code
+      updateTwoFactorMutation.mutate(
+        { enabled: true },
+        {
+          onSuccess: (data) => {
+            if (data.codeSent) {
+              // Code sent successfully, show OTP verification modal
+              setMaskedEmail(data.email || '');
+              setOtpCode('');
+              // Set expiry time (3 minutes = 180 seconds)
+              const expiresIn = data.expiresIn || 180;
+              setOtpExpiresAt(Date.now() + expiresIn * 1000);
+              setOtpCountdown(expiresIn);
+              setShow2FAModal(true);
+            } else if (data.enabled) {
+              // 2FA was already enabled
+              setTwoFactorEnabled(true);
+              Alert.alert('Two-factor authentication', '2FA is already enabled.');
+            }
+          },
+          onError: (error) => {
+            Alert.alert('Error', error.message || 'Failed to send verification code.');
+          },
+        }
+      );
+    }
+  }, [twoFactorEnabled, updateTwoFactorMutation]);
 
-    updateTwoFactorMutation.mutate(nextValue, {
+  // Handle OTP verification to complete enabling 2FA
+  const handleVerify2FA = useCallback((): void => {
+    if (otpCode.length !== 6) {
+      Alert.alert('Invalid Code', 'Please enter a 6-digit verification code.');
+      return;
+    }
+
+    // Check if OTP has expired
+    if (otpExpiresAt && Date.now() > otpExpiresAt) {
+      Alert.alert('Code Expired', 'Your verification code has expired. Please request a new one.');
+      return;
+    }
+
+    verify2FAMutation.mutate(otpCode, {
       onSuccess: () => {
-        setTwoFactorEnabled(nextValue);
+        setTwoFactorEnabled(true);
+        setShow2FAModal(false);
+        setOtpCode('');
+        setOtpExpiresAt(null);
+        setOtpCountdown(0);
         Alert.alert(
-          'Two-factor authentication',
-          nextValue
-            ? '2FA (OTP) enabled. Codes will be required at sign-in.'
-            : '2FA disabled. Re-enable to secure your account.'
+          'Two-factor authentication enabled',
+          '2FA (OTP) is now active. Codes will be required at sign-in.'
         );
       },
       onError: (error) => {
-        Alert.alert('Error', error.message || 'Failed to update 2FA settings.');
+        Alert.alert('Verification Failed', error.message || 'Invalid verification code.');
       },
     });
-  }, [twoFactorEnabled, updateTwoFactorMutation]);
+  }, [otpCode, otpExpiresAt, verify2FAMutation]);
+
+  // Handle resend 2FA code
+  const handleResend2FACode = useCallback((): void => {
+    resend2FAMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        setMaskedEmail(data.email || '');
+        // Reset expiry time (3 minutes = 180 seconds)
+        const expiresIn = data.expiresIn || 180;
+        setOtpExpiresAt(Date.now() + expiresIn * 1000);
+        setOtpCountdown(expiresIn);
+        setOtpCode('');
+        Alert.alert('Code Resent', `A new verification code has been sent to ${data.email}`);
+      },
+      onError: (error) => {
+        Alert.alert('Error', error.message || 'Failed to resend verification code.');
+      },
+    });
+  }, [resend2FAMutation]);
+
+  // Handle disable 2FA with password verification
+  const handleDisable2FA = useCallback((): void => {
+    if (!disablePassword) {
+      Alert.alert('Password Required', 'Please enter your password to disable 2FA.');
+      return;
+    }
+
+    updateTwoFactorMutation.mutate(
+      { enabled: false, password: disablePassword },
+      {
+        onSuccess: () => {
+          setTwoFactorEnabled(false);
+          setShowDisable2FAModal(false);
+          setDisablePassword('');
+          Alert.alert(
+            'Two-factor authentication disabled',
+            '2FA has been disabled. Re-enable to secure your account.'
+          );
+        },
+        onError: (error) => {
+          Alert.alert('Error', error.message || 'Failed to disable 2FA. Check your password.');
+        },
+      }
+    );
+  }, [disablePassword, updateTwoFactorMutation]);
 
   const handleRevokeSession = useCallback((id: string): void => {
     Alert.alert(
@@ -734,7 +915,7 @@ export default function ProfileScreen(): React.ReactElement {
         {/* Personal Information Card - First Section */}
         <Animated.View
           entering={FadeInDown.delay(100).springify()}
-          style={[styles.personalInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.personalInfoCard, { backgroundColor: colors.card, borderColor: colors.border }, getPlatformShadow(3)]}
         >
           {/* Card Header */}
           <View style={styles.personalInfoHeader}>
@@ -900,7 +1081,7 @@ export default function ProfileScreen(): React.ReactElement {
         {/* Hero Card - Account Overview */}
         <Animated.View
           entering={FadeInDown.delay(150).springify()}
-          style={[styles.heroCardWrapper]}
+          style={[styles.heroCardWrapper, getPlatformShadow(8)]}
         >
           <LinearGradient
             colors={[colors.primary, withAlpha(colors.primary, 0.85)]}
@@ -1437,6 +1618,159 @@ export default function ProfileScreen(): React.ReactElement {
           </Pressable>
         </Animated.View>
       </ScrollView>
+
+      {/* Enable 2FA Modal - OTP Verification */}
+      <Modal
+        visible={show2FAModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShow2FAModal(false);
+          setOtpCode('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalIconWrapper, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+              <Shield size={32} color={colors.primary} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Verify Your Email</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+              We&apos;ve sent a 6-digit code to {maskedEmail}. Enter it below to enable two-factor authentication.
+            </Text>
+
+            {/* Countdown Timer */}
+            <View style={[styles.countdownContainer, { backgroundColor: otpCountdown > 0 ? withAlpha(colors.primary, 0.1) : withAlpha(colors.error, 0.1) }]}>
+              <Text style={[styles.countdownText, { color: otpCountdown > 0 ? colors.primary : colors.error }]}>
+                {otpCountdown > 0
+                  ? `Code expires in ${Math.floor(otpCountdown / 60)}:${(otpCountdown % 60).toString().padStart(2, '0')}`
+                  : 'Code expired - please request a new one'}
+              </Text>
+            </View>
+
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  borderColor: otpCountdown > 0 ? colors.border : colors.error,
+                },
+              ]}
+              value={otpCode}
+              onChangeText={setOtpCode}
+              placeholder="Enter 6-digit code"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+              editable={otpCountdown > 0}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalSecondaryButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setShow2FAModal(false);
+                  setOtpCode('');
+                }}
+              >
+                <Text style={[styles.modalSecondaryButtonText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  { backgroundColor: otpCountdown > 0 ? colors.primary : colors.border },
+                  (verify2FAMutation.isPending || otpCountdown <= 0) && { opacity: 0.7 },
+                ]}
+                onPress={handleVerify2FA}
+                disabled={verify2FAMutation.isPending || otpCountdown <= 0}
+              >
+                {verify2FAMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryButtonText}>Verify</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.resendButton}
+              onPress={handleResend2FACode}
+              disabled={resend2FAMutation.isPending}
+            >
+              {resend2FAMutation.isPending ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={[styles.resendButtonText, { color: colors.primary }]}>Resend Code</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Disable 2FA Modal - Password Verification */}
+      <Modal
+        visible={showDisable2FAModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowDisable2FAModal(false);
+          setDisablePassword('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalIconWrapper, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+              <KeyRound size={32} color={colors.warning} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Disable Two-Factor Authentication</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+              Enter your password to confirm disabling 2FA. This will make your account less secure.
+            </Text>
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
+              value={disablePassword}
+              onChangeText={setDisablePassword}
+              placeholder="Enter your password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalSecondaryButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setShowDisable2FAModal(false);
+                  setDisablePassword('');
+                }}
+              >
+                <Text style={[styles.modalSecondaryButtonText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  { backgroundColor: colors.warning },
+                  updateTwoFactorMutation.isPending && { opacity: 0.7 },
+                ]}
+                onPress={handleDisable2FA}
+                disabled={updateTwoFactorMutation.isPending}
+              >
+                {updateTwoFactorMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryButtonText}>Disable 2FA</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1474,11 +1808,7 @@ const styles = StyleSheet.create({
   heroCardWrapper: {
     marginBottom: SPACING.lg,
     borderRadius: RADIUS['2xl'],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+    // Shadow applied via getPlatformShadow() in component
   },
   heroCard: {
     borderRadius: RADIUS['2xl'],
@@ -1701,11 +2031,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     marginBottom: SPACING.xl,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
+    // Shadow applied via getPlatformShadow() in component
     overflow: 'hidden',
   },
   personalInfoHeader: {
@@ -2304,5 +2630,102 @@ const styles = StyleSheet.create({
   comingSoonText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  // 2FA Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    alignItems: 'center',
+  },
+  modalIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  modalSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+    lineHeight: 22,
+  },
+  otpInput: {
+    width: '100%',
+    height: 52,
+    borderWidth: 1,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    textAlign: 'center',
+    letterSpacing: 4,
+    marginBottom: SPACING.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    width: '100%',
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSecondaryButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPrimaryButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#FFFFFF',
+  },
+  resendButton: {
+    marginTop: SPACING.lg,
+    paddingVertical: SPACING.sm,
+  },
+  resendButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  // OTP Countdown Timer Styles
+  countdownContainer: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.md,
+    alignItems: 'center',
+  },
+  countdownText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

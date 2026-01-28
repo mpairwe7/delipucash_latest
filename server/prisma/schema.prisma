@@ -18,6 +18,8 @@ model AppUser {
   avatar                   String?               @default("https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png")
   role                     UserRole?             @default(USER)
   twoFactorEnabled         Boolean               @default(false)
+  twoFactorCode            String?               // Hashed OTP code
+  twoFactorCodeExpiry      DateTime?             // OTP expiration time
   subscriptionStatus       SubscriptionStatus    @default(INACTIVE)
   surveysubscriptionStatus SubscriptionStatus    @default(INACTIVE)
   currentSubscriptionId    String?               @db.Uuid

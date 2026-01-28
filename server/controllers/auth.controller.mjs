@@ -4,6 +4,34 @@ import bcrypt from 'bcryptjs';
 import { errorHandler } from "../utils/error.mjs";
 import jwt from 'jsonwebtoken';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
+import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/emailService.mjs';
+import crypto from 'crypto';
+
+// ===========================================
+// 2FA Helper Functions
+// ===========================================
+
+/**
+ * Generate a 6-digit OTP code
+ */
+const generateOTPCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+/**
+ * Hash OTP code for secure storage
+ */
+const hashOTPCode = (code) => {
+  return crypto.createHash('sha256').update(code).digest('hex');
+};
+
+/**
+ * Verify OTP code against stored hash
+ */
+const verifyOTPCode = (inputCode, hashedCode) => {
+  const inputHash = hashOTPCode(inputCode);
+  return inputHash === hashedCode;
+};
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
@@ -451,42 +479,466 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
 // ===========================================
 
 /**
- * Toggle Two-Factor Authentication
+ * Toggle Two-Factor Authentication (enable/disable)
  * PUT /api/auth/two-factor
- * Note: This is a basic implementation. For production, integrate with OTP service like Twilio
+ * 
+ * When enabling: Sends verification code to email first
+ * When disabling: Requires current password verification
  */
 export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
-  const { enabled } = req.body;
-  const userId = req.user.id; // From JWT token
+  const { enabled, password } = req.body;
+  const userId = req.user.id;
 
-  console.log('🔐 2FA toggle request for user ID:', userId, '| Enabled:', enabled);
+  console.log('🔐 2FA toggle request for user ID:', userId, '| Enable:', enabled);
 
   try {
-    // Update user's 2FA setting
-    const updatedUser = await prisma.appUser.update({
+    const user = await prisma.appUser.findUnique({
       where: { id: userId },
-      data: {
-        twoFactorEnabled: enabled,
-        updatedAt: new Date(),
-      },
       select: {
         id: true,
         email: true,
+        firstName: true,
+        password: true,
         twoFactorEnabled: true,
       },
     });
 
-    console.log('✅ 2FA setting updated for user ID:', userId, '| Now:', updatedUser.twoFactorEnabled);
+    if (!user) {
+      return next(errorHandler(404, "User not found"));
+    }
 
-    res.status(200).json({
+    // If disabling 2FA, verify password first
+    if (!enabled && user.twoFactorEnabled) {
+      if (!password) {
+        return res.status(400).json({
+          success: false,
+          error: "Password required to disable 2FA"
+        });
+      }
+
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          error: "Invalid password"
+        });
+      }
+
+      // Disable 2FA
+      await prisma.appUser.update({
+        where: { id: userId },
+        data: {
+          twoFactorEnabled: false,
+          twoFactorCode: null,
+          twoFactorCodeExpiry: null,
+          updatedAt: new Date(),
+        },
+      });
+
+      console.log('✅ 2FA disabled for user ID:', userId);
+      return res.status(200).json({
+        success: true,
+        data: { enabled: false },
+        message: "Two-factor authentication disabled successfully"
+      });
+    }
+
+    // If enabling 2FA, send verification code
+    if (enabled && !user.twoFactorEnabled) {
+      const otpCode = generateOTPCode();
+      const hashedCode = hashOTPCode(otpCode);
+      const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+
+      // Store hashed code
+      await prisma.appUser.update({
+        where: { id: userId },
+        data: {
+          twoFactorCode: hashedCode,
+          twoFactorCodeExpiry: expiryTime,
+        },
+      });
+
+      // Send code via email
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+
+      if (!emailResult.success && process.env.NODE_ENV === 'production') {
+        console.error('❌ Failed to send 2FA email:', emailResult.error);
+        return res.status(500).json({
+          success: false,
+          error: "Failed to send verification code. Please try again."
+        });
+      }
+
+      console.log('📧 2FA verification code sent to:', user.email);
+      return res.status(200).json({
+        success: true,
+        data: {
+          codeSent: true,
+          email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'), // Mask email
+          expiresIn: 180, // seconds (3 minutes)
+        },
+        message: "Verification code sent to your email",
+        // In dev mode, include code for testing
+        ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
+      });
+    }
+
+    // Already in desired state
+    return res.status(200).json({
       success: true,
-      data: { enabled: updatedUser.twoFactorEnabled },
-      message: enabled
-        ? "Two-factor authentication enabled successfully"
-        : "Two-factor authentication disabled"
+      data: { enabled: user.twoFactorEnabled },
+      message: user.twoFactorEnabled
+        ? "Two-factor authentication is already enabled"
+        : "Two-factor authentication is already disabled"
     });
+
   } catch (error) {
     console.error("❌ Failed to toggle 2FA:", error);
     next(errorHandler(500, "Failed to update two-factor authentication"));
   }
 });
+
+/**
+ * Verify 2FA code and enable 2FA
+ * POST /api/auth/two-factor/verify
+ */
+export const verify2FACode = asyncHandler(async (req, res, next) => {
+  const { code } = req.body;
+  const userId = req.user.id;
+
+  console.log('🔐 2FA verification attempt for user ID:', userId);
+
+  if (!code || code.length !== 6) {
+    return res.status(400).json({
+      success: false,
+      error: "Invalid verification code format"
+    });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        twoFactorCode: true,
+        twoFactorCodeExpiry: true,
+        twoFactorEnabled: true,
+      },
+    });
+
+    if (!user) {
+      return next(errorHandler(404, "User not found"));
+    }
+
+    // Check if already enabled
+    if (user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Two-factor authentication is already enabled"
+      });
+    }
+
+    // Check if code exists
+    if (!user.twoFactorCode || !user.twoFactorCodeExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "No verification code found. Please request a new code."
+      });
+    }
+
+    // Check if code expired
+    if (new Date() > user.twoFactorCodeExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "Verification code has expired. Please request a new code."
+      });
+    }
+
+    // Verify the code
+    if (!verifyOTPCode(code, user.twoFactorCode)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid verification code"
+      });
+    }
+
+    // Enable 2FA and clear code
+    await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: true,
+        twoFactorCode: null,
+        twoFactorCodeExpiry: null,
+        updatedAt: new Date(),
+      },
+    });
+
+    console.log('✅ 2FA enabled successfully for user ID:', userId);
+    return res.status(200).json({
+      success: true,
+      data: { enabled: true },
+      message: "Two-factor authentication enabled successfully"
+    });
+
+  } catch (error) {
+    console.error("❌ Failed to verify 2FA code:", error);
+    next(errorHandler(500, "Failed to verify code"));
+  }
+});
+
+/**
+ * Resend 2FA verification code
+ * POST /api/auth/two-factor/resend
+ */
+export const resend2FACode = asyncHandler(async (req, res, next) => {
+  const userId = req.user.id;
+
+  console.log('📧 Resend 2FA code request for user ID:', userId);
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        twoFactorEnabled: true,
+        twoFactorCodeExpiry: true,
+      },
+    });
+
+    if (!user) {
+      return next(errorHandler(404, "User not found"));
+    }
+
+    if (user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Two-factor authentication is already enabled"
+      });
+    }
+
+    // Rate limit: Allow resend only after 1 minute
+    if (user.twoFactorCodeExpiry) {
+      const timeSinceLastCode = Date.now() - (user.twoFactorCodeExpiry.getTime() - 10 * 60 * 1000);
+      if (timeSinceLastCode < 60 * 1000) {
+        const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${waitSeconds} seconds before requesting a new code`
+        });
+      }
+    }
+
+    // Generate new code
+    const otpCode = generateOTPCode();
+    const hashedCode = hashOTPCode(otpCode);
+    const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+
+    await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        twoFactorCode: hashedCode,
+        twoFactorCodeExpiry: expiryTime,
+      },
+    });
+
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+
+    if (!emailResult.success && process.env.NODE_ENV === 'production') {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to send verification code. Please try again."
+      });
+    }
+
+    console.log('📧 New 2FA code sent to:', user.email);
+    return res.status(200).json({
+      success: true,
+      data: {
+        codeSent: true,
+        email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
+        expiresIn: 600,
+      },
+      message: "New verification code sent",
+      ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
+    });
+
+  } catch (error) {
+    console.error("❌ Failed to resend 2FA code:", error);
+    next(errorHandler(500, "Failed to send verification code"));
+  }
+});
+
+/**
+ * Send 2FA code for login verification (when 2FA is enabled)
+ * POST /api/auth/two-factor/send
+ * Note: Called during login flow, uses email from request body
+ */
+export const send2FALoginCode = asyncHandler(async (req, res, next) => {
+  const { email } = req.body;
+
+  console.log('📧 Login 2FA code request for:', email);
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      error: "Email is required"
+    });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        twoFactorEnabled: true,
+      },
+    });
+
+    if (!user) {
+      // Don't reveal if user exists
+      return res.status(200).json({
+        success: true,
+        message: "If an account exists, a verification code has been sent"
+      });
+    }
+
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Two-factor authentication is not enabled for this account"
+      });
+    }
+
+    const otpCode = generateOTPCode();
+    const hashedCode = hashOTPCode(otpCode);
+    const expiryTime = new Date(Date.now() + 10 * 60 * 1000);
+
+    await prisma.appUser.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: hashedCode,
+        twoFactorCodeExpiry: expiryTime,
+      },
+    });
+
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+
+    if (!emailResult.success && process.env.NODE_ENV === 'production') {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to send verification code"
+      });
+    }
+
+    console.log('📧 Login 2FA code sent to:', user.email);
+    return res.status(200).json({
+      success: true,
+      data: {
+        codeSent: true,
+        email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
+        expiresIn: 600,
+      },
+      message: "Verification code sent",
+      ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
+    });
+
+  } catch (error) {
+    console.error("❌ Failed to send login 2FA code:", error);
+    next(errorHandler(500, "Failed to send verification code"));
+  }
+});
+
+/**
+ * Verify 2FA code during login
+ * POST /api/auth/two-factor/verify-login
+ */
+export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
+  const { email, code } = req.body;
+
+  console.log('🔐 Login 2FA verification for:', email);
+
+  if (!email || !code || code.length !== 6) {
+    return res.status(400).json({
+      success: false,
+      error: "Email and valid 6-digit code are required"
+    });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        twoFactorCode: true,
+        twoFactorCodeExpiry: true,
+        twoFactorEnabled: true,
+      },
+    });
+
+    if (!user || !user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request"
+      });
+    }
+
+    if (!user.twoFactorCode || !user.twoFactorCodeExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "No verification code found. Please request a new code."
+      });
+    }
+
+    if (new Date() > user.twoFactorCodeExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "Verification code has expired"
+      });
+    }
+
+    if (!verifyOTPCode(code, user.twoFactorCode)) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid verification code"
+      });
+    }
+
+    // Clear the used code
+    await prisma.appUser.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: null,
+        twoFactorCodeExpiry: null,
+      },
+    });
+
+    // Generate JWT token for successful 2FA login
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
+
+    console.log('✅ 2FA login successful for:', email);
+    return res.status(200).json({
+      success: true,
+      message: "Two-factor authentication verified",
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+      },
+      token,
+    });
+
+  } catch (error) {
+    console.error("❌ Failed to verify login 2FA code:", error);
+    next(errorHandler(500, "Failed to verify code"));
+  }
+});
+

@@ -429,16 +429,23 @@ export const userApi = {
   },
 
   /**
-   * Update 2FA settings
-   * Backend: TODO - implement 2FA endpoint
-   * Fallback: Return enabled state
+   * Toggle 2FA settings (enable/disable)
+   * When enabling: Sends verification code to email
+   * When disabling: Requires password verification
+   * Backend: PUT /api/auth/two-factor
    */
-  async updateTwoFactor(enabled: boolean): Promise<ApiResponse<{ enabled: boolean }>> {
+  async updateTwoFactor(enabled: boolean, password?: string): Promise<ApiResponse<{
+    enabled?: boolean;
+    codeSent?: boolean;
+    email?: string;
+    expiresIn?: number;
+    devCode?: string; // Only in dev mode
+  }>> {
     if (isBackendConfigured) {
       try {
-        const response = await fetchJson<{ enabled: boolean }>('/api/auth/two-factor', {
+        const response = await fetchJson<any>('/api/auth/two-factor', {
           method: 'PUT',
-          body: JSON.stringify({ enabled }),
+          body: JSON.stringify({ enabled, password }),
         });
         if (response.success) return response;
       } catch (error) {
@@ -447,10 +454,73 @@ export const userApi = {
     }
     // Mock fallback
     await delay();
+    if (enabled) {
+      return {
+        success: true,
+        data: { codeSent: true, email: 'us***@example.com', expiresIn: 600 },
+        message: "Verification code sent to your email",
+      };
+    }
     return {
       success: true,
-      data: { enabled },
-      message: enabled ? "Two-factor authentication enabled" : "Two-factor authentication disabled",
+      data: { enabled: false },
+      message: "Two-factor authentication disabled",
+    };
+  },
+
+  /**
+   * Verify 2FA code to complete enabling 2FA
+   * Backend: POST /api/auth/two-factor/verify
+   */
+  async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<{ enabled: boolean }>('/api/auth/two-factor/verify', {
+          method: 'POST',
+          body: JSON.stringify({ code }),
+        });
+        return response;
+      } catch (error) {
+        console.log('[userApi.verify2FACode] Backend call failed:', error);
+      }
+    }
+    // Mock fallback - simulate verification
+    await delay();
+    if (code === '123456') {
+      return {
+        success: true,
+        data: { enabled: true },
+        message: "Two-factor authentication enabled successfully",
+      };
+    }
+    return {
+      success: false,
+      data: { enabled: false },
+      error: "Invalid verification code",
+    };
+  },
+
+  /**
+   * Resend 2FA verification code
+   * Backend: POST /api/auth/two-factor/resend
+   */
+  async resend2FACode(): Promise<ApiResponse<{ codeSent: boolean; email: string; expiresIn: number }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<any>('/api/auth/two-factor/resend', {
+          method: 'POST',
+        });
+        return response;
+      } catch (error) {
+        console.log('[userApi.resend2FACode] Backend call failed:', error);
+      }
+    }
+    // Mock fallback
+    await delay();
+    return {
+      success: true,
+      data: { codeSent: true, email: 'us***@example.com', expiresIn: 600 },
+      message: "New verification code sent",
     };
   },
 
