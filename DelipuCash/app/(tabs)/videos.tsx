@@ -37,6 +37,8 @@ import {
   TrendingUp,
   Video as VideoIcon,
   Camera,
+  LayoutGrid,
+  Play,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -72,6 +74,7 @@ import {
   LiveStreamScreen,
   TrendingVideoSlider,
   SearchOverlay,
+  InlineVideoPlayer,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
 import {
@@ -127,6 +130,12 @@ export default function VideosScreen(): React.ReactElement {
   const [fabExpanded, setFabExpanded] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
+
+  // View Mode State - YouTube-like inline vs grid view
+  const [viewMode, setViewMode] = useState<'inline' | 'grid'>('inline');
+
+  // Track which video is currently playing inline
+  const [activeInlineVideoId, setActiveInlineVideoId] = useState<string | null>(null);
 
   // Player State - YouTube-like experience
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
@@ -438,6 +447,21 @@ export default function VideosScreen(): React.ReactElement {
     refetch();
   }, [refetch]);
 
+  // View Mode Toggle - YouTube-like experience
+  const toggleViewMode = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setViewMode((prev) => (prev === 'inline' ? 'grid' : 'inline'));
+    // Reset active inline video when switching modes
+    setActiveInlineVideoId(null);
+  }, []);
+
+  // Handle expand from inline player to full player
+  const handleExpandFromInline = useCallback((video: Video) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveInlineVideoId(null);
+    handleVideoSelect(video);
+  }, [handleVideoSelect]);
+
   // FAB Actions
   const fabActions = useMemo(() => [
     {
@@ -499,6 +523,19 @@ export default function VideosScreen(): React.ReactElement {
             <Text style={[styles.headerTitle, { color: colors.text }]}>Videos</Text>
           </View>
           <View style={styles.headerRight}>
+            {/* View Mode Toggle - YouTube-like inline vs grid */}
+            <TouchableOpacity
+              style={[styles.viewModeButton, { backgroundColor: withAlpha(colors.primary, 0.12) }]}
+              accessibilityRole="button"
+              accessibilityLabel={viewMode === 'inline' ? 'Switch to grid view' : 'Switch to inline view'}
+              onPress={toggleViewMode}
+            >
+              {viewMode === 'inline' ? (
+                <LayoutGrid size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
+              ) : (
+                <Play size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
+              )}
+            </TouchableOpacity>
             <NotificationBell
               count={unreadCount ?? 0}
               onPress={() => router.push("/notifications" as Href)}
@@ -940,7 +977,7 @@ export default function VideosScreen(): React.ReactElement {
               {/* All Videos */}
               <SectionHeader
                 title="All Videos"
-                subtitle="Browse and discover"
+                subtitle={viewMode === 'inline' ? 'Tap to play • Long press to expand' : 'Browse and discover'}
                 icon={<Sparkles size={ICON_SIZE.md} color={colors.primary} strokeWidth={1.5} />}
               />
               {isLoading ? (
@@ -948,8 +985,28 @@ export default function VideosScreen(): React.ReactElement {
                   <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading videos...</Text>
                 </View>
+              ) : viewMode === 'inline' ? (
+                /* YouTube-like Inline Video Feed - Tap to play inline */
+                <View style={styles.inlineFeed}>
+                  {filteredVideos.map((video, index) => (
+                    <InlineVideoPlayer
+                      key={video.id}
+                      video={video}
+                      isVisible={activeInlineVideoId === video.id || activeInlineVideoId === null}
+                      onExpand={() => handleExpandFromInline(video)}
+                      onLike={() => handleVideoLike(video.id)}
+                      onComment={() => handleComment(video)}
+                      onShare={() => handleShare(video)}
+                      isLiked={likedVideos.has(video.id)}
+                      showActions={false}
+                      autoPlay={false}
+                      testID={`inline-video-${index}`}
+                    />
+                  ))}
+                </View>
               ) : (
-                  <View style={styles.videoGrid}>
+                    /* Grid View - Traditional card layout */
+                    <View style={styles.videoGrid}>
                     {filteredVideos.map((video) => (
                       <View key={video.id} style={styles.gridItem}>
                         <VideoCard video={video} onPress={() => handleVideoSelect(video)} />
@@ -1303,5 +1360,14 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     paddingVertical: SPACING.sm,
+  },
+  // View mode toggle button
+  viewModeButton: {
+    padding: SPACING.sm,
+    borderRadius: RADIUS.full,
+  },
+  // Inline video feed - YouTube-like layout
+  inlineFeed: {
+    gap: SPACING.md,
   },
 });

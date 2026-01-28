@@ -15,13 +15,14 @@
  * ```
  */
 
-import React, { memo } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Play, Pause, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -36,6 +37,7 @@ import {
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { ProgressBar } from '../ui/ProgressBar';
+import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 
 /**
  * Props for the MiniPlayer component
@@ -70,6 +72,40 @@ function MiniPlayerComponent({
   testID,
 }: MiniPlayerProps): React.ReactElement {
   const { colors } = useTheme();
+
+  // Thumbnail state with fallback handling
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(video.thumbnail || null);
+  const [isLoadingThumbnail, setIsLoadingThumbnail] = useState(false);
+
+  // Load best available thumbnail
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      if (video.thumbnail) {
+        setThumbnailUrl(video.thumbnail);
+        return;
+      }
+
+      if (video.videoUrl) {
+        setIsLoadingThumbnail(true);
+        try {
+          const generated = await getBestThumbnailUrl({
+            thumbnailUrl: video.thumbnail,
+            videoUrl: video.videoUrl,
+          });
+          setThumbnailUrl(generated || getPlaceholderImage('video'));
+        } catch (error) {
+          console.error('[MiniPlayer] Failed to generate thumbnail:', error);
+          setThumbnailUrl(getPlaceholderImage('video'));
+        } finally {
+          setIsLoadingThumbnail(false);
+        }
+      } else {
+        setThumbnailUrl(getPlaceholderImage('video'));
+      }
+    };
+
+    loadThumbnail();
+  }, [video.thumbnail, video.videoUrl]);
 
   const handlePlayPause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -115,11 +151,17 @@ function MiniPlayerComponent({
         <View style={styles.content}>
           {/* Thumbnail */}
           <View style={styles.thumbnail}>
-            <Image
-              source={{ uri: video.thumbnail }}
-              style={styles.thumbnailImage}
-              accessibilityIgnoresInvertColors
-            />
+            {isLoadingThumbnail ? (
+              <View style={[styles.thumbnailImage, styles.loadingContainer, { backgroundColor: colors.border }]}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
+                <Image
+                  source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
+                  style={styles.thumbnailImage}
+                  accessibilityIgnoresInvertColors
+                />
+            )}
           </View>
 
           {/* Info */}
@@ -218,6 +260,10 @@ const styles = StyleSheet.create({
   controlButton: {
     padding: SPACING.sm,
     borderRadius: RADIUS.full,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

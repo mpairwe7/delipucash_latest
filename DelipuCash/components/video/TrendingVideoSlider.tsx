@@ -32,6 +32,7 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   ImageBackground,
+  ActivityIndicator,
 } from 'react-native';
 import {
   Play,
@@ -53,6 +54,7 @@ import {
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { LinearGradient } from 'expo-linear-gradient';
+import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -154,6 +156,37 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const ranking = getRankingBadge(index, colors);
 
+  // Thumbnail state with fallback handling
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+  const [isLoadingThumbnail, setIsLoadingThumbnail] = useState(true);
+
+  // Load best available thumbnail
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      setIsLoadingThumbnail(true);
+      try {
+        if (video.thumbnail) {
+          setThumbnailUrl(video.thumbnail);
+        } else if (video.videoUrl) {
+          const generated = await getBestThumbnailUrl({
+            thumbnailUrl: video.thumbnail,
+            videoUrl: video.videoUrl,
+          });
+          setThumbnailUrl(generated || getPlaceholderImage('video'));
+        } else {
+          setThumbnailUrl(getPlaceholderImage('video'));
+        }
+      } catch (error) {
+        console.error('[TrendingVideoCard] Failed to load thumbnail:', error);
+        setThumbnailUrl(getPlaceholderImage('video'));
+      } finally {
+        setIsLoadingThumbnail(false);
+      }
+    };
+
+    loadThumbnail();
+  }, [video.thumbnail, video.videoUrl]);
+
   // Scale animation on active state
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -174,9 +207,6 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
     onLikePress?.();
   }, [onLikePress]);
 
-  // Default thumbnail if none provided
-  const thumbnailUri = video.thumbnailUrl || `https://picsum.photos/seed/${video.id}/640/360`;
-
   return (
     <Animated.View
       style={[
@@ -195,8 +225,13 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
         accessibilityHint="Double tap to play this trending video"
       >
         {/* Video Thumbnail */}
+        {isLoadingThumbnail ? (
+          <View style={[styles.thumbnail, styles.loadingContainer, { backgroundColor: colors.border }]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
         <ImageBackground
-          source={{ uri: thumbnailUri }}
+              source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
           style={styles.thumbnail}
           imageStyle={styles.thumbnailImage}
           resizeMode="cover"
@@ -255,7 +290,7 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
                     size={12}
                     color="rgba(255,255,255,0.9)"
                     strokeWidth={2}
-                    fill={video.isLiked ? colors.error : 'transparent'}
+                        fill={'transparent'}
                   />
                   <Text style={styles.metaText}>
                     {formatViewCount(video.likes || 0)}
@@ -273,6 +308,7 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
             </View>
           </LinearGradient>
         </ImageBackground>
+        )}
       </TouchableOpacity>
     </Animated.View>
   );
@@ -482,11 +518,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    ...TYPOGRAPHY.labelLarge,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: '700',
   },
   headerSubtitle: {
-    ...TYPOGRAPHY.bodySmall,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   seeAllButton: {
     paddingHorizontal: SPACING.md,
@@ -494,7 +532,8 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
   },
   seeAllText: {
-    ...TYPOGRAPHY.labelSmall,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '600',
   },
   scrollContent: {
@@ -536,7 +575,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   rankingText: {
-    ...TYPOGRAPHY.labelSmall,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
     fontWeight: '700',
   },
@@ -574,7 +614,8 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   videoTitle: {
-    ...TYPOGRAPHY.labelMedium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
     fontWeight: '600',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
@@ -591,7 +632,8 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   metaText: {
-    ...TYPOGRAPHY.bodySmall,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     color: 'rgba(255,255,255,0.9)',
     fontWeight: '500',
   },
@@ -603,10 +645,10 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   durationText: {
-    ...TYPOGRAPHY.bodySmall,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: 11,
     color: '#FFFFFF',
     fontWeight: '600',
-    fontSize: 11,
   },
   paginationContainer: {
     flexDirection: 'row',
@@ -618,7 +660,11 @@ const styles = StyleSheet.create({
   paginationDot: {
     height: 8,
     borderRadius: 4,
-    transition: 'width 0.3s ease',
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: RADIUS.xl,
   },
 });
 

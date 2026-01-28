@@ -98,6 +98,7 @@ export {
   UploadModal,
   SearchResults,
   TrendingVideoSlider,
+  InlineVideoPlayer,
 } from './video';
 export type {
   VideoPlayerProps,
@@ -108,6 +109,7 @@ export type {
   UploadFormData,
   SearchResultsProps,
   TrendingVideoSliderProps,
+  InlineVideoPlayerProps,
 } from './video';
 
 // LiveStream Components
