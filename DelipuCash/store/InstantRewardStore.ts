@@ -6,9 +6,10 @@
  * - TanStack Query: Server state (questions fetching, answer submission)
  * 
  * Features:
- * - Prevent repeated attempts on questions
+ * - Prevent repeated attempts on questions (single attempt enforcement)
  * - Track attempted questions with persistence
- * - Wallet/points tracking
+ * - Session management for continuous question flow
+ * - Wallet/points tracking with redemption support
  * - Offline queue for pending submissions
  */
 
@@ -31,7 +32,33 @@ export const REWARD_CONSTANTS = {
   INSTANT_REWARD_POINTS: 5,
   /** Conversion rate: points to UGX */
   POINTS_TO_UGX_RATE: 100,
+  /** Minimum points required for redemption */
+  MIN_REDEMPTION_POINTS: 50,
+  /** Redemption options (points to UGX) */
+  REDEMPTION_OPTIONS: [
+    { points: 50, cashValue: 5000 },
+    { points: 100, cashValue: 10000 },
+    { points: 250, cashValue: 25000 },
+    { points: 500, cashValue: 50000 },
+  ] as const,
 } as const;
+
+/** Redemption type for rewards */
+export type RewardRedemptionType = 'CASH' | 'AIRTIME';
+
+/** Payment provider options */
+export type PaymentProvider = 'MTN' | 'AIRTEL';
+
+/** Session state for instant reward flow */
+export type InstantRewardSessionState =
+  | 'IDLE'
+  | 'LOADING'
+  | 'ANSWERING'
+  | 'SUBMITTED'
+  | 'TRANSITIONING'
+  | 'SESSION_SUMMARY'
+  | 'REDEEMING'
+  | 'COMPLETED';
 
 // ===========================================
 // Types
@@ -69,6 +96,32 @@ export interface InstantRewardAttemptHistory {
   lastAttemptAt: string | null;
 }
 
+/** Session summary for display after all questions answered */
+export interface InstantRewardSessionSummary {
+  totalQuestions: number;
+  questionsAnswered: number;
+  correctAnswers: number;
+  incorrectAnswers: number;
+  totalEarned: number;
+  accuracy: number;
+  sessionStartedAt: string | null;
+  sessionCompletedAt: string | null;
+}
+
+/** Redemption request details */
+export interface RedemptionRequest {
+  points: number;
+  cashValue: number;
+  type: RewardRedemptionType;
+  provider: PaymentProvider;
+  phoneNumber: string;
+  status: 'PENDING' | 'PROCESSING' | 'SUCCESSFUL' | 'FAILED';
+  requestedAt: string;
+  completedAt: string | null;
+  transactionRef: string | null;
+  errorMessage: string | null;
+}
+
 export interface InstantRewardUIState {
   // Attempt History
   attemptHistory: InstantRewardAttemptHistory | null;
@@ -77,6 +130,12 @@ export interface InstantRewardUIState {
   walletBalance: number;
   pendingRewards: number;
   
+  // Session State (for continuous question flow)
+  sessionState: InstantRewardSessionState;
+  sessionQuestionIds: string[];
+  currentSessionIndex: number;
+  sessionSummary: InstantRewardSessionSummary;
+
   // Current Question State
   currentQuestionId: string | null;
   selectedAnswer: string | null;
@@ -89,6 +148,11 @@ export interface InstantRewardUIState {
   // Offline Queue
   pendingSubmissions: PendingSubmission[];
   isOnline: boolean;
+
+  // Redemption State
+  isRedeeming: boolean;
+  pendingRedemption: RedemptionRequest | null;
+  redemptionHistory: RedemptionRequest[];
 }
 
 export interface InstantRewardUIActions {
@@ -102,11 +166,29 @@ export interface InstantRewardUIActions {
   // Get unattempted questions from a list
   getUnattemptedQuestions: <T extends { id: string }>(questions: T[]) => T[];
   
+  // Session Management (for continuous flow)
+  startSession: (questionIds: string[]) => void;
+  endSession: () => void;
+  goToNextQuestion: () => string | null;
+  goToPreviousQuestion: () => string | null;
+  getCurrentSessionQuestion: () => string | null;
+  getSessionProgress: () => { current: number; total: number; remaining: number };
+  hasMoreQuestions: () => boolean;
+  setSessionState: (state: InstantRewardSessionState) => void;
+  updateSessionSummary: (isCorrect: boolean, rewardEarned: number) => void;
+
   // Wallet Management
   updateWalletBalance: (balance: number) => void;
   addPendingReward: (amount: number) => void;
   confirmReward: (amount: number) => void;
   
+  // Redemption Management
+  initiateRedemption: (request: Omit<RedemptionRequest, 'status' | 'requestedAt' | 'completedAt' | 'transactionRef' | 'errorMessage'>) => void;
+  completeRedemption: (transactionRef: string, success: boolean, errorMessage?: string) => void;
+  cancelRedemption: () => void;
+  canRedeem: () => boolean;
+  getRedemptionOptions: () => typeof REWARD_CONSTANTS.REDEMPTION_OPTIONS[number][];
+
   // Current Question State
   setCurrentQuestion: (questionId: string | null) => void;
   setSelectedAnswer: (answer: string | null) => void;
@@ -124,16 +206,32 @@ export interface InstantRewardUIActions {
 
   // Reset
   resetCurrentQuestion: () => void;
+  resetSession: () => void;
 }
 
 // ===========================================
 // Initial State
 // ===========================================
 
+const initialSessionSummary: InstantRewardSessionSummary = {
+  totalQuestions: 0,
+  questionsAnswered: 0,
+  correctAnswers: 0,
+  incorrectAnswers: 0,
+  totalEarned: 0,
+  accuracy: 0,
+  sessionStartedAt: null,
+  sessionCompletedAt: null,
+};
+
 const initialState: InstantRewardUIState = {
   attemptHistory: null,
   walletBalance: 0,
   pendingRewards: 0,
+  sessionState: 'IDLE',
+  sessionQuestionIds: [],
+  currentSessionIndex: 0,
+  sessionSummary: initialSessionSummary,
   currentQuestionId: null,
   selectedAnswer: null,
   isSubmitting: false,
@@ -141,6 +239,9 @@ const initialState: InstantRewardUIState = {
   error: null,
   pendingSubmissions: [],
   isOnline: true,
+  isRedeeming: false,
+  pendingRedemption: null,
+  redemptionHistory: [],
 };
 
 // ===========================================
@@ -236,6 +337,148 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       },
 
       // ========================================
+      // Session Management
+      // ========================================
+
+      startSession: (questionIds) => {
+        const now = new Date().toISOString();
+        set({
+          sessionState: 'ANSWERING',
+          sessionQuestionIds: questionIds,
+          currentSessionIndex: 0,
+          currentQuestionId: questionIds[0] || null,
+          sessionSummary: {
+            ...initialSessionSummary,
+            totalQuestions: questionIds.length,
+            sessionStartedAt: now,
+          },
+          selectedAnswer: null,
+          lastResult: null,
+          error: null,
+        });
+      },
+
+      endSession: () => {
+        const { sessionSummary } = get();
+        const now = new Date().toISOString();
+        set({
+          sessionState: 'SESSION_SUMMARY',
+          sessionSummary: {
+            ...sessionSummary,
+            sessionCompletedAt: now,
+          },
+        });
+      },
+
+      goToNextQuestion: () => {
+        const { sessionQuestionIds, currentSessionIndex, attemptHistory } = get();
+
+        // Find next unattempted question
+        let nextIndex = currentSessionIndex + 1;
+        while (nextIndex < sessionQuestionIds.length) {
+          const questionId = sessionQuestionIds[nextIndex];
+          if (!attemptHistory?.attemptedQuestionIds.includes(questionId)) {
+            break;
+          }
+          nextIndex++;
+        }
+
+        if (nextIndex >= sessionQuestionIds.length) {
+          // No more unanswered questions
+          get().endSession();
+          return null;
+        }
+
+        const nextQuestionId = sessionQuestionIds[nextIndex];
+        set({
+          sessionState: 'TRANSITIONING',
+          currentSessionIndex: nextIndex,
+          currentQuestionId: nextQuestionId,
+          selectedAnswer: null,
+          lastResult: null,
+        });
+
+        // After a brief delay, switch to answering state
+        setTimeout(() => {
+          set({ sessionState: 'ANSWERING' });
+        }, 300);
+
+        return nextQuestionId;
+      },
+
+      goToPreviousQuestion: () => {
+        const { sessionQuestionIds, currentSessionIndex } = get();
+
+        if (currentSessionIndex <= 0) {
+          return null;
+        }
+
+        const prevIndex = currentSessionIndex - 1;
+        const prevQuestionId = sessionQuestionIds[prevIndex];
+
+        set({
+          currentSessionIndex: prevIndex,
+          currentQuestionId: prevQuestionId,
+          selectedAnswer: null,
+          lastResult: null,
+        });
+
+        return prevQuestionId;
+      },
+
+      getCurrentSessionQuestion: () => {
+        const { sessionQuestionIds, currentSessionIndex } = get();
+        return sessionQuestionIds[currentSessionIndex] || null;
+      },
+
+      getSessionProgress: () => {
+        const { sessionQuestionIds, currentSessionIndex, attemptHistory } = get();
+        const total = sessionQuestionIds.length;
+        const answeredCount = attemptHistory?.attemptedQuestions.filter(
+          q => sessionQuestionIds.includes(q.questionId)
+        ).length || 0;
+        return {
+          current: currentSessionIndex + 1,
+          total,
+          remaining: total - answeredCount,
+        };
+      },
+
+      hasMoreQuestions: () => {
+        const { sessionQuestionIds, currentSessionIndex, attemptHistory } = get();
+        // Check if there are any unanswered questions remaining
+        for (let i = currentSessionIndex; i < sessionQuestionIds.length; i++) {
+          const questionId = sessionQuestionIds[i];
+          if (!attemptHistory?.attemptedQuestionIds.includes(questionId)) {
+            return true;
+          }
+        }
+        return false;
+      },
+
+      setSessionState: (state) => {
+        set({ sessionState: state });
+      },
+
+      updateSessionSummary: (isCorrect, rewardEarned) => {
+        set(state => {
+          const summary = state.sessionSummary;
+          const newCorrect = isCorrect ? summary.correctAnswers + 1 : summary.correctAnswers;
+          const newAnswered = summary.questionsAnswered + 1;
+          return {
+            sessionSummary: {
+              ...summary,
+              questionsAnswered: newAnswered,
+              correctAnswers: newCorrect,
+              incorrectAnswers: isCorrect ? summary.incorrectAnswers : summary.incorrectAnswers + 1,
+              totalEarned: summary.totalEarned + rewardEarned,
+              accuracy: newAnswered > 0 ? Math.round((newCorrect / newAnswered) * 100) : 0,
+            },
+          };
+        });
+      },
+
+      // ========================================
       // Wallet Management
       // ========================================
 
@@ -254,6 +497,70 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           walletBalance: state.walletBalance + amount,
           pendingRewards: Math.max(0, state.pendingRewards - amount),
         }));
+      },
+
+      // ========================================
+      // Redemption Management
+      // ========================================
+
+      initiateRedemption: (request) => {
+        const now = new Date().toISOString();
+        set({
+          isRedeeming: true,
+          sessionState: 'REDEEMING',
+          pendingRedemption: {
+            ...request,
+            status: 'PENDING',
+            requestedAt: now,
+            completedAt: null,
+            transactionRef: null,
+            errorMessage: null,
+          },
+        });
+      },
+
+      completeRedemption: (transactionRef, success, errorMessage) => {
+        const now = new Date().toISOString();
+        set(state => {
+          const completed: RedemptionRequest = {
+            ...state.pendingRedemption!,
+            status: success ? 'SUCCESSFUL' : 'FAILED',
+            completedAt: now,
+            transactionRef: success ? transactionRef : null,
+            errorMessage: success ? null : (errorMessage || 'Redemption failed'),
+          };
+
+          return {
+            isRedeeming: false,
+            sessionState: 'SESSION_SUMMARY',
+            pendingRedemption: null,
+            redemptionHistory: [...state.redemptionHistory, completed],
+            // Deduct points if successful
+            walletBalance: success
+              ? Math.max(0, state.walletBalance - completed.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE)
+              : state.walletBalance,
+          };
+        });
+      },
+
+      cancelRedemption: () => {
+        set({
+          isRedeeming: false,
+          sessionState: 'SESSION_SUMMARY',
+          pendingRedemption: null,
+        });
+      },
+
+      canRedeem: () => {
+        const { attemptHistory } = get();
+        const totalPoints = (attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+        return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+      },
+
+      getRedemptionOptions: () => {
+        const { attemptHistory } = get();
+        const totalPoints = (attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+        return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= totalPoints);
       },
 
       // ========================================
@@ -346,6 +653,22 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           error: null,
         });
       },
+
+      resetSession: () => {
+        set({
+          sessionState: 'IDLE',
+          sessionQuestionIds: [],
+          currentSessionIndex: 0,
+          sessionSummary: initialSessionSummary,
+          currentQuestionId: null,
+          selectedAnswer: null,
+          isSubmitting: false,
+          lastResult: null,
+          error: null,
+          isRedeeming: false,
+          pendingRedemption: null,
+        });
+      },
     }),
     {
       name: 'instant-reward-storage',
@@ -388,6 +711,20 @@ export const selectCurrentQuestionState = (state: InstantRewardUIState) => ({
   error: state.error,
 });
 
+export const selectSessionState = (state: InstantRewardUIState) => ({
+  state: state.sessionState,
+  questionIds: state.sessionQuestionIds,
+  currentIndex: state.currentSessionIndex,
+  summary: state.sessionSummary,
+  isActive: state.sessionState !== 'IDLE' && state.sessionState !== 'COMPLETED',
+});
+
+export const selectRedemptionState = (state: InstantRewardUIState) => ({
+  isRedeeming: state.isRedeeming,
+  pendingRedemption: state.pendingRedemption,
+  history: state.redemptionHistory,
+});
+
 export const selectOfflineQueueState = (state: InstantRewardUIState) => ({
   pendingCount: state.pendingSubmissions.length,
   isOnline: state.isOnline,
@@ -396,6 +733,30 @@ export const selectOfflineQueueState = (state: InstantRewardUIState) => ({
 
 export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>
   state.pendingSubmissions.find(s => s.questionId === questionId) ?? null;
+
+// ===========================================
+// Helper Functions
+// ===========================================
+
+/** Convert points to cash value in UGX */
+export const pointsToCash = (points: number): number =>
+  points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+
+/** Convert cash value to points */
+export const cashToPoints = (cash: number): number =>
+  Math.floor(cash / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+
+/** Check if user can redeem rewards */
+export const canRedeemRewards = (totalRewardsEarned: number): boolean => {
+  const points = totalRewardsEarned / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  return points >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+};
+
+/** Get available redemption options based on points */
+export const getAvailableRedemptionOptions = (totalRewardsEarned: number) => {
+  const points = totalRewardsEarned / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= points);
+};
 
 // ===========================================
 // Default Export

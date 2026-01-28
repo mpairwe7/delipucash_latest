@@ -1137,14 +1137,14 @@ export const rewardsApi = {
     // Try backend API first if configured
     if (isBackendConfigured && API_BASE_URL) {
       try {
-        const response = await fetchJson<RewardQuestion[]>(
-          '/api/reward-questions'
+        const response = await fetchJson<{ rewardQuestions: RewardQuestion[]; message: string }>(
+          '/api/reward-questions/all'
         );
 
-        if (response.success && response.data && Array.isArray(response.data)) {
+        if (response.success && response.data?.rewardQuestions && Array.isArray(response.data.rewardQuestions)) {
           return {
             success: true,
-            data: response.data,
+            data: response.data.rewardQuestions,
           };
         }
         // If backend returns error or empty, fall through to mock data
@@ -1164,8 +1164,30 @@ export const rewardsApi = {
 
   /**
    * Get reward question by ID
+   * Tries backend API first, falls back to mock data
    */
   async getQuestionById(questionId: string): Promise<ApiResponse<RewardQuestion | null>> {
+    // Try backend API first if configured
+    if (isBackendConfigured && API_BASE_URL) {
+      try {
+        const response = await fetchJson<{ rewardQuestion: RewardQuestion; message: string }>(
+          `/api/reward-questions/${questionId}`
+        );
+
+        if (response.success && response.data?.rewardQuestion) {
+          return {
+            success: true,
+            data: response.data.rewardQuestion,
+          };
+        }
+        // If backend returns error, fall through to mock data
+        console.log('[RewardsAPI] Backend returned no data for question, using mock data fallback');
+      } catch (error) {
+        console.log('[RewardsAPI] Backend error getting question by ID, using mock data fallback:', error);
+      }
+    }
+
+    // Fallback to mock data
     await delay();
     const question = mockRewardQuestions.find((q) => q.id === questionId) || null;
     return {

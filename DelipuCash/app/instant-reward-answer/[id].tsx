@@ -1,6 +1,6 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { formatCurrency } from "@/data/mockData";
-import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
+import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useRewardQuestions } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
@@ -18,6 +18,7 @@ import {
   triggerHaptic,
   getEncouragingFeedback,
 } from "@/utils/quiz-utils";
+import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -25,6 +26,7 @@ import {
   AlertCircle,
     ArrowLeft,
     CheckCircle2,
+  ChevronRight,
     Clock3,
   Lock,
     PartyPopper,
@@ -34,10 +36,11 @@ import {
     Users,
     Zap,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
     ActivityIndicator,
     Alert,
+  Animated,
     ScrollView,
     StyleSheet,
     Text,
@@ -54,13 +57,21 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showRedemptionModal, setShowRedemptionModal] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
+  const { data: allQuestions } = useRewardQuestions(); // Get all questions for session flow
   const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
-  // Instant Reward Store - Attempt Tracking
+  // Instant Reward Store - Session & Attempt Tracking
   const {
     initializeAttemptHistory,
     hasAttemptedQuestion,
@@ -68,6 +79,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     markQuestionAttempted,
     updateWalletBalance,
     confirmReward,
+    // Session management
+    sessionState,
+    sessionSummary,
+    startSession,
+    endSession,
+    goToNextQuestion,
+    hasMoreQuestions,
+    updateSessionSummary,
+    // Redemption
+    initiateRedemption,
+    completeRedemption,
+    cancelRedemption,
+    canRedeem,
   } = useInstantRewardStore();
 
   // Initialize attempt history for the user
@@ -76,6 +100,24 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       initializeAttemptHistory(user.email);
     }
   }, [user?.email, initializeAttemptHistory]);
+
+  // Initialize session if not already started
+  useEffect(() => {
+    if (allQuestions && allQuestions.length > 0 && sessionState === 'IDLE') {
+      const questionIds = allQuestions.map(q => q.id);
+      startSession(questionIds);
+    }
+  }, [allQuestions, sessionState, startSession]);
+
+  // Get unanswered questions for auto-transition
+  const unansweredQuestions = useMemo(() => {
+    if (!allQuestions) return [];
+    return allQuestions.filter(q =>
+      !hasAttemptedQuestion(q.id) &&
+      q.id !== questionId &&
+      !q.isCompleted
+    );
+  }, [allQuestions, questionId, hasAttemptedQuestion]);
 
   // Check if user has already attempted this question
   const previousAttempt = useMemo(() => {
@@ -133,6 +175,37 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     router.back();
   }, []);
 
+  // Auto-transition to next question or show session summary
+  const handleTransitionToNext = useCallback(() => {
+    const nextQuestion = unansweredQuestions[0];
+
+    if (nextQuestion) {
+      // Animate transition
+      setIsTransitioning(true);
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: -50,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Navigate to next question
+        goToNextQuestion();
+        router.replace(`/instant-reward-answer/${nextQuestion.id}`);
+      });
+    } else {
+      // No more questions - show session summary
+      triggerHaptic('success');
+      endSession();
+      setShowSessionSummary(true);
+    }
+  }, [unansweredQuestions, fadeAnim, slideAnim, goToNextQuestion, endSession]);
+
   const handleSelectOption = useCallback((optionKey: string) => {
     if (isClosed || hasAlreadyAttempted) return;
     triggerHaptic('selection');
@@ -185,6 +258,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             paymentStatus: payload.paymentStatus || null,
           });
 
+          // Update session summary
+          updateSessionSummary(payload.isCorrect, rewardAmount);
+
           if (payload.isCorrect) {
             triggerHaptic('success');
 
@@ -200,31 +276,66 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
               let paymentMessage = "";
               if (paymentStatus === "SUCCESSFUL") {
-                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points) has been credited!`;
+                paymentMessage = `\n\n💰 Your reward has been credited!`;
               } else if (paymentStatus === "PENDING") {
-                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} is being processed.`;
-              } else if (paymentStatus === "FAILED") {
-                paymentMessage = `\n\n⚠️ There was an issue processing your reward. Please contact support.`;
+                paymentMessage = `\n\n⏳ Your reward is being processed.`;
               }
 
+              // Show success alert then auto-transition after brief delay
               Alert.alert(
-                "🎉 Congratulations!",
-                `You're winner #${position}! You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!${paymentMessage}`
+                "🎉 Correct!",
+                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!${paymentMessage}`,
+                [
+                  {
+                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                    onPress: () => {
+                      setTimeout(() => handleTransitionToNext(), 300);
+                    },
+                  },
+                ]
               );
             } else {
+              // Correct but not a special winner - auto-transition after brief feedback
               Alert.alert(
                 "Correct! 🎯",
-                `You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!`
+                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!`,
+                [
+                  {
+                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                    onPress: () => {
+                      setTimeout(() => handleTransitionToNext(), 300);
+                    },
+                  },
+                ]
               );
             }
           } else if (payload.isExpired || payload.isCompleted) {
             triggerHaptic('warning');
-            Alert.alert("Unavailable", payload.message || "Rewards are no longer available.");
+            Alert.alert(
+              "Unavailable",
+              payload.message || "Rewards are no longer available.",
+              [
+                {
+                  text: unansweredQuestions.length > 0 ? "Try Another" : "View Summary",
+                  onPress: () => {
+                    setTimeout(() => handleTransitionToNext(), 300);
+                  },
+                },
+              ]
+            );
           } else {
             triggerHaptic('error');
             Alert.alert(
               "Incorrect 😢",
-              `${payload.message || "That was not correct."}\n\nNote: Each question can only be attempted once.`
+              `${payload.message || "That was not correct."}`,
+              [
+                {
+                  text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                  onPress: () => {
+                    setTimeout(() => handleTransitionToNext(), 300);
+                  },
+                },
+              ]
             );
           }
         },
@@ -234,7 +345,24 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, user, hasAlreadyAttempted, submitAnswer, markQuestionAttempted, confirmReward]);
+  }, [question, selectedOption, user, hasAlreadyAttempted, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext]);
+
+  // Handle redemption
+  const handleRedeem = useCallback(async (
+    amount: number,
+    type: 'CASH' | 'AIRTIME',
+    provider: 'MTN' | 'AIRTEL',
+    phoneNumber: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    initiateRedemption(type, provider);
+
+    // TODO: Call actual redemption API
+    // For now, simulate success
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    completeRedemption(true, `${formatCurrency(amount)} has been sent to your ${provider} number ${phoneNumber}`);
+    return { success: true, message: `${formatCurrency(amount)} has been sent to your ${provider} number!` };
+  }, [initiateRedemption, completeRedemption]);
 
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
@@ -524,22 +652,75 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           },
         ]}
       >
+        {/* Show progress indicator if more questions available */}
+        {unansweredQuestions.length > 0 && !hasAlreadyAttempted && !result && (
+          <View style={styles.progressIndicator}>
+            <Text style={[styles.progressText, { color: colors.textMuted }]}>
+              {unansweredQuestions.length} more question{unansweredQuestions.length > 1 ? 's' : ''} available
+            </Text>
+            <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
+          </View>
+        )}
+
         <PrimaryButton
           title={
             hasAlreadyAttempted
-              ? (previousAttempt?.isCorrect ? "Done ✓" : "Already Attempted")
-              : result?.isCorrect
-                ? "Done ✓"
+              ? (unansweredQuestions.length > 0 ? "Next Question" : (previousAttempt?.isCorrect ? "View Summary" : "View Summary"))
+              : result
+                ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
                 : isClosed
                   ? "Closed"
                   : "Submit Answer"
           }
-          onPress={(result?.isCorrect || hasAlreadyAttempted) ? handleBack : handleSubmit}
-          loading={submitAnswer.isPending}
-          disabled={isClosed && !hasAlreadyAttempted}
+          onPress={
+            (result || hasAlreadyAttempted)
+              ? () => handleTransitionToNext()
+              : handleSubmit
+          }
+          loading={submitAnswer.isPending || isTransitioning}
+          disabled={isClosed && !hasAlreadyAttempted && !result}
           variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
         />
       </View>
+
+      {/* Session Summary Modal */}
+      <RewardSessionSummary
+        visible={showSessionSummary}
+        totalQuestions={sessionSummary.totalQuestions}
+        correctAnswers={sessionSummary.correctAnswers}
+        incorrectAnswers={sessionSummary.incorrectAnswers}
+        totalEarned={sessionSummary.totalEarned}
+        sessionEarnings={sessionSummary.sessionEarnings}
+        totalBalance={sessionSummary.totalBalance}
+        canRedeemRewards={canRedeem()}
+        onRedeemCash={() => {
+          setShowSessionSummary(false);
+          setShowRedemptionModal(true);
+        }}
+        onRedeemAirtime={() => {
+          setShowSessionSummary(false);
+          setShowRedemptionModal(true);
+        }}
+        onContinue={() => {
+          setShowSessionSummary(false);
+          router.push('/instant-reward-questions');
+        }}
+        onClose={() => {
+          setShowSessionSummary(false);
+          router.back();
+        }}
+      />
+
+      {/* Redemption Modal */}
+      <RedemptionModal
+        visible={showRedemptionModal}
+        availableAmount={sessionSummary.totalBalance}
+        onClose={() => {
+          setShowRedemptionModal(false);
+          cancelRedemption();
+        }}
+        onRedeem={handleRedeem}
+      />
     </View>
   );
 }
@@ -774,5 +955,16 @@ const styles = StyleSheet.create({
   footer: {
     borderTopWidth: BORDER_WIDTH.thin,
     padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  progressIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  progressText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

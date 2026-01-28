@@ -21,7 +21,6 @@ import notificationRoutes from './routes/notificationRoutes.mjs';
 import userRoutes from './routes/userRoutes.mjs';
 import responseRoutes from './routes/responseRoutes.mjs';
 import quizRoutes from './routes/quizRoutes.mjs';
-import quizRoutes from './routes/quizRoutes.mjs';
 
 dotenv.config();
 
