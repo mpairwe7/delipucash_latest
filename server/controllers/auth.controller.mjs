@@ -445,3 +445,48 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
     res.status(500).json({ error: "Failed to fetch rewards." });
   }
 });
+
+// ===========================================
+// Two-Factor Authentication
+// ===========================================
+
+/**
+ * Toggle Two-Factor Authentication
+ * PUT /api/auth/two-factor
+ * Note: This is a basic implementation. For production, integrate with OTP service like Twilio
+ */
+export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
+  const { enabled } = req.body;
+  const userId = req.user.id; // From JWT token
+
+  console.log('🔐 2FA toggle request for user ID:', userId, '| Enabled:', enabled);
+
+  try {
+    // Update user's 2FA setting
+    const updatedUser = await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: enabled,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        twoFactorEnabled: true,
+      },
+    });
+
+    console.log('✅ 2FA setting updated for user ID:', userId, '| Now:', updatedUser.twoFactorEnabled);
+
+    res.status(200).json({
+      success: true,
+      data: { enabled: updatedUser.twoFactorEnabled },
+      message: enabled
+        ? "Two-factor authentication enabled successfully"
+        : "Two-factor authentication disabled"
+    });
+  } catch (error) {
+    console.error("❌ Failed to toggle 2FA:", error);
+    next(errorHandler(500, "Failed to update two-factor authentication"));
+  }
+});

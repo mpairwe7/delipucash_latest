@@ -1,5 +1,5 @@
 import express from 'express';
-import {  signOut, signin, signup , updateSubscriptionStatus, checkSubscriptionStatus, updateUserPoints,getUserPoints, updateSurveySubscriptionStatus,checkSurveySubscriptionStatus, changePassword} from '../controllers/auth.controller.mjs';
+import { signOut, signin, signup, updateSubscriptionStatus, checkSubscriptionStatus, updateUserPoints, getUserPoints, updateSurveySubscriptionStatus, checkSurveySubscriptionStatus, changePassword, toggleTwoFactor } from '../controllers/auth.controller.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
@@ -16,5 +16,7 @@ router.put("/:userId/points", updateUserPoints);
 router.get("/:userId/points", getUserPoints);
 // Change password endpoint (protected route)
 router.put("/change-password", verifyToken, changePassword);
+// Two-factor authentication toggle (protected route)
+router.put("/two-factor", verifyToken, toggleTwoFactor);
 
 export default router;

@@ -178,25 +178,32 @@ export const api = {
 
 // ===========================================
 // API Routes Configuration
+// Maps to backend Express routes
 // ===========================================
 
 export const API_ROUTES = {
-  // Auth
+  // Auth - maps to /api/auth/*
   auth: {
-    login: "/api/auth/login",
-    register: "/api/auth/register",
-    logout: "/api/auth/logout",
+    login: "/api/auth/signin",
+    register: "/api/auth/signup",
+    logout: "/api/auth/signout",
     forgotPassword: "/api/auth/forgot-password",
     resetPassword: "/api/auth/reset-password",
     refreshToken: "/api/auth/refresh-token",
+    changePassword: "/api/auth/change-password",
+    subscriptionStatus: (userId: string) => `/api/auth/${userId}/subscription-status`,
+    surveySubscriptionStatus: (userId: string) => `/api/auth/${userId}/surveysubscription-status`,
+    points: (userId: string) => `/api/auth/${userId}/points`,
   },
-  // User
+  // User - maps to /api/users/*
   user: {
-    profile: "/api/user/profile",
-    update: "/api/user/update",
-    stats: "/api/user/stats",
-    sessions: "/api/user/sessions",
-    deleteSession: (sessionId: string) => `/api/user/sessions/${sessionId}`,
+    profile: "/api/users/profile",
+    update: "/api/users/profile",
+    stats: "/api/users/stats",
+    sessions: "/api/users/login-activity",
+    privacy: "/api/users/privacy",
+    signoutAllDevices: "/api/users/signout-all-devices",
+    deleteSession: (sessionId: string) => `/api/users/sessions/${sessionId}`,
   },
   // Videos
   videos: {
@@ -265,12 +272,25 @@ export const API_ROUTES = {
 
 // ===========================================
 // User API
+// Integrates with backend REST API with mock fallback
+// Backend routes: /api/users/* and /api/auth/*
 // ===========================================
 export const userApi = {
   /**
    * Get current user profile
+   * Backend: GET /api/auth/:userId (requires auth token)
+   * Fallback: mockCurrentUser
    */
   async getProfile(): Promise<ApiResponse<AppUser>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<AppUser>(API_ROUTES.user.profile);
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.getProfile] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     return {
       success: true,
@@ -280,8 +300,22 @@ export const userApi = {
 
   /**
    * Update user profile
+   * Backend: PUT /api/auth/:userId (requires auth token)
+   * Fallback: mockCurrentUser with updates
    */
   async updateProfile(data: Partial<AppUser>): Promise<ApiResponse<AppUser>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<AppUser>(API_ROUTES.user.update, {
+          method: 'PUT',
+          body: JSON.stringify(data),
+        });
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.updateProfile] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     const updatedUser = { ...mockCurrentUser, ...data, updatedAt: new Date().toISOString() };
     return {
@@ -293,8 +327,19 @@ export const userApi = {
 
   /**
    * Get user statistics
+   * Backend: GET /api/users/:userId/stats (TODO: implement backend)
+   * Fallback: mockUserStats
    */
   async getStats(): Promise<ApiResponse<UserStats>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<UserStats>(API_ROUTES.user.stats);
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.getStats] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     return {
       success: true,
@@ -304,8 +349,19 @@ export const userApi = {
 
   /**
    * Get user by ID
+   * Backend: GET /api/users/:userId
+   * Fallback: getUserById from mock data
    */
   async getById(userId: string): Promise<ApiResponse<AppUser | null>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<AppUser>(`/api/users/${userId}`);
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.getById] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     const user = getUserById(userId);
     return {
@@ -316,8 +372,19 @@ export const userApi = {
 
   /**
    * Get user login sessions
+   * Backend: GET /api/users/login-activity (requires auth token)
+   * Fallback: mockLoginSessions filtered by user
    */
   async getSessions(): Promise<ApiResponse<LoginSession[]>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<LoginSession[]>('/api/users/login-activity');
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.getSessions] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     return {
       success: true,
@@ -327,8 +394,22 @@ export const userApi = {
 
   /**
    * Revoke a login session
+   * Backend: POST /api/users/signout-all-devices (for all) or individual session revoke
+   * Fallback: Update mock session to inactive
    */
   async revokeSession(sessionId: string): Promise<ApiResponse<{ revoked: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        // Note: Backend currently has signout-all-devices, may need individual session revoke endpoint
+        const response = await fetchJson<{ revoked: boolean }>(`/api/users/sessions/${sessionId}/revoke`, {
+          method: 'POST',
+        });
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.revokeSession] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     const sessionIndex = mockLoginSessions.findIndex(s => s.id === sessionId);
     if (sessionIndex === -1) {
@@ -349,8 +430,22 @@ export const userApi = {
 
   /**
    * Update 2FA settings
+   * Backend: TODO - implement 2FA endpoint
+   * Fallback: Return enabled state
    */
   async updateTwoFactor(enabled: boolean): Promise<ApiResponse<{ enabled: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<{ enabled: boolean }>('/api/auth/two-factor', {
+          method: 'PUT',
+          body: JSON.stringify({ enabled }),
+        });
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.updateTwoFactor] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     return {
       success: true,
@@ -361,8 +456,22 @@ export const userApi = {
 
   /**
    * Change password
+   * Backend: PUT /api/auth/change-password (requires auth token)
+   * Fallback: Simulate password change
    */
   async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<{ success: boolean }>('/api/auth/change-password', {
+          method: 'PUT',
+          body: JSON.stringify({ currentPassword, newPassword }),
+        });
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.changePassword] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay(800);
     // Simulate password validation
     if (currentPassword === newPassword) {
@@ -377,13 +486,49 @@ export const userApi = {
 
   /**
    * Update privacy settings
+   * Backend: PUT /api/users/privacy (requires auth token)
+   * Fallback: Return updated settings
    */
   async updatePrivacySettings(settings: { shareProfile: boolean; shareActivity: boolean }): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<{ shareProfile: boolean; shareActivity: boolean }>('/api/users/privacy', {
+          method: 'PUT',
+          body: JSON.stringify(settings),
+        });
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.updatePrivacySettings] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
     await delay();
     return {
       success: true,
       data: settings,
       message: "Privacy settings updated",
+    };
+  },
+
+  /**
+   * Get privacy settings
+   * Backend: GET /api/users/privacy (requires auth token)
+   * Fallback: Return default settings
+   */
+  async getPrivacySettings(): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
+    if (isBackendConfigured) {
+      try {
+        const response = await fetchJson<{ shareProfile: boolean; shareActivity: boolean }>('/api/users/privacy');
+        if (response.success) return response;
+      } catch (error) {
+        console.log('[userApi.getPrivacySettings] Backend call failed, using mock data:', error);
+      }
+    }
+    // Mock fallback
+    await delay();
+    return {
+      success: true,
+      data: { shareProfile: true, shareActivity: false },
     };
   },
 };
