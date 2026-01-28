@@ -3,10 +3,16 @@
  * 
  * Ensures a default admin user exists in the database.
  * Called during server startup.
+ * 
+ * Note: This uses Prisma Accelerate which may have cached schema.
+ * If the database was recently reset, run `node prisma/seed.mjs` instead.
  */
 
-import prisma from '../lib/prisma.mjs';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import bcrypt from 'bcryptjs';
+import 'dotenv/config';
 
 // Default admin credentials
 const DEFAULT_ADMIN = {
@@ -21,12 +27,25 @@ const DEFAULT_ADMIN = {
 /**
  * Ensures the default admin user exists in the database.
  * Creates one if it doesn't exist, otherwise logs that it already exists.
+ * Uses direct database connection to avoid Accelerate cache issues.
  * 
  * @returns {Promise<void>}
  */
 export async function ensureDefaultAdminExists() {
   console.log('🔐 Checking for default admin user...');
   
+  // Use direct database connection (bypasses Accelerate cache)
+  const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    console.log('⚠️ No database URL configured. Skipping admin check.');
+    return;
+  }
+
+  const pool = new pg.Pool({ connectionString });
+  const adapter = new PrismaPg(pool);
+  const prisma = new PrismaClient({ adapter });
+
   try {
     // Check if admin already exists
     const existingAdmin = await prisma.appUser.findUnique({
@@ -75,6 +94,9 @@ export async function ensureDefaultAdminExists() {
     // This could happen if the database isn't ready yet
     console.error('⚠️ Could not ensure admin user exists:', error.message);
     console.log('   You can create the admin manually by running: node prisma/seed.mjs');
+  } finally {
+    await prisma.$disconnect();
+    await pool.end();
   }
 }
 
