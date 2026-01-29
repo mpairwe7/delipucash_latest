@@ -37,8 +37,8 @@ import {
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/data/mockData";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
-import { useAuth } from "@/store";
 import { UploadSurvey } from "@/types";
+import { useAuth } from "@/utils/auth";
 import {
   BORDER_WIDTH,
   RADIUS,
