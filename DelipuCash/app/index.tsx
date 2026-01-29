@@ -76,12 +76,18 @@ export default function SplashScreen(): React.ReactElement {
   }, [logoScale, logoOpacity, contentOpacity, contentSlide, ctaOpacity]);
 
   const handleGetStarted = (): void => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Haptics may not be available on simulators/emulators
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
+      // Silently ignore - haptics not available on this device
+    });
     router.push("/(auth)/signup");
   };
 
   const handleSignIn = (): void => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Haptics may not be available on simulators/emulators
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
+      // Silently ignore - haptics not available on this device
+    });
     router.push("/(auth)/login");
   };
 
@@ -159,47 +165,46 @@ export default function SplashScreen(): React.ReactElement {
         {/* Spacer */}
         <View style={styles.spacer} />
 
-        {/* CTA Section */}
-        <Animated.View
-          style={[styles.ctaSection, { opacity: ctaOpacity }]}
-          pointerEvents="box-none"
-        >
-          {/* Primary CTA */}
-          <TouchableOpacity
-            onPress={handleGetStarted}
-            activeOpacity={0.85}
-            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-            accessibilityRole="button"
-            accessibilityLabel="Get Started - Create a new account"
-            accessibilityHint="Navigates to sign up screen"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.primaryButtonText}>Get Started</Text>
-          </TouchableOpacity>
+        {/* CTA Section - Use View wrapper to ensure touch events always work */}
+        <View style={styles.ctaSection}>
+          <Animated.View style={{ opacity: ctaOpacity }}>
+            {/* Primary CTA */}
+            <TouchableOpacity
+              onPress={handleGetStarted}
+              activeOpacity={0.85}
+              style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Get Started - Create a new account"
+              accessibilityHint="Navigates to sign up screen"
+            >
+              <Text style={styles.primaryButtonText}>Get Started</Text>
+            </TouchableOpacity>
+          </Animated.View>
 
-          {/* Secondary CTA */}
-          <TouchableOpacity
-            onPress={handleSignIn}
-            activeOpacity={0.6}
-            style={styles.secondaryButton}
-            accessibilityRole="button"
-            accessibilityLabel="Sign In to existing account"
-            accessibilityHint="Navigates to login screen"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.secondaryButtonText}>
-              Already have an account?{" "}
-              <Text
-                style={[
-                  styles.secondaryButtonAccent,
-                  { color: colors.primary },
-                ]}
-              >
-                Sign In
+          <Animated.View style={{ opacity: ctaOpacity }}>
+            {/* Secondary CTA */}
+            <TouchableOpacity
+              onPress={handleSignIn}
+              activeOpacity={0.6}
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Sign In to existing account"
+              accessibilityHint="Navigates to login screen"
+            >
+              <Text style={styles.secondaryButtonText}>
+                Already have an account?{" "}
+                <Text
+                  style={[
+                    styles.secondaryButtonAccent,
+                    { color: colors.primary },
+                  ]}
+                >
+                  Sign In
+                </Text>
               </Text>
-            </Text>
-          </TouchableOpacity>
-        </Animated.View>
+            </TouchableOpacity>
+          </Animated.View>
+        </View>
       </View>
     </View>
   );

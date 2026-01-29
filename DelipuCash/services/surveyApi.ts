@@ -34,11 +34,19 @@ const SURVEY_ROUTES = {
   submit: (id: string) => `/api/surveys/${id}/submit`,
   create: "/api/surveys/upload",
   responses: (id: string) => `/api/surveys/${id}/responses`,
+  checkAttempt: (id: string, userId: string) => `/api/surveys/${id}/attempt?userId=${userId}`,
   byStatus: (status: string) => `/api/surveys/status/${status}`,
   analytics: (id: string) => `/api/surveys/${id}/analytics`,
   delete: (id: string) => `/api/surveys/${id}`,
   update: (id: string) => `/api/surveys/${id}`,
 } as const;
+
+// Survey attempt status interface
+export interface SurveyAttemptStatus {
+  hasAttempted: boolean;
+  attemptedAt: string | null;
+  message: string;
+}
 
 // Helper to fetch JSON
 async function fetchJson<T>(
@@ -289,6 +297,33 @@ export const surveyApi = {
     await delay();
     const questions = getSurveyQuestionsForSurvey(surveyId);
     return { success: true, data: questions };
+  },
+
+  /**
+   * Check if user has already attempted a survey
+   * Industry standard: Single attempt per user per survey
+   */
+  async checkAttempt(
+    surveyId: string,
+    userId: string
+  ): Promise<ApiResponse<SurveyAttemptStatus>> {
+    if (isBackendConfigured) {
+      const response = await fetchJson<SurveyAttemptStatus>(
+        SURVEY_ROUTES.checkAttempt(surveyId, userId)
+      );
+      if (response.success) return response;
+    }
+
+    // Mock implementation - check local storage or return false
+    await delay(200);
+    return {
+      success: true,
+      data: {
+        hasAttempted: false,
+        attemptedAt: null,
+        message: "Survey is available for attempt",
+      },
+    };
   },
 
   /**

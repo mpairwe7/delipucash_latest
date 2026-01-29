@@ -169,6 +169,10 @@ model SurveyResponse {
   survey    Survey   @relation(fields: [surveyId], references: [id])
   user      AppUser  @relation(fields: [userId], references: [id])
 
+  // Industry standard: Enforce single attempt per user per survey at database level
+  @@unique([userId, surveyId], name: "unique_user_survey_attempt")
+  @@index([userId])
+  @@index([surveyId])
   @@map("survey_responses")
 }
 

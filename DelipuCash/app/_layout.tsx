@@ -4,7 +4,8 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef } from 'react';
 import { Platform, View } from 'react-native';
 import 'react-native-reanimated';
-import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+// expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
+// import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 import NotificationProvider from '@/utils/usePushNotifications';
@@ -87,16 +88,13 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Keep the screen awake in development; swallow errors on unsupported platforms
-  useEffect(() => {
-    if (__DEV__ && Platform.OS !== 'web') {
-      activateKeepAwakeAsync().catch((err) => console.warn('Keep awake unavailable:', err));
-
-      return () => {
-        deactivateKeepAwake().catch(() => undefined);
-      };
-    }
-  }, []);
+  // Keep-awake functionality disabled due to New Architecture incompatibility in Expo Go
+  // Re-enable when building standalone apps or when expo-keep-awake is updated
+  // useEffect(() => {
+  //   if (__DEV__ && Platform.OS !== 'web') {
+  //     // Keep screen awake during development
+  //   }
+  // }, []);
 
   // Callback-based approach for hiding splash screen (recommended)
   const onLayoutRootView = useCallback(async () => {

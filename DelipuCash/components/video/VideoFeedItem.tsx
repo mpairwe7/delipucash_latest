@@ -1,0 +1,1136 @@
+/**
+ * VideoFeedItem Component
+ * Individual video item for the vertical video feed
+ * TikTok/Instagram Reels style with gestures, overlays, and animations
+ * 
+ * Features:
+ * - Full-screen video playback
+ * - Double-tap to like with heart animation burst
+ * - Long-press for context menu / preview
+ * - Tap center to play/pause
+ * - Double-tap left/right for seek (YouTube style)
+ * - Smooth thumbnail → video transition
+ * - Buffering / error states
+ * - Side action bar (like, comment, share, bookmark)
+ * - Video info overlay (creator, title, music)
+ * - Accessibility support
+ * 
+ * @example
+ * ```tsx
+ * <VideoFeedItem
+ *   video={videoData}
+ *   index={0}
+ *   itemHeight={screenHeight}
+ *   isActive={true}
+ *   onLike={handleLike}
+ * />
+ * ```
+ */
+
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useMemo,
+} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  ImageBackground,
+  ActivityIndicator,
+  Dimensions,
+} from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withDelay,
+  runOnJS,
+  FadeIn,
+  FadeOut,
+  ZoomIn,
+} from 'react-native-reanimated';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import { useVideoPlayer, VideoView } from 'expo-video';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  Heart,
+  MessageCircle,
+  Share2,
+  Bookmark,
+  Music2,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  RotateCcw,
+  MoreHorizontal,
+} from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
+import {
+  useTheme,
+  SPACING,
+  TYPOGRAPHY,
+  RADIUS,
+  SHADOWS,
+  withAlpha,
+} from '@/utils/theme';
+import { Video } from '@/types';
+import { useVideoFeedStore, selectIsVideoLiked, selectIsVideoBookmarked } from '@/store/VideoFeedStore';
+import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const DOUBLE_TAP_DELAY = 300;
+const LONG_PRESS_DURATION = 500;
+const SEEK_AMOUNT = 10; // seconds
+const CONTROLS_HIDE_DELAY = 3000;
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface VideoFeedItemProps {
+  /** Video data */
+  video: Video;
+  /** Index in the feed */
+  index: number;
+  /** Height of this item */
+  itemHeight: number;
+  /** Whether this video is currently active (should play) */
+  isActive: boolean;
+  /** Whether video is muted */
+  isMuted: boolean;
+  /** Like handler */
+  onLike: () => void;
+  /** Comment handler */
+  onComment: () => void;
+  /** Share handler */
+  onShare: () => void;
+  /** Bookmark handler */
+  onBookmark: () => void;
+  /** Expand to full player handler */
+  onExpand: () => void;
+  /** Video end handler */
+  onVideoEnd?: () => void;
+  /** Screen reader enabled */
+  screenReaderEnabled?: boolean;
+  /** Test ID */
+  testID?: string;
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+const formatViews = (views: number): string => {
+  if (views >= 1000000) return `${(views / 1000000).toFixed(1)}M`;
+  if (views >= 1000) return `${(views / 1000).toFixed(1)}K`;
+  return views.toString();
+};
+
+// Duration formatting (exported for use elsewhere)
+export const formatDuration = (seconds: number = 0): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+/** Heart burst animation for double-tap like */
+const HeartBurst = memo(({ visible, x, y }: { visible: boolean; x: number; y: number }) => {
+  const scale = useSharedValue(0);
+  const opacity = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  useEffect(() => {
+    if (visible) {
+      scale.value = withSequence(
+        withSpring(1.2, { damping: 8, stiffness: 300 }),
+        withDelay(200, withSpring(0.9, { damping: 15 })),
+        withDelay(300, withTiming(0, { duration: 200 }))
+      );
+      opacity.value = withSequence(
+        withTiming(1, { duration: 100 }),
+        withDelay(600, withTiming(0, { duration: 200 }))
+      );
+      translateY.value = withSequence(
+        withTiming(0, { duration: 0 }),
+        withDelay(400, withTiming(-30, { duration: 400 }))
+      );
+    }
+  }, [visible, scale, opacity, translateY]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateY: translateY.value }],
+    opacity: opacity.value,
+  }));
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.heartBurst,
+        { left: x - 40, top: y - 40 },
+        animatedStyle,
+      ]}
+      pointerEvents="none"
+    >
+      <Heart size={80} color="#FF2D55" fill="#FF2D55" />
+    </Animated.View>
+  );
+});
+
+HeartBurst.displayName = 'HeartBurst';
+
+/** Seek indicator for double-tap seek */
+const SeekIndicator = memo(({ 
+  visible, 
+  side, 
+  amount 
+}: { 
+  visible: boolean; 
+  side: 'left' | 'right'; 
+  amount: number;
+}) => {
+  if (!visible) return null;
+
+  return (
+    <Animated.View
+      style={[
+        styles.seekIndicator,
+        side === 'left' ? styles.seekIndicatorLeft : styles.seekIndicatorRight,
+      ]}
+      entering={ZoomIn.duration(150)}
+      exiting={FadeOut.duration(200)}
+    >
+      <View style={[styles.seekBubble, { backgroundColor: withAlpha('#000000', 0.7) }]}>
+        <RotateCcw
+          size={24}
+          color="#FFFFFF"
+          style={side === 'right' ? { transform: [{ scaleX: -1 }] } : undefined}
+        />
+        <Text style={styles.seekText}>{amount}s</Text>
+      </View>
+    </Animated.View>
+  );
+});
+
+SeekIndicator.displayName = 'SeekIndicator';
+
+/** Progress bar at bottom of video */
+const VideoProgressBar = memo(({
+  progress,
+  bufferProgress,
+  duration,
+  isVisible,
+}: {
+  progress: number;
+  bufferProgress: number;
+  duration: number;
+  isVisible: boolean;
+}) => {
+  const { colors } = useTheme();
+  const widthAnim = useSharedValue(0);
+  const bufferWidthAnim = useSharedValue(0);
+
+  useEffect(() => {
+    widthAnim.value = withTiming(progress * 100, { duration: 100 });
+    bufferWidthAnim.value = withTiming(bufferProgress * 100, { duration: 100 });
+  }, [progress, bufferProgress, widthAnim, bufferWidthAnim]);
+
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${widthAnim.value}%`,
+  }));
+
+  const bufferStyle = useAnimatedStyle(() => ({
+    width: `${bufferWidthAnim.value}%`,
+  }));
+
+  if (!isVisible) return null;
+
+  return (
+    <View style={styles.progressContainer}>
+      <View style={[styles.progressTrack, { backgroundColor: withAlpha('#FFFFFF', 0.3) }]}>
+        <Animated.View style={[styles.bufferFill, bufferStyle, { backgroundColor: withAlpha('#FFFFFF', 0.5) }]} />
+        <Animated.View style={[styles.progressFill, progressStyle, { backgroundColor: colors.primary }]} />
+      </View>
+    </View>
+  );
+});
+
+VideoProgressBar.displayName = 'VideoProgressBar';
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
+
+function VideoFeedItemComponent({
+  video,
+  index,
+  itemHeight,
+  isActive,
+  isMuted,
+  onLike,
+  onComment,
+  onShare,
+  onBookmark,
+  onExpand,
+  onVideoEnd,
+  screenReaderEnabled = false,
+  testID,
+}: VideoFeedItemProps): React.ReactElement {
+  const { colors } = useTheme();
+
+  // Store selectors
+  const isLiked = useVideoFeedStore(selectIsVideoLiked(video.id));
+  const isBookmarked = useVideoFeedStore(selectIsVideoBookmarked(video.id));
+  const { toggleMute, setPlayerStatus, setProgress } = useVideoFeedStore();
+
+  // ============================================================================
+  // STATE
+  // ============================================================================
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  // showThumbnail tracks logical state while thumbnailOpacity handles animation
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showThumbnail, setShowThumbnail] = useState(true);
+  const [showControls, setShowControls] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [duration, setDuration] = useState(video.duration || 0);
+  const [currentTime, setCurrentTime] = useState(0);
+  // bufferProgress - tracked for future buffer indicator implementation
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [bufferProgress, _setBufferProgress] = useState(0);
+  const [thumbnailUrl, setThumbnailUrl] = useState(video.thumbnail);
+  
+  // Heart burst state
+  const [showHeartBurst, setShowHeartBurst] = useState(false);
+  const [heartPosition, setHeartPosition] = useState({ x: 0, y: 0 });
+  
+  // Seek indicator state
+  const [showSeekIndicator, setShowSeekIndicator] = useState(false);
+  const [seekSide, setSeekSide] = useState<'left' | 'right'>('left');
+  const [seekAmount, setSeekAmount] = useState(0);
+
+  // Refs
+  const lastTapRef = useRef<number>(0);
+  const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accumulatedSeekRef = useRef(0);
+
+  // Animation values
+  const scale = useSharedValue(1);
+  const thumbnailOpacity = useSharedValue(1);
+  const controlsOpacity = useSharedValue(0);
+  const likeScale = useSharedValue(1);
+  const playButtonScale = useSharedValue(1);
+
+  // ============================================================================
+  // VIDEO PLAYER
+  // ============================================================================
+
+  const player = useVideoPlayer(video.videoUrl || '', (playerInstance) => {
+    playerInstance.loop = true;
+    playerInstance.muted = isMuted;
+    playerInstance.volume = isMuted ? 0 : 1;
+  });
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Load thumbnail
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      if (!video.thumbnail && video.videoUrl) {
+        const generated = await getBestThumbnailUrl({
+          thumbnailUrl: video.thumbnail,
+          videoUrl: video.videoUrl,
+        });
+        setThumbnailUrl(generated || getPlaceholderImage('video'));
+      }
+    };
+    loadThumbnail();
+  }, [video.thumbnail, video.videoUrl]);
+
+  // Handle active state changes (auto-play/pause)
+  useEffect(() => {
+    if (!player) return;
+
+    if (isActive) {
+      // Start playing when active
+      player.play();
+      setIsPlaying(true);
+      setPlayerStatus('playing');
+      
+      // Fade out thumbnail after short delay
+      setTimeout(() => {
+        thumbnailOpacity.value = withTiming(0, { duration: 300 });
+        setShowThumbnail(false);
+      }, 200);
+    } else {
+      // Pause when not active
+      player.pause();
+      setIsPlaying(false);
+      setPlayerStatus('paused');
+      
+      // Show thumbnail again
+      thumbnailOpacity.value = withTiming(1, { duration: 200 });
+      setShowThumbnail(true);
+    }
+  }, [isActive, player, thumbnailOpacity, setPlayerStatus]);
+
+  // Sync mute state
+  useEffect(() => {
+    if (player) {
+      player.muted = isMuted;
+      player.volume = isMuted ? 0 : 1;
+    }
+  }, [isMuted, player]);
+
+  // Player status subscription
+  useEffect(() => {
+    if (!player) return;
+
+    const statusSub = player.addListener('statusChange', (event) => {
+      if (event.status === 'readyToPlay') {
+        setIsBuffering(false);
+        setHasError(false);
+        if (player.duration) {
+          setDuration(player.duration);
+        }
+      } else if (event.status === 'loading') {
+        setIsBuffering(true);
+      } else if (event.status === 'error') {
+        setHasError(true);
+        setIsBuffering(false);
+      }
+    });
+
+    const playingSub = player.addListener('playingChange', (event) => {
+      setIsPlaying(event.isPlaying);
+    });
+
+    return () => {
+      statusSub.remove();
+      playingSub.remove();
+    };
+  }, [player]);
+
+  // Progress tracking
+  useEffect(() => {
+    if (!player || !isActive || !isPlaying) return;
+
+    const interval = setInterval(() => {
+      if (player.currentTime !== undefined && player.duration) {
+        setCurrentTime(player.currentTime);
+        const prog = player.currentTime / player.duration;
+        setProgress(prog, player.duration);
+        
+        // Check if video ended
+        if (player.currentTime >= player.duration - 0.5) {
+          onVideoEnd?.();
+        }
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [player, isActive, isPlaying, setProgress, onVideoEnd]);
+
+  // Auto-hide controls
+  useEffect(() => {
+    if (showControls && isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+        controlsOpacity.value = withTiming(0, { duration: 200 });
+      }, CONTROLS_HIDE_DELAY);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [showControls, isPlaying, controlsOpacity]);
+
+  // ============================================================================
+  // HANDLERS
+  // ============================================================================
+
+  const handlePlayPause = useCallback(() => {
+    if (!player) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isPlaying) {
+      player.pause();
+      setIsPlaying(false);
+      playButtonScale.value = withSpring(1.1, { damping: 10 }, () => {
+        playButtonScale.value = withSpring(1);
+      });
+    } else {
+      player.play();
+      setIsPlaying(true);
+    }
+
+    // Show controls
+    setShowControls(true);
+    controlsOpacity.value = withTiming(1, { duration: 200 });
+  }, [player, isPlaying, playButtonScale, controlsOpacity]);
+
+  const handleDoubleTapLike = useCallback((x: number, y: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    // Show heart burst animation
+    setHeartPosition({ x, y });
+    setShowHeartBurst(true);
+    setTimeout(() => setShowHeartBurst(false), 1000);
+
+    // Trigger like
+    onLike();
+    
+    // Animate like button
+    likeScale.value = withSequence(
+      withSpring(1.4, { damping: 8 }),
+      withSpring(1, { damping: 12 })
+    );
+  }, [onLike, likeScale]);
+
+  const handleDoubleTapSeek = useCallback((side: 'left' | 'right') => {
+    if (!player || !duration) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const seekDirection = side === 'right' ? 1 : -1;
+    const newTime = Math.max(0, Math.min(currentTime + SEEK_AMOUNT * seekDirection, duration));
+    player.currentTime = newTime;
+    setCurrentTime(newTime);
+
+    // Accumulate seek amount for display
+    accumulatedSeekRef.current += SEEK_AMOUNT;
+    setSeekAmount(accumulatedSeekRef.current);
+    setSeekSide(side);
+    setShowSeekIndicator(true);
+
+    // Reset after delay
+    setTimeout(() => {
+      accumulatedSeekRef.current = 0;
+      setShowSeekIndicator(false);
+    }, 600);
+  }, [player, duration, currentTime]);
+
+  const handleLongPress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    onExpand();
+  }, [onExpand]);
+
+  const handleToggleMute = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    toggleMute();
+  }, [toggleMute]);
+
+  // ============================================================================
+  // GESTURES
+  // ============================================================================
+
+  const tapGesture = useMemo(
+    () =>
+      Gesture.Tap()
+        .maxDuration(250)
+        .onStart((event) => {
+          const now = Date.now();
+          const timeSinceLastTap = now - lastTapRef.current;
+          const { x, y } = event;
+
+          if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
+            // Double tap
+            const screenThird = SCREEN_WIDTH / 3;
+            
+            if (x < screenThird) {
+              // Left third - seek backward
+              runOnJS(handleDoubleTapSeek)('left');
+            } else if (x > screenThird * 2) {
+              // Right third - seek forward
+              runOnJS(handleDoubleTapSeek)('right');
+            } else {
+              // Center - like
+              runOnJS(handleDoubleTapLike)(x, y);
+            }
+          } else {
+            // Single tap - toggle play/pause (with delay to check for double tap)
+            lastTapPositionRef.current = { x, y };
+          }
+
+          lastTapRef.current = now;
+        })
+        .onEnd(() => {
+          // Check if this was a single tap (no double tap followed)
+          setTimeout(() => {
+            if (Date.now() - lastTapRef.current >= DOUBLE_TAP_DELAY) {
+              runOnJS(handlePlayPause)();
+            }
+          }, DOUBLE_TAP_DELAY);
+        }),
+    [handleDoubleTapSeek, handleDoubleTapLike, handlePlayPause]
+  );
+
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(LONG_PRESS_DURATION)
+        .onStart(() => {
+          scale.value = withSpring(0.95, { damping: 15 });
+          runOnJS(handleLongPress)();
+        })
+        .onEnd(() => {
+          scale.value = withSpring(1, { damping: 15 });
+        }),
+    [handleLongPress, scale]
+  );
+
+  const composedGesture = Gesture.Exclusive(longPressGesture, tapGesture);
+
+  // ============================================================================
+  // ANIMATED STYLES
+  // ============================================================================
+
+  const containerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const thumbnailStyle = useAnimatedStyle(() => ({
+    opacity: thumbnailOpacity.value,
+  }));
+
+  // Controls overlay animation (available for future overlay implementation)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const controlsStyle = useAnimatedStyle(() => ({
+    opacity: controlsOpacity.value,
+  }));
+
+  const likeButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: likeScale.value }],
+  }));
+
+  const playButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: playButtonScale.value }],
+  }));
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  const progress = duration > 0 ? currentTime / duration : 0;
+  const isLive = video.videoUrl?.includes('.m3u8') || video.videoUrl?.includes('live');
+
+  return (
+    <GestureHandlerRootView style={{ height: itemHeight }}>
+      <GestureDetector gesture={composedGesture}>
+        <Animated.View
+          testID={testID}
+          style={[styles.container, { height: itemHeight }, containerStyle]}
+          accessible
+          accessibilityRole="button"
+          accessibilityLabel={`Video ${index + 1}: ${video.title || 'Untitled'}. ${formatViews(video.views || 0)} views. ${isLiked ? 'Liked' : 'Not liked'}. Double tap center to like, tap to play or pause.`}
+          accessibilityHint="Double tap sides to seek, long press for more options"
+        >
+          {/* Video Layer */}
+          <View style={styles.videoLayer}>
+            {video.videoUrl && (
+              <VideoView
+                player={player}
+                style={styles.video}
+                contentFit="cover"
+                nativeControls={false}
+              />
+            )}
+          </View>
+
+          {/* Thumbnail Layer (crossfade) */}
+          <Animated.View style={[styles.thumbnailLayer, thumbnailStyle]} pointerEvents="none">
+            <ImageBackground
+              source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
+              style={styles.thumbnail}
+              resizeMode="cover"
+            />
+          </Animated.View>
+
+          {/* Gradient Overlays */}
+          <LinearGradient
+            colors={['rgba(0,0,0,0.4)', 'transparent', 'transparent', 'rgba(0,0,0,0.6)']}
+            locations={[0, 0.2, 0.7, 1]}
+            style={styles.gradient}
+            pointerEvents="none"
+          />
+
+          {/* Buffering Indicator */}
+          {isBuffering && isActive && (
+            <View style={styles.bufferingContainer}>
+              <ActivityIndicator size="large" color="#FFFFFF" />
+            </View>
+          )}
+
+          {/* Error State */}
+          {hasError && (
+            <Animated.View style={styles.errorContainer} entering={FadeIn}>
+              <Text style={styles.errorText}>Failed to load video</Text>
+              <Pressable
+                style={styles.retryButton}
+                onPress={() => {
+                  setHasError(false);
+                  player?.play();
+                }}
+              >
+                <RotateCcw size={20} color="#FFFFFF" />
+                <Text style={styles.retryText}>Retry</Text>
+              </Pressable>
+            </Animated.View>
+          )}
+
+          {/* Center Play/Pause Button (shown when paused or controls visible) */}
+          {(!isPlaying || showControls) && !isBuffering && !hasError && (
+            <Animated.View
+              style={[styles.centerPlayButton, playButtonStyle]}
+              entering={ZoomIn.duration(150)}
+              exiting={FadeOut.duration(150)}
+            >
+              <View style={styles.playButtonBg}>
+                {isPlaying ? (
+                  <Pause size={40} color="#FFFFFF" fill="#FFFFFF" />
+                ) : (
+                  <Play size={40} color="#FFFFFF" fill="#FFFFFF" />
+                )}
+              </View>
+            </Animated.View>
+          )}
+
+          {/* Live Badge */}
+          {isLive && (
+            <View style={styles.liveBadge}>
+              <View style={styles.liveIndicator} />
+              <Text style={styles.liveText}>LIVE</Text>
+            </View>
+          )}
+
+          {/* Mute Button (top right) */}
+          <Pressable
+            style={styles.muteButton}
+            onPress={handleToggleMute}
+            accessibilityRole="button"
+            accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
+          >
+            <View style={[styles.iconButtonBg, { backgroundColor: withAlpha('#000000', 0.5) }]}>
+              {isMuted ? (
+                <VolumeX size={20} color="#FFFFFF" />
+              ) : (
+                <Volume2 size={20} color="#FFFFFF" />
+              )}
+            </View>
+          </Pressable>
+
+          {/* Side Action Bar (TikTok style) */}
+          <View style={styles.sideActions}>
+            {/* Like */}
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onLike();
+                likeScale.value = withSequence(
+                  withSpring(1.3, { damping: 8 }),
+                  withSpring(1, { damping: 12 })
+                );
+              }}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel={`${isLiked ? 'Unlike' : 'Like'} video. ${formatViews(video.likes || 0)} likes`}
+            >
+              <Animated.View style={likeButtonStyle}>
+                <Heart
+                  size={32}
+                  color={isLiked ? '#FF2D55' : '#FFFFFF'}
+                  fill={isLiked ? '#FF2D55' : 'transparent'}
+                />
+              </Animated.View>
+              <Text style={styles.actionCount}>{formatViews(video.likes || 0)}</Text>
+            </Pressable>
+
+            {/* Comment */}
+            <Pressable
+              onPress={onComment}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel={`Comment on video. ${formatViews(video.commentsCount || 0)} comments`}
+            >
+              <MessageCircle size={32} color="#FFFFFF" />
+              <Text style={styles.actionCount}>{formatViews(video.commentsCount || 0)}</Text>
+            </Pressable>
+
+            {/* Share */}
+            <Pressable
+              onPress={onShare}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Share video"
+            >
+              <Share2 size={32} color="#FFFFFF" />
+              <Text style={styles.actionCount}>Share</Text>
+            </Pressable>
+
+            {/* Bookmark */}
+            <Pressable
+              onPress={onBookmark}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark video'}
+            >
+              <Bookmark
+                size={32}
+                color={isBookmarked ? colors.warning : '#FFFFFF'}
+                fill={isBookmarked ? colors.warning : 'transparent'}
+              />
+            </Pressable>
+
+            {/* More Options */}
+            <Pressable
+              onPress={onExpand}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel="More options"
+            >
+              <MoreHorizontal size={28} color="#FFFFFF" />
+            </Pressable>
+          </View>
+
+          {/* Bottom Info Overlay */}
+          <View style={styles.bottomInfo}>
+            {/* Creator Info */}
+            <View style={styles.creatorRow}>
+              <View style={styles.creatorAvatar}>
+                <Text style={styles.avatarText}>
+                  {(video.title || 'U').charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.creatorName}>@creator</Text>
+              <Pressable style={styles.followButton}>
+                <Text style={styles.followText}>Follow</Text>
+              </Pressable>
+            </View>
+
+            {/* Video Title/Description */}
+            <Text style={styles.videoTitle} numberOfLines={2}>
+              {video.title || 'Untitled Video'}
+            </Text>
+
+            {/* Music/Sound Row */}
+            <View style={styles.musicRow}>
+              <Music2 size={14} color="#FFFFFF" />
+              <Text style={styles.musicText} numberOfLines={1}>
+                Original audio - creator
+              </Text>
+            </View>
+          </View>
+
+          {/* Progress Bar */}
+          <VideoProgressBar
+            progress={progress}
+            bufferProgress={bufferProgress}
+            duration={duration}
+            isVisible={isActive}
+          />
+
+          {/* Heart Burst Animation */}
+          <HeartBurst visible={showHeartBurst} x={heartPosition.x} y={heartPosition.y} />
+
+          {/* Seek Indicator */}
+          <SeekIndicator visible={showSeekIndicator} side={seekSide} amount={seekAmount} />
+        </Animated.View>
+      </GestureDetector>
+    </GestureHandlerRootView>
+  );
+}
+
+// ============================================================================
+// STYLES
+// ============================================================================
+
+const styles = StyleSheet.create({
+  container: {
+    width: SCREEN_WIDTH,
+    backgroundColor: '#000000',
+    position: 'relative',
+  },
+  videoLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000000',
+  },
+  video: {
+    flex: 1,
+  },
+  thumbnailLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  thumbnail: {
+    flex: 1,
+  },
+  gradient: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+  },
+  bufferingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  errorContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: withAlpha('#000000', 0.7),
+    zIndex: 10,
+  },
+  errorText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    color: '#FFFFFF',
+    marginBottom: SPACING.md,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    backgroundColor: withAlpha('#FFFFFF', 0.2),
+    borderRadius: RADIUS.full,
+  },
+  retryText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#FFFFFF',
+  },
+  centerPlayButton: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    marginLeft: -40,
+    marginTop: -40,
+    zIndex: 5,
+  },
+  playButtonBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: withAlpha('#000000', 0.5),
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  liveBadge: {
+    position: 'absolute',
+    top: SPACING.lg,
+    left: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EF4444',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.sm,
+    gap: 4,
+    zIndex: 10,
+  },
+  liveIndicator: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  liveText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  muteButton: {
+    position: 'absolute',
+    top: SPACING.lg,
+    right: SPACING.md,
+    zIndex: 10,
+  },
+  iconButtonBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sideActions: {
+    position: 'absolute',
+    right: SPACING.sm,
+    bottom: 140,
+    alignItems: 'center',
+    gap: SPACING.lg,
+    zIndex: 10,
+  },
+  actionButton: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  actionCount: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  bottomInfo: {
+    position: 'absolute',
+    left: SPACING.md,
+    right: 80,
+    bottom: SPACING.xl,
+    zIndex: 10,
+  },
+  creatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  creatorAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#666666',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  avatarText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#FFFFFF',
+  },
+  creatorName: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#FFFFFF',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  followButton: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    backgroundColor: '#FF2D55',
+    borderRadius: RADIUS.sm,
+  },
+  followText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#FFFFFF',
+  },
+  videoTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: '#FFFFFF',
+    lineHeight: 20,
+    marginBottom: SPACING.sm,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  musicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  musicText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#FFFFFF',
+    flex: 1,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  progressContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 3,
+    zIndex: 20,
+  },
+  progressTrack: {
+    flex: 1,
+  },
+  bufferFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+  },
+  progressFill: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+  },
+  heartBurst: {
+    position: 'absolute',
+    zIndex: 100,
+    ...SHADOWS.lg,
+  },
+  seekIndicator: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -30,
+    zIndex: 50,
+  },
+  seekIndicatorLeft: {
+    left: SCREEN_WIDTH * 0.15,
+  },
+  seekIndicatorRight: {
+    right: SCREEN_WIDTH * 0.15,
+  },
+  seekBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+  },
+  seekText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    color: '#FFFFFF',
+  },
+});
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+export const VideoFeedItem = memo(VideoFeedItemComponent);
+export default VideoFeedItem;

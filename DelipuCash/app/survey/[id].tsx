@@ -1,10 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
   Animated,
   Easing,
+  InputAccessoryView,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,11 +22,13 @@ import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   FileText,
   ListChecks,
+  Lock,
   MessageCircle,
   Shield,
   Star,
@@ -29,7 +36,8 @@ import {
 } from "lucide-react-native";
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/data/mockData";
-import { useSubmitSurvey, useSurvey } from "@/services/hooks";
+import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
+import { useAuth } from "@/store";
 import { UploadSurvey } from "@/types";
 import {
   BORDER_WIDTH,
@@ -40,6 +48,9 @@ import {
   useTheme,
   withAlpha,
 } from "@/utils/theme";
+
+// Unique ID for InputAccessoryView (iOS keyboard toolbar)
+const INPUT_ACCESSORY_VIEW_ID = "survey-input-accessory";
 
 type QuestionType = "rating" | "checkbox" | "radio" | "text";
 
@@ -120,16 +131,67 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
 
+  // Auth state for single attempt enforcement
+  const { auth } = useAuth();
+  const userId = auth?.user?.id;
+
   const { data: surveyData, isLoading, error } = useSurvey(id || "");
   const submitSurvey = useSubmitSurvey();
+  
+  // Check if user has already attempted this survey (single attempt enforcement)
+  const { 
+    data: attemptStatus, 
+    isLoading: checkingAttempt 
+  } = useCheckSurveyAttempt(id || "", userId);
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [showReview, setShowReview] = useState(false);
+  const [isReducedMotion, setIsReducedMotion] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  
+  // Refs for keyboard handling and scroll
+  const scrollViewRef = useRef<ScrollView>(null);
+  const textInputRef = useRef<TextInput>(null);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
   const modalScale = useRef(new Animated.Value(0.95)).current;
+
+  // Check for reduced motion preference (accessibility - WCAG 2.1)
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setIsReducedMotion);
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      setIsReducedMotion
+    );
+    return () => subscription.remove();
+  }, []);
+
+  // Keyboard visibility handling for scroll accessibility
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setIsKeyboardVisible(true);
+        // Scroll to keep input visible
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: !isReducedMotion });
+        }, 100);
+      }
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setIsKeyboardVisible(false);
+      }
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, [isReducedMotion]);
 
   const survey: SurveyDisplay | null = useMemo(() => {
     if (!surveyData) return null;
@@ -283,21 +345,60 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   };
 
   useEffect(() => {
-    slideAnim.setValue(24);
+    const duration = isReducedMotion ? 0 : 220;
+    slideAnim.setValue(isReducedMotion ? 0 : 24);
     Animated.timing(slideAnim, {
       toValue: 0,
-      duration: 220,
+      duration,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [currentIndex, slideAnim]);
+  }, [currentIndex, slideAnim, isReducedMotion]);
 
-  if (isLoading) {
+  // Dismiss keyboard helper
+  const dismissKeyboard = useCallback(() => {
+    Keyboard.dismiss();
+  }, []);
+
+  // Loading state
+  if (isLoading || checkingAttempt) {
     return (
       <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.stateText, { color: colors.textMuted }]}>Loading survey...</Text>
+        <Text style={[styles.stateText, { color: colors.textMuted }]}>
+          {checkingAttempt ? "Checking eligibility..." : "Loading survey..."}
+        </Text>
+      </View>
+    );
+  }
+
+  // Already attempted state - Single attempt enforcement
+  if (attemptStatus?.hasAttempted) {
+    return (
+      <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
+        <StatusBar style={statusBarStyle} />
+        <View style={[styles.alreadyAttemptedIcon, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+          <Lock size={48} color={colors.warning} strokeWidth={1.5} />
+        </View>
+        <Text style={[styles.stateTitle, { color: colors.text }]}>Already Completed</Text>
+        <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 280 }]}>
+          You have already completed this survey. Each survey can only be attempted once per user.
+        </Text>
+        {attemptStatus.attemptedAt && (
+          <View style={[styles.attemptedDateBadge, { backgroundColor: withAlpha(colors.textMuted, 0.1) }]}>
+            <Clock size={14} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.attemptedDateText, { color: colors.textMuted }]}>
+              Completed on {new Date(attemptStatus.attemptedAt).toLocaleDateString()}
+            </Text>
+          </View>
+        )}
+        <PrimaryButton 
+          title="Browse Other Surveys" 
+          onPress={() => router.back()} 
+          style={{ marginTop: SPACING.xl }}
+          accessibilityLabel="Go back to browse other surveys"
+        />
       </View>
     );
   }
@@ -432,6 +533,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         return (
           <View style={styles.textFieldWrapper}>
             <TextInput
+              ref={textInputRef}
               style={[
                 styles.textInput,
                 {
@@ -447,6 +549,19 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               textAlignVertical="top"
               value={typeof currentAnswer === "string" ? currentAnswer : ""}
               onChangeText={(text) => setAnswer(text)}
+              // Accessibility improvements
+              accessibilityLabel={`Answer for: ${question.text}`}
+              accessibilityHint="Enter your text response"
+              // Keyboard handling for better scroll accessibility
+              inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_VIEW_ID : undefined}
+              returnKeyType="done"
+              blurOnSubmit={false}
+              onFocus={() => {
+                // Scroll to make input visible when keyboard appears
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: !isReducedMotion });
+                }, 150);
+              }}
             />
             <View style={styles.helperRow}>
               <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
@@ -458,13 +573,22 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+    >
       <StatusBar style={statusBarStyle} />
 
       <ScrollView
+        ref={scrollViewRef}
         style={styles.scroll}
-        contentContainerStyle={{ paddingBottom: insets.bottom + SPACING["4xl"] }}
+        contentContainerStyle={{ 
+          paddingBottom: insets.bottom + SPACING["4xl"] + (isKeyboardVisible ? 100 : 0) 
+        }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
       >
         <View
           style={[
@@ -675,18 +799,47 @@ const SurveyAttemptScreen = (): React.ReactElement => {
                 onPress={handleSubmit}
                 loading={submitSurvey.isPending}
                 rightIcon={<CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
+                accessibilityLabel="Submit survey responses"
               />
               <PrimaryButton
                 title="Keep editing"
                 variant="outline"
                 onPress={closeReviewModal}
                 leftIcon={<X size={16} color={colors.text} strokeWidth={1.5} />}
+                accessibilityLabel="Continue editing responses"
               />
             </View>
           </Animated.View>
         </Animated.View>
       </Modal>
-    </View>
+
+      {/* iOS Keyboard Accessory View for better scroll accessibility */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={INPUT_ACCESSORY_VIEW_ID}>
+          <View 
+            style={[
+              styles.keyboardAccessory, 
+              { 
+                backgroundColor: colors.card,
+                borderTopColor: colors.border,
+              }
+            ]}
+          >
+            <TouchableOpacity 
+              onPress={dismissKeyboard}
+              style={styles.keyboardDismissButton}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss keyboard"
+            >
+              <ChevronDown size={20} color={colors.textMuted} strokeWidth={1.5} />
+              <Text style={[styles.keyboardDismissText, { color: colors.textMuted }]}>
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
+    </KeyboardAvoidingView>
   );
 };
 
@@ -995,6 +1148,48 @@ const styles = StyleSheet.create({
   stateTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["2xl"],
+  },
+  // Already attempted state styles
+  alreadyAttemptedIcon: {
+    width: 88,
+    height: 88,
+    borderRadius: RADIUS["2xl"],
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.md,
+  },
+  attemptedDateBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    marginTop: SPACING.sm,
+  },
+  attemptedDateText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  // Keyboard accessory styles for iOS
+  keyboardAccessory: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm,
+    borderTopWidth: BORDER_WIDTH.hairline,
+  },
+  keyboardDismissButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+  },
+  keyboardDismissText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 });
 

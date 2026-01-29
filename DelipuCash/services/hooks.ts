@@ -592,6 +592,29 @@ export function useSurvey(surveyId: string): UseQueryResult<(Survey & { question
 }
 
 /**
+ * Hook to check if user has already attempted a survey
+ * Industry standard: Single attempt per user per survey
+ */
+export function useCheckSurveyAttempt(
+  surveyId: string, 
+  userId: string | undefined
+): UseQueryResult<{ hasAttempted: boolean; attemptedAt: string | null; message: string }, Error> {
+  return useQuery({
+    queryKey: ["surveyAttempt", surveyId, userId] as const,
+    queryFn: async () => {
+      if (!userId) {
+        return { hasAttempted: false, attemptedAt: null, message: "User not authenticated" };
+      }
+      const response = await api.surveys.checkAttempt(surveyId, userId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    enabled: !!surveyId && !!userId,
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
+}
+
+/**
  * Hook to submit survey response
  */
 export function useSubmitSurvey(): UseMutationResult<{ reward: number }, Error, { surveyId: string; responses: Record<string, unknown> }> {
