@@ -32,3 +32,7 @@ export type { SearchResultsProps } from './SearchResults';
 // Slider Components
 export { TrendingVideoSlider } from './TrendingVideoSlider';
 export type { TrendingVideoSliderProps } from './TrendingVideoSlider';
+
+// Inline Player Components
+export { InlineVideoPlayer } from './InlineVideoPlayer';
+export type { InlineVideoPlayerProps } from './InlineVideoPlayer';

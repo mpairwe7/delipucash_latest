@@ -1,0 +1,36 @@
+{
+  "cli": {
+    "version": ">= 16.31.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "development"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "NODE_ENV": "production",
+        "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
+        "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

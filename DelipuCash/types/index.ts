@@ -168,14 +168,18 @@ export interface UploadSurvey {
 export interface Ad {
   id: string;
   title: string;
+  headline: string | null;
   description: string;
   imageUrl: string | null;
   videoUrl: string | null;
   thumbnailUrl: string | null;
   type: "regular" | "featured" | "banner" | "compact";
+  placement: "feed" | "interstitial" | "native" | "rewarded" | "story";
   sponsored: boolean;
   views: number;
   clicks: number;
+  impressions: number;
+  conversions: number;
   isActive: boolean;
   startDate: string | null;
   endDate: string | null;
@@ -187,6 +191,25 @@ export interface Ad {
   frequency: number | null;
   lastShown: string | null;
   targetUrl: string | null;
+  // CTA & Engagement
+  callToAction: "learn_more" | "shop_now" | "sign_up" | "download" | "contact_us" | "get_offer" | "book_now" | "watch_more" | "apply_now" | "subscribe" | "get_quote";
+  // Budget & Bidding
+  pricingModel: "cpm" | "cpc" | "cpa" | "flat";
+  totalBudget: number;
+  bidAmount: number;
+  dailyBudgetLimit: number | null;
+  amountSpent: number;
+  // Targeting
+  targetAgeRanges: string[] | null;
+  targetGender: "all" | "male" | "female" | "other";
+  targetLocations: string[] | null;
+  targetInterests: string[] | null;
+  enableRetargeting: boolean;
+  // Status & Approval
+  status: "pending" | "approved" | "rejected" | "paused" | "completed";
+  rejectionReason: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
 }
 
 export interface SurveyResponse {

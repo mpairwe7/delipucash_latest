@@ -135,7 +135,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showLimitWarning, setShowLimitWarning] = useState(false);
   
-  // Camera hook - industry standard camera initialization
+  // Camera hook - industry standard lazy camera initialization
+  // autoRequest: false - Show permission prompt UI first for better UX
+  // Only request permissions after user acknowledges why camera is needed
   const {
     hasPermission,
     requestPermissions,
@@ -149,7 +151,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     isReady,
     markReady,
   } = useCamera({
-    autoRequest: true,
+    autoRequest: false, // Industry standard: show permission context first
     pauseOnBackground: true,
     initialFacing: 'back',
   });
@@ -432,9 +434,17 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     Alert.alert('Settings', 'Camera settings coming soon!');
   }, []);
 
-  // Loading state
+  // Permission not yet requested - show context prompt (industry best practice)
+  // Users should understand WHY camera access is needed before system dialog
   if (hasPermission === null) {
-    return <PermissionPrompt type="loading" />;
+    return (
+      <PermissionPrompt
+        type="request"
+        onRequestPermissions={requestPermissions}
+        title="Enable Camera Access"
+        description="To record videos and go live, we need access to your camera, microphone, and media library. Your recordings stay private until you choose to share them."
+      />
+    );
   }
   
   // Permission denied

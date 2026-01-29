@@ -1,201 +1,297 @@
-# DelipuCash Backend - Vercel Serverless Deployment
+# DelipuCash Backend Server
 
-This is the optimized backend API for DelipuCash, configured for deployment on Vercel serverless functions.
+A robust Node.js/Express backend API for the DelipuCash mobile application, featuring Prisma ORM with PostgreSQL and Prisma Accelerate for enhanced performance.
 
-## 🚀 Quick Deploy
+## 🚀 Tech Stack
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/your-username/delipucash-backend)
+- **Runtime:** Node.js 18+ / Bun
+- **Framework:** Express.js
+- **Database:** PostgreSQL (Supabase)
+- **ORM:** Prisma 7.x with Prisma Accelerate
+- **Authentication:** JWT (JSON Web Tokens)
+- **Deployment:** Vercel Serverless Functions
 
 ## 📋 Prerequisites
 
-- Node.js 18.x or higher
-- MongoDB database (MongoDB Atlas recommended)
-- Vercel account
+- Node.js 18.x or higher (or Bun 1.x)
+- PostgreSQL database (Supabase recommended)
+- Prisma Accelerate account (for caching)
 - Environment variables configured
 
-## 🛠️ Local Development
+## 🛠️ Local Development Setup
 
-1. **Clone and install dependencies:**
-   ```bash
-   git clone <repository-url>
-   cd server
-   yarn install
-   ```
+### 1. Clone and Install Dependencies
 
-2. **Set up environment variables:**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your actual values
-   ```
-
-3. **Generate Prisma client:**
-   ```bash
-   yarn prisma generate
-   ```
-
-4. **Run development server:**
-   ```bash
-   yarn dev
-   ```
-
-## 🌐 Vercel Deployment
-
-### Method 1: Automatic Deployment (Recommended)
-
-1. **Connect your repository to Vercel:**
-   - Go to [Vercel Dashboard](https://vercel.com/dashboard)
-   - Click "New Project"
-   - Import your Git repository
-   - Vercel will auto-detect the configuration
-
-2. **Set environment variables in Vercel:**
-   - Go to Project Settings → Environment Variables
-   - Add all variables from `.env.example`
-
-3. **Deploy:**
-   - Push to your main branch
-   - Vercel will automatically deploy
-
-### Method 2: Manual Deployment
-
-1. **Install Vercel CLI:**
-   ```bash
-   npm install -g vercel
-   ```
-
-2. **Login to Vercel:**
-   ```bash
-   vercel login
-   ```
-
-3. **Deploy:**
-   ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
-   ```
-
-## 🔧 Configuration
-
-### Environment Variables
-
-Create these environment variables in Vercel Dashboard:
-
-```env
-DATABASE_URL=mongodb+srv://username:password@cluster.mongodb.net/database
-JWT_SECRET=your_jwt_secret_key
-PAYPAL_CLIENT_ID=your_paypal_client_id
-PAYPAL_CLIENT_SECRET=your_paypal_client_secret
-EMAIL_USER=your_email@gmail.com
-EMAIL_PASS=your_app_password
-FRONTEND_URL=https://your-frontend.vercel.app
-NODE_ENV=production
+```bash
+cd server
+bun install
+# or
+npm install
 ```
 
-### Database Setup
+### 2. Configure Environment Variables
 
-1. **MongoDB Atlas (Recommended):**
-   - Create a MongoDB Atlas cluster
-   - Whitelist Vercel IPs (or use 0.0.0.0/0 for all IPs)
-   - Get connection string and add to `DATABASE_URL`
+Copy the example environment file and configure it:
 
-2. **Push database schema:**
-   ```bash
-   yarn prisma db push
-   ```
+```bash
+cp .env.example .env
+```
+
+Required environment variables:
+
+```env
+# Database URLs
+DATABASE_URL="postgresql://user:password@host:6543/postgres?pgbouncer=true"
+DIRECT_DATABASE_URL="postgresql://user:password@host:5432/postgres"
+ACCELERATE_URL="prisma+postgres://accelerate.prisma-data.net/?api_key=YOUR_KEY"
+
+# Authentication
+JWT_SECRET="your-secure-jwt-secret"
+
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Frontend URL (for CORS)
+FRONTEND_URL="http://localhost:8081"
+```
+
+### 3. Database Setup
+
+Generate Prisma client:
+
+```bash
+bunx prisma generate
+```
+
+Push schema to database:
+
+```bash
+bunx prisma db push
+```
+
+Seed the database with default admin user:
+
+```bash
+node prisma/seed.mjs
+```
+
+**Default Admin Credentials:**
+- Email: `admin@delipucash.com`
+- Password: `admin123456`
+
+### 4. Start Development Server
+
+```bash
+# Using Bun
+VERCEL=0 bun run dev
+
+# Using npm
+VERCEL=0 npm run dev
+```
+
+The server will start at `http://localhost:3000`
 
 ## 📁 Project Structure
 
 ```
 server/
 ├── api/
-│   └── index.js          # Main serverless function
-├── routes/               # API routes
-├── controllers/          # Route handlers
+│   └── index.js              # Vercel serverless entry point
+├── controllers/              # Route handlers
+│   ├── auth.controller.mjs   # Authentication logic
+│   ├── AdController.mjs      # Advertisement management
+│   ├── questionController.mjs
+│   ├── surveyController.mjs
+│   ├── paymentController.mjs
+│   └── ...
+├── routes/                   # API route definitions
+│   ├── auth.route.mjs
+│   ├── AdRoutes.mjs
+│   ├── questionRoutes.mjs
+│   └── ...
 ├── lib/
-│   └── prisma.mjs       # Database client (optimized for serverless)
+│   └── prisma.mjs           # Prisma client singleton
 ├── config/
-│   └── db.mjs           # Database configuration
-├── utils/               # Utility functions
+│   ├── corsOptions.mjs      # CORS configuration
+│   └── db.mjs               # Database configuration
+├── utils/
+│   ├── verifyUser.mjs       # JWT verification middleware
+│   ├── adminInit.mjs        # Admin user initialization
+│   └── error.mjs            # Error handling utilities
 ├── prisma/
-│   └── schema.prisma    # Database schema
-├── vercel.json          # Vercel configuration
-└── package.json         # Dependencies and scripts
+│   ├── schema.prisma        # Database schema
+│   └── seed.mjs             # Database seeding script
+├── index.js                 # Local development entry point
+├── vercel.json              # Vercel deployment config
+└── package.json
 ```
 
 ## 🔍 API Endpoints
 
 ### Health Check
-- `GET /` - Root endpoint
-- `GET /health` - Comprehensive health check
-- `GET /ping` - Simple ping endpoint
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | API health check |
+| GET | `/api/health/ping` | Simple ping |
 
 ### Authentication
-- `POST /api/auth/login` - User login
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/logout` - User logout
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/register` | User registration |
+| POST | `/api/auth/login` | User login |
+| POST | `/api/auth/logout` | User logout |
+| GET | `/api/auth/profile` | Get user profile |
 
-### Core Features
-- `/api/rewards/*` - Reward management
-- `/api/questions/*` - Question management
-- `/api/surveys/*` - Survey management
-- `/api/payments/*` - Payment processing
-- `/api/videos/*` - Video management
-- `/api/ads/*` - Advertisement management
-- `/api/users/*` - User management
-- `/api/notifications/*` - Notification system
+### Users
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users` | List all users (Admin) |
+| GET | `/api/users/:id` | Get user by ID |
+| PUT | `/api/users/:id` | Update user |
+| DELETE | `/api/users/:id` | Delete user |
 
-## 🚨 Troubleshooting
+### Questions & Quiz
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/questions` | Get all questions |
+| POST | `/api/questions` | Create question |
+| GET | `/api/quiz/questions` | Get quiz questions |
+| POST | `/api/quiz/sessions` | Save quiz session |
+| GET | `/api/quiz/points/:userId` | Get user points |
+| PUT | `/api/quiz/points` | Update user points |
 
-### Common Issues
+### Surveys
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/surveys` | Get all surveys |
+| POST | `/api/surveys` | Create survey |
+| GET | `/api/surveys/:id` | Get survey by ID |
+| POST | `/api/surveys/:id/respond` | Submit survey response |
 
-1. **Database Connection Errors:**
-   - Verify `DATABASE_URL` is correct
-   - Check MongoDB Atlas IP whitelist
-   - Ensure database exists
+### Advertisements
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/ads` | Get ads with targeting |
+| POST | `/api/ads` | Create advertisement |
+| GET | `/api/ads/:id` | Get ad by ID |
+| POST | `/api/ads/:id/click` | Track ad click |
+| POST | `/api/ads/:id/impression` | Track ad impression |
 
-2. **CORS Errors:**
-   - Add your frontend domain to `FRONTEND_URL`
-   - Check CORS configuration in `api/index.js`
+### Payments
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/payments/initiate` | Initiate payment |
+| POST | `/api/payments/callback` | Payment callback |
+| GET | `/api/payments/history` | Payment history |
 
-3. **Cold Start Delays:**
-   - First request may be slow (cold start)
-   - Subsequent requests will be faster
-   - Consider using Vercel Pro for faster cold starts
+### Rewards
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/rewards` | Get user rewards |
+| POST | `/api/rewards/redeem` | Redeem reward |
+| GET | `/api/reward-questions` | Get reward questions |
 
-4. **Function Timeout:**
-   - Vercel has a 30-second timeout for serverless functions
-   - Optimize long-running queries
-   - Consider background processing for heavy tasks
+### Notifications
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/notifications` | Get notifications |
+| PUT | `/api/notifications/:id/read` | Mark as read |
+| DELETE | `/api/notifications/:id` | Delete notification |
 
-### Monitoring
+## 🗄️ Database Schema
 
-- **Vercel Dashboard:** Monitor deployments, errors, and performance
-- **Health Check:** Use `/health` endpoint to monitor API status
-- **Logs:** Check Vercel function logs for debugging
+Key models in the Prisma schema:
 
-## 🔒 Security Considerations
+- **AppUser** - User accounts with roles (USER, ADMIN, MODERATOR)
+- **Question** - Quiz questions
+- **QuestionAttempt** - User question attempts
+- **Survey** - Survey definitions
+- **SurveyResponse** - Survey responses
+- **Ad** - Advertisements with targeting options
+- **Payment** - Payment transactions
+- **Reward** - User rewards
+- **RewardQuestion** - Instant reward questions
+- **Notification** - Push notifications
+- **Video** - Video content
 
-- All environment variables are secure in Vercel
-- CORS is configured for specific origins
-- JWT tokens for authentication
-- Input validation on all endpoints
-- Rate limiting recommended for production
+## 🚀 Deployment
 
-## 📊 Performance Optimization
+### Vercel Deployment
 
-- **Prisma Client:** Optimized with singleton pattern for serverless
-- **Connection Pooling:** Handled by Prisma
-- **Cold Start Optimization:** Minimal imports and lazy loading
-- **Caching:** Consider Redis for session management
-- **CDN:** Static assets served via Vercel CDN
+1. **Connect Repository:**
+   - Link your GitHub repository to Vercel
+   - Set the root directory to `server`
 
-## 🆘 Support
+2. **Configure Environment Variables:**
+   Add all required environment variables in Vercel dashboard.
 
-For deployment issues:
-1. Check Vercel function logs
-2. Test endpoints with health check
-3. Verify all environment variables are set
-4. Check database connectivity
+3. **Deploy:**
+   ```bash
+   vercel --prod
+   ```
+
+### Manual Deployment
+
+```bash
+chmod +x deploy.sh
+./deploy.sh
+```
+
+## 🔧 Available Scripts
+
+```bash
+# Development
+bun run dev          # Start development server with nodemon
+
+# Production
+bun run start        # Start production server
+bun run build        # Generate Prisma client
+
+# Database
+bun run db:push      # Push schema to database
+bun run db:studio    # Open Prisma Studio
+bun run db:reset     # Reset database
+bun run db:seed      # Seed database
+
+# Testing
+bun run test         # Run tests
+```
+
+## 🔒 Security Features
+
+- JWT-based authentication
+- Role-based access control (RBAC)
+- Password hashing with bcrypt
+- CORS configuration
+- Input validation
+- Rate limiting (recommended for production)
+
+## 🐛 Troubleshooting
+
+### Database Connection Issues
+
+1. Verify `DATABASE_URL` and `DIRECT_DATABASE_URL` are correct
+2. Check if Prisma Accelerate API key is valid
+3. Ensure database is accessible from your network
+
+### Prisma Client Issues
+
+```bash
+# Regenerate Prisma client
+bunx prisma generate
+
+# Reset and resync database
+bunx prisma db push --force-reset
+```
+
+### Admin User Creation
+
+If the admin user is not created automatically:
+
+```bash
+node prisma/seed.mjs
+```
 
 ## 📝 License
 

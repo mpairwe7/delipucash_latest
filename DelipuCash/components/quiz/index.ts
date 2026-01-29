@@ -12,3 +12,7 @@ export {
   AnswerFeedback,
   SessionSummaryCard,
 } from './QuizComponents';
+
+// Instant Reward Session Components
+export { RewardSessionSummary } from './RewardSessionSummary';
+export { RedemptionModal } from './RedemptionModal';

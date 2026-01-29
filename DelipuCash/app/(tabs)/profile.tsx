@@ -4,7 +4,7 @@
  * Quick Access section with Help Support, My Rewards, Create Ad, Create Question cards
  */
 
-import React, { memo, useCallback, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,9 @@ import {
   Pressable,
   Platform,
   Dimensions,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -33,11 +36,13 @@ import Animated, {
 import {
   ArrowUpRight,
   BadgeCheck,
+  Bell,
   ChevronRight,
   CreditCard,
   Edit,
   Eye,
   Gift,
+  Globe,
   HelpCircle,
   History,
   KeyRound,
@@ -45,11 +50,15 @@ import {
   LucideIcon,
   Megaphone,
   MessageSquare,
+  Moon,
+  Palette,
   PlusCircle,
+  Settings,
   Shield,
   ShieldCheck,
   Smartphone,
   Sparkles,
+  Sun,
   TrendingUp,
   Upload,
   Wallet,
@@ -59,6 +68,7 @@ import {
 import { FormInput, NotificationBell, PrimaryButton, SectionHeader } from '@/components';
 import {
   useChangePassword,
+  useResend2FACode,
   useRevokeSession,
   useUnreadCount,
   useUpdatePrivacySettings,
@@ -66,7 +76,9 @@ import {
   useUpdateTwoFactor,
   useUserSessions,
   useUserStats,
+  useVerify2FACode,
 } from '@/services/hooks';
+import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
@@ -78,16 +90,24 @@ import {
   ThemeColors,
   TYPOGRAPHY,
   useTheme,
+  useThemeStore,
   withAlpha,
 } from '@/utils/theme';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
-// Responsive helpers
+// Platform-specific constants for industry-standard responsive design
+const isIOS = Platform.OS === 'ios';
+const isAndroid = Platform.OS === 'android';
+const isWeb = Platform.OS === 'web';
+
+// Screen size breakpoints (following Material Design & iOS HIG guidelines)
 const isTablet = width >= 768;
 const isLargeScreen = width >= 1024;
 const isSmallScreen = width < 375;
+const isLandscape = width > height;
 
+// Platform-aware responsive helpers
 const getResponsiveSize = (small: number, medium: number, large: number) => {
   if (isLargeScreen) return large;
   if (isTablet) return medium;
@@ -95,11 +115,38 @@ const getResponsiveSize = (small: number, medium: number, large: number) => {
 };
 
 const getResponsivePadding = () => {
-  if (isLargeScreen) return 32;
-  if (isTablet) return 24;
+  // iOS typically uses more generous padding
+  const basePadding = isIOS ? 2 : 0;
+  // Adjust padding for landscape and web
+  const landscapeAdjust = isLandscape ? 8 : 0;
+  const webAdjust = isWeb ? 4 : 0;
+
+  if (isLargeScreen) return 32 + basePadding + webAdjust;
+  if (isTablet) return 24 + basePadding + landscapeAdjust;
   if (isSmallScreen) return 16;
-  return 20;
+  return 20 + basePadding;
 };
+
+// Platform-specific shadow styles (Android uses elevation, iOS uses shadow properties)
+const getPlatformShadow = (elevation: number = 4) => {
+  if (isAndroid) {
+    return { elevation };
+  }
+  return {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: elevation / 2 },
+    shadowOpacity: 0.1 + elevation * 0.02,
+    shadowRadius: elevation,
+  };
+};
+
+// Platform-specific hit slop for touch targets (following platform guidelines)
+const getHitSlop = () => ({
+  top: isIOS ? 10 : 8,
+  bottom: isIOS ? 10 : 8,
+  left: isIOS ? 10 : 8,
+  right: isIOS ? 10 : 8,
+});
 
 // Interface definitions
 interface ProfileData {
@@ -124,6 +171,10 @@ interface QuickAccessItem {
   onPress?: () => void;
   badge?: number;
   adminOnly?: boolean;
+  /** If true, requires subscription for non-admin users */
+  requiresSubscription?: boolean;
+  /** Description shown below title (e.g., subscription status) */
+  description?: string;
 }
 
 interface MenuItem {
@@ -141,7 +192,9 @@ const QuickAccessCard = memo<{
   index: number;
   colors: ThemeColors;
   isAdmin?: boolean;
-}>(({ item, index, colors, isAdmin }) => {
+  hasSubscription?: boolean;
+  onSubscriptionRequired?: () => void;
+}>(({ item, index, colors, isAdmin, hasSubscription, onSubscriptionRequired }) => {
   const scale = useSharedValue(1);
   const Icon = item.icon;
 
@@ -162,6 +215,13 @@ const QuickAccessCard = memo<{
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Check if subscription is required for non-admin users
+    if (item.requiresSubscription && !isAdmin && !hasSubscription) {
+      onSubscriptionRequired?.();
+      return;
+    }
+
     if (item.onPress) {
       item.onPress();
     } else if (item.route) {
@@ -170,39 +230,47 @@ const QuickAccessCard = memo<{
   };
 
   return (
-    <Animated.View entering={FadeInDown.delay(100 + index * 50).springify()}>
-      <AnimatedPressable
-        style={[
-          styles.quickAccessCard,
-          {
-            backgroundColor: colors.card,
-            borderColor: colors.border,
-            width: isTablet ? '23%' : '48%',
-          },
-          animatedStyle,
-        ]}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
-        accessibilityLabel={item.title}
-        accessibilityRole="button"
+    <View style={styles.quickAccessCardWrapper}>
+      <Animated.View
+        entering={FadeInDown.delay(100 + index * 50).springify()}
+        style={{ flex: 1 }}
       >
-        <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
-          <Icon size={getResponsiveSize(20, 24, 28)} color={item.iconColor} strokeWidth={1.5} />
-          {item.badge !== undefined && item.badge > 0 && (
-            <View style={styles.badgeContainer}>
-              <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
-            </View>
-          )}
-        </View>
-        <Text
-          style={[styles.quickAccessText, { color: colors.text, fontSize: getResponsiveSize(12, 14, 16) }]}
-          numberOfLines={2}
+        <AnimatedPressable
+          style={[
+            styles.quickAccessCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+            getPlatformShadow(2),
+            animatedStyle,
+          ]}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={handlePress}
+          hitSlop={getHitSlop()}
+          accessibilityLabel={item.title}
+          accessibilityRole="button"
         >
-          {item.title}
-        </Text>
-      </AnimatedPressable>
-    </Animated.View>
+          <View style={[styles.quickAccessIcon, { backgroundColor: item.iconBgColor }]}>
+            <Icon size={ICON_SIZE.lg} color={item.iconColor} strokeWidth={1.5} />
+            {item.badge !== undefined && item.badge > 0 && (
+              <View style={styles.badgeContainer}>
+                <Text style={styles.badgeText}>{item.badge > 99 ? '99+' : item.badge}</Text>
+              </View>
+            )}
+          </View>
+          <Text
+            style={[styles.quickAccessText, { color: colors.text }]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.8}
+          >
+            {item.title}
+          </Text>
+        </AnimatedPressable>
+      </Animated.View>
+    </View>
   );
 });
 
@@ -316,18 +384,36 @@ export default function ProfileScreen(): React.ReactElement {
   const { data: userStats, isLoading: statsLoading } = useUserStats();
   const { data: sessions = [], isLoading: sessionsLoading, refetch: refetchSessions } = useUserSessions();
 
+  // Survey subscription status for non-admin users
+  const { data: surveySubscription } = useSurveySubscriptionStatus();
+  const hasSurveySubscription = surveySubscription?.hasActiveSubscription ?? false;
+
   // Mutations
   const updateProfileMutation = useUpdateProfile();
   const updateTwoFactorMutation = useUpdateTwoFactor();
+  const verify2FAMutation = useVerify2FACode();
+  const resend2FAMutation = useResend2FACode();
   const changePasswordMutation = useChangePassword();
   const updatePrivacyMutation = useUpdatePrivacySettings();
   const revokeSessionMutation = useRevokeSession();
 
   const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(Boolean(user?.twoFactorEnabled));
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [disablePassword, setDisablePassword] = useState('');
+  const [showDisable2FAModal, setShowDisable2FAModal] = useState(false);
   const [changePassword, setChangePassword] = useState({ current: '', next: '', confirm: '' });
   const [privacy, setPrivacy] = useState({ shareProfile: true, shareActivity: false });
-  const [activeTab, setActiveTab] = useState<'shortcuts' | 'security' | 'payments'>('shortcuts');
+  const [activeTab, setActiveTab] = useState<'shortcuts' | 'security' | 'payments' | 'preferences'>('shortcuts');
   const [isEditing, setIsEditing] = useState(false);
+
+  // Theme store for dark/light mode toggle
+  const { isDark, toggleTheme } = useThemeStore();
+
   const [editForm, setEditForm] = useState({
     firstName: user?.firstName || 'John',
     lastName: user?.lastName || 'Doe',
@@ -347,6 +433,48 @@ export default function ProfileScreen(): React.ReactElement {
       setTwoFactorEnabled(Boolean(user.twoFactorEnabled));
     }
   }, [user]);
+
+  // OTP countdown timer effect
+  useEffect(() => {
+    if (show2FAModal && otpExpiresAt) {
+      // Clear any existing interval
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+      }
+
+      // Start countdown
+      countdownRef.current = setInterval(() => {
+        const remaining = Math.max(0, Math.ceil((otpExpiresAt - Date.now()) / 1000));
+        setOtpCountdown(remaining);
+
+        if (remaining <= 0) {
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+          }
+        }
+      }, 1000);
+
+      return () => {
+        if (countdownRef.current) {
+          clearInterval(countdownRef.current);
+          countdownRef.current = null;
+        }
+      };
+    }
+  }, [show2FAModal, otpExpiresAt]);
+
+  // Cleanup countdown on modal close
+  useEffect(() => {
+    if (!show2FAModal) {
+      setOtpExpiresAt(null);
+      setOtpCountdown(0);
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    }
+  }, [show2FAModal]);
 
   const responsivePadding = getResponsivePadding();
 
@@ -472,7 +600,8 @@ export default function ProfileScreen(): React.ReactElement {
         iconColor: '#FF9800',
         iconBgColor: 'rgba(255, 152, 0, 0.1)',
         route: '/create-survey',
-        adminOnly: true,
+        // Visible to all users but requires subscription for non-admins
+        requiresSubscription: true,
       },
     ],
     []
@@ -482,7 +611,24 @@ export default function ProfileScreen(): React.ReactElement {
     { key: 'shortcuts', label: 'Shortcuts', icon: Zap },
     { key: 'security', label: 'Security', icon: Shield },
     { key: 'payments', label: 'Payments', icon: CreditCard },
+    { key: 'preferences', label: 'Preferences', icon: Settings },
   ] as const;
+
+  // Handler for subscription required (shown when non-admin users try to access subscription features)
+  const handleSubscriptionRequired = useCallback((): void => {
+    Alert.alert(
+      'Subscription Required',
+      'You need an active subscription to create surveys. Subscribe now to unlock this feature.',
+      [
+        { text: 'Maybe Later', style: 'cancel' },
+        {
+          text: 'Subscribe',
+          onPress: () => router.push('/survey-payment' as Href),
+          style: 'default',
+        },
+      ]
+    );
+  }, []);
 
   // Handlers
   const handleSignOut = useCallback((): void => {
@@ -529,23 +675,112 @@ export default function ProfileScreen(): React.ReactElement {
   }, [changePassword, changePasswordMutation]);
 
   const toggleTwoFactor = useCallback((): void => {
-    const nextValue = !twoFactorEnabled;
+    if (twoFactorEnabled) {
+      // Disabling 2FA - show password modal
+      setShowDisable2FAModal(true);
+    } else {
+      // Enabling 2FA - request verification code
+      updateTwoFactorMutation.mutate(
+        { enabled: true },
+        {
+          onSuccess: (data) => {
+            if (data.codeSent) {
+              // Code sent successfully, show OTP verification modal
+              setMaskedEmail(data.email || '');
+              setOtpCode('');
+              // Set expiry time (3 minutes = 180 seconds)
+              const expiresIn = data.expiresIn || 180;
+              setOtpExpiresAt(Date.now() + expiresIn * 1000);
+              setOtpCountdown(expiresIn);
+              setShow2FAModal(true);
+            } else if (data.enabled) {
+              // 2FA was already enabled
+              setTwoFactorEnabled(true);
+              Alert.alert('Two-factor authentication', '2FA is already enabled.');
+            }
+          },
+          onError: (error) => {
+            Alert.alert('Error', error.message || 'Failed to send verification code.');
+          },
+        }
+      );
+    }
+  }, [twoFactorEnabled, updateTwoFactorMutation]);
 
-    updateTwoFactorMutation.mutate(nextValue, {
+  // Handle OTP verification to complete enabling 2FA
+  const handleVerify2FA = useCallback((): void => {
+    if (otpCode.length !== 6) {
+      Alert.alert('Invalid Code', 'Please enter a 6-digit verification code.');
+      return;
+    }
+
+    // Check if OTP has expired
+    if (otpExpiresAt && Date.now() > otpExpiresAt) {
+      Alert.alert('Code Expired', 'Your verification code has expired. Please request a new one.');
+      return;
+    }
+
+    verify2FAMutation.mutate(otpCode, {
       onSuccess: () => {
-        setTwoFactorEnabled(nextValue);
+        setTwoFactorEnabled(true);
+        setShow2FAModal(false);
+        setOtpCode('');
+        setOtpExpiresAt(null);
+        setOtpCountdown(0);
         Alert.alert(
-          'Two-factor authentication',
-          nextValue
-            ? '2FA (OTP) enabled. Codes will be required at sign-in.'
-            : '2FA disabled. Re-enable to secure your account.'
+          'Two-factor authentication enabled',
+          '2FA (OTP) is now active. Codes will be required at sign-in.'
         );
       },
       onError: (error) => {
-        Alert.alert('Error', error.message || 'Failed to update 2FA settings.');
+        Alert.alert('Verification Failed', error.message || 'Invalid verification code.');
       },
     });
-  }, [twoFactorEnabled, updateTwoFactorMutation]);
+  }, [otpCode, otpExpiresAt, verify2FAMutation]);
+
+  // Handle resend 2FA code
+  const handleResend2FACode = useCallback((): void => {
+    resend2FAMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        setMaskedEmail(data.email || '');
+        // Reset expiry time (3 minutes = 180 seconds)
+        const expiresIn = data.expiresIn || 180;
+        setOtpExpiresAt(Date.now() + expiresIn * 1000);
+        setOtpCountdown(expiresIn);
+        setOtpCode('');
+        Alert.alert('Code Resent', `A new verification code has been sent to ${data.email}`);
+      },
+      onError: (error) => {
+        Alert.alert('Error', error.message || 'Failed to resend verification code.');
+      },
+    });
+  }, [resend2FAMutation]);
+
+  // Handle disable 2FA with password verification
+  const handleDisable2FA = useCallback((): void => {
+    if (!disablePassword) {
+      Alert.alert('Password Required', 'Please enter your password to disable 2FA.');
+      return;
+    }
+
+    updateTwoFactorMutation.mutate(
+      { enabled: false, password: disablePassword },
+      {
+        onSuccess: () => {
+          setTwoFactorEnabled(false);
+          setShowDisable2FAModal(false);
+          setDisablePassword('');
+          Alert.alert(
+            'Two-factor authentication disabled',
+            '2FA has been disabled. Re-enable to secure your account.'
+          );
+        },
+        onError: (error) => {
+          Alert.alert('Error', error.message || 'Failed to disable 2FA. Check your password.');
+        },
+      }
+    );
+  }, [disablePassword, updateTwoFactorMutation]);
 
   const handleRevokeSession = useCallback((id: string): void => {
     Alert.alert(
@@ -723,7 +958,7 @@ export default function ProfileScreen(): React.ReactElement {
         {/* Personal Information Card - First Section */}
         <Animated.View
           entering={FadeInDown.delay(100).springify()}
-          style={[styles.personalInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.personalInfoCard, { backgroundColor: colors.card, borderColor: colors.border }, getPlatformShadow(3)]}
         >
           {/* Card Header */}
           <View style={styles.personalInfoHeader}>
@@ -889,7 +1124,7 @@ export default function ProfileScreen(): React.ReactElement {
         {/* Hero Card - Account Overview */}
         <Animated.View
           entering={FadeInDown.delay(150).springify()}
-          style={[styles.heroCardWrapper]}
+          style={[styles.heroCardWrapper, getPlatformShadow(8)]}
         >
           <LinearGradient
             colors={[colors.primary, withAlpha(colors.primary, 0.85)]}
@@ -985,6 +1220,8 @@ export default function ProfileScreen(): React.ReactElement {
                 index={index}
                 colors={colors}
                 isAdmin={isAdmin}
+                hasSubscription={hasSurveySubscription}
+                onSubscriptionRequired={handleSubscriptionRequired}
               />
             ))}
           </View>
@@ -1043,7 +1280,8 @@ export default function ProfileScreen(): React.ReactElement {
                 key={tab.key}
                 style={[
                   styles.tabButton,
-                  isActive && [styles.tabButtonActive, { backgroundColor: withAlpha(colors.primary, 0.12) }],
+                  { backgroundColor: isActive ? withAlpha(colors.primary, 0.12) : withAlpha(colors.text, 0.05) },
+                  { borderWidth: 1, borderColor: isActive ? withAlpha(colors.primary, 0.2) : withAlpha(colors.border, 0.5) },
                 ]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1052,13 +1290,13 @@ export default function ProfileScreen(): React.ReactElement {
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
               >
-                <View style={[styles.tabIconContainer, isActive && { backgroundColor: colors.primary }]}>
-                  <Icon size={ICON_SIZE.sm} color={isActive ? '#FFFFFF' : colors.textMuted} strokeWidth={2} />
+                <View style={[styles.tabIconContainer, isActive ? { backgroundColor: colors.primary } : { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
+                  <Icon size={ICON_SIZE.sm} color={isActive ? '#FFFFFF' : colors.text} strokeWidth={2} />
                 </View>
                 <Text
                   style={[
                     styles.tabLabel,
-                    { color: isActive ? colors.primary : colors.textMuted },
+                    { color: isActive ? colors.primary : colors.text },
                     isActive && styles.tabLabelActive,
                   ]}
                 >
@@ -1256,6 +1494,152 @@ export default function ProfileScreen(): React.ReactElement {
           </Animated.View>
         )}
 
+        {activeTab === 'preferences' && (
+          <Animated.View entering={FadeInDown.springify()}>
+            <SectionHeader
+              title="Preferences"
+              subtitle="Customize your experience"
+              icon={<Settings size={ICON_SIZE.base} color={colors.info} />}
+            />
+            <Animated.View
+              entering={FadeInUp.delay(100).springify()}
+              style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              {/* Theme Toggle Section */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Palette size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Appearance</Text>
+                  </View>
+                  <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                    Choose your preferred theme for a comfortable viewing experience.
+                  </Text>
+                </View>
+
+                {/* Dark/Light Mode Toggle */}
+                <View style={[styles.themeToggleContainer, { borderColor: colors.border }]}>
+                  <View style={styles.themeInfo}>
+                    <View style={[styles.themeIconWrapper, { backgroundColor: withAlpha(isDark ? colors.primary : colors.warning, 0.12) }]}>
+                      {isDark ? (
+                        <Moon size={ICON_SIZE.base} color={colors.primary} />
+                      ) : (
+                        <Sun size={ICON_SIZE.base} color={colors.warning} />
+                      )}
+                    </View>
+                    <View style={styles.themeLabelContainer}>
+                      <Text style={[styles.securityTitle, { color: colors.text }]}>
+                        {isDark ? 'Dark Mode' : 'Light Mode'}
+                      </Text>
+                      <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                        {isDark ? 'Easier on your eyes in low light' : 'Better visibility in bright environments'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Switch
+                    value={isDark}
+                    onValueChange={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      toggleTheme();
+                    }}
+                    thumbColor={isDark ? colors.primary : colors.warning}
+                    trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
+                  />
+                </View>
+
+                {/* Theme Preview Cards */}
+                <View style={styles.themePreviewRow}>
+                  <Pressable
+                    style={[
+                      styles.themePreviewCard,
+                      { backgroundColor: '#1A1A2E', borderColor: isDark ? colors.primary : colors.border },
+                      isDark && styles.themePreviewCardActive,
+                    ]}
+                    onPress={() => {
+                      if (!isDark) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        toggleTheme();
+                      }
+                    }}
+                  >
+                    <Moon size={ICON_SIZE.sm} color="#8B5CF6" />
+                    <Text style={[styles.themePreviewLabel, { color: '#FFFFFF' }]}>Dark</Text>
+                    {isDark && (
+                      <View style={[styles.themeCheckmark, { backgroundColor: colors.primary }]}>
+                        <BadgeCheck size={12} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.themePreviewCard,
+                      { backgroundColor: '#F8F9FA', borderColor: !isDark ? colors.primary : colors.border },
+                      !isDark && styles.themePreviewCardActive,
+                    ]}
+                    onPress={() => {
+                      if (isDark) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        toggleTheme();
+                      }
+                    }}
+                  >
+                    <Sun size={ICON_SIZE.sm} color="#F59E0B" />
+                    <Text style={[styles.themePreviewLabel, { color: '#1A1A2E' }]}>Light</Text>
+                    {!isDark && (
+                      <View style={[styles.themeCheckmark, { backgroundColor: colors.primary }]}>
+                        <BadgeCheck size={12} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Notification Preferences */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Bell size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Notifications</Text>
+                  </View>
+                </View>
+                <Pressable
+                  style={[styles.preferenceItem, { borderColor: colors.border }]}
+                  onPress={() => router.push('/notifications' as Href)}
+                >
+                  <View style={styles.preferenceItemContent}>
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Manage Notifications</Text>
+                    <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                      Control push notifications and alerts
+                    </Text>
+                  </View>
+                  <ChevronRight size={ICON_SIZE.base} color={colors.textMuted} />
+                </Pressable>
+              </View>
+
+              {/* Language & Region */}
+              <View style={[styles.sectionBlock, { borderColor: colors.border, borderBottomWidth: 0 }]}>
+                <View style={styles.inlineHeader}>
+                  <View style={styles.inlineTitleRow}>
+                    <Globe size={ICON_SIZE.base} color={colors.text} />
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Language & Region</Text>
+                  </View>
+                </View>
+                <View style={[styles.preferenceItem, { borderColor: colors.border, borderBottomWidth: 0 }]}>
+                  <View style={styles.preferenceItemContent}>
+                    <Text style={[styles.securityTitle, { color: colors.text }]}>Language</Text>
+                    <Text style={[styles.securitySubtitle, { color: colors.textMuted }]}>
+                      English (Default)
+                    </Text>
+                  </View>
+                  <View style={[styles.comingSoonBadge, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+                    <Text style={[styles.comingSoonText, { color: colors.warning }]}>Coming Soon</Text>
+                  </View>
+                </View>
+              </View>
+            </Animated.View>
+          </Animated.View>
+        )}
+
         {/* Sign Out Button */}
         <Animated.View entering={FadeIn.delay(500)}>
           <Pressable
@@ -1279,6 +1663,159 @@ export default function ProfileScreen(): React.ReactElement {
           </Pressable>
         </Animated.View>
       </ScrollView>
+
+      {/* Enable 2FA Modal - OTP Verification */}
+      <Modal
+        visible={show2FAModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShow2FAModal(false);
+          setOtpCode('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalIconWrapper, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+              <Shield size={32} color={colors.primary} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Verify Your Email</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+              We&apos;ve sent a 6-digit code to {maskedEmail}. Enter it below to enable two-factor authentication.
+            </Text>
+
+            {/* Countdown Timer */}
+            <View style={[styles.countdownContainer, { backgroundColor: otpCountdown > 0 ? withAlpha(colors.primary, 0.1) : withAlpha(colors.error, 0.1) }]}>
+              <Text style={[styles.countdownText, { color: otpCountdown > 0 ? colors.primary : colors.error }]}>
+                {otpCountdown > 0
+                  ? `Code expires in ${Math.floor(otpCountdown / 60)}:${(otpCountdown % 60).toString().padStart(2, '0')}`
+                  : 'Code expired - please request a new one'}
+              </Text>
+            </View>
+
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  borderColor: otpCountdown > 0 ? colors.border : colors.error,
+                },
+              ]}
+              value={otpCode}
+              onChangeText={setOtpCode}
+              placeholder="Enter 6-digit code"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              maxLength={6}
+              autoFocus
+              editable={otpCountdown > 0}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalSecondaryButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setShow2FAModal(false);
+                  setOtpCode('');
+                }}
+              >
+                <Text style={[styles.modalSecondaryButtonText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  { backgroundColor: otpCountdown > 0 ? colors.primary : colors.border },
+                  (verify2FAMutation.isPending || otpCountdown <= 0) && { opacity: 0.7 },
+                ]}
+                onPress={handleVerify2FA}
+                disabled={verify2FAMutation.isPending || otpCountdown <= 0}
+              >
+                {verify2FAMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryButtonText}>Verify</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.resendButton}
+              onPress={handleResend2FACode}
+              disabled={resend2FAMutation.isPending}
+            >
+              {resend2FAMutation.isPending ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={[styles.resendButtonText, { color: colors.primary }]}>Resend Code</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Disable 2FA Modal - Password Verification */}
+      <Modal
+        visible={showDisable2FAModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowDisable2FAModal(false);
+          setDisablePassword('');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <View style={[styles.modalIconWrapper, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+              <KeyRound size={32} color={colors.warning} />
+            </View>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Disable Two-Factor Authentication</Text>
+            <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+              Enter your password to confirm disabling 2FA. This will make your account less secure.
+            </Text>
+            <TextInput
+              style={[
+                styles.otpInput,
+                {
+                  color: colors.text,
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
+              value={disablePassword}
+              onChangeText={setDisablePassword}
+              placeholder="Enter your password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalSecondaryButton, { borderColor: colors.border }]}
+                onPress={() => {
+                  setShowDisable2FAModal(false);
+                  setDisablePassword('');
+                }}
+              >
+                <Text style={[styles.modalSecondaryButtonText, { color: colors.textMuted }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalPrimaryButton,
+                  { backgroundColor: colors.warning },
+                  updateTwoFactorMutation.isPending && { opacity: 0.7 },
+                ]}
+                onPress={handleDisable2FA}
+                disabled={updateTwoFactorMutation.isPending}
+              >
+                {updateTwoFactorMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.modalPrimaryButtonText}>Disable 2FA</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1316,11 +1853,7 @@ const styles = StyleSheet.create({
   heroCardWrapper: {
     marginBottom: SPACING.lg,
     borderRadius: RADIUS['2xl'],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 8,
+    // Shadow applied via getPlatformShadow() in component
   },
   heroCard: {
     borderRadius: RADIUS['2xl'],
@@ -1488,27 +2021,35 @@ const styles = StyleSheet.create({
   quickAccessGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginTop: SPACING.sm,
+    marginTop: SPACING.base,
+    // Using negative margin trick for consistent gutters (industry standard approach)
+    marginHorizontal: -SPACING.xs,
+  },
+  quickAccessCardWrapper: {
+    // 2-column layout: each card takes exactly 50% width
+    width: '50%',
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: SPACING.xs,
   },
   quickAccessCard: {
+    width: '100%',
+    aspectRatio: 1.1, // Slightly taller than wide for better visual balance
     borderRadius: RADIUS.lg,
     alignItems: 'center',
-    marginBottom: SPACING.base,
-    borderWidth: 1,
-    padding: getResponsiveSize(12, 16, 20),
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-    minHeight: getResponsiveSize(90, 100, 110),
     justifyContent: 'center',
+    borderWidth: 1,
+    padding: SPACING.md,
+    // Shadow for depth (platform-specific applied in component)
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   quickAccessIcon: {
-    width: getResponsiveSize(48, 52, 56),
-    height: getResponsiveSize(48, 52, 56),
-    borderRadius: getResponsiveSize(24, 26, 28),
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: SPACING.sm,
@@ -1516,8 +2057,10 @@ const styles = StyleSheet.create({
   },
   quickAccessText: {
     textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium',
-    fontWeight: '500',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: TYPOGRAPHY.fontSize.sm * 1.3,
+    paddingHorizontal: SPACING.xs,
   },
   badgeContainer: {
     position: 'absolute',
@@ -1543,11 +2086,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     marginBottom: SPACING.xl,
     borderWidth: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 3,
+    // Shadow applied via getPlatformShadow() in component
     overflow: 'hidden',
   },
   personalInfoHeader: {
@@ -2067,5 +2606,181 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
     marginTop: SPACING.md,
+  },
+  // Preferences Tab Styles
+  themeToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  themeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginRight: SPACING.md,
+  },
+  themeIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  themeLabelContainer: {
+    flex: 1,
+  },
+  themePreviewRow: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  themePreviewCard: {
+    flex: 1,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+    position: 'relative',
+  },
+  themePreviewCardActive: {
+    borderWidth: 2,
+  },
+  themePreviewLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xs,
+  },
+  themeCheckmark: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preferenceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.md,
+    borderBottomWidth: 1,
+  },
+  preferenceItemContent: {
+    flex: 1,
+    marginRight: SPACING.md,
+  },
+  comingSoonBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  comingSoonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  // 2FA Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.lg,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    alignItems: 'center',
+  },
+  modalIconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.lg,
+  },
+  modalTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    textAlign: 'center',
+    marginBottom: SPACING.sm,
+  },
+  modalSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: 'center',
+    marginBottom: SPACING.lg,
+    lineHeight: 22,
+  },
+  otpInput: {
+    width: '100%',
+    height: 52,
+    borderWidth: 1,
+    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    textAlign: 'center',
+    letterSpacing: 4,
+    marginBottom: SPACING.lg,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    width: '100%',
+  },
+  modalSecondaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSecondaryButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  modalPrimaryButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPrimaryButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#FFFFFF',
+  },
+  resendButton: {
+    marginTop: SPACING.lg,
+    paddingVertical: SPACING.sm,
+  },
+  resendButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  // OTP Countdown Timer Styles
+  countdownContainer: {
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.md,
+    alignItems: 'center',
+  },
+  countdownText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

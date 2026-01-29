@@ -3,6 +3,7 @@ import {
   createRewardQuestion,
   getAllRewardQuestions,
   getInstantRewardQuestions,
+  getRewardQuestionById,
   getRewardQuestionsByUser,
   updateRewardQuestion,
   deleteRewardQuestion,
@@ -19,6 +20,9 @@ router.get('/all', getAllRewardQuestions);
 
 // Get instant reward questions only (matches frontend: GET /reward-questions/instant)
 router.get('/instant', getInstantRewardQuestions);
+
+// Get reward question by ID (matches frontend: GET /reward-questions/:id)
+router.get('/:id', getRewardQuestionById);
 
 // Get reward questions by user (matches frontend: GET /reward-questions/user/:userId)
 router.get('/user/:userId', getRewardQuestionsByUser);

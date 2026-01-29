@@ -49,6 +49,7 @@ function transformUserProfile(user: AppUser, stats?: UserStats): UserProfile {
     telephone: user.phone, // Alias for compatibility
     points: user.points,
     avatar: user.avatar,
+    role: user.role, // Include role for admin checks
     subscriptionStatus: user.subscriptionStatus,
     surveysubscriptionStatus: user.surveysubscriptionStatus,
     // Computed fields from stats

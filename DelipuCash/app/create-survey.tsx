@@ -56,6 +56,7 @@ import {
 } from '@/utils/theme';
 import { useAuth, useAuthModal } from '@/utils/auth';
 import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
+import { UserRole } from '@/types';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -122,14 +123,16 @@ const CreateSurveyScreen: React.FC = () => {
   const responsive = useResponsive();
 
   // Auth & Subscription state
-  const { isAuthenticated, isReady: authReady } = useAuth();
+  const { isAuthenticated, isReady: authReady, auth } = useAuth();
   const { open: openAuth } = useAuthModal();
   const {
     data: subscriptionStatus,
     isLoading: loadingSubscription
   } = useSurveySubscriptionStatus();
 
-  const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
+  // Admin bypass - admins have active subscription by default
+  const isAdmin = auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
+  const hasActiveSubscription = isAdmin || (subscriptionStatus?.hasActiveSubscription ?? false);
   const remainingDays = subscriptionStatus?.remainingDays ?? 0;
 
   // State
@@ -174,9 +177,9 @@ const CreateSurveyScreen: React.FC = () => {
     }
   }, [authReady, isAuthenticated, router, openAuth]);
 
-  // Check subscription status
+  // Check subscription status (admins bypass this check)
   useEffect(() => {
-    if (authReady && isAuthenticated && !loadingSubscription && !hasActiveSubscription) {
+    if (authReady && isAuthenticated && !loadingSubscription && !isAdmin && !hasActiveSubscription) {
       Alert.alert(
         "Subscription Required",
         "You need an active subscription to create surveys. Subscribe now to unlock survey creation.",
@@ -194,7 +197,7 @@ const CreateSurveyScreen: React.FC = () => {
         ]
       );
     }
-  }, [authReady, isAuthenticated, loadingSubscription, hasActiveSubscription, router]);
+  }, [authReady, isAuthenticated, loadingSubscription, isAdmin, hasActiveSubscription, router]);
 
   // Entrance animation
   useEffect(() => {
@@ -316,8 +319,21 @@ const CreateSurveyScreen: React.FC = () => {
         <View style={styles.headerSide} />
       </View>
 
-      {/* Subscription Status Badge */}
-      {hasActiveSubscription && (
+      {/* Subscription Status Badge / Admin Badge */}
+      {isAdmin ? (
+        <View style={[
+          styles.subscriptionBadge,
+          {
+            backgroundColor: withAlpha(colors.primary, 0.1),
+            borderColor: withAlpha(colors.primary, 0.2),
+          }
+        ]}>
+          <ShieldCheck size={14} color={colors.primary} strokeWidth={2} />
+          <Text style={[styles.subscriptionBadgeText, { color: colors.primary }]}>
+            Admin Access
+          </Text>
+        </View>
+      ) : hasActiveSubscription && (
         <View style={[
           styles.subscriptionBadge,
           {
@@ -341,7 +357,7 @@ const CreateSurveyScreen: React.FC = () => {
     <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
       <ActivityIndicator size="large" color={colors.primary} />
       <Text style={[styles.loadingText, { color: colors.textMuted }]}>
-        Checking your subscription...
+        Checking access permissions...
       </Text>
     </View>
   );
@@ -590,8 +606,8 @@ const CreateSurveyScreen: React.FC = () => {
   // MAIN RENDER
   // ============================================================================
 
-  // Show loading state while checking auth/subscription
-  if (!authReady || loadingSubscription) {
+  // Show loading state while checking auth (admins skip subscription loading)
+  if (!authReady || (!isAdmin && loadingSubscription)) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -618,8 +634,8 @@ const CreateSurveyScreen: React.FC = () => {
     );
   }
 
-  // Show access denied if no subscription
-  if (!hasActiveSubscription) {
+  // Show access denied if no subscription (admins bypass this check)
+  if (!isAdmin && !hasActiveSubscription) {
     return (
       <SafeAreaView
         style={[styles.container, { backgroundColor: colors.background }]}

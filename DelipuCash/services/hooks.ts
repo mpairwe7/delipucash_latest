@@ -139,19 +139,74 @@ export function useRevokeSession(): UseMutationResult<{ revoked: boolean }, Erro
 }
 
 /**
- * Hook to update 2FA settings
+ * Response type for 2FA toggle
  */
-export function useUpdateTwoFactor(): UseMutationResult<{ enabled: boolean }, Error, boolean> {
+interface TwoFactorToggleResponse {
+  enabled?: boolean;
+  codeSent?: boolean;
+  email?: string;
+  expiresIn?: number;
+  devCode?: string;
+}
+
+/**
+ * Hook to toggle 2FA settings
+ * When enabling: Returns codeSent=true, need to call verify2FACode next
+ * When disabling: Requires password, returns enabled=false
+ */
+export function useUpdateTwoFactor(): UseMutationResult<
+  TwoFactorToggleResponse,
+  Error,
+  { enabled: boolean; password?: string }
+> {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (enabled: boolean) => {
-      const response = await api.user.updateTwoFactor(enabled);
+    mutationFn: async ({ enabled, password }) => {
+      const response = await api.user.updateTwoFactor(enabled, password);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      // Only invalidate if 2FA was actually toggled (not just code sent)
+      if (data.enabled !== undefined) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      }
+    },
+  });
+}
+
+/**
+ * Hook to verify 2FA code (to complete enabling 2FA)
+ */
+export function useVerify2FACode(): UseMutationResult<{ enabled: boolean }, Error, string> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (code: string) => {
+      const response = await api.user.verify2FACode(code);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
+    },
+  });
+}
+
+/**
+ * Hook to resend 2FA verification code
+ */
+export function useResend2FACode(): UseMutationResult<
+  { codeSent: boolean; email: string; expiresIn: number },
+  Error,
+  void
+> {
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.user.resend2FACode();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
     },
   });
 }

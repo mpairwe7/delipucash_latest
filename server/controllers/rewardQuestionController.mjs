@@ -281,6 +281,89 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
   }
 });
 
+// Get reward question by ID
+export const getRewardQuestionById = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    console.log('RewardQuestionController: getRewardQuestionById - Fetching question:', id);
+
+    const rewardQuestion = await prisma.rewardQuestion.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
+        winners: {
+          select: {
+            id: true,
+            userEmail: true,
+            position: true,
+            amountAwarded: true,
+            paymentStatus: true,
+            createdAt: true,
+          },
+          orderBy: {
+            position: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!rewardQuestion) {
+      return res.status(404).json({ message: "Reward question not found" });
+    }
+
+    const formattedQuestion = {
+      id: rewardQuestion.id,
+      text: rewardQuestion.text,
+      options: rewardQuestion.options,
+      correctAnswer: rewardQuestion.correctAnswer,
+      rewardAmount: rewardQuestion.rewardAmount,
+      expiryTime: rewardQuestion.expiryTime?.toISOString() || null,
+      isActive: rewardQuestion.isActive,
+      userId: rewardQuestion.userId,
+      isInstantReward: rewardQuestion.isInstantReward,
+      maxWinners: rewardQuestion.maxWinners,
+      winnersCount: rewardQuestion.winnersCount,
+      isCompleted: rewardQuestion.isCompleted,
+      paymentProvider: rewardQuestion.paymentProvider,
+      phoneNumber: rewardQuestion.phoneNumber,
+      createdAt: rewardQuestion.createdAt.toISOString(),
+      updatedAt: rewardQuestion.updatedAt.toISOString(),
+      user: rewardQuestion.user ? {
+        id: rewardQuestion.user.id,
+        firstName: rewardQuestion.user.firstName || 'Anonymous',
+        lastName: rewardQuestion.user.lastName || '',
+        avatar: rewardQuestion.user.avatar
+      } : null,
+      winners: rewardQuestion.winners.map(winner => ({
+        id: winner.id,
+        userEmail: winner.userEmail,
+        position: winner.position,
+        amountAwarded: winner.amountAwarded,
+        paymentStatus: winner.paymentStatus,
+        createdAt: winner.createdAt.toISOString()
+      }))
+    };
+
+    console.log('RewardQuestionController: getRewardQuestionById - Question found:', formattedQuestion.id);
+
+    res.json({
+      message: "Reward question fetched successfully",
+      rewardQuestion: formattedQuestion
+    });
+  } catch (error) {
+    console.error("RewardQuestionController: getRewardQuestionById - Error occurred:", error);
+    res.status(500).json({ message: "Failed to fetch reward question" });
+  }
+});
+
 // Get reward questions by user
 export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
   try {

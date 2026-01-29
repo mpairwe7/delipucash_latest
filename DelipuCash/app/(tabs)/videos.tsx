@@ -14,7 +14,6 @@ import {
   StyleSheet,
   RefreshControl,
   Alert,
-  TextInput,
   Dimensions,
   Share,
   ActivityIndicator,
@@ -38,6 +37,8 @@ import {
   TrendingUp,
   Video as VideoIcon,
   Camera,
+  LayoutGrid,
+  Play,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -72,17 +73,26 @@ import {
   FloatingActionButton,
   LiveStreamScreen,
   TrendingVideoSlider,
+  SearchOverlay,
+  InlineVideoPlayer,
 } from "@/components";
 import type { RecordedVideo } from "@/components";
 import {
   useBannerAds,
   useAdsForPlacement,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { BannerAd, NativeAd, CompactAd, FeaturedAd } from "@/components/ads";
-import { Video } from "@/types";
+import {
+  AdPlacementWrapper,
+  BetweenContentAd,
+  InFeedAd,
+  AdCarousel,
+} from "@/components/ads";
+import { Video, Ad } from "@/types";
 import { useVideoStore, selectLikedVideoIds } from "@/store/VideoStore";
+import { useSearch } from "@/hooks/useSearch";
 import * as Haptics from "expo-haptics";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -115,11 +125,17 @@ export default function VideosScreen(): React.ReactElement {
 
   // UI State
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
+
+  // View Mode State - YouTube-like inline vs grid view
+  const [viewMode, setViewMode] = useState<'inline' | 'grid'>('inline');
+
+  // Track which video is currently playing inline
+  const [activeInlineVideoId, setActiveInlineVideoId] = useState<string | null>(null);
 
   // Player State - YouTube-like experience
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
@@ -142,33 +158,82 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: shareVideo } = useShareVideo();
   
   // Ad data using TanStack Query for optimized caching
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds();
-  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video');
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
   const { mutate: recordAdClick } = useRecordAdClick();
   const { mutate: recordAdImpression } = useRecordAdImpression();
 
-  // Ad handlers for analytics tracking
-  const handleAdClick = useCallback((ad: any) => {
+  // Ad handlers for analytics tracking - Following IAB Standards
+  const handleAdClick = useCallback((ad: Ad) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    recordAdClick(ad.id);
+    recordAdClick({
+      adId: ad.id,
+      placement: 'video',
+    });
   }, [recordAdClick]);
 
-  const handleAdImpression = useCallback((ad: any) => {
-    recordAdImpression(ad.id);
+  const handleAdImpression = useCallback((ad: Ad) => {
+    recordAdImpression({
+      adId: ad.id,
+      placement: 'video',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
   }, [recordAdImpression]);
 
   // Memoized Data
   const videos = useMemo(() => videosData?.videos ?? [], [videosData?.videos]);
 
-  const filteredVideos = useMemo(() => {
-    if (!searchQuery) return videos;
-    const lower = searchQuery.toLowerCase();
-    return videos.filter(
-      (video) =>
-        (video.title || "").toLowerCase().includes(lower) ||
-        (video.description || "").toLowerCase().includes(lower)
-    );
-  }, [videos, searchQuery]);
+  // Use the search hook for video search
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: filteredVideos,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+  } = useSearch({
+    data: videos,
+    searchFields: ['title', 'description'],
+    storageKey: '@videos_search_history',
+    debounceMs: 250,
+    customFilter: (video: Video, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        (video.title || '').toLowerCase().includes(lower) ||
+        (video.description || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from video titles
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return videos
+      .filter((v: Video) => (v.title || '').toLowerCase().includes(lowerQuery))
+      .map((v: Video) => v.title || '')
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [searchQuery, videos, recentSearches]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    setShowSearchResults(query.length > 0);
+    if (query.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [submitSearch]);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
+    setShowSearchResults(false);
+  }, [setSearchQuery]);
 
   const liveVideos = useMemo(
     () => videos.filter((video) =>
@@ -205,9 +270,9 @@ export default function VideosScreen(): React.ReactElement {
   const onRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
-    await Promise.all([refetch(), refetchBannerAds(), refetchVideoAds()]);
+    await Promise.all([refetch(), refetchBannerAds(), refetchVideoAds(), refetchFeaturedAds()]);
     setRefreshing(false);
-  }, [refetch, refetchBannerAds, refetchVideoAds]);
+  }, [refetch, refetchBannerAds, refetchVideoAds, refetchFeaturedAds]);
 
   const handleComment = useCallback((video: Video): void => {
     router.push(`/question-comments/${video.id}` as Href);
@@ -289,16 +354,6 @@ export default function VideosScreen(): React.ReactElement {
     setShowMiniPlayer(false);
     setProgress(0);
   }, [videos, addToWatchHistory, storeSetVideoQueue, storeSetCurrentVideo, setPlayerState]);
-
-  const handleSearch = useCallback((query: string) => {
-    setSearchQuery(query);
-    setShowSearchResults(query.length > 0);
-  }, []);
-
-  const clearSearch = useCallback(() => {
-    setSearchQuery("");
-    setShowSearchResults(false);
-  }, []);
 
   const closePlayer = useCallback(() => {
     // YouTube-like behavior: minimize to mini player instead of closing
@@ -392,6 +447,21 @@ export default function VideosScreen(): React.ReactElement {
     refetch();
   }, [refetch]);
 
+  // View Mode Toggle - YouTube-like experience
+  const toggleViewMode = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setViewMode((prev) => (prev === 'inline' ? 'grid' : 'inline'));
+    // Reset active inline video when switching modes
+    setActiveInlineVideoId(null);
+  }, []);
+
+  // Handle expand from inline player to full player
+  const handleExpandFromInline = useCallback((video: Video) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveInlineVideoId(null);
+    handleVideoSelect(video);
+  }, [handleVideoSelect]);
+
   // FAB Actions
   const fabActions = useMemo(() => [
     {
@@ -453,6 +523,19 @@ export default function VideosScreen(): React.ReactElement {
             <Text style={[styles.headerTitle, { color: colors.text }]}>Videos</Text>
           </View>
           <View style={styles.headerRight}>
+            {/* View Mode Toggle - YouTube-like inline vs grid */}
+            <TouchableOpacity
+              style={[styles.viewModeButton, { backgroundColor: withAlpha(colors.primary, 0.12) }]}
+              accessibilityRole="button"
+              accessibilityLabel={viewMode === 'inline' ? 'Switch to grid view' : 'Switch to inline view'}
+              onPress={toggleViewMode}
+            >
+              {viewMode === 'inline' ? (
+                <LayoutGrid size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
+              ) : (
+                <Play size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
+              )}
+            </TouchableOpacity>
             <NotificationBell
               count={unreadCount ?? 0}
               onPress={() => router.push("/notifications" as Href)}
@@ -470,17 +553,20 @@ export default function VideosScreen(): React.ReactElement {
         </View>
 
         {/* Search Bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <TouchableOpacity
+          style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => setSearchOverlayVisible(true)}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Open search"
+        >
           <Search size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search videos..."
-            placeholderTextColor={colors.textMuted}
-            value={searchQuery}
-            onChangeText={handleSearch}
-            accessibilityLabel="Search videos"
-            returnKeyType="search"
-          />
+          <Text
+            style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : colors.textMuted }]}
+            numberOfLines={1}
+          >
+            {searchQuery || "Search videos..."}
+          </Text>
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={clearSearch} accessibilityLabel="Clear search">
               <X size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={2} />
@@ -493,7 +579,23 @@ export default function VideosScreen(): React.ReactElement {
           >
             <Filter size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
           </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
+
+        {/* Search Overlay */}
+        <SearchOverlay
+          visible={searchOverlayVisible}
+          onClose={() => setSearchOverlayVisible(false)}
+          query={searchQuery}
+          onChangeQuery={setSearchQuery}
+          onSubmit={handleSearchSubmit}
+          recentSearches={recentSearches}
+          onRemoveFromHistory={removeFromHistory}
+          onClearHistory={clearHistory}
+          suggestions={searchSuggestions}
+          placeholder="Search videos..."
+          searchContext="Videos"
+          trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial']}
+        />
       </View>
 
       {/* Main Content */}
@@ -575,16 +677,28 @@ export default function VideosScreen(): React.ReactElement {
                 />
               </View>
 
-              {/* Banner Ad - High visibility after stats */}
-              {bannerAds && bannerAds.length > 0 && (
-                <View style={styles.adContainer}>
-                  <BannerAd
-                    ad={bannerAds[0]}
+              {/* Featured Ad Carousel - High visibility after stats (YouTube-like) */}
+              {featuredAds && featuredAds.length > 0 && (
+                <View style={styles.featuredAdContainer}>
+                  <AdCarousel
+                    ads={featuredAds}
                     onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(bannerAds[0])}
-                    style={styles.bannerAd}
+                    onAdLoad={() => featuredAds[0] && handleAdImpression(featuredAds[0])}
+                    autoScrollInterval={7000}
+                    style={styles.featuredAdCarousel}
                   />
                 </View>
+              )}
+
+              {/* Banner Ad - Secondary placement */}
+              {bannerAds && bannerAds.length > 0 && (
+                <AdPlacementWrapper
+                  ad={bannerAds[0]}
+                  placement="banner-top"
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(bannerAds[0])}
+                  style={styles.bannerAdPlacement}
+                />
               )}
 
               {/* Up Next Section - YouTube-like auto-play queue */}
@@ -719,16 +833,15 @@ export default function VideosScreen(): React.ReactElement {
                 )}
               </ScrollView>
 
-              {/* Featured Ad - Premium placement after live content */}
+              {/* Featured Ad - Premium placement after live content (Industry Standard: Natural break) */}
               {videoAds && videoAds.length > 1 && (
-                <View style={styles.adContainer}>
-                  <FeaturedAd
-                    ad={videoAds[1]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(videoAds[1])}
-                    style={styles.featuredAd}
-                  />
-                </View>
+                <BetweenContentAd
+                  ad={videoAds[1]}
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(videoAds[1])}
+                  variant="featured"
+                  style={styles.betweenContentAd}
+                />
               )}
 
               {/* Trending Section */}
@@ -762,16 +875,15 @@ export default function VideosScreen(): React.ReactElement {
                 ))}
               </ScrollView>
 
-              {/* Native Ad - Blends naturally after trending content */}
+              {/* In-Feed Native Ad - Blends naturally after trending content (YouTube/Instagram style) */}
               {videoAds && videoAds.length > 0 && (
-                <View style={styles.adContainer}>
-                  <NativeAd
-                    ad={videoAds[0]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(videoAds[0])}
-                    style={styles.nativeAd}
-                  />
-                </View>
+                <InFeedAd
+                  ad={videoAds[0]}
+                  index={0}
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(videoAds[0])}
+                  style={styles.inFeedAd}
+                />
               )}
 
               {/* Popular Section */}
@@ -797,14 +909,13 @@ export default function VideosScreen(): React.ReactElement {
 
               {/* Compact Ad - Minimal footprint before sponsored content */}
               {bannerAds && bannerAds.length > 1 && (
-                <View style={styles.adContainer}>
-                  <CompactAd
-                    ad={bannerAds[1]}
-                    onAdClick={handleAdClick}
-                    onAdLoad={() => handleAdImpression(bannerAds[1])}
-                    style={styles.compactAd}
-                  />
-                </View>
+                <AdPlacementWrapper
+                  ad={bannerAds[1]}
+                  placement="inline"
+                  onAdClick={handleAdClick}
+                  onAdLoad={() => handleAdImpression(bannerAds[1])}
+                  style={styles.compactAdPlacement}
+                />
               )}
 
               {/* Sponsored Section */}
@@ -866,7 +977,7 @@ export default function VideosScreen(): React.ReactElement {
               {/* All Videos */}
               <SectionHeader
                 title="All Videos"
-                subtitle="Browse and discover"
+                subtitle={viewMode === 'inline' ? 'Tap to play • Long press to expand' : 'Browse and discover'}
                 icon={<Sparkles size={ICON_SIZE.md} color={colors.primary} strokeWidth={1.5} />}
               />
               {isLoading ? (
@@ -874,8 +985,28 @@ export default function VideosScreen(): React.ReactElement {
                   <ActivityIndicator size="large" color={colors.primary} />
                   <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading videos...</Text>
                 </View>
+              ) : viewMode === 'inline' ? (
+                /* YouTube-like Inline Video Feed - Tap to play inline */
+                <View style={styles.inlineFeed}>
+                  {filteredVideos.map((video, index) => (
+                    <InlineVideoPlayer
+                      key={video.id}
+                      video={video}
+                      isVisible={activeInlineVideoId === video.id || activeInlineVideoId === null}
+                      onExpand={() => handleExpandFromInline(video)}
+                      onLike={() => handleVideoLike(video.id)}
+                      onComment={() => handleComment(video)}
+                      onShare={() => handleShare(video)}
+                      isLiked={likedVideos.has(video.id)}
+                      showActions={false}
+                      autoPlay={false}
+                      testID={`inline-video-${index}`}
+                    />
+                  ))}
+                </View>
               ) : (
-                  <View style={styles.videoGrid}>
+                    /* Grid View - Traditional card layout */
+                    <View style={styles.videoGrid}>
                     {filteredVideos.map((video) => (
                       <View key={video.id} style={styles.gridItem}>
                         <VideoCard video={video} onPress={() => handleVideoSelect(video)} />
@@ -935,13 +1066,16 @@ export default function VideosScreen(): React.ReactElement {
         onClose={() => setUploadModalVisible(false)}
       />
 
-      {/* LiveStream Screen */}
-      <LiveStreamScreen
-        visible={liveStreamVisible}
-        onClose={closeLiveStream}
-        onVideoUploaded={handleVideoUploaded}
-        asModal={true}
-      />
+      {/* LiveStream Screen - Lazy loaded for performance optimization
+          Only mount when user explicitly requests camera access (industry standard) */}
+      {liveStreamVisible && (
+        <LiveStreamScreen
+          visible={liveStreamVisible}
+          onClose={closeLiveStream}
+          onVideoUploaded={handleVideoUploaded}
+          asModal={true}
+        />
+      )}
     </View>
   );
 }
@@ -1177,11 +1311,32 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: "center",
   },
-  // Ad Styles
+  // Ad Styles - Industry Standard Placements with Proper Transitions
   adContainer: {
     marginVertical: SPACING.md,
     borderRadius: RADIUS.lg,
     overflow: "hidden",
+  },
+  featuredAdContainer: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.base,
+  },
+  featuredAdCarousel: {
+    paddingHorizontal: SPACING.base,
+  },
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
+  },
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  inFeedAd: {
+    marginVertical: SPACING.md,
+    marginHorizontal: -SPACING.xs,
+  },
+  compactAdPlacement: {
+    marginVertical: SPACING.sm,
   },
   bannerAd: {
     borderRadius: RADIUS.lg,
@@ -1198,5 +1353,21 @@ const styles = StyleSheet.create({
   compactAd: {
     borderRadius: RADIUS.md,
     overflow: "hidden",
+  },
+  // Search placeholder style
+  searchPlaceholder: {
+    flex: 1,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    paddingVertical: SPACING.sm,
+  },
+  // View mode toggle button
+  viewModeButton: {
+    padding: SPACING.sm,
+    borderRadius: RADIUS.full,
+  },
+  // Inline video feed - YouTube-like layout
+  inlineFeed: {
+    gap: SPACING.md,
   },
 });

@@ -3,6 +3,7 @@ import {
     PrimaryButton,
     QuestionCard,
     SearchBar,
+  SearchOverlay,
     SectionHeader,
     StatCard,
 } from "@/components";
@@ -18,11 +19,21 @@ import {
 import {
     useBannerAds,
     useAdsForPlacement,
+  useFeaturedAds,
     useRecordAdClick,
     useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { BannerAd, NativeAd, CompactAd } from "@/components/ads";
-import { SubscriptionStatus, UserRole } from "@/types";
+import {
+  BannerAd,
+  NativeAd,
+  CompactAd,
+  AdPlacementWrapper,
+  BetweenContentAd,
+  InFeedAd,
+  AdCarousel,
+} from "@/components/ads";
+import { useSearch } from "@/hooks/useSearch";
+import { SubscriptionStatus, UserRole, Ad, Question } from "@/types";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -89,7 +100,7 @@ export default function QuestionsScreen(): React.ReactElement {
     const [refreshing, setRefreshing] = useState(false);
     const [questionText, setQuestionText] = useState("");
     const [category, setCategory] = useState("");
-    const [searchQuery, setSearchQuery] = useState("");
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [showQuizSession, setShowQuizSession] = useState(false);
@@ -147,13 +158,14 @@ export default function QuestionsScreen(): React.ReactElement {
     const { data: unreadCount } = useUnreadCount();
 
     // Ad hooks - TanStack Query for intelligent ad loading
-    const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
-    const { data: questionAds, refetch: refetchQuestionAds } = useAdsForPlacement('question', 3);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: questionAds, refetch: refetchQuestionAds } = useAdsForPlacement('question', 4);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
     const recordAdClick = useRecordAdClick();
     const recordAdImpression = useRecordAdImpression();
 
     // Ad click handler with analytics tracking
-    const handleAdClick = useCallback((ad: any) => {
+  const handleAdClick = useCallback((ad: Ad) => {
       recordAdClick.mutate({
         adId: ad.id,
         placement: 'question',
@@ -162,7 +174,7 @@ export default function QuestionsScreen(): React.ReactElement {
     }, [recordAdClick]);
 
     // Ad impression tracking
-    const handleAdImpression = useCallback((ad: any, duration: number = 1000) => {
+  const handleAdImpression = useCallback((ad: Ad, duration: number = 1000) => {
       recordAdImpression.mutate({
         adId: ad.id,
         placement: 'question',
@@ -172,12 +184,55 @@ export default function QuestionsScreen(): React.ReactElement {
       });
     }, [recordAdImpression]);
 
-    const questions = useMemo(() => {
+  // Use the search hook for question search
+  const allQuestions = useMemo(() => {
       const list = questionsData?.questions || [];
-      if (!searchQuery) return list;
-      const lower = searchQuery.toLowerCase();
-      return list.filter((q) => q.text.toLowerCase().includes(lower));
-    }, [questionsData, searchQuery]);
+    return list;
+  }, [questionsData]);
+
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: questions,
+    isSearching,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+    hasNoResults,
+  } = useSearch({
+    data: allQuestions,
+    searchFields: ['text', 'category'],
+    storageKey: '@questions_search_history',
+    debounceMs: 250,
+    customFilter: (question: Question, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        (question.text || '').toLowerCase().includes(lower) ||
+        (question.category || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from question texts
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return allQuestions
+      .filter((q: Question) => (q.text || '').toLowerCase().includes(lowerQuery))
+      .map((q: Question) => q.text?.slice(0, 50) + (q.text && q.text.length > 50 ? '...' : ''))
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [searchQuery, allQuestions, recentSearches]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    if (query.trim()) {
+      triggerHaptic('light');
+    }
+  }, [submitSearch]);
 
     const rewardQuestionCards = useMemo(() => {
       return (rewardQuestions || []).map((rq) => ({
@@ -261,9 +316,9 @@ export default function QuestionsScreen(): React.ReactElement {
 
     const onRefresh = useCallback(async () => {
       setRefreshing(true);
-      await Promise.all([refetch(), refetchBannerAds(), refetchQuestionAds()]);
+      await Promise.all([refetch(), refetchBannerAds(), refetchQuestionAds(), refetchFeaturedAds()]);
       setRefreshing(false);
-    }, [refetch]);
+    }, [refetch, refetchBannerAds, refetchQuestionAds, refetchFeaturedAds]);
 
   /**
    * Navigate to question answer screen with proper checks
@@ -440,14 +495,55 @@ export default function QuestionsScreen(): React.ReactElement {
           </View>
 
           {/* Search */}
-          <SearchBar
+          <TouchableOpacity
+            onPress={() => setSearchOverlayVisible(true)}
+            activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Open search"
+          >
+            <SearchBar
+              placeholder="Search questions..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              style={{ marginBottom: SPACING.lg }}
+              onSubmit={handleSearchSubmit}
+              onFocus={() => setSearchOverlayVisible(true)}
+              icon={<Search size={18} color={colors.textMuted} />}
+            />
+          </TouchableOpacity>
+
+          {/* Search Overlay */}
+          <SearchOverlay
+            visible={searchOverlayVisible}
+            onClose={() => setSearchOverlayVisible(false)}
+            query={searchQuery}
+            onChangeQuery={setSearchQuery}
+            onSubmit={handleSearchSubmit}
+            recentSearches={recentSearches}
+            onRemoveFromHistory={removeFromHistory}
+            onClearHistory={clearHistory}
+            suggestions={searchSuggestions}
             placeholder="Search questions..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            style={{ marginBottom: SPACING.lg }}
-            onSubmit={() => {}}
-            icon={<Search size={18} color={colors.textMuted} />}
+            searchContext="Questions"
+            trendingSearches={['How to earn', 'Rewards', 'Survey tips', 'Cash out']}
           />
+
+          {/* Search Results Feedback */}
+          {isSearching && (
+            <View style={styles.searchFeedback}>
+              <Text style={[styles.searchFeedbackText, { color: colors.textMuted }]}>
+                {hasNoResults
+                  ? `No questions found for "${searchQuery}"`
+                  : `Found ${questions.length} question${questions.length !== 1 ? 's' : ''}`
+                }
+              </Text>
+              {isSearching && (
+                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                  <Text style={[styles.clearSearchText, { color: colors.primary }]}>Clear</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
 
           {/* Action cards for core flows */}
           <View style={styles.actionGrid}>
@@ -569,14 +665,13 @@ export default function QuestionsScreen(): React.ReactElement {
 
           {/* Smart Banner Ad - Non-intrusive placement after stats */}
           {bannerAds && bannerAds.length > 0 && (
-            <View style={styles.adContainer}>
-              <BannerAd
-                ad={bannerAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(bannerAds[0])}
-                style={styles.bannerAd}
-              />
-            </View>
+            <AdPlacementWrapper
+              ad={bannerAds[0]}
+              placement="banner-top"
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[0])}
+              style={styles.bannerAdPlacement}
+            />
           )}
 
           {/* Instant Reward Questions */}
@@ -630,16 +725,15 @@ export default function QuestionsScreen(): React.ReactElement {
             )}
           </View>
 
-          {/* Native Ad - Blends with content between sections */}
+          {/* In-Feed Native Ad - Blends with content between sections (Industry Standard) */}
           {questionAds && questionAds.length > 0 && (
-            <View style={styles.adContainer}>
-              <NativeAd
-                ad={questionAds[0]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(questionAds[0])}
-                style={styles.nativeAd}
-              />
-            </View>
+            <BetweenContentAd
+              ad={questionAds[0]}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(questionAds[0])}
+              variant="native"
+              style={styles.betweenContentAd}
+            />
           )}
 
           {/* Recent Questions - Quora-like discussion feed */}
@@ -686,16 +780,15 @@ export default function QuestionsScreen(): React.ReactElement {
             </View>
           </View>
 
-          {/* Compact Ad - Minimal footprint before all questions */}
+          {/* Compact Ad - Minimal footprint before all questions (Industry Standard) */}
           {bannerAds && bannerAds.length > 1 && (
-            <View style={styles.adContainer}>
-              <CompactAd
-                ad={bannerAds[1]}
-                onAdClick={handleAdClick}
-                onAdLoad={() => handleAdImpression(bannerAds[1])}
-                style={styles.compactAd}
-              />
-            </View>
+            <InFeedAd
+              ad={bannerAds[1]}
+              index={1}
+              onAdClick={handleAdClick}
+              onAdLoad={() => handleAdImpression(bannerAds[1])}
+              style={styles.inFeedAd}
+            />
           )}
 
           {/* All Questions List */}
@@ -1288,11 +1381,21 @@ function ActionCard({
       fontFamily: TYPOGRAPHY.fontFamily.medium,
       fontSize: TYPOGRAPHY.fontSize.sm,
     },
-    // Ad Styles
+    // Ad Styles - Industry Standard Placements with Smooth Transitions
     adContainer: {
       marginVertical: SPACING.md,
       borderRadius: RADIUS.lg,
       overflow: "hidden",
+    },
+    bannerAdPlacement: {
+      marginVertical: SPACING.md,
+    },
+    betweenContentAd: {
+      marginVertical: SPACING.lg,
+      marginHorizontal: -SPACING.sm,
+    },
+    inFeedAd: {
+      marginVertical: SPACING.md,
     },
     bannerAd: {
       borderRadius: RADIUS.lg,
@@ -1305,5 +1408,21 @@ function ActionCard({
     compactAd: {
       borderRadius: RADIUS.md,
       overflow: "hidden",
+    },
+    // Search feedback styles
+    searchFeedback: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: SPACING.md,
+      paddingHorizontal: SPACING.xs,
+    },
+    searchFeedbackText: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    clearSearchText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.sm,
     },
   });

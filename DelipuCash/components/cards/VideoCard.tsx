@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import {
   ViewStyle,
   Pressable,
   ImageBackground,
+  ActivityIndicator,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -47,6 +48,7 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { Video } from "@/types";
+import { getBestThumbnailUrl, getPlaceholderImage } from "@/utils/thumbnail-utils";
 
 // Create AnimatedPressable
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -112,6 +114,43 @@ export function VideoCard({
 }: VideoCardProps): React.ReactElement {
   const { colors } = useTheme();
 
+  // Thumbnail state with fallback handling
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(video.thumbnail || null);
+  const [isLoadingThumbnail, setIsLoadingThumbnail] = useState(false);
+
+  // Load best available thumbnail
+  useEffect(() => {
+    const loadThumbnail = async () => {
+      // Use existing thumbnail if available
+      if (video.thumbnail) {
+        setThumbnailUrl(video.thumbnail);
+        return;
+      }
+
+      // Try to generate thumbnail from video URL
+      if (video.videoUrl) {
+        setIsLoadingThumbnail(true);
+        try {
+          const generated = await getBestThumbnailUrl({
+            thumbnailUrl: video.thumbnail,
+            videoUrl: video.videoUrl,
+          });
+          setThumbnailUrl(generated || getPlaceholderImage('video'));
+        } catch (error) {
+          console.error('[VideoCard] Failed to generate thumbnail:', error);
+          setThumbnailUrl(getPlaceholderImage('video'));
+        } finally {
+          setIsLoadingThumbnail(false);
+        }
+      } else {
+        // Use placeholder if no video URL
+        setThumbnailUrl(getPlaceholderImage('video'));
+      }
+    };
+
+    loadThumbnail();
+  }, [video.thumbnail, video.videoUrl]);
+
   // Animation values
   const scale = useSharedValue(1);
   const pressed = useSharedValue(0);
@@ -172,8 +211,13 @@ export function VideoCard({
         >
           {/* Thumbnail */}
           <View style={styles.horizontalThumbnailContainer}>
+            {isLoadingThumbnail ? (
+              <View style={[styles.horizontalThumbnail, styles.loadingContainer, { backgroundColor: colors.border }]}>
+                <ActivityIndicator size="small" color={colors.primary} />
+              </View>
+            ) : (
             <ImageBackground
-              source={{ uri: video.thumbnail }}
+                  source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
               style={styles.horizontalThumbnail}
               imageStyle={{ borderRadius: RADIUS.md }}
             >
@@ -189,6 +233,7 @@ export function VideoCard({
                 </View>
               )}
             </ImageBackground>
+            )}
           </View>
 
           {/* Info */}
@@ -239,8 +284,13 @@ export function VideoCard({
       >
         {/* Thumbnail */}
         <View style={styles.thumbnailContainer}>
+          {isLoadingThumbnail ? (
+            <View style={[styles.thumbnail, styles.loadingContainer, variant === "compact" && styles.thumbnailCompact, { backgroundColor: colors.border }]}>
+              <ActivityIndicator size="large" color={colors.primary} />
+            </View>
+          ) : (
           <ImageBackground
-            source={{ uri: video.thumbnail }}
+                source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
             style={[
               styles.thumbnail,
               variant === "compact" && styles.thumbnailCompact,
@@ -286,6 +336,7 @@ export function VideoCard({
               </View>
             )}
           </ImageBackground>
+          )}
         </View>
 
         {/* Title & Meta */}
@@ -486,6 +537,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.md,
+  },
+  loadingContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: RADIUS.md,
   },
 });
 

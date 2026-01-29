@@ -4,6 +4,234 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
+// ===========================================
+// User Profile Endpoints
+// ===========================================
+
+/**
+ * Get current user's profile
+ * GET /api/users/profile
+ */
+export const getUserProfile = asyncHandler(async (req, res) => {
+  const userId = req.user.id; // From JWT token
+
+  console.log('👤 Profile request for user ID:', userId);
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        phoneNumber: true,
+        points: true,
+        avatar: true,
+        role: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        privacySettings: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      // Prisma Accelerate: Standard cache for user profile
+      cacheStrategy: cacheStrategies.standard,
+    });
+
+    if (!user) {
+      console.log('❌ User not found:', userId);
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    console.log('✅ Profile retrieved for user ID:', userId);
+    res.json({
+      success: true,
+      data: {
+        ...user,
+        // Map phoneNumber to phone for frontend compatibility
+        phone: user.phone || user.phoneNumber,
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error fetching user profile:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch user profile" });
+  }
+});
+
+/**
+ * Update current user's profile
+ * PUT /api/users/profile
+ */
+export const updateUserProfile = asyncHandler(async (req, res) => {
+  const userId = req.user.id; // From JWT token
+  const { firstName, lastName, phone, avatar, privacySettings } = req.body;
+
+  console.log('📝 Profile update request for user ID:', userId);
+  console.log('📝 Update data:', { firstName, lastName, phone, avatar });
+
+  try {
+    const updatedUser = await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        ...(firstName !== undefined && { firstName }),
+        ...(lastName !== undefined && { lastName }),
+        ...(phone !== undefined && { phone }),
+        ...(avatar !== undefined && { avatar }),
+        ...(privacySettings !== undefined && { privacySettings }),
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        phoneNumber: true,
+        points: true,
+        avatar: true,
+        role: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        privacySettings: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log('✅ Profile updated successfully for user ID:', userId);
+    res.json({
+      success: true,
+      data: {
+        ...updatedUser,
+        phone: updatedUser.phone || updatedUser.phoneNumber,
+      },
+      message: "Profile updated successfully"
+    });
+  } catch (error) {
+    console.error("❌ Error updating user profile:", error);
+    res.status(500).json({ success: false, error: "Failed to update user profile" });
+  }
+});
+
+/**
+ * Get user statistics
+ * GET /api/users/stats
+ */
+export const getUserStats = asyncHandler(async (req, res) => {
+  const userId = req.user.id; // From JWT token
+
+  console.log('📊 Stats request for user ID:', userId);
+
+  try {
+    // Aggregate user statistics from various tables
+    const [
+      surveysCompleted,
+      questionsAnswered,
+      rewardsEarned,
+      totalEarnings,
+      user
+    ] = await Promise.all([
+      // Count completed surveys
+      prisma.surveyResponse.count({
+        where: { userId },
+      }),
+      // Count answered questions
+      prisma.questionAttempt.count({
+        where: { userId },
+      }),
+      // Count rewards earned
+      prisma.reward.count({
+        where: { userId },
+      }),
+      // Sum total earnings from rewards
+      prisma.reward.aggregate({
+        where: { userId },
+        _sum: { amount: true },
+      }),
+      // Get user points
+      prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { points: true },
+        cacheStrategy: cacheStrategies.shortLived,
+      }),
+    ]);
+
+    const stats = {
+      surveysCompleted: surveysCompleted || 0,
+      questionsAnswered: questionsAnswered || 0,
+      rewardsEarned: rewardsEarned || 0,
+      totalEarnings: totalEarnings._sum.amount || 0,
+      totalRewards: user?.points || 0,
+      // Calculated fields
+      totalPoints: user?.points || 0,
+    };
+
+    console.log('✅ Stats retrieved for user ID:', userId, stats);
+    res.json({
+      success: true,
+      data: stats
+    });
+  } catch (error) {
+    console.error("❌ Error fetching user stats:", error);
+    res.status(500).json({ success: false, error: "Failed to fetch user statistics" });
+  }
+});
+
+/**
+ * Revoke individual login session
+ * POST /api/users/sessions/:sessionId/revoke
+ */
+export const revokeSession = asyncHandler(async (req, res) => {
+  const userId = req.user.id; // From JWT token
+  const { sessionId } = req.params;
+
+  console.log('🔒 Revoke session request:', { userId, sessionId });
+
+  try {
+    // Verify session belongs to user
+    const session = await prisma.loginSession.findFirst({
+      where: {
+        id: sessionId,
+        userId: userId,
+      },
+    });
+
+    if (!session) {
+      console.log('❌ Session not found or unauthorized:', sessionId);
+      return res.status(404).json({
+        success: false,
+        data: { revoked: false },
+        error: "Session not found"
+      });
+    }
+
+    // Revoke the session
+    await prisma.loginSession.update({
+      where: { id: sessionId },
+      data: {
+        isActive: false,
+        logoutTime: new Date(),
+      },
+    });
+
+    console.log('✅ Session revoked successfully:', sessionId);
+    res.json({
+      success: true,
+      data: { revoked: true },
+      message: "Session revoked successfully"
+    });
+  } catch (error) {
+    console.error("❌ Error revoking session:", error);
+    res.status(500).json({ success: false, error: "Failed to revoke session" });
+  }
+});
+
+// ===========================================
+// Legacy User Endpoints
+// ===========================================
+
 // User Registration
 export const createAppUser = asyncHandler(async (req, res) => {
   const {  phoneNumber, password, firstName ,lastName} = req.body;
