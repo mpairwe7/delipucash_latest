@@ -476,7 +476,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
   }, [validate, createAdMutation, form, mediaKind, uploadedUrl]);
 
   return (
-    <SafeAreaView style={[themedStyles.safeArea, { paddingTop: insets.top }]}> 
+    <SafeAreaView style={themedStyles.safeArea} edges={['top', 'bottom']}> 
       <StatusBar style={statusBarStyle} />
       <KeyboardAvoidingView
         style={themedStyles.flex}

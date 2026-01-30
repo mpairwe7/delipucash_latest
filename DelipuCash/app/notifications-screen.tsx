@@ -412,7 +412,7 @@ export default function NotificationsScreen() {
   }, [isLoading, selectedFilter]);
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style={statusBarStyle} />
 
       {/* Header */}

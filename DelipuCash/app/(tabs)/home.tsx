@@ -38,9 +38,7 @@ import {
   Play,
   Award,
   Target,
-  BarChart3,
   Zap,
-  Calendar,
   Plus,
 } from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -49,7 +47,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withRepeat,
   withSequence,
   withTiming,
@@ -100,14 +97,14 @@ import {
 } from "@/services/adHooksRefactored";
 import { BannerAd, FeaturedAd, NativeAd, CompactAd } from "@/components/ads";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
 // Enhanced responsive breakpoints
 const isTablet = width >= 768;
 const isLargeScreen = width >= 1024;
 const isSmallScreen = width < 375;
 const isMediumScreen = width >= 375 && width < 768;
-const isLandscape = width > height;
+// const isLandscape = width > height; // Reserved for future responsive layouts
 
 // Responsive helper functions
 const getResponsiveSize = (small: number, medium: number, large: number): number => {
@@ -187,7 +184,7 @@ const EXPLORE_ITEMS = [
 export default function HomePage(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const { data: user, loading, refetch } = useUser();
+  const { data: user, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
@@ -245,7 +242,7 @@ export default function HomePage(): React.ReactElement {
       -1,
       false
     );
-  }, []);
+  }, [pulseAnim]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseAnim.value }],
@@ -550,7 +547,7 @@ export default function HomePage(): React.ReactElement {
               </View>
               <View style={styles.rewardTextContainer}>
                 <Text style={[styles.rewardTitle, { color: colors.text, fontSize: getResponsiveSize(14, 15, 16) }]}>
-                  Answer today's question to earn rewards!
+                  Answer today&apos;s question to earn rewards!
                 </Text>
                 <Text style={[styles.rewardPoints, { color: colors.primary, fontSize: getResponsiveSize(18, 20, 22) }]}>
                   +100 points
@@ -833,7 +830,7 @@ export default function HomePage(): React.ReactElement {
           subtitle={activeExploreItem.description}
           icon={activeExploreItem.icon}
           gradientColors={activeExploreItem.colors}
-          features={activeExploreItem.features as ExploreFeature[]}
+          features={[...activeExploreItem.features] as unknown as ExploreFeature[]}
           actionText={activeExploreItem.actionText}
           onAction={() => handleModalAction(activeExploreItem.route)}
         />

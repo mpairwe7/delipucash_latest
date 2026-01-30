@@ -496,7 +496,7 @@ const SubscriptionScreen: React.FC = () => {
   // Loading screen
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
         <StatusBar style={statusBarStyle} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -507,7 +507,7 @@ const SubscriptionScreen: React.FC = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style={statusBarStyle} />
       
       <ScrollView
