@@ -107,16 +107,21 @@ export interface Video {
   description: string | null;
   videoUrl: string;
   thumbnail: string;
-  userId: string;
+  userId?: string;
   user?: AppUser;
   likes: number;
   views: number;
   duration?: number; // Duration in seconds
-  isBookmarked: boolean;
+  isBookmarked?: boolean;
   comments?: Comment[];
   commentsCount: number;
   createdAt: string;
-  updatedAt: string;
+  updatedAt?: string;
+  // Sponsored content fields (for in-feed ads)
+  isSponsored?: boolean;
+  sponsorName?: string;
+  ctaUrl?: string;
+  ctaText?: string;
 }
 
 export interface Comment {

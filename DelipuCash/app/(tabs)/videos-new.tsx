@@ -28,7 +28,7 @@ import {
   Share,
   Dimensions,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { router, Href } from 'expo-router';
 import {
   Wifi,
@@ -38,6 +38,7 @@ import {
   Play,
   Search,
   Bell,
+  X,
 } from 'lucide-react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -48,7 +49,9 @@ import {
   withAlpha,
   ICON_SIZE,
   Z_INDEX,
+  SYSTEM_BARS,
 } from '@/utils/theme';
+import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
 import {
   useVideos,
   useTrendingVideos,
@@ -67,7 +70,9 @@ import {
 } from '@/components/video';
 import { LiveStreamScreen } from '@/components/livestream';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
-import { Video } from '@/types';
+import { SearchOverlay } from '@/components/cards';
+import { InterstitialAd } from '@/components/ads';
+import { Video, Ad } from '@/types';
 import {
   useVideoFeedStore,
   selectActiveVideo,
@@ -75,6 +80,12 @@ import {
   selectUI,
   selectLikedVideoIds,
 } from '@/store/VideoFeedStore';
+import { useSearch } from '@/hooks/useSearch';
+import {
+  useAdsForPlacement,
+  useRecordAdClick,
+  useRecordAdImpression,
+} from '@/services/adHooksRefactored';
 
 // ============================================================================
 // CONSTANTS
@@ -91,8 +102,22 @@ type FeedTab = 'for-you' | 'following' | 'trending';
 // ============================================================================
 
 export default function VideosScreen(): React.ReactElement {
-  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+
+  // ============================================================================
+  // SYSTEM BARS - Industry-standard immersive video experience
+  // Following iOS HIG and Material Design 3 guidelines for video content
+  // ============================================================================
+
+  const {
+    insets,
+    statusBarStyle,
+    containerStyle: systemBarsContainerStyle,
+    headerStyle: systemBarsHeaderStyle,
+  } = useSystemBars({
+    ...SYSTEM_BARS_PRESETS.videoFeed,
+    statusBarBackground: SYSTEM_BARS.statusBar.darkOverlay,
+  });
 
   // ============================================================================
   // STORE STATE
@@ -127,6 +152,8 @@ export default function VideosScreen(): React.ReactElement {
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
   const [fabExpanded, setFabExpanded] = useState(false);
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
+  const [showSearchResults, setShowSearchResults] = useState(false);
 
   // ============================================================================
   // DATA HOOKS
@@ -140,22 +167,118 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: bookmarkVideo } = useBookmarkVideo();
   const { mutate: shareVideo } = useShareVideo();
 
+  // Ad data using TanStack Query for optimized caching - Industry Standard
+  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
+  const { mutate: recordAdClick } = useRecordAdClick();
+  const { mutate: recordAdImpression } = useRecordAdImpression();
+
+  // Interstitial ad state - shown after every N videos watched (TikTok/YouTube pattern)
+  const [showInterstitialAd, setShowInterstitialAd] = useState(false);
+  const [videosWatchedCount, setVideosWatchedCount] = useState(0);
+  const VIDEOS_BEFORE_INTERSTITIAL = 5; // Industry standard: show ad every 5-7 videos
+
   // ============================================================================
   // COMPUTED DATA
   // ============================================================================
 
-  const videos = useMemo(() => {
+  const allVideos = useMemo(() => videosData?.videos || [], [videosData?.videos]);
+
+  // Search hook for video search functionality
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    filteredResults: filteredVideos,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+  } = useSearch({
+    data: allVideos,
+    searchFields: ['title', 'description'],
+    storageKey: '@videos_search_history',
+    debounceMs: 250,
+    customFilter: (video: Video, query: string) => {
+      const lower = query.toLowerCase();
+      return (
+        (video.title || '').toLowerCase().includes(lower) ||
+        (video.description || '').toLowerCase().includes(lower)
+      );
+    },
+  });
+
+  // Generate search suggestions from video titles
+  const searchSuggestions = useMemo(() => {
+    if (!searchQuery) return recentSearches.slice(0, 5);
+    const lowerQuery = searchQuery.toLowerCase();
+    return allVideos
+      .filter((v: Video) => (v.title || '').toLowerCase().includes(lowerQuery))
+      .map((v: Video) => v.title || '')
+      .filter(Boolean)
+      .slice(0, 5);
+  }, [searchQuery, allVideos, recentSearches]);
+
+  // Convert ads to video-like format for in-feed display (TikTok/Reels pattern)
+  // Industry standard: Insert sponsored content every 4-6 organic videos
+  const videosWithAds = useMemo(() => {
+    let baseVideos: Video[] = [];
+
+    // If searching, return filtered results without ads
+    if (showSearchResults && searchQuery) {
+      return filteredVideos;
+    }
+
     switch (activeTab) {
       case 'trending':
-        return trendingVideos || [];
+        baseVideos = trendingVideos || [];
+        break;
       case 'following':
-        // Filter to followed creators (mock for now)
-        return (videosData?.videos || []).filter(v => v.likes > 100);
+        baseVideos = allVideos.filter(v => v.likes > 100);
+        break;
       case 'for-you':
       default:
-        return videosData?.videos || [];
+        baseVideos = allVideos;
     }
-  }, [videosData?.videos, trendingVideos, activeTab]);
+
+    // Insert sponsored video ads into feed (Industry Standard: every 5 videos)
+    if (!videoAds || videoAds.length === 0) return baseVideos;
+
+    const AD_INSERTION_INTERVAL = 5; // TikTok/YouTube standard
+    const result: Video[] = [];
+    let adIndex = 0;
+
+    baseVideos.forEach((video, index) => {
+      result.push(video);
+
+      // Insert ad after every N videos
+      if ((index + 1) % AD_INSERTION_INTERVAL === 0 && adIndex < videoAds.length) {
+        const ad = videoAds[adIndex];
+        // Convert ad to video-like format for feed display
+        // Map Ad properties to Video interface for seamless feed integration
+        const ctaLabel = ad.callToAction?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Learn More';
+        const adAsVideo: Video = {
+          id: `ad-${ad.id}`,
+          title: ad.headline || ad.title,
+          description: ad.description,
+          videoUrl: ad.videoUrl || '',
+          thumbnail: ad.thumbnailUrl || ad.imageUrl || '',
+          views: ad.views || 0,
+          likes: 0,
+          commentsCount: 0,
+          createdAt: ad.createdAt || new Date().toISOString(),
+          isSponsored: true,
+          sponsorName: ad.user?.firstName || 'Sponsored',
+          ctaUrl: ad.targetUrl || undefined,
+          ctaText: ctaLabel,
+        };
+        result.push(adAsVideo);
+        adIndex++;
+      }
+    });
+
+    return result;
+  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
+
+  const videos = videosWithAds;
 
   // Get current video data from store
   const currentVideoData = useMemo(() => {
@@ -232,10 +355,42 @@ export default function VideosScreen(): React.ReactElement {
     openFullPlayer(video.id);
   }, [openFullPlayer]);
 
-  const handleVideoEnd = useCallback((video: Video) => {
-    // Auto-advance to next video is handled by the feed
-    console.log('Video ended:', video.title);
+  // Ad handlers for analytics tracking - Following IAB Standards
+  const handleAdClick = useCallback((ad: Ad) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    recordAdClick({
+      adId: ad.id,
+      placement: 'video',
+    });
+  }, [recordAdClick]);
+
+  const handleAdImpression = useCallback((ad: Ad) => {
+    recordAdImpression({
+      adId: ad.id,
+      placement: 'video',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
+  }, [recordAdImpression]);
+
+  const handleInterstitialClose = useCallback(() => {
+    setShowInterstitialAd(false);
+    setVideosWatchedCount(0); // Reset counter after ad shown
   }, []);
+
+  const handleVideoEnd = useCallback((video: Video) => {
+    // Track video completion for ad timing (TikTok/YouTube pattern)
+    const newCount = videosWatchedCount + 1;
+    setVideosWatchedCount(newCount);
+
+    // Show interstitial ad after every N videos (Industry Standard)
+    if (newCount >= VIDEOS_BEFORE_INTERSTITIAL && videoAds && videoAds.length > 0) {
+      setShowInterstitialAd(true);
+    }
+
+    console.log('Video ended:', video.title, `(${newCount}/${VIDEOS_BEFORE_INTERSTITIAL} until ad)`);
+  }, [videosWatchedCount, videoAds]);
 
   const handleTabChange = useCallback((tab: FeedTab) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -255,6 +410,21 @@ export default function VideosScreen(): React.ReactElement {
   const closeLiveStream = useCallback(() => {
     setLiveStreamVisible(false);
   }, []);
+
+  // Search handlers
+  const handleSearchSubmit = useCallback((query: string) => {
+    submitSearch(query);
+    setSearchOverlayVisible(false);
+    setShowSearchResults(query.length > 0);
+    if (query.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [submitSearch]);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery('');
+    setShowSearchResults(false);
+  }, [setSearchQuery]);
 
   // ============================================================================
   // FAB ACTIONS
@@ -295,88 +465,121 @@ export default function VideosScreen(): React.ReactElement {
   // ============================================================================
 
   return (
-    <View style={[styles.container, { backgroundColor: '#000000' }]}>
-      <StatusBar style="light" />
+    <GestureHandlerRootView style={styles.gestureRoot}>
+      <View style={[styles.container, systemBarsContainerStyle, { backgroundColor: '#000000' }]}>
+        {/* StatusBar configured via useSystemBars hook for intelligent management */}
+        <StatusBar style={statusBarStyle} translucent animated />
 
-      {/* Floating Header */}
+        {/* Floating Header with system bars integration */}
       <View
         style={[
           styles.header,
+            systemBarsHeaderStyle,
           {
             paddingTop: insets.top + SPACING.sm,
           },
         ]}
         pointerEvents="box-none"
       >
-        {/* Left: Search */}
-        <TouchableOpacity
-          style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
-          onPress={() => router.push('/search' as Href)}
-          accessibilityRole="button"
-          accessibilityLabel="Search videos"
-        >
-          <Search size={ICON_SIZE.lg} color="#FFFFFF" />
-        </TouchableOpacity>
-
-        {/* Center: Tab Chips */}
-        <View style={styles.tabContainer}>
-          {(['following', 'for-you', 'trending'] as FeedTab[]).map((tab) => (
+          {/* Search Bar Row */}
+          <View style={styles.searchRow}>
             <TouchableOpacity
-              key={tab}
-              style={[
-                styles.tabChip,
-                activeTab === tab && styles.tabChipActive,
-              ]}
-              onPress={() => handleTabChange(tab)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: activeTab === tab }}
-              accessibilityLabel={`${tab.replace('-', ' ')} tab`}
+              style={[styles.searchContainer, { backgroundColor: withAlpha('#000000', 0.5) }]}
+              onPress={() => setSearchOverlayVisible(true)}
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Open search"
             >
+              <Search size={ICON_SIZE.md} color="#FFFFFF" strokeWidth={1.5} />
               <Text
-                style={[
-                  styles.tabText,
-                  activeTab === tab && styles.tabTextActive,
-                ]}
+                style={[styles.searchPlaceholder, { color: searchQuery ? '#FFFFFF' : withAlpha('#FFFFFF', 0.6) }]}
+                numberOfLines={1}
               >
-                {tab === 'for-you' ? 'For You' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {searchQuery || 'Search videos...'}
               </Text>
-              {activeTab === tab && <View style={styles.tabIndicator} />}
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} accessibilityLabel="Clear search">
+                  <X size={ICON_SIZE.md} color="#FFFFFF" strokeWidth={2} />
+                </TouchableOpacity>
+              )}
             </TouchableOpacity>
-          ))}
-        </View>
 
-        {/* Right: Actions */}
-        <View style={styles.headerRight}>
-          <TouchableOpacity
-            style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
-            onPress={toggleViewMode}
-            accessibilityRole="button"
-            accessibilityLabel={feedMode === 'vertical' ? 'Switch to grid view' : 'Switch to vertical feed'}
-          >
-            {feedMode === 'vertical' ? (
-              <LayoutGrid size={ICON_SIZE.md} color="#FFFFFF" />
-            ) : (
-              <Play size={ICON_SIZE.md} color="#FFFFFF" />
-            )}
-          </TouchableOpacity>
+            {/* Right: Actions */}
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
+                onPress={toggleViewMode}
+                accessibilityRole="button"
+                accessibilityLabel={feedMode === 'vertical' ? 'Switch to grid view' : 'Switch to vertical feed'}
+              >
+                {feedMode === 'vertical' ? (
+                  <LayoutGrid size={ICON_SIZE.md} color="#FFFFFF" />
+                ) : (
+                  <Play size={ICON_SIZE.md} color="#FFFFFF" />
+                )}
+              </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
-            onPress={() => router.push('/notifications' as Href)}
-            accessibilityRole="button"
-            accessibilityLabel={`Notifications, ${unreadCount || 0} unread`}
-          >
-            <Bell size={ICON_SIZE.md} color="#FFFFFF" />
-            {(unreadCount ?? 0) > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationCount}>
-                  {(unreadCount ?? 0) > 99 ? '99+' : unreadCount}
+              <TouchableOpacity
+                style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
+                onPress={() => router.push('/notifications' as Href)}
+                accessibilityRole="button"
+                accessibilityLabel={`Notifications, ${unreadCount || 0} unread`}
+              >
+                <Bell size={ICON_SIZE.md} color="#FFFFFF" />
+                {(unreadCount ?? 0) > 0 && (
+                  <View style={styles.notificationBadge}>
+                    <Text style={styles.notificationCount}>
+                      {(unreadCount ?? 0) > 99 ? '99+' : unreadCount}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Center: Tab Chips */}
+          <View style={styles.tabContainer}>
+            {(['following', 'for-you', 'trending'] as FeedTab[]).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[
+                  styles.tabChip,
+                  activeTab === tab && styles.tabChipActive,
+                ]}
+                onPress={() => handleTabChange(tab)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === tab }}
+                accessibilityLabel={`${tab.replace('-', ' ')} tab`}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === tab && styles.tabTextActive,
+                  ]}
+                >
+                  {tab === 'for-you' ? 'For You' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                 </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+                {activeTab === tab && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            ))}
         </View>
       </View>
+
+        {/* Search Overlay */}
+        <SearchOverlay
+          visible={searchOverlayVisible}
+          onClose={() => setSearchOverlayVisible(false)}
+          query={searchQuery}
+          onChangeQuery={setSearchQuery}
+          onSubmit={handleSearchSubmit}
+          recentSearches={recentSearches}
+          onRemoveFromHistory={removeFromHistory}
+          onClearHistory={clearHistory}
+          suggestions={searchSuggestions}
+          placeholder="Search videos..."
+          searchContext="Videos"
+          trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial']}
+        />
 
       {/* Main Video Feed */}
       <VerticalVideoFeed
@@ -455,11 +658,29 @@ export default function VideosScreen(): React.ReactElement {
           onClose={closeLiveStream}
           onVideoUploaded={() => {
             refetch();
+            refetchVideoAds();
           }}
           asModal={true}
         />
       )}
-    </View>
+
+        {/* Interstitial Ad - Industry Standard: Full-screen ad between content */}
+        {videoAds && videoAds.length > 0 && (
+          <InterstitialAd
+            ad={videoAds[0]}
+            visible={showInterstitialAd}
+            onClose={handleInterstitialClose}
+            onAdClick={handleAdClick}
+            onAdComplete={(ad) => {
+              handleAdImpression(ad);
+              handleInterstitialClose();
+            }}
+            skipAfterSeconds={5}
+            showCloseButton={true}
+          />
+        )}
+      </View>
+    </GestureHandlerRootView>
   );
 }
 
@@ -468,6 +689,9 @@ export default function VideosScreen(): React.ReactElement {
 // ============================================================================
 
 const styles = StyleSheet.create({
+  gestureRoot: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -476,12 +700,30 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: 'column',
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.sm,
     zIndex: Z_INDEX.sticky,
+    gap: SPACING.sm,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.md,
+    height: 40,
+    borderRadius: 20,
+    gap: SPACING.sm,
+  },
+  searchPlaceholder: {
+    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   headerButton: {
     width: 40,
@@ -497,6 +739,7 @@ const styles = StyleSheet.create({
   tabContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: SPACING.md,
   },
   tabChip: {

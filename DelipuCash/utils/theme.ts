@@ -189,6 +189,56 @@ export const COMPONENT_SIZE = {
 } as const;
 
 /**
+ * System bars configuration for immersive experiences
+ * Following iOS Human Interface Guidelines and Material Design 3 specs
+ */
+export const SYSTEM_BARS = {
+  /** Status bar configurations */
+  statusBar: {
+    /** Height estimates (actual values come from SafeAreaInsets) */
+    height: {
+      ios: 44,
+      iosNotch: 47,
+      android: 24,
+    },
+    /** Default translucent background for overlay mode */
+    translucentBackground: 'transparent',
+    /** Dark overlay for light content on videos/images */
+    darkOverlay: 'rgba(0, 0, 0, 0.3)',
+    /** Light overlay for dark content */
+    lightOverlay: 'rgba(255, 255, 255, 0.1)',
+  },
+  /** Navigation bar configurations (Android) */
+  navigationBar: {
+    /** Standard navigation bar height */
+    height: 48,
+    /** Gesture navigation bar height (Android 10+) */
+    gestureHeight: 32,
+    /** Home indicator height (iOS) */
+    homeIndicator: 34,
+  },
+  /** Transition animations */
+  animation: {
+    /** Duration for show/hide transitions */
+    duration: 200,
+    /** Easing for smooth transitions */
+    easing: 'ease-in-out',
+  },
+  /** Content modes for immersive experiences */
+  mode: {
+    /** Standard mode - visible system bars */
+    standard: 'standard',
+    /** Immersive mode - hide system bars (TikTok/Reels style) */
+    immersive: 'immersive',
+    /** Edge-to-edge - visible but translucent bars */
+    edgeToEdge: 'edge-to-edge',
+  },
+} as const;
+
+/** System bars mode type */
+export type SystemBarsMode = keyof typeof SYSTEM_BARS.mode;
+
+/**
  * Shadow/elevation tokens for depth hierarchy
  */
 export const SHADOWS = {

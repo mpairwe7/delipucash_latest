@@ -54,7 +54,6 @@ import Animated, {
   runOnJS,
   FadeIn,
   FadeOut,
-  ZoomIn,
 } from 'react-native-reanimated';
 import {
   Gesture,
@@ -177,8 +176,12 @@ const HeartBurst = memo(({ visible, x, y }: { visible: boolean; x: number; y: nu
     }
   }, [visible, scale, opacity, translateY]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
+  // Separate transform/opacity from layout - avoids Reanimated conflict warning
+  const transformStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }, { translateY: translateY.value }],
+  }));
+
+  const opacityStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
   }));
 
@@ -189,11 +192,13 @@ const HeartBurst = memo(({ visible, x, y }: { visible: boolean; x: number; y: nu
       style={[
         styles.heartBurst,
         { left: x - 40, top: y - 40 },
-        animatedStyle,
+        opacityStyle,
       ]}
       pointerEvents="none"
     >
-      <Heart size={80} color="#FF2D55" fill="#FF2D55" />
+      <Animated.View style={transformStyle}>
+        <Heart size={80} color="#FF2D55" fill="#FF2D55" />
+      </Animated.View>
     </Animated.View>
   );
 });
@@ -212,21 +217,20 @@ const SeekIndicator = memo(({
 }) => {
   if (!visible) return null;
 
+  // Use wrapper View for layout animation to avoid transform conflict
   return (
     <Animated.View
       style={[
         styles.seekIndicator,
         side === 'left' ? styles.seekIndicatorLeft : styles.seekIndicatorRight,
       ]}
-      entering={ZoomIn.duration(150)}
+      entering={FadeIn.duration(150)}
       exiting={FadeOut.duration(200)}
     >
       <View style={[styles.seekBubble, { backgroundColor: withAlpha('#000000', 0.7) }]}>
-        <RotateCcw
-          size={24}
-          color="#FFFFFF"
-          style={side === 'right' ? { transform: [{ scaleX: -1 }] } : undefined}
-        />
+        <View style={side === 'right' ? { transform: [{ scaleX: -1 }] } : undefined}>
+          <RotateCcw size={24} color="#FFFFFF" />
+        </View>
         <Text style={styles.seekText}>{amount}s</Text>
       </View>
     </Animated.View>
@@ -336,6 +340,7 @@ function VideoFeedItemComponent({
   const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accumulatedSeekRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   // Animation values
   const scale = useSharedValue(1);
@@ -353,6 +358,25 @@ function VideoFeedItemComponent({
     playerInstance.muted = isMuted;
     playerInstance.volume = isMuted ? 0 : 1;
   });
+
+  // Track mounted state
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  // Safe player method wrapper to prevent calls on released objects
+  const safePlayerCall = useCallback(<T,>(fn: () => T, fallback?: T): T | undefined => {
+    if (!player || !isMountedRef.current) return fallback;
+    try {
+      return fn();
+    } catch (error) {
+      console.warn('VideoFeedItem: Player call failed (likely released):', error);
+      return fallback;
+    }
+  }, [player]);
 
   // ============================================================================
   // EFFECTS
@@ -374,22 +398,24 @@ function VideoFeedItemComponent({
 
   // Handle active state changes (auto-play/pause)
   useEffect(() => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
 
     if (isActive) {
       // Start playing when active
-      player.play();
+      safePlayerCall(() => player.play());
       setIsPlaying(true);
       setPlayerStatus('playing');
       
       // Fade out thumbnail after short delay
       setTimeout(() => {
-        thumbnailOpacity.value = withTiming(0, { duration: 300 });
-        setShowThumbnail(false);
+        if (isMountedRef.current) {
+          thumbnailOpacity.value = withTiming(0, { duration: 300 });
+          setShowThumbnail(false);
+        }
       }, 200);
     } else {
       // Pause when not active
-      player.pause();
+      safePlayerCall(() => player.pause());
       setIsPlaying(false);
       setPlayerStatus('paused');
       
@@ -397,59 +423,92 @@ function VideoFeedItemComponent({
       thumbnailOpacity.value = withTiming(1, { duration: 200 });
       setShowThumbnail(true);
     }
-  }, [isActive, player, thumbnailOpacity, setPlayerStatus]);
+  }, [isActive, player, thumbnailOpacity, setPlayerStatus, safePlayerCall]);
 
   // Sync mute state
   useEffect(() => {
-    if (player) {
-      player.muted = isMuted;
-      player.volume = isMuted ? 0 : 1;
-    }
-  }, [isMuted, player]);
+    safePlayerCall(() => {
+      if (player) {
+        player.muted = isMuted;
+        player.volume = isMuted ? 0 : 1;
+      }
+    });
+  }, [isMuted, player, safePlayerCall]);
 
   // Player status subscription
   useEffect(() => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
 
-    const statusSub = player.addListener('statusChange', (event) => {
-      if (event.status === 'readyToPlay') {
-        setIsBuffering(false);
-        setHasError(false);
-        if (player.duration) {
-          setDuration(player.duration);
+    let statusSub: { remove: () => void } | null = null;
+    let playingSub: { remove: () => void } | null = null;
+
+    try {
+      statusSub = player.addListener('statusChange', (event) => {
+        if (!isMountedRef.current) return;
+
+        if (event.status === 'readyToPlay') {
+          setIsBuffering(false);
+          setHasError(false);
+          try {
+            if (player.duration) {
+              setDuration(player.duration);
+            }
+          } catch {
+            // Player may be released
+          }
+        } else if (event.status === 'loading') {
+          setIsBuffering(true);
+        } else if (event.status === 'error') {
+          setHasError(true);
+          setIsBuffering(false);
         }
-      } else if (event.status === 'loading') {
-        setIsBuffering(true);
-      } else if (event.status === 'error') {
-        setHasError(true);
-        setIsBuffering(false);
-      }
-    });
+      });
 
-    const playingSub = player.addListener('playingChange', (event) => {
-      setIsPlaying(event.isPlaying);
-    });
+      playingSub = player.addListener('playingChange', (event) => {
+        if (!isMountedRef.current) return;
+        setIsPlaying(event.isPlaying);
+      });
+    } catch (error) {
+      console.warn('VideoFeedItem: Failed to add player listeners:', error);
+    }
 
     return () => {
-      statusSub.remove();
-      playingSub.remove();
+      try {
+        statusSub?.remove();
+        playingSub?.remove();
+      } catch {
+        // Listeners may already be removed
+      }
     };
   }, [player]);
 
   // Progress tracking
   useEffect(() => {
-    if (!player || !isActive || !isPlaying) return;
+    if (!player || !isActive || !isPlaying || !isMountedRef.current) return;
 
     const interval = setInterval(() => {
-      if (player.currentTime !== undefined && player.duration) {
-        setCurrentTime(player.currentTime);
-        const prog = player.currentTime / player.duration;
-        setProgress(prog, player.duration);
-        
-        // Check if video ended
-        if (player.currentTime >= player.duration - 0.5) {
-          onVideoEnd?.();
+      if (!isMountedRef.current) {
+        clearInterval(interval);
+        return;
+      }
+
+      try {
+        const currentTime = player.currentTime;
+        const duration = player.duration;
+
+        if (currentTime !== undefined && duration) {
+          setCurrentTime(currentTime);
+          const prog = currentTime / duration;
+          setProgress(prog, duration);
+
+      // Check if video ended
+          if (currentTime >= duration - 0.5) {
+            onVideoEnd?.();
+          }
         }
+      } catch {
+        // Player may have been released, stop the interval
+        clearInterval(interval);
       }
     }, 100);
 
@@ -476,25 +535,25 @@ function VideoFeedItemComponent({
   // ============================================================================
 
   const handlePlayPause = useCallback(() => {
-    if (!player) return;
+    if (!player || !isMountedRef.current) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     if (isPlaying) {
-      player.pause();
+      safePlayerCall(() => player.pause());
       setIsPlaying(false);
       playButtonScale.value = withSpring(1.1, { damping: 10 }, () => {
         playButtonScale.value = withSpring(1);
       });
     } else {
-      player.play();
+      safePlayerCall(() => player.play());
       setIsPlaying(true);
     }
 
     // Show controls
     setShowControls(true);
     controlsOpacity.value = withTiming(1, { duration: 200 });
-  }, [player, isPlaying, playButtonScale, controlsOpacity]);
+  }, [player, isPlaying, playButtonScale, controlsOpacity, safePlayerCall]);
 
   const handleDoubleTapLike = useCallback((x: number, y: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -515,13 +574,16 @@ function VideoFeedItemComponent({
   }, [onLike, likeScale]);
 
   const handleDoubleTapSeek = useCallback((side: 'left' | 'right') => {
-    if (!player || !duration) return;
+    if (!player || !duration || !isMountedRef.current) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const seekDirection = side === 'right' ? 1 : -1;
     const newTime = Math.max(0, Math.min(currentTime + SEEK_AMOUNT * seekDirection, duration));
-    player.currentTime = newTime;
+
+    safePlayerCall(() => {
+      player.currentTime = newTime;
+    });
     setCurrentTime(newTime);
 
     // Accumulate seek amount for display
@@ -535,7 +597,7 @@ function VideoFeedItemComponent({
       accumulatedSeekRef.current = 0;
       setShowSeekIndicator(false);
     }, 600);
-  }, [player, duration, currentTime]);
+  }, [player, duration, currentTime, safePlayerCall]);
 
   const handleLongPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -696,7 +758,7 @@ function VideoFeedItemComponent({
                 style={styles.retryButton}
                 onPress={() => {
                   setHasError(false);
-                  player?.play();
+                  safePlayerCall(() => player?.play());
                 }}
               >
                 <RotateCcw size={20} color="#FFFFFF" />
@@ -708,17 +770,19 @@ function VideoFeedItemComponent({
           {/* Center Play/Pause Button (shown when paused or controls visible) */}
           {(!isPlaying || showControls) && !isBuffering && !hasError && (
             <Animated.View
-              style={[styles.centerPlayButton, playButtonStyle]}
-              entering={ZoomIn.duration(150)}
+              style={styles.centerPlayButton}
+              entering={FadeIn.duration(150)}
               exiting={FadeOut.duration(150)}
             >
-              <View style={styles.playButtonBg}>
-                {isPlaying ? (
-                  <Pause size={40} color="#FFFFFF" fill="#FFFFFF" />
-                ) : (
-                  <Play size={40} color="#FFFFFF" fill="#FFFFFF" />
-                )}
-              </View>
+              <Animated.View style={playButtonStyle}>
+                <View style={styles.playButtonBg}>
+                  {isPlaying ? (
+                    <Pause size={40} color="#FFFFFF" fill="#FFFFFF" />
+                  ) : (
+                    <Play size={40} color="#FFFFFF" fill="#FFFFFF" />
+                  )}
+                </View>
+              </Animated.View>
             </Animated.View>
           )}
 
