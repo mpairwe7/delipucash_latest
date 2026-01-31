@@ -47,7 +47,7 @@ import {
   RADIUS,
   withAlpha,
 } from '@/utils/theme';
-import { NotificationBell } from '@/components';
+import { NotificationBell } from '@/components/NotificationBell';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;

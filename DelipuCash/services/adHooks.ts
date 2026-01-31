@@ -82,7 +82,7 @@ export const useAds = (filters?: AdFilters) => {
       }
       
       const response = await adApi.fetchAds(filters);
-      return { data: response.data, total: response.total };
+      return { data: response.data, total: response.pagination?.total || response.data.length };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -259,7 +259,7 @@ export const useRandomAd = (type?: AdType, enabled = true) => {
 /**
  * Hook to fetch user's ads (for advertisers)
  */
-export const useUserAds = (filters?: AdFilters) => {
+export const useUserAds = (userId?: string, filters?: AdFilters) => {
   return useQuery({
     queryKey: adQueryKeys.userAds(filters),
     queryFn: async () => {
@@ -267,9 +267,14 @@ export const useUserAds = (filters?: AdFilters) => {
         return { data: MOCK_ADS.slice(0, 5), total: 5 };
       }
       
-      const response = await adApi.fetchUserAds(filters);
-      return { data: response.data, total: response.total };
+      if (!userId) {
+        return { data: [], total: 0 };
+      }
+
+      const response = await adApi.fetchUserAds(userId, filters);
+      return { data: response.data, total: response.pagination?.total || response.data.length };
     },
+    enabled: !!userId || USE_MOCK_DATA,
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
   });

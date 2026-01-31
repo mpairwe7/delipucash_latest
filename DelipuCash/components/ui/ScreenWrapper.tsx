@@ -238,9 +238,11 @@ function ScreenWrapperComponent({
       edges={safeAreaEdges}
       testID={testID}
     >
+      {/* Status bar with animated transitions for theme changes */}
       <StatusBar 
         style={resolvedStatusBarStyle} 
         translucent={statusBarTranslucent}
+        animated
       />
 
       {/* Optional header */}

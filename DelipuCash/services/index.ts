@@ -5,26 +5,62 @@
  * - API modules: Raw API calls (surveyApi, videoApi, etc.)
  * - Hooks: TanStack Query hooks for data fetching
  * - Use TanStack Query hooks in components, not raw API calls
+ * 
+ * Note: Some modules have overlapping exports. We use explicit re-exports
+ * to avoid conflicts and prefer newer implementations over legacy ones.
  */
 
-export * from "./api";
+// Core API - main unified API object
 export { default as api } from "./api";
-export * from "./hooks";
+
+// Legacy hooks from ./hooks (excluding video hooks that are in videoHooks)
+export {
+    // Query keys
+    queryKeys,
+    // Survey hooks
+    useSurveys,
+    useRunningSurveys,
+    useSurvey,
+    useSubmitSurvey,
+    useCheckSurveyAttempt,
+    // Question hooks
+    useQuestions,
+    useQuestion,
+    // User hooks
+    useUserProfile,
+    // Comment hooks
+    useAddComment,
+    useUnlikeVideo,
+    useShareVideo,
+    // Search
+    useSearchVideos,
+    // Types
+    type SharePlatform,
+} from "./hooks";
+
+// Mock auth
 export * from "./mockAuth";
+
+// Support API
 export * from "./supportApi";
+
+// Notification API
 export * from "./notificationApi";
-export * from "./surveyApi";
+
+// Survey API
 export { default as surveyApi } from "./surveyApi";
-export * from "./videoApi";
+
+// Video API
 export { default as videoApi } from "./videoApi";
-export * from "./questionApi";
+
+// Question API
 export { default as questionApi } from "./questionApi";
-export * from "./surveyPaymentApi";
+
+// Survey Payment
 export { default as surveyPaymentApi } from "./surveyPaymentApi";
 export * from "./surveyPaymentHooks";
 
 // Ad Services
-export * from "./adApi";
 export { default as adApi } from "./adApi";
 
 // ============================================================================
@@ -59,6 +95,7 @@ export * from "./surveyResponseHooks";
 // ============================================================================
 // Video TanStack Query Hooks (Industry Standard)
 // Centralized video hooks with optimistic updates and caching
+// These are the preferred video hooks - use instead of legacy hooks
 // ============================================================================
 export * from "./videoHooks";
 export { default as videoHooks } from "./videoHooks";
@@ -66,6 +103,49 @@ export { default as videoHooks } from "./videoHooks";
 // ============================================================================
 // RevenueCat Purchases (Google Play Billing / App Store)
 // ============================================================================
-export * from "./purchasesService";
 export { purchasesService, default as purchasesServiceInstance } from "./purchasesService";
 export * from "./purchasesHooks";
+
+// ============================================================================
+// Cloudflare R2 Storage (Industry Standard)
+// Video, thumbnail, and livestream storage with signed URLs
+// ============================================================================
+export {
+    // Upload functions
+    validateUpload,
+    uploadVideoToR2,
+    uploadMediaToR2,
+    uploadThumbnailToR2,
+    getPresignedUploadUrl,
+    uploadToPresignedUrl,
+    uploadLivestreamChunk,
+    finalizeLivestreamRecording,
+    getSignedPlaybackUrl,
+    // Types
+    type VideoUploadResult,
+    type ThumbnailUploadResult,
+    type PresignedUploadResult,
+    type ValidateUploadResult,
+    type UploadProgressEvent,
+} from "./r2UploadService";
+
+export {
+    // Query keys
+    r2QueryKeys,
+    // Hooks
+    useValidateR2Upload,
+    useUploadVideoToR2,
+    useUploadMediaToR2,
+    useUploadThumbnailToR2,
+    useGetPresignedUploadUrl,
+    useUploadToPresignedUrl,
+    useUploadLivestreamChunk,
+    useFinalizeLivestreamRecording,
+    useGetSignedPlaybackUrl,
+    useR2VideoUpload,
+    // Types
+    type UseUploadVideoParams,
+    type UseUploadMediaParams,
+    type UseUploadThumbnailParams,
+    type UploadHookResult,
+} from "./r2UploadHooks";

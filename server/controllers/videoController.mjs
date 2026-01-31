@@ -33,6 +33,7 @@ export const createVideo = asyncHandler(async (req, res) => {
         videoUrl,
         thumbnail,
         userId,
+        duration: duration ? Math.round(duration) : null, // Duration in seconds
         likes: 0,
         views: 0,
         isBookmarked: false,
@@ -140,7 +141,7 @@ export const commentPost = asyncHandler(async (req, res) => {
         mediaUrls: comment.mediaUrls,
         userId: comment.userId,
         videoId: comment.videoId,
-        timestamp: comment.createdAt.getTime(),
+        createdAt: comment.createdAt.toISOString(), // ISO string for frontend consistency
         user: {
           id: comment.user.id,
           firstName: comment.user.firstName,
@@ -248,10 +249,9 @@ export const getAllVideos = asyncHandler(async (req, res) => {
         views: video.views || 0,
         isBookmarked: video.isBookmarked || false,
         commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.getTime(),
-        updatedAt: video.updatedAt.getTime(),
-        timestamp: video.createdAt.getTime(),
-        duration: 0, // Default duration
+        createdAt: video.createdAt.toISOString(), // ISO string for frontend consistency
+        updatedAt: video.updatedAt.toISOString(), // ISO string for frontend consistency
+        duration: video.duration || 0, // Duration in seconds from database
         comments: [], // Empty comments array
         user: video.user ? {
           id: video.user.id,

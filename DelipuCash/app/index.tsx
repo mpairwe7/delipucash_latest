@@ -1,101 +1,343 @@
-import { RADIUS, SPACING, TYPOGRAPHY, useTheme } from "@/utils/theme";
+import { RADIUS, SPACING, TYPOGRAPHY, useTheme, withAlpha } from "@/utils/theme";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
-    Animated,
-    Dimensions,
+  AccessibilityInfo,
+  Pressable,
     StyleSheet,
-    Text,
-    TouchableOpacity,
+  Text,
     View,
 } from "react-native";
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeInDown,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  HelpCircle,
+  PlayCircle,
+  ClipboardCheck,
+  Coins,
+  ChevronRight,
+  Sparkles,
+} from "lucide-react-native";
 
-const { height } = Dimensions.get("window");
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface FeatureItem {
+  icon: React.ComponentType<{ size: number; color: string; strokeWidth?: number }>;
+  title: string;
+  description: string;
+  color: string;
+  accessibilityLabel: string;
+}
+
+// ============================================================================
+// CONSTANTS - Feature Teasers
+// ============================================================================
+
+const FEATURES: FeatureItem[] = [
+  {
+    icon: HelpCircle,
+    title: "Answer Questions",
+    description: "Earn 10-50 pts each",
+    color: "#6C63FF",
+    accessibilityLabel: "Answer questions and earn 10 to 50 points each",
+  },
+  {
+    icon: PlayCircle,
+    title: "Watch Videos",
+    description: "Earn while you watch",
+    color: "#FF6B6B",
+    accessibilityLabel: "Watch videos and earn rewards while you watch",
+  },
+  {
+    icon: ClipboardCheck,
+    title: "Take Surveys",
+    description: "Quick cash rewards",
+    color: "#4ECDC4",
+    accessibilityLabel: "Complete surveys for quick cash rewards",
+  },
+];
+
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
+
+/** Animated Logo with spring bounce and glow effect */
+const AnimatedLogo = React.memo(function AnimatedLogo({
+  colors
+}: {
+  colors: ReturnType<typeof useTheme>["colors"]
+}) {
+  const scale = useSharedValue(0.6);
+  const opacity = useSharedValue(0);
+  const glowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    // Entrance animation
+    opacity.value = withTiming(1, { duration: 400 });
+    scale.value = withSpring(1, { damping: 12, stiffness: 100 });
+
+    // Subtle pulsing glow
+    glowOpacity.value = withDelay(
+      600,
+      withRepeat(
+        withSequence(
+          withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.15, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+        ),
+        -1,
+        true
+      )
+    );
+  }, [scale, opacity, glowOpacity]);
+
+  const logoStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
+
+  return (
+    <View
+      style={styles.logoSection}
+      accessible
+      accessibilityRole="image"
+      accessibilityLabel="DelipuCash logo - Your earning companion"
+    >
+      {/* Ambient glow */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.logoGlow,
+          { backgroundColor: colors.primary },
+          glowStyle,
+        ]}
+      />
+
+      <Animated.View style={[styles.logoWrapper, logoStyle]}>
+        <View style={[styles.logoContainer, { borderColor: withAlpha(colors.primary, 0.3) }]}>
+          <Image
+            source={require("../assets/images/logo.png")}
+            style={styles.logo}
+            contentFit="contain"
+            transition={200}
+            placeholder={require("../assets/images/logo.png")}
+            cachePolicy="memory-disk"
+          />
+        </View>
+      </Animated.View>
+    </View>
+  );
+});
+
+/** Feature teaser card with icon and text */
+const FeatureCard = React.memo(function FeatureCard({
+  feature,
+  index,
+  colors,
+}: {
+  feature: FeatureItem;
+  index: number;
+  colors: ReturnType<typeof useTheme>["colors"];
+}) {
+  const Icon = feature.icon;
+
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(600 + index * 100).springify().damping(15)}
+      style={[
+        styles.featureCard,
+        { backgroundColor: withAlpha(feature.color, 0.12) },
+      ]}
+      accessible
+      accessibilityLabel={feature.accessibilityLabel}
+      accessibilityRole="text"
+    >
+      <View style={[styles.featureIconContainer, { backgroundColor: withAlpha(feature.color, 0.2) }]}>
+        <Icon size={20} color={feature.color} strokeWidth={2} />
+      </View>
+      <View style={styles.featureTextContainer}>
+        <Text
+          style={[styles.featureTitle, { color: "#FFFFFF" }]}
+          allowFontScaling
+          maxFontSizeMultiplier={1.3}
+        >
+          {feature.title}
+        </Text>
+        <Text
+          style={[styles.featureDescription, { color: "rgba(255,255,255,0.6)" }]}
+          allowFontScaling
+          maxFontSizeMultiplier={1.2}
+        >
+          {feature.description}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+});
+
+/** Primary CTA Button with scale feedback */
+const PrimaryCTAButton = React.memo(function PrimaryCTAButton({
+  onPress,
+  colors,
+}: {
+  onPress: () => void;
+  colors: ReturnType<typeof useTheme>["colors"];
+}) {
+  const scale = useSharedValue(1);
+  const shimmerPosition = useSharedValue(0);
+
+  useEffect(() => {
+    // Subtle shimmer effect
+    shimmerPosition.value = withRepeat(
+      withTiming(1, { duration: 3000, easing: Easing.linear }),
+      -1,
+      false
+    );
+  }, [shimmerPosition]);
+
+  const buttonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handlePressIn = useCallback(() => {
+    scale.value = withSpring(0.96, { damping: 15 });
+  }, [scale]);
+
+  const handlePressOut = useCallback(() => {
+    scale.value = withSpring(1, { damping: 15 });
+  }, [scale]);
+
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
+    onPress();
+  }, [onPress]);
+
+  return (
+    <Animated.View
+      entering={FadeInUp.delay(900).springify().damping(12)}
+      style={buttonStyle}
+    >
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+        accessibilityRole="button"
+        accessibilityLabel="Get Started Free"
+        accessibilityHint="Create a free account and start earning rewards immediately"
+      >
+        <Sparkles size={18} color="#FFFFFF" strokeWidth={2} style={{ marginRight: 8 }} />
+        <Text
+          style={styles.primaryButtonText}
+          allowFontScaling
+          maxFontSizeMultiplier={1.2}
+        >
+          Get Started — Free
+        </Text>
+        <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+      </Pressable>
+    </Animated.View>
+  );
+});
+
+/** Secondary Sign In link */
+const SecondarySignIn = React.memo(function SecondarySignIn({
+  onPress,
+  colors,
+}: {
+  onPress: () => void;
+  colors: ReturnType<typeof useTheme>["colors"];
+}) {
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    onPress();
+  }, [onPress]);
+
+  return (
+    <Animated.View entering={FadeIn.delay(1000).duration(400)}>
+      <Pressable
+        onPress={handlePress}
+        style={styles.secondaryButton}
+        accessibilityRole="button"
+        accessibilityLabel="Sign In to existing account"
+        accessibilityHint="Navigate to login screen if you already have an account"
+      >
+        <Text
+          style={styles.secondaryButtonText}
+          allowFontScaling
+          maxFontSizeMultiplier={1.2}
+        >
+          Already have an account?{" "}
+          <Text style={[styles.secondaryButtonAccent, { color: colors.primary }]}>
+            Sign In
+          </Text>
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+});
+
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 
 /**
- * Clean, minimal splash screen following industry best practices:
- * - Centered logo with subtle fade-in animation
- * - App name with elegant typography
- * - Minimal tagline for context
- * - Two clear CTAs with strong visual hierarchy
- * - Generous whitespace for breathing room
+ * Premium Splash Screen - 2025/2026 Industry Standard
+ * 
+ * Design Principles:
+ * - Clear value proposition: "Earn real rewards"
+ * - Visual hierarchy: Logo → Headline → Features → CTAs
+ * - Accessibility: Full VoiceOver/TalkBack support, dynamic type
+ * - Performance: Optimized animations, cached images
+ * - Engagement: Feature teasers show earning opportunities
+ * 
+ * Inspired by: TikTok (energy), Cash App (simplicity), Duolingo (motivation)
  */
 export default function SplashScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
 
-  // Animation values
-  const logoScale = useRef(new Animated.Value(0.8)).current;
-  const logoOpacity = useRef(new Animated.Value(0)).current;
-  const contentOpacity = useRef(new Animated.Value(0)).current;
-  const contentSlide = useRef(new Animated.Value(30)).current;
-  const ctaOpacity = useRef(new Animated.Value(0)).current;
-
+  // Announce screen purpose for screen readers
   useEffect(() => {
-    // Staggered animation sequence for polished feel
-    Animated.sequence([
-      // Logo entrance
-      Animated.parallel([
-        Animated.spring(logoScale, {
-          toValue: 1,
-          tension: 50,
-          friction: 7,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoOpacity, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]),
-      // Content fade in
-      Animated.parallel([
-        Animated.timing(contentOpacity, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(contentSlide, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-      ]),
-      // CTA buttons
-      Animated.timing(ctaOpacity, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [logoScale, logoOpacity, contentOpacity, contentSlide, ctaOpacity]);
+    AccessibilityInfo.announceForAccessibility(
+      "Welcome to DelipuCash. Earn real money by answering questions, watching videos, and completing surveys. Press Get Started to begin."
+    );
+  }, []);
 
-  const handleGetStarted = (): void => {
-    // Haptics may not be available on simulators/emulators
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {
-      // Silently ignore - haptics not available on this device
-    });
+  const handleGetStarted = useCallback((): void => {
     router.push("/(auth)/signup");
-  };
+  }, []);
 
-  const handleSignIn = (): void => {
-    // Haptics may not be available on simulators/emulators
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {
-      // Silently ignore - haptics not available on this device
-    });
+  const handleSignIn = useCallback((): void => {
     router.push("/(auth)/login");
-  };
+  }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={styles.container} accessible accessibilityRole="none">
       <StatusBar style="light" />
 
-      {/* Subtle gradient background */}
+      {/* Gradient Background */}
       <LinearGradient
         colors={["#1a1a2e", "#16213e", "#0f0f23"]}
         locations={[0, 0.5, 1]}
@@ -103,106 +345,79 @@ export default function SplashScreen(): React.ReactElement {
         pointerEvents="none"
       />
 
-      {/* Decorative ambient glow behind logo */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.ambientGlow,
-          {
-            opacity: logoOpacity,
-            backgroundColor: colors.primary,
-          },
-        ]}
-      />
-
+      {/* Main Content */}
       <View
         style={[
           styles.content,
           {
-            paddingTop: insets.top + height * 0.14,
+            paddingTop: insets.top + SPACING.xl,
             paddingBottom: insets.bottom + SPACING.lg,
           },
         ]}
       >
-        {/* Logo Section */}
-        <View style={styles.heroSection}>
-          <Animated.View
-            style={[
-              styles.logoWrapper,
-              {
-                opacity: logoOpacity,
-                transform: [{ scale: logoScale }],
-              },
-            ]}
-          >
-            <View style={styles.logoContainer}>
-              <Image
-                source={require("../assets/images/logo.png")}
-                style={styles.logo}
-                contentFit="contain"
-                transition={300}
-              />
-            </View>
-          </Animated.View>
+        {/* Hero Section: Logo */}
+        <AnimatedLogo colors={colors} />
 
-          {/* App Name & Tagline */}
-          <Animated.View
-            style={[
-              styles.textContainer,
-              {
-                opacity: contentOpacity,
-                transform: [{ translateY: contentSlide }],
-              },
-            ]}
+        {/* Headline Section */}
+        <Animated.View
+          entering={FadeInDown.delay(300).springify().damping(15)}
+          style={styles.headlineSection}
+        >
+          <View style={styles.earningBadge}>
+            <Coins size={14} color="#FFD700" strokeWidth={2} />
+            <Text style={styles.earningBadgeText}>Start Earning Today</Text>
+          </View>
+
+          <Text
+            style={styles.headline}
+            accessible
+            accessibilityRole="header"
+            allowFontScaling
+            maxFontSizeMultiplier={1.3}
           >
-            <Text style={styles.appName}>DelipuCash</Text>
-            <Text style={styles.tagline}>
-              Earn rewards for your time.{"\n"}Simple. Fast. Secure.
+            Earn Real Cash{"\n"}
+            <Text style={[styles.headlineAccent, { color: colors.primary }]}>
+              Answering & Watching
             </Text>
-          </Animated.View>
+          </Text>
+
+          <Text
+            style={styles.subheadline}
+            allowFontScaling
+            maxFontSizeMultiplier={1.2}
+          >
+            Join thousands earning daily rewards.{"\n"}Questions • Videos • Surveys
+          </Text>
+        </Animated.View>
+
+        {/* Feature Teasers */}
+        <View style={styles.featuresSection}>
+          {FEATURES.map((feature, index) => (
+            <FeatureCard
+              key={feature.title}
+              feature={feature}
+              index={index}
+              colors={colors}
+            />
+          ))}
         </View>
 
         {/* Spacer */}
         <View style={styles.spacer} />
 
-        {/* CTA Section - Use View wrapper to ensure touch events always work */}
+        {/* CTA Section */}
         <View style={styles.ctaSection}>
-          <Animated.View style={{ opacity: ctaOpacity }}>
-            {/* Primary CTA */}
-            <TouchableOpacity
-              onPress={handleGetStarted}
-              activeOpacity={0.85}
-              style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-              accessibilityRole="button"
-              accessibilityLabel="Get Started - Create a new account"
-              accessibilityHint="Navigates to sign up screen"
-            >
-              <Text style={styles.primaryButtonText}>Get Started</Text>
-            </TouchableOpacity>
-          </Animated.View>
+          <PrimaryCTAButton onPress={handleGetStarted} colors={colors} />
+          <SecondarySignIn onPress={handleSignIn} colors={colors} />
 
-          <Animated.View style={{ opacity: ctaOpacity }}>
-            {/* Secondary CTA */}
-            <TouchableOpacity
-              onPress={handleSignIn}
-              activeOpacity={0.6}
-              style={styles.secondaryButton}
-              accessibilityRole="button"
-              accessibilityLabel="Sign In to existing account"
-              accessibilityHint="Navigates to login screen"
-            >
-              <Text style={styles.secondaryButtonText}>
-                Already have an account?{" "}
-                <Text
-                  style={[
-                    styles.secondaryButtonAccent,
-                    { color: colors.primary },
-                  ]}
-                >
-                  Sign In
-                </Text>
-              </Text>
-            </TouchableOpacity>
+          {/* Trust indicator */}
+          <Animated.View
+            entering={FadeIn.delay(1100).duration(400)}
+            style={styles.trustIndicator}
+          >
+            <Text style={styles.trustText}>
+              🇺🇬 Trusted by 10,000+ users in Uganda
+            </Text>
           </Animated.View>
         </View>
       </View>
@@ -210,100 +425,161 @@ export default function SplashScreen(): React.ReactElement {
   );
 }
 
+// ============================================================================
+// STYLES
+// ============================================================================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#0f0f23",
   },
-  ambientGlow: {
-    position: "absolute",
-    top: height * 0.18,
-    alignSelf: "center",
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    opacity: 0.12,
-    transform: [{ scale: 1.8 }],
-  },
   content: {
     flex: 1,
-    paddingHorizontal: SPACING.xl,
+    paddingHorizontal: SPACING.lg,
   },
-  heroSection: {
+
+  // Logo Section
+  logoSection: {
     alignItems: "center",
+    marginBottom: SPACING.lg,
+  },
+  logoGlow: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    transform: [{ scale: 2 }],
   },
   logoWrapper: {
-    marginBottom: SPACING.xl,
+    zIndex: 1,
   },
   logoContainer: {
-    width: 88,
-    height: 88,
+    width: 80,
+    height: 80,
     borderRadius: RADIUS.xl,
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    // Subtle shadow for depth
+    borderWidth: 1.5,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 10,
   },
   logo: {
-    width: 56,
-    height: 56,
+    width: 48,
+    height: 48,
   },
-  textContainer: {
+
+  // Headline Section
+  headlineSection: {
     alignItems: "center",
+    marginBottom: SPACING.xl,
   },
-  appName: {
+  earningBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    backgroundColor: "rgba(255, 215, 0, 0.15)",
+    borderRadius: RADIUS.full,
+    marginBottom: SPACING.md,
+  },
+  earningBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: "#FFD700",
+    letterSpacing: 0.5,
+  },
+  headline: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 32,
+    fontSize: 28,
     color: "#FFFFFF",
-    letterSpacing: -0.3,
+    textAlign: "center",
+    lineHeight: 36,
+    letterSpacing: -0.5,
     marginBottom: SPACING.sm,
   },
-  tagline: {
+  headlineAccent: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+  },
+  subheadline: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.base,
     color: "rgba(255, 255, 255, 0.55)",
     textAlign: "center",
-    lineHeight: 24,
-    maxWidth: 280,
+    lineHeight: 22,
   },
-  spacer: {
-    flex: 1,
+
+  // Features Section
+  featuresSection: {
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
   },
-  ctaSection: {
-    gap: SPACING.base,
-    paddingHorizontal: SPACING.sm,
-  },
-  primaryButton: {
-    height: 52,
-    paddingHorizontal: SPACING.xl,
+  featureCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: SPACING.md,
+    paddingHorizontal: SPACING.md,
     borderRadius: RADIUS.lg,
+    gap: SPACING.md,
+  },
+  featureIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.md,
     alignItems: "center",
     justifyContent: "center",
-    // Subtle shadow for elevation
-    shadowColor: "#4D4DFF",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
+  },
+  featureTextContainer: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    marginBottom: 2,
+  },
+  featureDescription: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+
+  // Spacer
+  spacer: {
+    flex: 1,
+    minHeight: SPACING.lg,
+  },
+
+  // CTA Section
+  ctaSection: {
+    gap: SPACING.md,
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    height: 56,
+    borderRadius: RADIUS.lg,
+    shadowColor: "#6C63FF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
   },
   primaryButtonText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
     color: "#FFFFFF",
     letterSpacing: 0.3,
   },
   secondaryButton: {
-    height: 48,
-    paddingHorizontal: SPACING.lg,
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: SPACING.md,
+    minHeight: 48,
   },
   secondaryButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -313,5 +589,17 @@ const styles = StyleSheet.create({
   },
   secondaryButtonAccent: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
+  },
+
+  // Trust Indicator
+  trustIndicator: {
+    alignItems: "center",
+    paddingTop: SPACING.sm,
+  },
+  trustText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: "rgba(255, 255, 255, 0.4)",
+    textAlign: "center",
   },
 });

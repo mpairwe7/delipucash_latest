@@ -12,15 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Mail, CheckCircle } from "lucide-react-native";
-import {
-  useTheme,
-  ThemeColors,
-  SPACING,
-  TYPOGRAPHY,
-  RADIUS,
-  ICON_SIZE,
-  COMPONENT_SIZE,
-} from "@/utils/theme";
+import { useTheme, ThemeColors } from "@/utils/theme";
 import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { validators, validateForm, ValidationSchema } from "@/utils/validation";
@@ -89,7 +81,7 @@ const SuccessScreen = memo<SuccessScreenProps>(
         </Text>
 
         <Text style={[styles.successMessage, { color: colors.textSecondary }]}>
-          We've sent a password reset link to{"\n"}
+          We&apos;ve sent a password reset link to{"\n"}
           <Text style={[styles.successEmail, { color: colors.text }]}>{email}</Text>
         </Text>
 
@@ -101,7 +93,7 @@ const SuccessScreen = memo<SuccessScreenProps>(
 
         <TouchableOpacity onPress={onTryAgain} accessibilityRole="button">
           <Text style={[styles.tryAgainText, { color: colors.textSecondary }]}>
-            Didn't receive email?{" "}
+            Didn&apos;t receive email?{" "}
             <Text style={{ color: colors.primary }}>Try again</Text>
           </Text>
         </TouchableOpacity>
@@ -256,7 +248,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
               Forgot Password?
             </Text>
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              No worries! Enter your email address and we'll send you a link to
+              No worries! Enter your email address and we&apos;ll send you a link to
               reset your password.
             </Text>
           </View>

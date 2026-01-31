@@ -460,7 +460,7 @@ function LeaderboardSnippetComponent({
       </View>
 
       {/* Current user rank (if not in top 3) */}
-      {currentUserRank && currentUserRank > 3 && (
+      {currentUserRank !== undefined && currentUserRank > 3 && (
         <View 
           style={[
             styles.currentUserRank,

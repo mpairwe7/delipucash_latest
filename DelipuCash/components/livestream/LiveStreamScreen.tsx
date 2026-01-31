@@ -140,6 +140,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Only request permissions after user acknowledges why camera is needed
   const {
     hasPermission,
+    hasAllPermissions,
+    hasMicrophonePermission,
+    hasMediaLibraryPermission,
     requestPermissions,
     cameraRef,
     facing,
@@ -150,10 +153,17 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     setZoom,
     isReady,
     markReady,
+    startRecording: cameraStartRecording,
+    stopRecording: cameraStopRecording,
+    saveToMediaLibrary,
   } = useCamera({
     autoRequest: false, // Industry standard: show permission context first
     pauseOnBackground: true,
     initialFacing: 'back',
+    onError: (error) => {
+      console.error('[LiveStream] Camera error:', error);
+      Alert.alert('Camera Error', error);
+    },
   });
 
   // Sync camera state with local state for UI compatibility
@@ -170,6 +180,18 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     onUpgradeRequired?.();
     router.push('/subscription' as Href);
   }, [onUpgradeRequired]);
+
+  // Cleanup on unmount - stop recording if in progress
+  useEffect(() => {
+    return () => {
+      // Stop recording timer if active
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+        recordingTimerRef.current = null;
+      }
+      // Camera recording cleanup is handled by useCamera hook
+    };
+  }, []);
 
   // Handle orientation changes and cleanup
   useEffect(() => {
@@ -322,6 +344,19 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [showControls, fadeAnim]);
   
   const startRecording = useCallback(async () => {
+    // Verify all permissions before starting
+    if (!hasAllPermissions) {
+      Alert.alert(
+        'Permissions Required',
+        'Camera, microphone, and media library permissions are required to record videos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Grant Permissions', onPress: requestPermissions },
+        ]
+      );
+      return;
+    }
+
     // Update store state
     storeStartRecording();
     
@@ -337,6 +372,16 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       console.warn('Failed to start server session, continuing locally');
     }
 
+    // Start actual camera recording
+    try {
+      await cameraStartRecording();
+    } catch (error) {
+      console.error('Failed to start camera recording:', error);
+      Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
+      storeStopRecording();
+      return;
+    }
+
     setIsRecording(true);
     setShowControls(true);
     
@@ -345,9 +390,17 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream]);
+  }, [fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
   
   const stopRecording = useCallback(async () => {
+    // Stop actual camera recording first
+    let videoUri: string | null = null;
+    try {
+      videoUri = await cameraStopRecording();
+    } catch (error) {
+      console.error('Failed to stop camera recording:', error);
+    }
+
     // Update store state
     storeStopRecording();
     
@@ -366,40 +419,55 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     }
 
     setIsRecording(false);
-    setIsUploading(true);
-    
-    // Simulate upload with progress
-    let progress = 0;
-    const uploadInterval = setInterval(() => {
-      progress += Math.random() * 20;
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(uploadInterval);
-        
-        // Simulate upload completion
-        setTimeout(() => {
-          setIsUploading(false);
-          setUploadProgress(0);
-          
-          const videoData: RecordedVideo = {
-            id: `video_${Date.now()}`,
-            uri: `https://storage.delipucash.com/videos/${Date.now()}.mp4`,
-            duration: recordingTime,
-            title: 'New Recording',
-          };
-          
-          onVideoUploaded?.(videoData);
-          
-          Alert.alert(
-            'Upload Complete',
-            'Your video has been uploaded successfully!',
-            [{ text: 'OK', onPress: onClose }]
-          );
-        }, 500);
+
+    // If we have a recorded video, save it to media library
+    if (videoUri) {
+      setIsUploading(true);
+
+      try {
+        // Save to media library (industry standard behavior)
+        await saveToMediaLibrary(videoUri);
+
+        // Simulate upload progress for UX
+        let progress = 0;
+        const uploadInterval = setInterval(() => {
+          progress += Math.random() * 25;
+          if (progress >= 100) {
+            progress = 100;
+            clearInterval(uploadInterval);
+
+            setTimeout(() => {
+              setIsUploading(false);
+              setUploadProgress(0);
+
+              const videoData: RecordedVideo = {
+                id: `video_${Date.now()}`,
+                uri: videoUri!,
+                duration: recordingTime,
+                title: 'New Recording',
+              };
+
+              onVideoUploaded?.(videoData);
+
+              Alert.alert(
+                'Recording Saved',
+                'Your video has been saved and uploaded successfully!',
+                [{ text: 'OK', onPress: onClose }]
+              );
+            }, 500);
+          }
+          setUploadProgress(Math.min(Math.round(progress), 100));
+        }, 150);
+      } catch (error) {
+        console.error('Failed to save recording:', error);
+        setIsUploading(false);
+        Alert.alert('Save Error', 'Failed to save recording to your library.');
       }
-      setUploadProgress(Math.min(Math.round(progress), 100));
-    }, 200);
-  }, [recordingTime, onVideoUploaded, onClose, storeStopRecording, endLivestreamMutation, storeEndLivestream]);
+    } else {
+      // No video recorded, just close
+      Alert.alert('Recording Error', 'No video was recorded.');
+    }
+  }, [recordingTime, onVideoUploaded, onClose, storeStopRecording, endLivestreamMutation, storeEndLivestream, cameraStopRecording, saveToMediaLibrary]);
 
   // Update ref when stopRecording changes
   useEffect(() => {
@@ -447,12 +515,24 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     );
   }
   
-  // Permission denied
-  if (hasPermission === false) {
+  // Permission denied - show detailed permission status
+  if (hasPermission === false || !hasAllPermissions) {
+    // Build a descriptive message about which permissions are missing
+    const missingPermissions: string[] = [];
+    if (!hasPermission) missingPermissions.push('Camera');
+    if (!hasMicrophonePermission) missingPermissions.push('Microphone');
+    if (!hasMediaLibraryPermission) missingPermissions.push('Media Library');
+
+    const description = missingPermissions.length > 0
+      ? `The following permissions are required: ${missingPermissions.join(', ')}. Please grant access to continue.`
+      : 'Please grant camera, microphone, and media library access to record videos.';
+
     return (
       <PermissionPrompt 
         type="request" 
         onRequestPermissions={requestPermissions}
+        title="Permissions Required"
+        description={description}
       />
     );
   }

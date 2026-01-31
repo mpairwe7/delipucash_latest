@@ -8,9 +8,8 @@ import 'react-native-reanimated';
 // import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
-import NotificationProvider from '@/utils/usePushNotifications';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { onlineManager } from '@tanstack/react-query';
+import { NotificationProvider } from '@/utils/usePushNotifications';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';

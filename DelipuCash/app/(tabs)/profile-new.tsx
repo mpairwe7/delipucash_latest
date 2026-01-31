@@ -65,19 +65,20 @@ import {
 // Components
 import { NotificationBell, SectionHeader } from '@/components';
 import {
-  ProfileHeader,
-  EarningsOverview,
+  ProfileUserCard,
   QuickActionsGrid,
   SettingsSection,
   OTPVerificationModal,
   ProfileSkeleton,
-  RecentActivityCard,
   AccessibleText,
   AnimatedCard,
+  EditProfileModal,
+  TransactionsCard,
 } from '@/components/profile';
 import type { ProfileQuickAction } from '@/components/profile/QuickActionsGrid';
 import type { SettingItem } from '@/components/profile/SettingsSection';
-import type { ActivityItem } from '@/components/profile/RecentActivityCard';
+import type { EditProfileData } from '@/components/profile/EditProfileModal';
+import type { RecentTransaction } from '@/components/profile/TransactionsCard';
 
 // Services & Hooks
 import {
@@ -118,7 +119,7 @@ const getResponsivePadding = () => {
 // Section types for FlatList
 type SectionType =
   | 'header'
-  | 'earnings'
+  | 'transactions'
   | 'quickActions'
   | 'achievements'
   | 'recentActivity'
@@ -159,6 +160,8 @@ export default function ProfileScreen(): React.ReactElement {
   // Local state
   const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(Boolean(user?.twoFactorEnabled));
   const [show2FAModal, setShow2FAModal] = useState(false);
+  const [showEditProfileModal, setShowEditProfileModal] = useState(false);
+  const [isEditingSaving, setIsEditingSaving] = useState(false);
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   // const [privacy, setPrivacy] = useState({ shareProfile: true, shareActivity: false }); // TODO: implement privacy settings
@@ -277,30 +280,30 @@ export default function ProfileScreen(): React.ReactElement {
     },
   ], []);
 
-  // Mock recent activity (replace with real data)
-  const recentActivity: ActivityItem[] = useMemo(() => [
+  // Recent transactions for TransactionsCard (formatted for the component)
+  const recentTransactions: RecentTransaction[] = useMemo(() => [
     {
       id: '1',
       type: 'reward',
       amount: 150,
       title: 'Daily Reward Claimed',
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
       status: 'completed',
     },
     {
       id: '2',
-      type: 'survey',
-      amount: 50,
-      title: 'Completed: Product Feedback',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+      type: 'deposit',
+      amount: 500,
+      title: 'Survey Bonus',
+      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
       status: 'completed',
     },
     {
       id: '3',
-      type: 'question',
-      amount: 25,
-      title: 'Answered 5 Questions',
-      createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), // 2 days ago
+      type: 'withdrawal',
+      amount: 200,
+      title: 'Mobile Money Transfer',
+      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       status: 'completed',
     },
   ], []);
@@ -314,14 +317,6 @@ export default function ProfileScreen(): React.ReactElement {
     await Promise.all([refetchUser(), refetchSessions()]);
     setIsRefreshing(false);
   }, [refetchUser, refetchSessions]);
-
-  const handleWithdraw = useCallback(() => {
-    if (profile.walletBalance <= 0) {
-      Alert.alert('Insufficient funds', 'You need a positive balance to withdraw.');
-      return;
-    }
-    router.push('/(tabs)/withdraw');
-  }, [profile.walletBalance]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -350,9 +345,32 @@ export default function ProfileScreen(): React.ReactElement {
   }, []);
 
   const handleEditProfile = useCallback(() => {
-    // Navigate to edit profile screen or show modal
-    Alert.alert('Edit Profile', 'Profile editing coming soon!');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowEditProfileModal(true);
   }, []);
+
+  const handleSaveProfile = useCallback(async (data: EditProfileData) => {
+    setIsEditingSaving(true);
+    try {
+      // TODO: Implement actual API call
+      // await updateProfileMutation.mutateAsync(data);
+      console.log('Saving profile:', data);
+
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Refetch user data
+      await refetchUser();
+
+      setShowEditProfileModal(false);
+      Alert.alert('Success', 'Your profile has been updated!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      throw error;
+    } finally {
+      setIsEditingSaving(false);
+    }
+  }, [refetchUser]);
 
   const handleToggle2FA = useCallback(() => {
     if (twoFactorEnabled) {
@@ -502,9 +520,8 @@ export default function ProfileScreen(): React.ReactElement {
 
   const sections: SectionItem[] = useMemo(() => [
     { type: 'header', id: 'header' },
-    { type: 'earnings', id: 'earnings' },
+    { type: 'transactions', id: 'transactions' },
     { type: 'quickActions', id: 'quickActions' },
-    { type: 'recentActivity', id: 'recentActivity' },
     { type: 'settings', id: 'settings' },
     { type: 'signOut', id: 'signOut' },
   ], []);
@@ -513,32 +530,36 @@ export default function ProfileScreen(): React.ReactElement {
     switch (item.type) {
       case 'header':
         return (
-          <ProfileHeader
-            firstName={profile.firstName}
-            lastName={profile.lastName}
-            email={profile.email}
-            isVerified={profile.isVerified}
-            totalEarnings={profile.totalEarnings}
-            walletBalance={profile.walletBalance}
-            streakDays={profile.streakDays}
-            onEditPress={handleEditProfile}
-            onEarningsPress={() => router.push('/(tabs)/transactions')}
-            onStreakPress={() => Alert.alert('Streak', `Your current streak is ${profile.streakDays} days!`)}
-          />
+          <View style={styles.sectionContainer}>
+            <ProfileUserCard
+              firstName={profile.firstName}
+              lastName={profile.lastName}
+              email={profile.email}
+              phone={profile.telephone}
+              isVerified={profile.isVerified}
+              totalEarnings={profile.totalEarnings}
+              walletBalance={profile.walletBalance}
+              streakDays={profile.streakDays}
+              maxStreak={30}
+              onEditPress={handleEditProfile}
+              onAvatarPress={() => Alert.alert('Change Photo', 'Photo picker coming soon!')}
+              onEarningsPress={() => router.push('/(tabs)/transactions')}
+              onWalletPress={() => router.push('/(tabs)/withdraw' as Href)}
+              onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
+            />
+          </View>
         );
 
-      case 'earnings':
+      case 'transactions':
         return (
           <View style={styles.sectionContainer}>
-            <EarningsOverview
-              walletBalance={profile.walletBalance}
-              totalEarnings={profile.totalEarnings}
-              totalRewards={profile.totalRewards}
-              userName={profile.firstName}
-              isVerified={profile.isVerified}
-              onWithdraw={handleWithdraw}
-              onViewHistory={() => router.push('/(tabs)/transactions')}
-              onViewRewards={() => Alert.alert('Rewards', 'View all your rewards!')}
+            <TransactionsCard
+              totalEarned={profile.totalEarnings}
+              currentStreak={profile.streakDays}
+              maxStreak={30}
+              recentTransactions={recentTransactions}
+              onPress={() => router.push('/(tabs)/transactions')}
+              onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
             />
           </View>
         );
@@ -556,17 +577,6 @@ export default function ProfileScreen(): React.ReactElement {
               isAdmin={isAdmin}
               hasSubscription={hasSurveySubscription}
               onSubscriptionRequired={handleSubscriptionRequired}
-            />
-          </View>
-        );
-
-      case 'recentActivity':
-        return (
-          <View style={styles.sectionContainer}>
-            <RecentActivityCard
-              activities={recentActivity}
-              onViewAll={() => router.push('/(tabs)/transactions')}
-              onItemPress={(activity: ActivityItem) => Alert.alert('Activity', `Details for: ${activity.title}`)}
             />
           </View>
         );
@@ -624,11 +634,10 @@ export default function ProfileScreen(): React.ReactElement {
     quickAccessItems,
     isAdmin,
     hasSurveySubscription,
-    recentActivity,
+    recentTransactions,
     securitySettings,
     appearanceSettings,
     handleEditProfile,
-    handleWithdraw,
     handleSubscriptionRequired,
     handleSignOut,
   ]);
@@ -735,6 +744,21 @@ export default function ProfileScreen(): React.ReactElement {
         onClose={() => setShow2FAModal(false)}
         isVerifying={verify2FAMutation.isPending}
         isResending={resend2FAMutation.isPending}
+      />
+
+      {/* Edit Profile Modal */}
+      <EditProfileModal
+        visible={showEditProfileModal}
+        user={{
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          email: profile.email,
+          telephone: profile.telephone,
+          avatarUri: undefined, // TODO: Add avatar URI from user data
+        }}
+        onSave={handleSaveProfile}
+        onClose={() => setShowEditProfileModal(false)}
+        isSaving={isEditingSaving}
       />
     </View>
   );

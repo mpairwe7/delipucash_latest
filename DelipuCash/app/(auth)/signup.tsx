@@ -183,7 +183,7 @@ export default function SignupScreen(): React.ReactElement {
     });
 
     if (response.success) {
-      router.replace("/(tabs)");
+      router.replace("/(tabs)/home-redesigned");
     } else {
       setGeneralError(response.error || "Registration failed. Please try again.");
     }

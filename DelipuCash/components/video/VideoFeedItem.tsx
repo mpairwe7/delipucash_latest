@@ -113,18 +113,18 @@ export interface VideoFeedItemProps {
   isActive: boolean;
   /** Whether video is muted */
   isMuted: boolean;
-  /** Like handler */
-  onLike: () => void;
-  /** Comment handler */
-  onComment: () => void;
-  /** Share handler */
-  onShare: () => void;
-  /** Bookmark handler */
-  onBookmark: () => void;
-  /** Expand to full player handler */
-  onExpand: () => void;
-  /** Video end handler */
-  onVideoEnd?: () => void;
+  /** Like handler - receives video object */
+  onLike: (video: Video) => void;
+  /** Comment handler - receives video object */
+  onComment: (video: Video) => void;
+  /** Share handler - receives video object */
+  onShare: (video: Video) => void;
+  /** Bookmark handler - receives video object */
+  onBookmark: (video: Video) => void;
+  /** Expand to full player handler - receives video object */
+  onExpand: (video: Video) => void;
+  /** Video end handler - receives video object */
+  onVideoEnd?: (video: Video) => void;
   /** Screen reader enabled */
   screenReaderEnabled?: boolean;
   /** Test ID */
@@ -503,7 +503,7 @@ function VideoFeedItemComponent({
 
       // Check if video ended
           if (currentTime >= duration - 0.5) {
-            onVideoEnd?.();
+            onVideoEnd?.(video);
           }
         }
       } catch {
@@ -513,7 +513,7 @@ function VideoFeedItemComponent({
     }, 100);
 
     return () => clearInterval(interval);
-  }, [player, isActive, isPlaying, setProgress, onVideoEnd]);
+  }, [player, isActive, isPlaying, setProgress, onVideoEnd, video]);
 
   // Auto-hide controls
   useEffect(() => {
@@ -563,15 +563,15 @@ function VideoFeedItemComponent({
     setShowHeartBurst(true);
     setTimeout(() => setShowHeartBurst(false), 1000);
 
-    // Trigger like
-    onLike();
+    // Trigger like with video object
+    onLike(video);
     
     // Animate like button
     likeScale.value = withSequence(
       withSpring(1.4, { damping: 8 }),
       withSpring(1, { damping: 12 })
     );
-  }, [onLike, likeScale]);
+  }, [onLike, likeScale, video]);
 
   const handleDoubleTapSeek = useCallback((side: 'left' | 'right') => {
     if (!player || !duration || !isMountedRef.current) return;
@@ -601,8 +601,8 @@ function VideoFeedItemComponent({
 
   const handleLongPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    onExpand();
-  }, [onExpand]);
+    onExpand(video);
+  }, [onExpand, video]);
 
   const handleToggleMute = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -816,7 +816,7 @@ function VideoFeedItemComponent({
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onLike();
+                onLike(video);
                 likeScale.value = withSequence(
                   withSpring(1.3, { damping: 8 }),
                   withSpring(1, { damping: 12 })
@@ -838,7 +838,7 @@ function VideoFeedItemComponent({
 
             {/* Comment */}
             <Pressable
-              onPress={onComment}
+              onPress={() => onComment(video)}
               style={styles.actionButton}
               accessibilityRole="button"
               accessibilityLabel={`Comment on video. ${formatViews(video.commentsCount || 0)} comments`}
@@ -849,7 +849,7 @@ function VideoFeedItemComponent({
 
             {/* Share */}
             <Pressable
-              onPress={onShare}
+              onPress={() => onShare(video)}
               style={styles.actionButton}
               accessibilityRole="button"
               accessibilityLabel="Share video"
@@ -860,7 +860,7 @@ function VideoFeedItemComponent({
 
             {/* Bookmark */}
             <Pressable
-              onPress={onBookmark}
+              onPress={() => onBookmark(video)}
               style={styles.actionButton}
               accessibilityRole="button"
               accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark video'}
@@ -874,7 +874,7 @@ function VideoFeedItemComponent({
 
             {/* More Options */}
             <Pressable
-              onPress={onExpand}
+              onPress={() => onExpand(video)}
               style={styles.actionButton}
               accessibilityRole="button"
               accessibilityLabel="More options"
@@ -1035,7 +1035,7 @@ const styles = StyleSheet.create({
   },
   muteButton: {
     position: 'absolute',
-    top: SPACING.lg,
+    top: SPACING['3xl'],
     right: SPACING.md,
     zIndex: 10,
   },
@@ -1193,8 +1193,39 @@ const styles = StyleSheet.create({
 });
 
 // ============================================================================
+// MEMO COMPARISON - Prevent unnecessary re-renders for performance
+// ============================================================================
+
+/**
+ * Custom comparison function for React.memo
+ * Only re-render when these specific props change:
+ * - video.id changes (different video)
+ * - isActive changes (play/pause state)
+ * - isMuted changes (audio state)
+ * - itemHeight changes (layout)
+ * - screenReaderEnabled changes (accessibility)
+ * 
+ * Callbacks are excluded since they should be stable references from parent
+ */
+function arePropsEqual(
+  prevProps: VideoFeedItemProps,
+  nextProps: VideoFeedItemProps
+): boolean {
+  return (
+    prevProps.video.id === nextProps.video.id &&
+    prevProps.video.likes === nextProps.video.likes &&
+    prevProps.video.commentsCount === nextProps.video.commentsCount &&
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.isMuted === nextProps.isMuted &&
+    prevProps.itemHeight === nextProps.itemHeight &&
+    prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&
+    prevProps.index === nextProps.index
+  );
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
-export const VideoFeedItem = memo(VideoFeedItemComponent);
+export const VideoFeedItem = memo(VideoFeedItemComponent, arePropsEqual);
 export default VideoFeedItem;

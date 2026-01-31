@@ -504,12 +504,47 @@ export const useTheme = (): ThemeContextValue => {
 
 /**
  * Create a color with alpha transparency
+ * Handles hex colors (3 or 6 digit), rgb/rgba, and fallback for invalid colors
  */
-export const withAlpha = (hexColor: string, alpha: number): string => {
+export const withAlpha = (hexColor: string | undefined, alpha: number): string => {
+  // Handle undefined/null/empty color
+  if (!hexColor || typeof hexColor !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
+  // If it's already an rgba color, just return with new alpha
+  if (hexColor.startsWith('rgba')) {
+    return hexColor.replace(/[\d.]+\)$/g, `${alpha})`);
+  }
+
+  // If it's an rgb color, convert to rgba
+  if (hexColor.startsWith('rgb(')) {
+    return hexColor.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+
+  // Handle hex colors
   const hex = hexColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Handle 3-digit hex
+  let r: number, g: number, b: number;
+  if (hex.length === 3) {
+    r = parseInt(hex[0] + hex[0], 16);
+    g = parseInt(hex[1] + hex[1], 16);
+    b = parseInt(hex[2] + hex[2], 16);
+  } else if (hex.length >= 6) {
+    r = parseInt(hex.substring(0, 2), 16);
+    g = parseInt(hex.substring(2, 4), 16);
+    b = parseInt(hex.substring(4, 6), 16);
+  } else {
+    // Invalid hex, return fallback
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
+  // Handle NaN values
+  if (isNaN(r) || isNaN(g) || isNaN(b)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 

@@ -49,9 +49,11 @@ import {
   Pressable,
   ListRenderItemInfo,
   ViewToken,
+  ViewabilityConfig,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from "@/hooks/useStatusBar";
 import { Href, router } from "expo-router";
 import Animated, {
   FadeIn,
@@ -72,6 +74,9 @@ import {
   Play,
   Flame,
   Star,
+  MessageCircle,
+  HelpCircle,
+  Zap,
 } from "lucide-react-native";
 
 // Components
@@ -97,26 +102,32 @@ import {
   PointsDisplay,
   DailyProgress,
   LeaderboardSnippet,
-  LeaderboardUser,
   RewardProgress,
 } from "@/components/feed";
 
 // Ads
 import {
   InFeedAd,
+  BetweenContentAd,
 } from "@/components/ads";
 
 // Hooks & Services
 import {
   useInstantRewardQuestions,
-  useQuestions,
-  useRecentQuestions,
   useRewardQuestions,
   useUnreadCount,
-  useUserStats,
 } from "@/services/hooks";
 import {
+  useQuestionsFeed,
+  useQuestionsLeaderboard,
+  useUserQuestionsStats,
+  useVoteQuestion,
+  useCreateQuestion,
+  FeedTabId,
+} from "@/services/questionHooks";
+import {
   useAdsForPlacement,
+  useBannerAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
@@ -132,7 +143,6 @@ import {
   TYPOGRAPHY,
   RADIUS,
   COMPONENT_SIZE,
-  useTheme,
   withAlpha,
 } from "@/utils/theme";
 import { formatCurrency } from "@/data/mockData";
@@ -144,8 +154,6 @@ import QuizSessionScreen from "@/app/quiz-session";
 // ============================================================================
 // TYPES
 // ============================================================================
-
-type FeedTabId = "for-you" | "latest" | "unanswered" | "rewards" | "my-activity";
 
 interface FeedItem {
   type: "question" | "ad" | "gamification" | "cta";
@@ -167,12 +175,11 @@ const FEED_TABS: FeedTab[] = [
 
 const AD_INSERTION_INTERVAL = 5; // Insert ad every N questions
 
-// Mock leaderboard data (would come from API)
-const MOCK_LEADERBOARD: LeaderboardUser[] = [
-  { id: "1", name: "Sarah K.", points: 15420, rank: 1 },
-  { id: "2", name: "James M.", points: 12350, rank: 2 },
-  { id: "3", name: "Emma L.", points: 11200, rank: 3 },
-];
+// Stable viewability config (defined outside component to prevent recreation)
+const VIEWABILITY_CONFIG: ViewabilityConfig = {
+  itemVisiblePercentThreshold: 50,
+  minimumViewTime: 1000,
+};
 
 // ============================================================================
 // MAIN COMPONENT
@@ -180,7 +187,7 @@ const MOCK_LEADERBOARD: LeaderboardUser[] = [
 
 export default function QuestionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useTheme();
+  const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
   const { data: user, loading: userLoading } = useUser();
   
   // Refs
@@ -197,43 +204,57 @@ export default function QuestionsScreen(): React.ReactElement {
   const fabScale = useSharedValue(1);
   const fabRotation = useSharedValue(0);
 
-  // Data fetching
-  const { data: questionsData, isLoading, refetch } = useQuestions();
-  useInstantRewardQuestions(10); // Prefetch for feed
-  useRewardQuestions(); // Prefetch for feed
-  useRecentQuestions(20); // Prefetch for feed
-  const { data: userStats } = useUserStats();
+  // ========== DATA FETCHING ==========
+  // Questions feed with proper REST API integration
+  const {
+    data: feedData,
+    isLoading: isFeedLoading,
+    refetch: refetchFeed,
+    isError: hasFeedError,
+    error: feedError,
+  } = useQuestionsFeed({ tab: selectedTab });
+
+  // User stats from dedicated hook
+  const { data: userStats, refetch: refetchUserStats } = useUserQuestionsStats();
+
+  // Leaderboard data
+  const { data: leaderboard } = useQuestionsLeaderboard(3);
+
+  // Prefetch related data
+  useInstantRewardQuestions(10);
+  useRewardQuestions();
+
+  // Notification count
   const { data: unreadCount } = useUnreadCount();
 
-  // Ads
-  const { data: feedAds } = useAdsForPlacement("question", 5);
+  // Ads - Multiple ad placements following industry standards
+  const { data: feedAds, refetch: refetchFeedAds } = useAdsForPlacement("question", 5);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
+
+  // Mutations
+  const voteMutation = useVoteQuestion();
+  const createMutation = useCreateQuestion();
 
   // User permissions
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
   const isAuthenticated = !!user && !userLoading;
+  const isLoading = isFeedLoading || userLoading;
 
-  // Combine and transform questions based on selected tab
+  // Extract questions from feed data
   const allQuestions = useMemo(() => {
-    const list = questionsData?.questions || [];
-    return list.map((q): FeedQuestion => ({
-      ...q,
-      author: {
-        id: q.userId || "anonymous",
-        name: "Anonymous User", // Would come from API
-        reputation: Math.floor(Math.random() * 5000) + 100,
-        badge: Math.random() > 0.7 ? "top-contributor" : undefined,
-      },
-      upvotes: Math.floor(Math.random() * 50),
-      downvotes: Math.floor(Math.random() * 5),
-      followersCount: Math.floor(Math.random() * 100) + 5,
-      isHot: Math.random() > 0.85,
-      isTrending: Math.random() > 0.9,
-      hasExpertAnswer: Math.random() > 0.8,
-      hasAcceptedAnswer: Math.random() > 0.6,
-    }));
-  }, [questionsData]);
+    return feedData?.questions || [];
+  }, [feedData]);
+
+  // Feed stats from API
+  const feedStats = useMemo(() => {
+    return feedData?.stats || {
+      totalQuestions: 0,
+      unansweredCount: 0,
+      rewardsCount: 0,
+    };
+  }, [feedData]);
 
   // Filter questions based on selected tab
   const filteredQuestions = useMemo((): FeedQuestion[] => {
@@ -324,9 +345,9 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     triggerHaptic("light");
-    await refetch();
+    await Promise.all([refetchFeed(), refetchUserStats(), refetchFeedAds(), refetchBannerAds()]);
     setRefreshing(false);
-  }, [refetch]);
+  }, [refetchFeed, refetchUserStats, refetchFeedAds, refetchBannerAds]);
 
   const handleTabChange = useCallback((tabId: string) => {
     setSelectedTab(tabId as FeedTabId);
@@ -351,9 +372,8 @@ export default function QuestionsScreen(): React.ReactElement {
 
   const handleVote = useCallback((questionId: string, type: "up" | "down") => {
     triggerHaptic("light");
-    // Would call API to vote
-    console.log(`Vote ${type} on question ${questionId}`);
-  }, []);
+    voteMutation.mutate({ questionId, type });
+  }, [voteMutation]);
 
   const handleSearchSubmit = useCallback((query: string) => {
     submitSearch(query);
@@ -400,11 +420,20 @@ export default function QuestionsScreen(): React.ReactElement {
   }, [isAuthenticated]);
 
   const handleQuestionSubmit = useCallback(async (data: QuestionFormData) => {
-    console.log("Submitting question:", data);
-    setShowCreateWizard(false);
-    triggerHaptic("success");
-    // Would call API to submit question
-  }, []);
+    try {
+      await createMutation.mutateAsync({
+        text: data.title,
+        category: data.category,
+        rewardAmount: data.rewardAmount,
+        isInstantReward: data.isRewardQuestion,
+      });
+      setShowCreateWizard(false);
+      triggerHaptic("success");
+    } catch (error) {
+      console.error("Failed to create question:", error);
+      triggerHaptic("error");
+    }
+  }, [createMutation]);
 
   // FAB animation styles
   const fabAnimatedStyle = useAnimatedStyle(() => ({
@@ -414,19 +443,22 @@ export default function QuestionsScreen(): React.ReactElement {
     ],
   }));
 
-  // Viewability config for analytics/impressions
-  const viewabilityConfig = useMemo(() => ({
-    itemVisiblePercentThreshold: 50,
-    minimumViewTime: 1000,
-  }), []);
+  // Viewability callback ref - stable reference to prevent FlatList recreation
+  const handleAdImpressionRef = useRef(handleAdImpression);
+  handleAdImpressionRef.current = handleAdImpression;
 
-  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    viewableItems.forEach((item) => {
-      if (item.item.type === "ad" && item.item.data) {
-        handleAdImpression(item.item.data as Ad);
-      }
-    });
-  }, [handleAdImpression]);
+  const viewabilityConfigCallbackPairs = useRef([
+    {
+      viewabilityConfig: VIEWABILITY_CONFIG,
+      onViewableItemsChanged: ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+        viewableItems.forEach((item) => {
+          if (item.item?.type === "ad" && item.item.data) {
+            handleAdImpressionRef.current(item.item.data as Ad);
+          }
+        });
+      },
+    },
+  ]);
 
   // Render functions
   const renderHeader = useCallback(() => (
@@ -462,7 +494,7 @@ export default function QuestionsScreen(): React.ReactElement {
         <StatCard
           icon={<Award size={18} color={colors.primary} strokeWidth={1.5} />}
           title="Answered"
-          value={userStats?.totalAnswers || 0}
+          value={userStats?.totalAnswered || 0}
           subtitle="Total responses"
         />
         <StatCard
@@ -473,7 +505,7 @@ export default function QuestionsScreen(): React.ReactElement {
         />
       </View>
 
-      {/* Answer & Earn CTA */}
+      {/* Answer & Earn CTA - For reward questions */}
       <Pressable
         style={[styles.earnCta, { backgroundColor: colors.card }]}
         onPress={handleQuizStart}
@@ -511,6 +543,62 @@ export default function QuestionsScreen(): React.ReactElement {
         </View>
       </Pressable>
 
+      {/* Answer Instant Reward Questions Card */}
+      <Pressable
+        style={[styles.instantRewardCard, { backgroundColor: colors.card }]}
+        onPress={() => router.push("/instant-reward-questions" as Href)}
+        accessibilityLabel="Browse instant reward questions for quick payouts"
+        accessibilityRole="button"
+      >
+        <View style={[styles.instantRewardIcon, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+          <Sparkles size={24} color={colors.warning} strokeWidth={1.5} />
+        </View>
+        <View style={styles.instantRewardContent}>
+          <Text style={[styles.instantRewardTitle, { color: colors.text }]}>
+            Answer Instant Reward Questions!
+          </Text>
+          <Text style={[styles.instantRewardSubtitle, { color: colors.textMuted }]}>
+            Earn instant payouts for quality answers
+          </Text>
+        </View>
+        <Zap size={20} color={colors.warning} strokeWidth={2} />
+      </Pressable>
+
+      {/* Ask Questions CTA - Collaboration focused (Quora/Stack Overflow style) */}
+      <Pressable
+        style={[styles.askQuestionsCta, { backgroundColor: colors.card }]}
+        onPress={() => setShowCreateWizard(true)}
+        accessibilityLabel="Ask a question and get answers from the community"
+        accessibilityRole="button"
+      >
+        <View style={[styles.askQuestionsIcon, { backgroundColor: withAlpha(colors.info, 0.15) }]}>
+          <HelpCircle size={24} color={colors.info} strokeWidth={1.5} />
+        </View>
+        <View style={styles.askQuestionsContent}>
+          <Text style={[styles.askQuestionsTitle, { color: colors.text }]}>
+            Ask the Community
+          </Text>
+          <Text style={[styles.askQuestionsSubtitle, { color: colors.textMuted }]}>
+            Get answers from experts and community members
+          </Text>
+          <View style={styles.askQuestionsStats}>
+            <View style={[styles.askQuestionsStat, { backgroundColor: withAlpha(colors.info, 0.15) }]}>
+              <MessageCircle size={12} color={colors.info} strokeWidth={2} />
+              <Text style={[styles.askQuestionsStatText, { color: colors.info }]}>
+                Quick responses
+              </Text>
+            </View>
+            <View style={[styles.askQuestionsStat, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
+              <TrendingUp size={12} color={colors.success} strokeWidth={2} />
+              <Text style={[styles.askQuestionsStatText, { color: colors.success }]}>
+                Build reputation
+              </Text>
+            </View>
+          </View>
+        </View>
+        <Plus size={20} color={colors.info} strokeWidth={2} />
+      </Pressable>
+
       {/* Reward Progress */}
       <RewardProgress
         currentPoints={userStats?.totalEarnings || 1250}
@@ -521,15 +609,30 @@ export default function QuestionsScreen(): React.ReactElement {
 
       {/* Leaderboard Snippet */}
       <LeaderboardSnippet
-        users={MOCK_LEADERBOARD}
-        currentUserRank={42}
+        users={leaderboard?.users || []}
+        currentUserRank={leaderboard?.currentUserRank || 0}
         onPress={() => console.log("View full leaderboard")}
       />
 
-      {/* Feed Tabs */}
+      {/* Native Ad between gamification and feed - Industry Standard placement */}
+      {bannerAds && bannerAds.length > 0 && (
+        <BetweenContentAd
+          ad={bannerAds[0]}
+          onAdClick={handleAdClick}
+          onAdLoad={() => handleAdImpression(bannerAds[0])}
+          variant="native"
+          style={styles.betweenContentAd}
+        />
+      )}
+
+      {/* Feed Tabs - Show dynamic badge count for unanswered */}
       {!isLoading ? (
         <FeedTabs
-          tabs={FEED_TABS}
+          tabs={FEED_TABS.map(tab =>
+            tab.id === 'unanswered'
+              ? { ...tab, badge: feedStats.unansweredCount > 0 ? `${feedStats.unansweredCount}` : 'HOT' }
+              : tab
+          )}
           selectedTab={selectedTab}
           onTabChange={handleTabChange}
           variant="pill"
@@ -557,6 +660,8 @@ export default function QuestionsScreen(): React.ReactElement {
   ), [
     isLoading, userStats, colors, selectedTab, handleTabChange, handleQuizStart,
     isSearching, searchQuery, searchResults, hasNoResults, setSearchQuery,
+    bannerAds, handleAdClick, handleAdImpression, setShowCreateWizard,
+    leaderboard, feedStats,
   ]);
 
   const renderItem = useCallback(({ item, index }: ListRenderItemInfo<FeedItem>) => {
@@ -596,6 +701,26 @@ export default function QuestionsScreen(): React.ReactElement {
       return <QuestionFeedSkeleton count={5} />;
     }
 
+    // Handle error state
+    if (hasFeedError) {
+      return (
+        <View style={styles.emptyState}>
+          <HelpCircle size={48} color={colors.error} strokeWidth={1} />
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            Something went wrong
+          </Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+            {feedError?.message || "Unable to load questions. Please try again."}
+          </Text>
+          <PrimaryButton
+            title="Try Again"
+            onPress={() => refetchFeed()}
+            style={styles.emptyButton}
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={styles.emptyState}>
         <Sparkles size={48} color={colors.textMuted} strokeWidth={1} />
@@ -612,7 +737,7 @@ export default function QuestionsScreen(): React.ReactElement {
         />
       </View>
     );
-  }, [isLoading, colors]);
+  }, [isLoading, colors, hasFeedError, feedError, refetchFeed]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.id, []);
 
@@ -624,7 +749,8 @@ export default function QuestionsScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      {/* Status bar with translucent for edge-to-edge design */}
+      <StatusBar style={statusBarStyle} translucent animated />
 
       {/* Header */}
       <Animated.View
@@ -686,10 +812,10 @@ export default function QuestionsScreen(): React.ReactElement {
         maxToRenderPerBatch={10}
         windowSize={11}
         initialNumToRender={7}
+        updateCellsBatchingPeriod={50}
         getItemLayout={getItemLayout}
-        // Viewability tracking
-        viewabilityConfig={viewabilityConfig}
-        onViewableItemsChanged={onViewableItemsChanged}
+        // Viewability tracking - use stable callback pairs
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
         // Accessibility
         accessibilityRole="list"
         accessibilityLabel="Questions feed"
@@ -923,6 +1049,87 @@ const styles = StyleSheet.create({
   // In-feed Ad
   inFeedAd: {
     marginVertical: SPACING.sm,
+  },
+
+  // Between content Ad
+  betweenContentAd: {
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sm,
+  },
+
+  // Instant Reward Questions Card
+  instantRewardCard: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  instantRewardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  instantRewardContent: {
+    flex: 1,
+    gap: 2,
+  },
+  instantRewardTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  instantRewardSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+
+  // Ask Questions CTA (Collaboration-focused)
+  askQuestionsCta: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  askQuestionsIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.lg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  askQuestionsContent: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  askQuestionsTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  askQuestionsSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  askQuestionsStats: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  askQuestionsStat: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+  },
+  askQuestionsStatText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 
   // FAB

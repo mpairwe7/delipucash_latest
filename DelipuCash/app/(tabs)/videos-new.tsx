@@ -19,7 +19,7 @@
  * - TanStack Query: Server state (data fetching, caching)
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -27,9 +27,11 @@ import {
   TouchableOpacity,
   Share,
   Dimensions,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { router, Href } from 'expo-router';
+import { router, Href, useFocusEffect } from 'expo-router';
 import {
   Wifi,
   Upload,
@@ -127,6 +129,7 @@ export default function VideosScreen(): React.ReactElement {
   const feedMode = useVideoFeedStore(selectFeedMode);
   const ui = useVideoFeedStore(selectUI);
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
+  // isPlaybackAllowed is used in VerticalVideoFeed for granular control
   // bookmarkedVideoIds available via: useVideoFeedStore(selectBookmarkedVideoIds)
 
   const {
@@ -142,6 +145,11 @@ export default function VideosScreen(): React.ReactElement {
     setRefreshing,
     setLoadingMore,
     getVideoById,
+    // Lifecycle management - Industry Standard: TikTok/YouTube/Instagram pattern
+    setScreenFocused,
+    setAppActive,
+    pauseAllPlayback,
+    resumePlayback,
   } = useVideoFeedStore();
 
   // ============================================================================
@@ -176,6 +184,62 @@ export default function VideosScreen(): React.ReactElement {
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
   const [videosWatchedCount, setVideosWatchedCount] = useState(0);
   const VIDEOS_BEFORE_INTERSTITIAL = 5; // Industry standard: show ad every 5-7 videos
+
+  // ============================================================================
+  // LIFECYCLE MANAGEMENT - Industry Standard: TikTok/YouTube/Instagram pattern
+  // Videos should pause when screen loses focus or app goes to background
+  // ============================================================================
+
+  // Track AppState changes (foreground/background)
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      const wasActive = appStateRef.current === 'active';
+      const isActive = nextAppState === 'active';
+
+      if (wasActive && !isActive) {
+        // App going to background - pause all video playback
+        setAppActive(false);
+        console.log('[VideoScreen] App backgrounded - pausing playback');
+      } else if (!wasActive && isActive) {
+        // App coming to foreground - resume playback if screen is focused
+        setAppActive(true);
+        console.log('[VideoScreen] App foregrounded - resuming playback');
+      }
+
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [setAppActive]);
+
+  // Track screen focus (navigation between tabs/screens)
+  useFocusEffect(
+    useCallback(() => {
+      // Screen gained focus - mark as focused and resume playback
+      setScreenFocused(true);
+      console.log('[VideoScreen] Screen focused - resuming playback');
+
+      return () => {
+        // Screen lost focus - pause all video playback
+        setScreenFocused(false);
+        console.log('[VideoScreen] Screen unfocused - pausing playback');
+      };
+    }, [setScreenFocused])
+  );
+
+  // Pause videos when LiveStream is visible (modal overlay)
+  useEffect(() => {
+    if (liveStreamVisible) {
+      pauseAllPlayback();
+      console.log('[VideoScreen] LiveStream opened - pausing feed playback');
+    }
+  }, [liveStreamVisible, pauseAllPlayback]);
 
   // ============================================================================
   // COMPUTED DATA
@@ -409,7 +473,10 @@ export default function VideosScreen(): React.ReactElement {
 
   const closeLiveStream = useCallback(() => {
     setLiveStreamVisible(false);
-  }, []);
+    // Resume video feed playback when closing livestream
+    resumePlayback();
+    console.log('[VideoScreen] LiveStream closed - resuming feed playback');
+  }, [resumePlayback]);
 
   // Search handlers
   const handleSearchSubmit = useCallback((query: string) => {

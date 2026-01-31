@@ -74,7 +74,7 @@ import {
   COMPONENT_SIZE,
   withAlpha,
 } from "@/utils/theme";
-import { PrimaryButton } from "@/components";
+import { PrimaryButton } from "@/components/PrimaryButton";
 import * as Haptics from "expo-haptics";
 
 // ============================================================================

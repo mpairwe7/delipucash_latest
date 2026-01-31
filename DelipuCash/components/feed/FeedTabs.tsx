@@ -126,15 +126,18 @@ const TabButton = memo(function TabButton({
   const selectedColor = colors.primary;
   const defaultColor = colors.textMuted;
 
+  // Pre-compute the alpha color outside of worklet
+  const selectedBgColor = withAlpha(selectedColor, 0.12);
+
   const animatedBgStyle = useAnimatedStyle(() => {
     if (variant !== "pill") return {};
     return {
       backgroundColor: withTiming(
-        isSelected ? withAlpha(selectedColor, 0.12) : "transparent",
+        isSelected ? selectedBgColor : "transparent",
         { duration: 200 }
       ),
     };
-  }, [isSelected, variant]);
+  }, [isSelected, variant, selectedBgColor]);
 
   return (
     <AnimatedPressable

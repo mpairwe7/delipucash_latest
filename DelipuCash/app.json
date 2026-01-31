@@ -16,6 +16,7 @@
         "NSCameraUsageDescription": "DelipuCash needs camera access to record videos and take photos for surveys and content creation.",
         "NSMicrophoneUsageDescription": "DelipuCash needs microphone access to record audio for video content.",
         "NSPhotoLibraryUsageDescription": "DelipuCash needs photo library access to upload images and videos.",
+        "NSPhotoLibraryAddUsageDescription": "DelipuCash needs permission to save your recorded videos and photos to your device.",
         "NSLocationWhenInUseUsageDescription": "DelipuCash uses your location to show relevant surveys and content in your area."
       }
     },
@@ -116,6 +117,14 @@
         {
           "photosPermission": "DelipuCash needs access to your photos to upload images and videos for surveys and content.",
           "cameraPermission": "DelipuCash needs camera access to take photos for surveys and content creation."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "DelipuCash needs access to your photo library to save and upload videos and images.",
+          "savePhotosPermission": "DelipuCash needs permission to save your recorded videos to your device.",
+          "isAccessMediaLocationEnabled": true
         }
       ],
       "expo-font",

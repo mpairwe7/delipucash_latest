@@ -55,6 +55,7 @@ import {
 } from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from "@/hooks/useStatusBar";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   FadeIn,
@@ -67,7 +68,6 @@ import Animated, {
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import {
-  useTheme,
   SPACING,
   TYPOGRAPHY,
   RADIUS,
@@ -211,7 +211,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(
 
 export default function HomePage(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useTheme();
+  const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
   const { data: user, loading: userLoading, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -959,7 +959,8 @@ export default function HomePage(): React.ReactElement {
   if (isInitialLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar style={statusBarStyle} />
+        {/* Status bar with translucent for edge-to-edge design */}
+        <StatusBar style={statusBarStyle} translucent animated />
         <View
           style={[
             styles.skeletonContainer,
@@ -974,7 +975,8 @@ export default function HomePage(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      {/* Status bar with translucent for edge-to-edge design */}
+      <StatusBar style={statusBarStyle} translucent animated />
       
       <AnimatedFlatList
         ref={flatListRef}

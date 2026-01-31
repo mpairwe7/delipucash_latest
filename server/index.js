@@ -22,6 +22,9 @@ import notificationRoutes from './routes/notificationRoutes.mjs';
 import userRoutes from './routes/userRoutes.mjs';
 import responseRoutes from './routes/responseRoutes.mjs';
 import quizRoutes from './routes/quizRoutes.mjs';
+import surveySubscriptionRoutes from './routes/surveySubscriptionRoutes.mjs';
+import surveyPaymentRoutes from './routes/surveyPaymentRoutes.mjs';
+import r2UploadRoutes from './routes/r2UploadRoutes.mjs';
 
 dotenv.config();
 
@@ -88,6 +91,9 @@ app.use('/api/notifications', notificationRoutes); // Changed to more consistent
 app.use('/api/users', userRoutes);
 app.use('/api/responses', responseRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/survey-subscriptions', surveySubscriptionRoutes);
+app.use('/api/survey-payments', surveyPaymentRoutes);
+app.use('/api/r2', r2UploadRoutes); // Cloudflare R2 storage routes
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {

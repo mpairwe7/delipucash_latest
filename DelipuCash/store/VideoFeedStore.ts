@@ -119,6 +119,12 @@ export interface VideoFeedState {
   
   // Watch history
   watchedVideoIds: string[];
+
+  // Lifecycle state (Industry Standard: TikTok/YouTube/Instagram pattern)
+  // Track screen focus and app state to properly pause/resume video playback
+  isScreenFocused: boolean;
+  isAppActive: boolean;
+  previousPlayerStatus: PlayerStatus | null; // Store status before pause for resume
 }
 
 export interface VideoFeedActions {
@@ -171,11 +177,18 @@ export interface VideoFeedActions {
   toggleBookmark: (videoId: string) => boolean;
   addToWatchHistory: (videoId: string) => void;
   
+  // Lifecycle management (Industry Standard: TikTok/YouTube pattern)
+  pauseAllPlayback: () => void; // Called when screen loses focus or app backgrounds
+  resumePlayback: () => void; // Called when screen regains focus or app foregrounds
+  setScreenFocused: (focused: boolean) => void; // Track screen focus state
+  setAppActive: (active: boolean) => void; // Track app foreground/background state
+
   // Utilities
   getVideoById: (videoId: string) => Video | undefined;
   getVideoAtIndex: (index: number) => Video | undefined;
   getActiveVideoData: () => Video | undefined;
   shouldVideoPlay: (videoId: string) => boolean;
+  isPlaybackAllowed: () => boolean; // Check if playback is allowed based on lifecycle
   reset: () => void;
 }
 
@@ -231,6 +244,10 @@ const initialState: VideoFeedState = {
   ui: initialUI,
   likedVideoIds: new Set(),
   bookmarkedVideoIds: new Set(),
+  // Lifecycle state - Industry standard: videos should only play when screen is focused AND app is active
+  isScreenFocused: true,
+  isAppActive: true,
+  previousPlayerStatus: null,
   watchedVideoIds: [],
 };
 
@@ -725,6 +742,87 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     // ========================================================================
+    // LIFECYCLE MANAGEMENT (Industry Standard: TikTok/YouTube/Instagram pattern)
+    // Ensures videos pause when screen loses focus or app goes to background
+    // ========================================================================
+
+    pauseAllPlayback: () => {
+      const { activeVideo } = get();
+
+      // Store current status before pausing so we can resume later
+      if (activeVideo.status === 'playing' || activeVideo.status === 'buffering') {
+        set({
+          previousPlayerStatus: activeVideo.status,
+          activeVideo: {
+            ...activeVideo,
+            status: 'paused',
+          },
+        });
+      }
+    },
+
+    resumePlayback: () => {
+      const { activeVideo, previousPlayerStatus, isScreenFocused, isAppActive, feedMode, ui } = get();
+
+      // Only resume if:
+      // 1. Screen is focused
+      // 2. App is active (in foreground)
+      // 3. Not in grid mode
+      // 4. Not showing overlays (comments, full player handles its own state)
+      // 5. We have a previous status to resume from
+      if (
+        isScreenFocused &&
+        isAppActive &&
+        feedMode !== 'grid' &&
+        !ui.showComments &&
+        previousPlayerStatus &&
+        activeVideo.videoId
+      ) {
+        set({
+          previousPlayerStatus: null,
+          activeVideo: {
+            ...activeVideo,
+            status: previousPlayerStatus,
+          },
+        });
+      }
+    },
+
+    setScreenFocused: (focused) => {
+      const currentState = get();
+
+      // Only trigger state change if actually different
+      if (currentState.isScreenFocused === focused) return;
+
+      set({ isScreenFocused: focused });
+
+      if (!focused) {
+        // Screen lost focus - pause playback
+        get().pauseAllPlayback();
+      } else if (focused && currentState.isAppActive) {
+        // Screen regained focus and app is active - resume playback
+        get().resumePlayback();
+      }
+    },
+
+    setAppActive: (active) => {
+      const currentState = get();
+
+      // Only trigger state change if actually different
+      if (currentState.isAppActive === active) return;
+
+      set({ isAppActive: active });
+
+      if (!active) {
+        // App went to background - pause playback
+        get().pauseAllPlayback();
+      } else if (active && currentState.isScreenFocused) {
+        // App came to foreground and screen is focused - resume playback
+        get().resumePlayback();
+      }
+    },
+
+    // ========================================================================
     // UTILITIES
     // ========================================================================
 
@@ -743,10 +841,23 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     shouldVideoPlay: (videoId) => {
-      const { activeVideo, feedMode, ui } = get();
+      const { activeVideo, feedMode, ui, isScreenFocused, isAppActive } = get();
+      // Industry standard: Only play if screen focused AND app active
+      if (!isScreenFocused || !isAppActive) return false;
       if (feedMode === 'grid') return false;
       if (ui.showFullPlayer || ui.showComments) return false;
       return activeVideo.videoId === videoId && activeVideo.status === 'playing';
+    },
+
+    isPlaybackAllowed: () => {
+      const { isScreenFocused, isAppActive, feedMode, ui } = get();
+      // Check all conditions that would prevent playback
+      if (!isScreenFocused) return false;
+      if (!isAppActive) return false;
+      if (feedMode === 'grid') return false;
+      if (ui.showComments) return false;
+      // Note: showFullPlayer has its own player, so don't block for that
+      return true;
     },
 
     reset: () => {
@@ -779,7 +890,15 @@ export const selectIsActiveVideo = (videoId: string) => (state: VideoFeedState) 
   state.activeVideo.videoId === videoId;
 
 export const selectShouldVideoPlay = (videoId: string) => (state: VideoFeedState) => {
+  // Industry standard: Only play if screen focused AND app active
+  if (!state.isScreenFocused || !state.isAppActive) return false;
   if (state.feedMode === 'grid') return false;
   if (state.ui.showFullPlayer || state.ui.showComments) return false;
   return state.activeVideo.videoId === videoId;
 };
+
+// Lifecycle selectors
+export const selectIsScreenFocused = (state: VideoFeedState) => state.isScreenFocused;
+export const selectIsAppActive = (state: VideoFeedState) => state.isAppActive;
+export const selectIsPlaybackAllowed = (state: VideoFeedState) =>
+  state.isScreenFocused && state.isAppActive && state.feedMode !== 'grid' && !state.ui.showComments;

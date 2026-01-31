@@ -34,4 +34,13 @@ export { AchievementBadge } from './AchievementBadge';
 export type { AchievementBadgeProps } from './AchievementBadge';
 
 export { RecentActivityCard } from './RecentActivityCard';
-export type { RecentActivityCardProps } from './RecentActivityCard';
+export type { RecentActivityCardProps, ActivityItem } from './RecentActivityCard';
+
+export { EditProfileModal } from './EditProfileModal';
+export type { EditProfileModalProps, EditProfileData } from './EditProfileModal';
+
+export { TransactionsCard } from './TransactionsCard';
+export type { TransactionsCardProps, RecentTransaction } from './TransactionsCard';
+
+export { ProfileUserCard } from './ProfileUserCard';
+export type { ProfileUserCardProps } from './ProfileUserCard';

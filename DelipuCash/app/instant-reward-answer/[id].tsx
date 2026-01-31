@@ -16,7 +16,6 @@ import {
 import {
   normalizeText,
   triggerHaptic,
-  getEncouragingFeedback,
 } from "@/utils/quiz-utils";
 import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
@@ -77,15 +76,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     hasAttemptedQuestion,
     getAttemptedQuestion,
     markQuestionAttempted,
-    updateWalletBalance,
     confirmReward,
+    walletBalance,
     // Session management
     sessionState,
     sessionSummary,
     startSession,
     endSession,
     goToNextQuestion,
-    hasMoreQuestions,
     updateSessionSummary,
     // Redemption
     initiateRedemption,
@@ -217,6 +215,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
     if (!question) return;
 
+    // Validate user authentication
+    if (!user?.email) {
+      Alert.alert(
+        "Authentication Required",
+        "Please log in to submit answers and earn rewards.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     // Prevent re-attempts
     if (hasAlreadyAttempted) {
       Alert.alert(
@@ -237,8 +245,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       {
         questionId: question.id,
         answer,
-        phoneNumber: user?.phone,
-        userEmail: user?.email,
+        phoneNumber: user.phone,
+        userEmail: user.email,
       },
       {
         onSuccess: (payload) => {
@@ -271,7 +279,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
             // Check if this is an instant reward winner
             if (payload.isWinner) {
-              const position = payload.position || 0;
+              const _position = payload.position || 0;
               const paymentStatus = payload.paymentStatus || 'PENDING';
 
               let paymentMessage = "";
@@ -339,9 +347,32 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             );
           }
         },
-        onError: () => {
+        onError: (error) => {
           triggerHaptic('error');
-          Alert.alert("Error", "Unable to submit your answer. Please try again.");
+          const errorMessage = error?.message || "Unable to submit your answer. Please try again.";
+
+          // Handle specific error cases
+          if (errorMessage.includes("already attempted")) {
+            Alert.alert(
+              "Already Attempted",
+              "You have already attempted this question. Each question can only be attempted once.",
+              [{ text: "OK", onPress: () => router.back() }]
+            );
+          } else if (errorMessage.includes("expired")) {
+            Alert.alert(
+              "Question Expired",
+              "This question has expired and is no longer available.",
+              [{ text: "OK", onPress: () => handleTransitionToNext() }]
+            );
+          } else if (errorMessage.includes("completed")) {
+            Alert.alert(
+              "Question Completed",
+              "All winners have been found for this question.",
+              [{ text: "Try Another", onPress: () => handleTransitionToNext() }]
+            );
+          } else {
+            Alert.alert("Error", errorMessage);
+          }
         },
       }
     );
@@ -354,13 +385,21 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
   ): Promise<{ success: boolean; message?: string }> => {
-    initiateRedemption(type, provider);
+    // Create redemption request object
+    initiateRedemption({
+      points: amount,
+      cashValue: amount,
+      type,
+      provider,
+      phoneNumber,
+    });
 
     // TODO: Call actual redemption API
     // For now, simulate success
     await new Promise(resolve => setTimeout(resolve, 2000));
 
-    completeRedemption(true, `${formatCurrency(amount)} has been sent to your ${provider} number ${phoneNumber}`);
+    const transactionRef = `TXN-${Date.now()}`;
+    completeRedemption(transactionRef, true);
     return { success: true, message: `${formatCurrency(amount)} has been sent to your ${provider} number!` };
   }, [initiateRedemption, completeRedemption]);
 
@@ -690,8 +729,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         correctAnswers={sessionSummary.correctAnswers}
         incorrectAnswers={sessionSummary.incorrectAnswers}
         totalEarned={sessionSummary.totalEarned}
-        sessionEarnings={sessionSummary.sessionEarnings}
-        totalBalance={sessionSummary.totalBalance}
+        sessionEarnings={sessionSummary.totalEarned}
+        totalBalance={walletBalance}
         canRedeemRewards={canRedeem()}
         onRedeemCash={() => {
           setShowSessionSummary(false);
@@ -714,7 +753,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       {/* Redemption Modal */}
       <RedemptionModal
         visible={showRedemptionModal}
-        availableAmount={sessionSummary.totalBalance}
+        availableAmount={walletBalance}
         onClose={() => {
           setShowRedemptionModal(false);
           cancelRedemption();

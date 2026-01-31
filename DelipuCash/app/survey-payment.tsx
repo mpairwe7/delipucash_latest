@@ -469,7 +469,7 @@ const SurveyPaymentScreen: React.FC = () => {
   // Convert API plans to component format
   const planConfigs: PlanConfig[] = useMemo(() => {
     return plans.map(plan => ({
-      type: plan.type as SurveySubscriptionType,
+      type: plan.type,
       label: plan.name,
       price: plan.price,
       currency: plan.currency,

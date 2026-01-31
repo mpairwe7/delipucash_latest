@@ -55,6 +55,7 @@ import { Video } from '@/types';
 import {
   useVideoFeedStore,
   selectActiveVideo,
+  selectIsPlaybackAllowed,
 } from '@/store/VideoFeedStore';
 import { VideoFeedItem } from './VideoFeedItem';
 import { VideoFeedSkeleton } from './VideoFeedSkeleton';
@@ -72,12 +73,12 @@ const VIEWABILITY_CONFIG = {
   waitForInteraction: false,
 };
 
-/** FlatList optimization settings */
+/** FlatList optimization settings - tuned for TikTok-style vertical video feeds */
 const LIST_OPTIMIZATION = {
-  windowSize: 5, // Render 5 screens worth of content
-  maxToRenderPerBatch: 3, // Render 3 items per batch
-  updateCellsBatchingPeriod: 50, // Batch updates every 50ms
-  initialNumToRender: 2, // Start with 2 items
+  windowSize: 3, // Reduced from 5 - only render 3 screens worth of content for better perf
+  maxToRenderPerBatch: 2, // Reduced from 3 - render fewer items per batch
+  updateCellsBatchingPeriod: 100, // Increased from 50ms - batch updates less frequently
+  initialNumToRender: 1, // Reduced from 2 - start with just 1 item for faster initial render
   removeClippedSubviews: Platform.OS === 'android', // Android only for stability
 };
 
@@ -145,6 +146,7 @@ function VerticalVideoFeedComponent({
 
   // Store state
   const activeVideo = useVideoFeedStore(selectActiveVideo);
+  const isPlaybackAllowed = useVideoFeedStore(selectIsPlaybackAllowed);
   // Note: feedMode and ui available via store if needed
   const {
     setVideos,
@@ -245,46 +247,41 @@ function VerticalVideoFeedComponent({
     }
   }, [isLoadingMore, isLoading, onEndReached, setLoadingMore]);
 
-  // Handle video like
+  // Handle video like - stable reference passed to VideoFeedItem
   const handleLike = useCallback(
     (video: Video) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onLike?.(video);
     },
     [onLike]
   );
 
-  // Handle video comment
+  // Handle video comment - stable reference passed to VideoFeedItem
   const handleComment = useCallback(
     (video: Video) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onComment?.(video);
     },
     [onComment]
   );
 
-  // Handle video share
+  // Handle video share - stable reference passed to VideoFeedItem
   const handleShare = useCallback(
     (video: Video) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onShare?.(video);
     },
     [onShare]
   );
 
-  // Handle video bookmark
+  // Handle video bookmark - stable reference passed to VideoFeedItem
   const handleBookmark = useCallback(
     (video: Video) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       onBookmark?.(video);
     },
     [onBookmark]
   );
 
-  // Handle expand to full player
+  // Handle expand to full player - stable reference passed to VideoFeedItem
   const handleExpandPlayer = useCallback(
     (video: Video) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onExpandPlayer?.(video);
     },
     [onExpandPlayer]
@@ -320,29 +317,36 @@ function VerticalVideoFeedComponent({
     [itemHeight]
   );
 
-  // Render video item
+  // Memoized active video ID and muted state for stable reference
+  const activeVideoId = activeVideo.videoId;
+  const isMuted = activeVideo.isMuted;
+
+  // Render video item - optimized to pass stable references
+  // Industry Standard: Only set isActive=true if playback is actually allowed
+  // This ensures videos pause when screen loses focus or app backgrounds
   const renderItem = useCallback(
     ({ item, index }: { item: Video; index: number }) => (
       <VideoFeedItem
         video={item}
         index={index}
         itemHeight={itemHeight}
-        isActive={activeVideo.videoId === item.id}
-        isMuted={activeVideo.isMuted}
-        onLike={() => handleLike(item)}
-        onComment={() => handleComment(item)}
-        onShare={() => handleShare(item)}
-        onBookmark={() => handleBookmark(item)}
-        onExpand={() => handleExpandPlayer(item)}
-        onVideoEnd={() => onVideoEnd?.(item)}
+        isActive={activeVideoId === item.id && isPlaybackAllowed}
+        isMuted={isMuted}
+        onLike={handleLike}
+        onComment={handleComment}
+        onShare={handleShare}
+        onBookmark={handleBookmark}
+        onExpand={handleExpandPlayer}
+        onVideoEnd={onVideoEnd}
         screenReaderEnabled={screenReaderEnabled}
         testID={`video-feed-item-${index}`}
       />
     ),
     [
       itemHeight,
-      activeVideo.videoId,
-      activeVideo.isMuted,
+      activeVideoId,
+      isPlaybackAllowed,
+      isMuted,
       handleLike,
       handleComment,
       handleShare,

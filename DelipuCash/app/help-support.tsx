@@ -49,8 +49,6 @@ import {
 
 type TabType = 'faq' | 'contact' | 'tutorials';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 export default function HelpSupportScreen() {
   const { colors, statusBarStyle } = useTheme();
   const router = useRouter();
