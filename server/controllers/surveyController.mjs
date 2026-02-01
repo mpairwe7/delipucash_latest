@@ -283,6 +283,50 @@ export const deleteSurvey = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Check if user has already attempted a survey
+ * Industry standard: Single attempt per user per survey
+ */
+export const checkSurveyAttempt = asyncHandler(async (req, res) => {
+  const { surveyId } = req.params;
+  const { userId } = req.query;
+
+  if (!userId) {
+    return res.status(400).json({ 
+      message: 'User ID is required',
+      hasAttempted: false 
+    });
+  }
+
+  try {
+    const existingResponse = await prisma.surveyResponse.findFirst({
+      where: {
+        surveyId,
+        userId,
+      },
+      select: {
+        id: true,
+        createdAt: true,
+      },
+    });
+
+    res.status(200).json({
+      hasAttempted: !!existingResponse,
+      attemptedAt: existingResponse?.createdAt || null,
+      message: existingResponse 
+        ? 'You have already completed this survey' 
+        : 'Survey is available for attempt',
+    });
+  } catch (error) {
+    console.error('Error checking survey attempt:', error);
+    res.status(500).json({ 
+      message: 'Error checking survey attempt', 
+      error: error.message,
+      hasAttempted: false,
+    });
+  }
+});
+
 export const submitSurveyResponse = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
   const { userId, responses } = req.body;
@@ -302,6 +346,23 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     if (!prisma.surveyResponse) {
       console.error('prisma.surveyResponse is undefined. Available models:', Object.keys(prisma));
       throw new Error('Database model error');
+    }
+
+    // Industry Standard: Check for existing attempt (single attempt per user)
+    const existingResponse = await prisma.surveyResponse.findFirst({
+      where: {
+        surveyId,
+        userId,
+      },
+    });
+
+    if (existingResponse) {
+      console.log('User has already attempted this survey:', existingResponse.id);
+      return res.status(409).json({ 
+        message: 'You have already completed this survey. Only one attempt is allowed per user.',
+        alreadyAttempted: true,
+        attemptedAt: existingResponse.createdAt,
+      });
     }
 
     // Save the responses

@@ -189,6 +189,56 @@ export const COMPONENT_SIZE = {
 } as const;
 
 /**
+ * System bars configuration for immersive experiences
+ * Following iOS Human Interface Guidelines and Material Design 3 specs
+ */
+export const SYSTEM_BARS = {
+  /** Status bar configurations */
+  statusBar: {
+    /** Height estimates (actual values come from SafeAreaInsets) */
+    height: {
+      ios: 44,
+      iosNotch: 47,
+      android: 24,
+    },
+    /** Default translucent background for overlay mode */
+    translucentBackground: 'transparent',
+    /** Dark overlay for light content on videos/images */
+    darkOverlay: 'rgba(0, 0, 0, 0.3)',
+    /** Light overlay for dark content */
+    lightOverlay: 'rgba(255, 255, 255, 0.1)',
+  },
+  /** Navigation bar configurations (Android) */
+  navigationBar: {
+    /** Standard navigation bar height */
+    height: 48,
+    /** Gesture navigation bar height (Android 10+) */
+    gestureHeight: 32,
+    /** Home indicator height (iOS) */
+    homeIndicator: 34,
+  },
+  /** Transition animations */
+  animation: {
+    /** Duration for show/hide transitions */
+    duration: 200,
+    /** Easing for smooth transitions */
+    easing: 'ease-in-out',
+  },
+  /** Content modes for immersive experiences */
+  mode: {
+    /** Standard mode - visible system bars */
+    standard: 'standard',
+    /** Immersive mode - hide system bars (TikTok/Reels style) */
+    immersive: 'immersive',
+    /** Edge-to-edge - visible but translucent bars */
+    edgeToEdge: 'edge-to-edge',
+  },
+} as const;
+
+/** System bars mode type */
+export type SystemBarsMode = keyof typeof SYSTEM_BARS.mode;
+
+/**
  * Shadow/elevation tokens for depth hierarchy
  */
 export const SHADOWS = {
@@ -454,12 +504,47 @@ export const useTheme = (): ThemeContextValue => {
 
 /**
  * Create a color with alpha transparency
+ * Handles hex colors (3 or 6 digit), rgb/rgba, and fallback for invalid colors
  */
-export const withAlpha = (hexColor: string, alpha: number): string => {
+export const withAlpha = (hexColor: string | undefined, alpha: number): string => {
+  // Handle undefined/null/empty color
+  if (!hexColor || typeof hexColor !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
+  // If it's already an rgba color, just return with new alpha
+  if (hexColor.startsWith('rgba')) {
+    return hexColor.replace(/[\d.]+\)$/g, `${alpha})`);
+  }
+
+  // If it's an rgb color, convert to rgba
+  if (hexColor.startsWith('rgb(')) {
+    return hexColor.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+  }
+
+  // Handle hex colors
   const hex = hexColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Handle 3-digit hex
+  let r: number, g: number, b: number;
+  if (hex.length === 3) {
+    r = parseInt(hex[0] + hex[0], 16);
+    g = parseInt(hex[1] + hex[1], 16);
+    b = parseInt(hex[2] + hex[2], 16);
+  } else if (hex.length >= 6) {
+    r = parseInt(hex.substring(0, 2), 16);
+    g = parseInt(hex.substring(2, 4), 16);
+    b = parseInt(hex.substring(4, 6), 16);
+  } else {
+    // Invalid hex, return fallback
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
+  // Handle NaN values
+  if (isNaN(r) || isNaN(g) || isNaN(b)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 

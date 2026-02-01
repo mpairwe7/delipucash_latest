@@ -49,8 +49,6 @@ import {
 
 type TabType = 'faq' | 'contact' | 'tutorials';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
 export default function HelpSupportScreen() {
   const { colors, statusBarStyle } = useTheme();
   const router = useRouter();
@@ -514,7 +512,7 @@ export default function HelpSupportScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <StatusBar style={statusBarStyle} />
       
       {/* Header */}

@@ -663,6 +663,39 @@ export const videosApi = {
   },
 
   /**
+   * Unlike a video
+   */
+  async unlike(videoId: string): Promise<ApiResponse<Video>> {
+    await delay();
+    const video = getVideoById(videoId);
+    if (!video) {
+      return { success: false, data: {} as Video, error: "Video not found" };
+    }
+    return {
+      success: true,
+      data: { ...video, likes: Math.max(0, video.likes - 1) },
+      message: "Video unliked",
+    };
+  },
+
+  /**
+   * Share a video (track for analytics)
+   */
+  async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean }>> {
+    await delay();
+    const video = getVideoById(videoId);
+    if (!video) {
+      return { success: false, data: { shared: false }, error: "Video not found" };
+    }
+    // In a real app, this would track the share event
+    return {
+      success: true,
+      data: { shared: true },
+      message: `Video shared via ${platform}`,
+    };
+  },
+
+  /**
    * Bookmark a video
    */
   async bookmark(videoId: string): Promise<ApiResponse<Video>> {
@@ -698,7 +731,7 @@ export const videosApi = {
     description?: string;
     videoUrl: string;
     thumbnail: string;
-    duration: number;
+    duration?: number;
   }): Promise<ApiResponse<Video>> {
     await delay(1000); // Longer delay to simulate upload
     const newVideo: Video = {
@@ -797,12 +830,12 @@ export const videosApi = {
   /**
    * Add comment to video
    */
-  async addComment(videoId: string, text: string): Promise<ApiResponse<Comment>> {
+  async addComment(videoId: string, text: string, mediaUrls?: string[]): Promise<ApiResponse<Comment>> {
     await delay();
     const newComment: Comment = {
       id: `comment_${Date.now()}`,
       text,
-      mediaUrls: [],
+      mediaUrls: mediaUrls || [],
       userId: mockCurrentUser.id,
       videoId,
       createdAt: new Date().toISOString(),
@@ -1042,6 +1075,24 @@ export const surveysApi = {
       success: true,
       data: { deleted: true },
       message: "Survey deleted successfully",
+    };
+  },
+
+  /**
+   * Check if user has already attempted a survey
+   */
+  async checkAttempt(surveyId: string, userId: string): Promise<ApiResponse<{ hasAttempted: boolean; attemptedAt: string | null; message: string }>> {
+    await delay();
+    // In a real app, this would check the database
+    // For mock, we'll return a random result based on IDs
+    const hasAttempted = (surveyId.charCodeAt(0) + userId.charCodeAt(0)) % 3 === 0;
+    return {
+      success: true,
+      data: {
+        hasAttempted,
+        attemptedAt: hasAttempted ? new Date(Date.now() - 86400000).toISOString() : null,
+        message: hasAttempted ? "You have already completed this survey" : "Survey available",
+      },
     };
   },
 };

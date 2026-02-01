@@ -27,11 +27,12 @@ import {
   ICON_SIZE,
   withAlpha,
 } from '@/utils/theme';
+import { SurveySubscriptionType } from '@/types';
 
 /**
- * Subscription plan types
+ * Subscription plan types - alias for SurveySubscriptionType for backwards compatibility
  */
-export type SubscriptionPlanType = 'ONCE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY' | 'LIFETIME';
+export type SubscriptionPlanType = SurveySubscriptionType;
 
 /**
  * Plan configuration interface
@@ -70,15 +71,18 @@ export interface SubscriptionPlanCardProps {
  */
 const getPlanIcon = (type: SubscriptionPlanType, color: string, size: number) => {
   switch (type) {
-    case 'LIFETIME':
+    case SurveySubscriptionType.LIFETIME:
       return <Crown size={size} color={color} />;
-    case 'YEARLY':
+    case SurveySubscriptionType.YEARLY:
       return <Star size={size} color={color} />;
-    case 'MONTHLY':
+    case SurveySubscriptionType.HALF_YEARLY:
+    case SurveySubscriptionType.QUARTERLY:
+    case SurveySubscriptionType.MONTHLY:
       return <Zap size={size} color={color} />;
-    case 'WEEKLY':
+    case SurveySubscriptionType.WEEKLY:
+    case SurveySubscriptionType.DAILY:
       return <Clock size={size} color={color} />;
-    case 'ONCE':
+    case SurveySubscriptionType.ONCE:
     default:
       return <Gift size={size} color={color} />;
   }

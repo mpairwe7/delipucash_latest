@@ -20,6 +20,8 @@ model AppUser {
   twoFactorEnabled         Boolean               @default(false)
   twoFactorCode            String?               // Hashed OTP code
   twoFactorCodeExpiry      DateTime?             // OTP expiration time
+  passwordResetToken       String?               // Hashed password reset token
+  passwordResetExpiry      DateTime?             // Password reset token expiration
   subscriptionStatus       SubscriptionStatus    @default(INACTIVE)
   surveysubscriptionStatus SubscriptionStatus    @default(INACTIVE)
   currentSubscriptionId    String?               @db.Uuid
@@ -56,14 +58,69 @@ model Video {
   userId        String    @db.Uuid
   likes         Int       @default(0)
   views         Int       @default(0)
+  duration      Int?      // Duration in seconds (optional for upload, can be extracted from video)
   isBookmarked  Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   commentsCount Int       @default(0)
+  
+  // R2 Storage Metadata (Cloudflare R2 / S3-compatible)
+  r2VideoKey       String?   // R2 object key for video file
+  r2ThumbnailKey   String?   // R2 object key for thumbnail
+  r2VideoEtag      String?   // ETag for cache validation
+  r2ThumbnailEtag  String?   // ETag for thumbnail cache validation
+  videoMimeType    String?   // Video MIME type (e.g., video/mp4)
+  thumbnailMimeType String?  // Thumbnail MIME type (e.g., image/jpeg)
+  videoSizeBytes   BigInt?   // Video file size in bytes
+  thumbnailSizeBytes Int?    // Thumbnail file size in bytes
+  storageProvider  String    @default("r2") // Storage provider: r2, supabase, uploadcare, etc.
+  isProcessed      Boolean   @default(false) // Whether video has been processed (transcoding, etc.)
+  processingStatus String?   // Processing status: pending, processing, completed, failed
+  
   comments      Comment[]
   user          AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
+  @@index([r2VideoKey])
+}
+
+model Livestream {
+  id                String    @id @default(uuid()) @db.Uuid
+  sessionId         String    @unique // Unique session identifier
+  userId            String    @db.Uuid
+  title             String?
+  description       String?
+  status            String    @default("pending") // pending, live, ended, failed
+  streamKey         String?   // Unique stream key for the session
+  
+  // Timing
+  startedAt         DateTime?
+  endedAt           DateTime?
+  scheduledStartAt  DateTime?
+  durationSeconds   Int?      // Actual duration in seconds
+  maxDurationSeconds Int      @default(300) // Max allowed duration based on user tier
+  
+  // Metrics
+  viewerCount       Int       @default(0)
+  peakViewerCount   Int       @default(0)
+  
+  // R2 Storage for recording
+  r2RecordingKey    String?   // R2 object key for the recording
+  r2ThumbnailKey    String?   // R2 object key for thumbnail
+  recordingUrl      String?   // Public/signed URL for playback
+  thumbnailUrl      String?
+  recordingSizeBytes BigInt?
+  
+  // Metadata
+  isRecordingEnabled Boolean  @default(true)
+  isPremium          Boolean  @default(false)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([sessionId])
+  @@index([status])
 }
 
 model Comment {
@@ -169,6 +226,10 @@ model SurveyResponse {
   survey    Survey   @relation(fields: [surveyId], references: [id])
   user      AppUser  @relation(fields: [userId], references: [id])
 
+  // Industry standard: Enforce single attempt per user per survey at database level
+  @@unique([userId, surveyId], name: "unique_user_survey_attempt")
+  @@index([userId])
+  @@index([surveyId])
   @@map("survey_responses")
 }
 
@@ -426,12 +487,14 @@ enum surveysubscriptionStatus {
 }
 
 enum SubscriptionType {
+  ONCE
   DAILY
   WEEKLY
   MONTHLY
   QUARTERLY
   HALF_YEARLY
   YEARLY
+  LIFETIME
 }
 
 enum UserRole {

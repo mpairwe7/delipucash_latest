@@ -34,11 +34,11 @@ interface TabConfig {
 }
 
 const tabs: TabConfig[] = [
-  { name: "home", title: "Home", icon: Home },
-  { name: "questions", title: "Questions", icon: MessageSquare },
-  { name: "videos", title: "Videos", icon: Video },
-  { name: "surveys", title: "Surveys", icon: BarChart2 },
-  { name: "profile", title: "Profile", icon: User },
+  { name: "home-redesigned", title: "Home", icon: Home },
+  { name: "questions-new", title: "Questions", icon: MessageSquare },
+  { name: "videos-new", title: "Videos", icon: Video },
+  { name: "surveys-new", title: "Surveys", icon: BarChart2 },
+  { name: "profile-new", title: "Profile", icon: User },
 ];
 
 /**
@@ -111,6 +111,37 @@ export default function TabLayout(): React.ReactElement {
       />
       <Tabs.Screen
         name="explore"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="videos"
+        options={{
+          href: null,
+        }}
+      />
+      {/* Old screens hidden from tabs */}
+      <Tabs.Screen
+        name="home"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="questions"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="surveys"
+        options={{
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
         options={{
           href: null,
         }}

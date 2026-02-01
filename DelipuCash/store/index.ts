@@ -221,3 +221,43 @@ export type {
   VideoState,
   VideoActions,
 } from './VideoStore';
+
+// ============================================================================
+// Video Feed Store (NEW 2025 - TikTok/Reels/Shorts Style)
+// Advanced video feed orchestration with visibility-based playback
+// ============================================================================
+export {
+  useVideoFeedStore,
+  // Constants
+  AUTOPLAY_VISIBILITY_THRESHOLD,
+  PAUSE_VISIBILITY_THRESHOLD,
+  PRELOAD_AHEAD_COUNT,
+  PRELOAD_BEHIND_COUNT,
+  SNAP_TO_INTERVAL_RATIO,
+  // Selectors
+  selectActiveVideo,
+  selectFeedMode,
+  selectActiveTab,
+  selectVideos,
+  selectUI,
+  selectGesture,
+  selectLikedVideoIds,
+  selectBookmarkedVideoIds,
+  // Derived Selectors
+  selectIsVideoLiked,
+  selectIsVideoBookmarked,
+  selectIsActiveVideo,
+  selectShouldVideoPlay,
+} from './VideoFeedStore';
+export type {
+  FeedMode,
+  FeedTab,
+  PlayerStatus,
+  VideoVisibility,
+  ActiveVideoState,
+  GestureState,
+  PreloadState,
+  FeedUIState,
+  VideoFeedState,
+  VideoFeedActions,
+} from './VideoFeedStore';

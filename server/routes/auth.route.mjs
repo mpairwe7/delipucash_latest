@@ -14,7 +14,10 @@ import {
     verify2FACode,
     resend2FACode,
     send2FALoginCode,
-    verify2FALoginCode
+    verify2FALoginCode,
+    forgotPassword,
+    resetPassword,
+    validateResetToken,
 } from '../controllers/auth.controller.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
@@ -24,6 +27,11 @@ const router = express.Router();
 router.post("/signup", signup);
 router.post("/signin", signin);
 router.post('/signout', signOut);
+
+// Password reset routes (public)
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
+router.post("/validate-reset-token", validateResetToken);
 
 // Subscription status routes
 router.put("/:userId/subscription-status", updateSubscriptionStatus);

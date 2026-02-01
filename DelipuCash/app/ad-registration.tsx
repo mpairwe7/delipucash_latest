@@ -31,19 +31,20 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import { Sparkles, TrendingUp, AlertCircle, CheckCircle, Lightbulb } from "lucide-react-native";
 
 // ============================================================================
 // INDUSTRY-STANDARD AD CONFIGURATION
 // ============================================================================
 
-/** Ad placement types following IAB standards */
-type AdPlacement = "feed" | "interstitial" | "native" | "rewarded" | "story";
+/** Ad placement types following app placements */
+type AdPlacement = "home" | "feed" | "survey" | "video" | "question" | "profile" | "explore";
 
 /** Pricing models */
 type PricingModel = "cpm" | "cpc" | "cpa" | "flat";
 
 /** Call-to-action button types */
-type CTAType = "learn_more" | "shop_now" | "sign_up" | "download" | "watch_video" | "get_offer" | "book_now" | "contact_us" | "apply_now" | "subscribe" | "none";
+type CTAType = "learn_more" | "shop_now" | "sign_up" | "download" | "contact_us" | "get_offer" | "book_now" | "watch_more" | "apply_now" | "subscribe" | "get_quote";
 
 /** Target audience age ranges */
 type AgeRange = "13-17" | "18-24" | "25-34" | "35-44" | "45-54" | "55-64" | "65+";
@@ -56,7 +57,7 @@ interface FormState {
   title: string;
   description: string;
   targetUrl: string;
-  type: "regular" | "featured" | "banner" | "compact";
+  type: "standard" | "featured" | "banner" | "compact";
   placement: AdPlacement;
   sponsored: boolean;
   isActive: boolean;
@@ -102,18 +103,20 @@ type MediaKind = "image" | "video" | null;
 
 // Configuration constants
 const typeLabels: Record<FormState["type"], { label: string; description: string }> = {
-  regular: { label: "Regular", description: "Standard feed ad" },
+  standard: { label: "Standard", description: "Standard feed ad" },
   featured: { label: "Featured", description: "Highlighted placement" },
   banner: { label: "Banner", description: "Top/bottom banner" },
   compact: { label: "Compact", description: "Small inline ad" },
 };
 
 const placementLabels: Record<AdPlacement, { label: string; icon: string }> = {
+  home: { label: "Home", icon: "home" },
   feed: { label: "Feed", icon: "view-list" },
-  interstitial: { label: "Fullscreen", icon: "fullscreen" },
-  native: { label: "Native", icon: "puzzle" },
-  rewarded: { label: "Rewarded", icon: "gift" },
-  story: { label: "Story", icon: "camera" },
+  survey: { label: "Survey", icon: "poll" },
+  video: { label: "Video", icon: "play-circle" },
+  question: { label: "Question", icon: "help-circle" },
+  profile: { label: "Profile", icon: "account" },
+  explore: { label: "Explore", icon: "compass" },
 };
 
 const pricingLabels: Record<PricingModel, { label: string; description: string }> = {
@@ -128,13 +131,13 @@ const ctaOptions: Record<CTAType, string> = {
   shop_now: "Shop Now",
   sign_up: "Sign Up",
   download: "Download",
-  watch_video: "Watch Video",
+  contact_us: "Contact Us",
   get_offer: "Get Offer",
   book_now: "Book Now",
-  contact_us: "Contact Us",
+  watch_more: "Watch More",
   apply_now: "Apply Now",
   subscribe: "Subscribe",
-  none: "No Button",
+  get_quote: "Get Quote",
 };
 
 const ageRangeOptions: AgeRange[] = ["13-17", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
@@ -155,6 +158,254 @@ const FORM_STEPS = [
 
 type FormStep = typeof FORM_STEPS[number]["key"];
 
+// ============================================================================
+// AI-POWERED SUGGESTIONS
+// ============================================================================
+
+interface AISuggestion {
+  type: 'success' | 'warning' | 'tip' | 'improvement';
+  title: string;
+  description: string;
+  action?: {
+    label: string;
+    value: any;
+    field: keyof FormState;
+  };
+}
+
+/** Generate AI suggestions based on form state */
+function generateAISuggestions(form: FormState, hasMedia: boolean, mediaKind: MediaKind): AISuggestion[] {
+  const suggestions: AISuggestion[] = [];
+
+  // Title suggestions
+  if (form.title.length > 0 && form.title.length < 20) {
+    suggestions.push({
+      type: 'tip',
+      title: 'Expand your headline',
+      description: 'Titles with 40-60 characters tend to perform 23% better. Consider adding more descriptive words.',
+    });
+  }
+  if (form.title && !form.title.match(/\d/)) {
+    suggestions.push({
+      type: 'improvement',
+      title: 'Add numbers for impact',
+      description: 'Headlines with numbers get 36% more clicks. Example: "Save 50%" or "Join 10,000+ users".',
+    });
+  }
+
+  // Description suggestions
+  if (form.description.length > 0 && form.description.length < 50) {
+    suggestions.push({
+      type: 'tip',
+      title: 'Enrich your description',
+      description: 'Ads with 80-120 character descriptions see 18% higher engagement. Tell users the value proposition.',
+    });
+  }
+  if (form.description && !form.description.includes('!') && !form.description.includes('?')) {
+    suggestions.push({
+      type: 'improvement',
+      title: 'Add emotion',
+      description: 'Questions and exclamations increase CTR by 14%. Ask users a question or excite them!',
+    });
+  }
+
+  // CTA suggestions
+  if (form.callToAction === 'learn_more') {
+    suggestions.push({
+      type: 'tip',
+      title: 'Consider a stronger CTA',
+      description: '"Shop Now" and "Get Offer" buttons convert 27% better than "Learn More" for e-commerce.',
+    });
+  }
+
+  // Targeting suggestions
+  if (form.targetAgeRanges.length === ageRangeOptions.length) {
+    suggestions.push({
+      type: 'warning',
+      title: 'Targeting is too broad',
+      description: 'Selecting all age groups reduces relevance. Focus on your core demographic for better ROI.',
+    });
+  }
+  if (form.targetInterests.length === 0) {
+    suggestions.push({
+      type: 'improvement',
+      title: 'Add interest targeting',
+      description: 'Interest-based targeting improves conversion rates by 40%. Select relevant interests.',
+    });
+  }
+
+  // Budget suggestions
+  const budget = Number(form.budget) || 0;
+  const bidAmount = Number(form.bidAmount) || 0;
+  if (budget > 0 && budget < 10) {
+    suggestions.push({
+      type: 'warning',
+      title: 'Budget may be too low',
+      description: 'Campaigns under $10 have limited reach. Consider $25+ for meaningful results.',
+    });
+  }
+  if (form.pricingModel === 'cpm' && bidAmount > 0 && bidAmount > 5) {
+    suggestions.push({
+      type: 'tip',
+      title: 'High CPM bid',
+      description: 'Average CPM in this category is $2-4. You might be overpaying. Consider reducing your bid.',
+    });
+  }
+  if (form.pricingModel === 'cpc' && bidAmount > 0 && bidAmount < 0.3) {
+    suggestions.push({
+      type: 'warning',
+      title: 'Low CPC bid',
+      description: 'Very low CPC bids may result in limited delivery. Consider $0.50+ for better reach.',
+    });
+  }
+
+  // Media suggestions
+  if (!hasMedia) {
+    suggestions.push({
+      type: 'warning',
+      title: 'Add creative assets',
+      description: 'Ads with images get 94% more views. Video ads have 20% higher engagement rates.',
+    });
+  }
+  if (mediaKind === 'video') {
+    suggestions.push({
+      type: 'success',
+      title: 'Great choice: Video ad',
+      description: 'Video ads have 20% higher engagement and 27% better recall. Keep videos under 15 seconds for best results.',
+    });
+  }
+
+  // Placement-specific suggestions
+  if (form.placement === 'video' && budget < 50) {
+    suggestions.push({
+      type: 'tip',
+      title: 'Video ads need higher budget',
+      description: 'Video ad placements work best with $50+ budgets due to higher user expectations.',
+    });
+  }
+  if (form.placement === 'home' && mediaKind !== 'video') {
+    suggestions.push({
+      type: 'improvement',
+      title: 'Home placement works better with video',
+      description: 'Home placements see 3x more engagement with video content vs. static images.',
+    });
+  }
+
+  // Frequency cap suggestions
+  const frequencyCap = Number(form.frequencyCap) || 0;
+  if (frequencyCap > 5) {
+    suggestions.push({
+      type: 'warning',
+      title: 'Frequency cap is high',
+      description: 'Showing an ad more than 5 times can cause ad fatigue. Recommended: 2-3 per day.',
+    });
+  }
+
+  // Success indicators
+  if (form.title.length >= 30 && form.description.length >= 80 && hasMedia && form.targetInterests.length > 0) {
+    suggestions.push({
+      type: 'success',
+      title: 'Looking good!',
+      description: 'Your ad is well-configured for optimal performance. Expected CTR: 2.5-3.5%.',
+    });
+  }
+
+  return suggestions.slice(0, 3); // Limit to 3 suggestions at a time
+}
+
+/** AI Suggestions Panel Component */
+const AISuggestionsPanel: React.FC<{
+  suggestions: AISuggestion[];
+  colors: any;
+  onApplySuggestion?: (field: keyof FormState, value: any) => void;
+}> = ({ suggestions, colors, onApplySuggestion }) => {
+  if (suggestions.length === 0) return null;
+
+  const getIcon = (type: AISuggestion['type']) => {
+    switch (type) {
+      case 'success': return <CheckCircle size={18} color={colors.success} />;
+      case 'warning': return <AlertCircle size={18} color={colors.warning} />;
+      case 'tip': return <Lightbulb size={18} color={colors.primary} />;
+      case 'improvement': return <TrendingUp size={18} color={colors.info} />;
+    }
+  };
+
+  const getBgColor = (type: AISuggestion['type']) => {
+    switch (type) {
+      case 'success': return withAlpha(colors.success, 0.1);
+      case 'warning': return withAlpha(colors.warning, 0.1);
+      case 'tip': return withAlpha(colors.primary, 0.1);
+      case 'improvement': return withAlpha(colors.info, 0.1);
+    }
+  };
+
+  return (
+    <Animated.View
+      entering={FadeIn.delay(200).duration(300)}
+      style={{
+        marginBottom: SPACING.md,
+        padding: SPACING.md,
+        backgroundColor: colors.card,
+        borderRadius: RADIUS.lg,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: SPACING.xs, marginBottom: SPACING.sm }}>
+        <Sparkles size={18} color={colors.primary} />
+        <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.medium, fontSize: TYPOGRAPHY.fontSize.sm, color: colors.text }}>
+          AI Suggestions
+        </Text>
+      </View>
+
+      {suggestions.map((suggestion, index) => (
+        <View
+          key={index}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: SPACING.sm,
+            paddingVertical: SPACING.sm,
+            paddingHorizontal: SPACING.sm,
+            marginBottom: index < suggestions.length - 1 ? SPACING.xs : 0,
+            backgroundColor: getBgColor(suggestion.type),
+            borderRadius: RADIUS.md,
+          }}
+        >
+          <View style={{ marginTop: 2 }}>
+            {getIcon(suggestion.type)}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.medium, fontSize: TYPOGRAPHY.fontSize.sm, color: colors.text }}>
+              {suggestion.title}
+            </Text>
+            <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.regular, fontSize: TYPOGRAPHY.fontSize.xs, color: colors.textMuted, marginTop: 2, lineHeight: 16 }}>
+              {suggestion.description}
+            </Text>
+            {suggestion.action && (
+              <TouchableOpacity
+                style={{
+                  marginTop: SPACING.xs,
+                  paddingVertical: 4,
+                  paddingHorizontal: SPACING.sm,
+                  backgroundColor: colors.primary,
+                  borderRadius: RADIUS.sm,
+                  alignSelf: 'flex-start',
+                }}
+                onPress={() => onApplySuggestion?.(suggestion.action!.field, suggestion.action!.value)}
+              >
+                <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.medium, fontSize: TYPOGRAPHY.fontSize.xs, color: colors.primaryText }}>
+                  {suggestion.action.label}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      ))}
+    </Animated.View>
+  );
+};
+
 export default function AdRegistrationScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
@@ -171,7 +422,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
     title: "",
     description: "",
     targetUrl: "",
-    type: "regular",
+    type: "standard",
     placement: "feed",
     sponsored: true,
     isActive: true,
@@ -354,11 +605,9 @@ export default function AdRegistrationScreen(): React.ReactElement {
             <Text style={[themedStyles.previewBadgeText, { color: colors.primaryText }]}>Video</Text>
           </View>
         )}
-        {form.callToAction !== "none" && (
-          <View style={[themedStyles.ctaOverlay, { backgroundColor: withAlpha(colors.primary, 0.9) }]}>
-            <Text style={themedStyles.ctaOverlayText}>{ctaOptions[form.callToAction]}</Text>
-          </View>
-        )}
+        <View style={[themedStyles.ctaOverlay, { backgroundColor: withAlpha(colors.primary, 0.9) }]}>
+          <Text style={themedStyles.ctaOverlayText}>{ctaOptions[form.callToAction]}</Text>
+        </View>
       </View>
     );
   }, [colors.border, colors.primaryText, colors.primary, hasMedia, mediaKind, mediaUri, uploadedUrl, themedStyles, form.callToAction]);
@@ -386,11 +635,13 @@ export default function AdRegistrationScreen(): React.ReactElement {
     
     // Placement affects reach
     const placementMultipliers: Record<AdPlacement, number> = {
-      feed: 1,
-      interstitial: 0.3,
-      native: 0.8,
-      rewarded: 0.4,
-      story: 0.6,
+      home: 1,
+      feed: 0.9,
+      survey: 0.5,
+      video: 0.6,
+      question: 0.7,
+      profile: 0.4,
+      explore: 0.8,
     };
     multiplier *= placementMultipliers[form.placement];
     
@@ -429,6 +680,16 @@ export default function AdRegistrationScreen(): React.ReactElement {
     return { impressions, clicks, cost: budget };
   }, [form.budget, form.bidAmount, form.pricingModel, estimatedReach]);
 
+  // AI-powered suggestions based on current form state
+  const aiSuggestions = useMemo(() => {
+    return generateAISuggestions(form, hasMedia, mediaKind);
+  }, [form, hasMedia, mediaKind]);
+
+  // Apply suggestion handler
+  const handleApplySuggestion = useCallback((field: keyof FormState, value: any) => {
+    updateField(field, value);
+  }, [updateField]);
+
   const handleSubmit = useCallback(async () => {
     if (!validate()) return;
     setSubmitting(true);
@@ -437,25 +698,37 @@ export default function AdRegistrationScreen(): React.ReactElement {
       // Use TanStack Query mutation for optimized caching and state management
       await createAdMutation.mutateAsync({
         title: form.title.trim(),
+        headline: form.headline.trim() || undefined,
         description: form.description.trim(),
         imageUrl: mediaKind === 'image' ? uploadedUrl : undefined,
         videoUrl: mediaKind === 'video' ? uploadedUrl : undefined,
         thumbnailUrl: mediaKind === 'video' ? uploadedUrl : undefined,
         type: form.type,
+        placement: form.placement,
         sponsored: form.sponsored,
-        isActive: form.isActive,
-        targetUrl: form.targetUrl.trim(),
+        targetUrl: form.targetUrl.trim() || undefined,
+        callToAction: form.callToAction,
         startDate: form.startDate?.toISOString(),
         endDate: form.endDate?.toISOString(),
+        pricingModel: form.pricingModel,
+        totalBudget: parseFloat(form.budget) || 0,
+        bidAmount: parseFloat(form.bidAmount) || 0,
+        dailyBudgetLimit: form.dailyBudgetLimit ? parseFloat(form.dailyBudgetLimit) : undefined,
+        targetAgeRanges: form.targetAgeRanges,
+        targetGender: form.targetGender,
+        targetLocations: form.targetLocations.length > 0 ? form.targetLocations : undefined,
+        targetInterests: form.targetInterests.length > 0 ? form.targetInterests : undefined,
+        enableRetargeting: form.enableRetargeting,
         priority: form.priority,
         frequency: Number(form.frequencyCap) || undefined,
+        userId: 'current-user-id', // TODO: Get from auth context
       });
       
       Alert.alert("Ad Campaign Created!", "Your campaign is now under review and will be live within 24 hours.", [
         { text: "View Campaigns", onPress: () => router.push("/") },
         { text: "Create Another", onPress: () => {
           setForm({
-            title: "", description: "", targetUrl: "", type: "regular", placement: "feed",
+            title: "", description: "", targetUrl: "", type: "standard", placement: "feed",
             sponsored: true, isActive: true, pricingModel: "cpm", budget: "", bidAmount: "",
             dailyBudgetLimit: "", callToAction: "learn_more", headline: "",
             targetAgeRanges: ["18-24", "25-34"], targetGender: "all", targetLocations: [],
@@ -476,7 +749,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
   }, [validate, createAdMutation, form, mediaKind, uploadedUrl]);
 
   return (
-    <SafeAreaView style={[themedStyles.safeArea, { paddingTop: insets.top }]}> 
+    <SafeAreaView style={themedStyles.safeArea} edges={['top', 'bottom']}> 
       <StatusBar style={statusBarStyle} />
       <KeyboardAvoidingView
         style={themedStyles.flex}
@@ -547,6 +820,13 @@ export default function AdRegistrationScreen(): React.ReactElement {
           contentContainerStyle={themedStyles.scroll}
           showsVerticalScrollIndicator={false}
         >
+          {/* AI Suggestions Panel */}
+          <AISuggestionsPanel
+            suggestions={aiSuggestions}
+            colors={colors}
+            onApplySuggestion={handleApplySuggestion}
+          />
+
           {/* Step 1: Media/Creative */}
           {currentStep === "media" && (
             <Animated.View entering={FadeInDown.springify()}>

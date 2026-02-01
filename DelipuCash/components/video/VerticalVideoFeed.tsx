@@ -1,0 +1,521 @@
+/**
+ * VerticalVideoFeed Component
+ * TikTok/Instagram Reels/YouTube Shorts style vertical video feed
+ * 
+ * Features:
+ * - Full-screen vertical video snapping
+ * - Single video plays at a time (visibility-based)
+ * - Optimized FlatList with proper virtualization
+ * - Smooth transitions and animations
+ * - Preloading for zero-buffering experience
+ * - Accessibility support
+ * 
+ * @example
+ * ```tsx
+ * <VerticalVideoFeed
+ *   videos={videos}
+ *   onVideoEnd={handleVideoEnd}
+ *   onRefresh={handleRefresh}
+ * />
+ * ```
+ */
+
+import React, {
+  memo,
+  useCallback,
+  useRef,
+  useMemo,
+  useEffect,
+  useState,
+} from 'react';
+import {
+  View,
+  FlatList,
+  StyleSheet,
+  Dimensions,
+  ViewToken,
+  RefreshControl,
+  Platform,
+  AccessibilityInfo,
+  Text,
+  ActivityIndicator,
+} from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import {
+  useTheme,
+  SPACING,
+  TYPOGRAPHY,
+} from '@/utils/theme';
+import { Video } from '@/types';
+import {
+  useVideoFeedStore,
+  selectActiveVideo,
+  selectIsPlaybackAllowed,
+} from '@/store/VideoFeedStore';
+import { VideoFeedItem } from './VideoFeedItem';
+import { VideoFeedSkeleton } from './VideoFeedSkeleton';
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+/** Viewability config for determining which video should play */
+const VIEWABILITY_CONFIG = {
+  itemVisiblePercentThreshold: 60, // Video plays when 60%+ visible
+  minimumViewTime: 100, // Minimum time (ms) before considering viewable
+  waitForInteraction: false,
+};
+
+/** FlatList optimization settings - tuned for TikTok-style vertical video feeds */
+const LIST_OPTIMIZATION = {
+  windowSize: 3, // Reduced from 5 - only render 3 screens worth of content for better perf
+  maxToRenderPerBatch: 2, // Reduced from 3 - render fewer items per batch
+  updateCellsBatchingPeriod: 100, // Increased from 50ms - batch updates less frequently
+  initialNumToRender: 1, // Reduced from 2 - start with just 1 item for faster initial render
+  removeClippedSubviews: Platform.OS === 'android', // Android only for stability
+};
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+export interface VerticalVideoFeedProps {
+  /** Array of videos to display */
+  videos: Video[];
+  /** Loading state */
+  isLoading?: boolean;
+  /** Refreshing state for pull-to-refresh */
+  isRefreshing?: boolean;
+  /** Callback when pull-to-refresh is triggered */
+  onRefresh?: () => void;
+  /** Callback when end of list is reached (for infinite scroll) */
+  onEndReached?: () => void;
+  /** Loading more state */
+  isLoadingMore?: boolean;
+  /** Callback when a video ends playing */
+  onVideoEnd?: (video: Video) => void;
+  /** Callback when user likes a video */
+  onLike?: (video: Video) => void;
+  /** Callback when user wants to comment */
+  onComment?: (video: Video) => void;
+  /** Callback when user shares a video */
+  onShare?: (video: Video) => void;
+  /** Callback when user bookmarks a video */
+  onBookmark?: (video: Video) => void;
+  /** Callback when user expands to full player */
+  onExpandPlayer?: (video: Video) => void;
+  /** Initial video index to scroll to */
+  initialIndex?: number;
+  /** Header component to render above feed */
+  ListHeaderComponent?: React.ReactElement;
+  /** Test ID for testing */
+  testID?: string;
+}
+
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
+function VerticalVideoFeedComponent({
+  videos,
+  isLoading = false,
+  isRefreshing = false,
+  onRefresh,
+  onEndReached,
+  isLoadingMore = false,
+  onVideoEnd,
+  onLike,
+  onComment,
+  onShare,
+  onBookmark,
+  onExpandPlayer,
+  initialIndex = 0,
+  ListHeaderComponent,
+  testID,
+}: VerticalVideoFeedProps): React.ReactElement {
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const flatListRef = useRef<FlatList<Video>>(null);
+
+  // Store state
+  const activeVideo = useVideoFeedStore(selectActiveVideo);
+  const isPlaybackAllowed = useVideoFeedStore(selectIsPlaybackAllowed);
+  // Note: feedMode and ui available via store if needed
+  const {
+    setVideos,
+    setActiveVideo,
+    handleViewableItemsChanged,
+    setRefreshing,
+    setLoadingMore,
+    getPreloadTargets,
+    markPreloaded,
+  } = useVideoFeedStore();
+
+  // Local state
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [screenReaderEnabled, setScreenReaderEnabled] = useState(false);
+
+  // Animation values
+  const feedOpacity = useSharedValue(1);
+
+  // Calculate item height (full screen minus safe areas)
+  const itemHeight = useMemo(() => {
+    return SCREEN_HEIGHT - insets.top;
+  }, [insets.top]);
+
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Sync videos with store
+  useEffect(() => {
+    if (videos.length > 0) {
+      setVideos(videos);
+      if (!isInitialized && videos.length > 0) {
+        // Set initial active video
+        setActiveVideo(videos[initialIndex]?.id ?? null, initialIndex);
+        setIsInitialized(true);
+      }
+    }
+  }, [videos, setVideos, isInitialized, initialIndex, setActiveVideo]);
+
+  // Check for screen reader
+  useEffect(() => {
+    const checkScreenReader = async () => {
+      const enabled = await AccessibilityInfo.isScreenReaderEnabled();
+      setScreenReaderEnabled(enabled);
+    };
+    checkScreenReader();
+
+    const subscription = AccessibilityInfo.addEventListener(
+      'screenReaderChanged',
+      setScreenReaderEnabled
+    );
+    return () => subscription.remove();
+  }, []);
+
+  // Preload videos when active video changes
+  useEffect(() => {
+    const preloadTargets = getPreloadTargets();
+    preloadTargets.forEach((videoId) => {
+      // Mark as preloaded (actual preloading handled by VideoFeedItem)
+      markPreloaded(videoId);
+    });
+  }, [activeVideo.index, getPreloadTargets, markPreloaded]);
+
+  // ============================================================================
+  // CALLBACKS
+  // ============================================================================
+
+  // Handle viewable items change (core auto-play logic)
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const mappedItems = viewableItems.map((vt) => ({
+        item: vt.item as Video,
+        index: vt.index ?? 0,
+        isViewable: vt.isViewable,
+      }));
+      handleViewableItemsChanged(mappedItems);
+    },
+    [handleViewableItemsChanged]
+  );
+
+  // Memoized viewability config ref
+  const viewabilityConfigCallbackPairs = useRef([
+    { viewabilityConfig: VIEWABILITY_CONFIG, onViewableItemsChanged },
+  ]);
+
+  // Handle refresh
+  const handleRefresh = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRefreshing(true);
+    onRefresh?.();
+  }, [onRefresh, setRefreshing]);
+
+  // Handle end reached
+  const handleEndReached = useCallback(() => {
+    if (!isLoadingMore && !isLoading) {
+      setLoadingMore(true);
+      onEndReached?.();
+    }
+  }, [isLoadingMore, isLoading, onEndReached, setLoadingMore]);
+
+  // Handle video like - stable reference passed to VideoFeedItem
+  const handleLike = useCallback(
+    (video: Video) => {
+      onLike?.(video);
+    },
+    [onLike]
+  );
+
+  // Handle video comment - stable reference passed to VideoFeedItem
+  const handleComment = useCallback(
+    (video: Video) => {
+      onComment?.(video);
+    },
+    [onComment]
+  );
+
+  // Handle video share - stable reference passed to VideoFeedItem
+  const handleShare = useCallback(
+    (video: Video) => {
+      onShare?.(video);
+    },
+    [onShare]
+  );
+
+  // Handle video bookmark - stable reference passed to VideoFeedItem
+  const handleBookmark = useCallback(
+    (video: Video) => {
+      onBookmark?.(video);
+    },
+    [onBookmark]
+  );
+
+  // Handle expand to full player - stable reference passed to VideoFeedItem
+  const handleExpandPlayer = useCallback(
+    (video: Video) => {
+      onExpandPlayer?.(video);
+    },
+    [onExpandPlayer]
+  );
+
+  // Scroll to specific index (exposed for programmatic navigation)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const scrollToIndex = useCallback(
+    (index: number, animated = true) => {
+      flatListRef.current?.scrollToIndex({
+        index,
+        animated,
+        viewPosition: 0,
+      });
+    },
+    []
+  );
+
+  // ============================================================================
+  // RENDER FUNCTIONS
+  // ============================================================================
+
+  // Key extractor
+  const keyExtractor = useCallback((item: Video) => item.id, []);
+
+  // Get item layout for optimization
+  const getItemLayout = useCallback(
+    (_: ArrayLike<Video> | null | undefined, index: number) => ({
+      length: itemHeight,
+      offset: itemHeight * index,
+      index,
+    }),
+    [itemHeight]
+  );
+
+  // Memoized active video ID and muted state for stable reference
+  const activeVideoId = activeVideo.videoId;
+  const isMuted = activeVideo.isMuted;
+
+  // Render video item - optimized to pass stable references
+  // Industry Standard: Only set isActive=true if playback is actually allowed
+  // This ensures videos pause when screen loses focus or app backgrounds
+  const renderItem = useCallback(
+    ({ item, index }: { item: Video; index: number }) => (
+      <VideoFeedItem
+        video={item}
+        index={index}
+        itemHeight={itemHeight}
+        isActive={activeVideoId === item.id && isPlaybackAllowed}
+        isMuted={isMuted}
+        onLike={handleLike}
+        onComment={handleComment}
+        onShare={handleShare}
+        onBookmark={handleBookmark}
+        onExpand={handleExpandPlayer}
+        onVideoEnd={onVideoEnd}
+        screenReaderEnabled={screenReaderEnabled}
+        testID={`video-feed-item-${index}`}
+      />
+    ),
+    [
+      itemHeight,
+      activeVideoId,
+      isPlaybackAllowed,
+      isMuted,
+      handleLike,
+      handleComment,
+      handleShare,
+      handleBookmark,
+      handleExpandPlayer,
+      onVideoEnd,
+      screenReaderEnabled,
+    ]
+  );
+
+  // Render footer (loading more indicator)
+  const renderFooter = useCallback(() => {
+    if (!isLoadingMore) return null;
+    return (
+      <View style={[styles.footer, { height: itemHeight * 0.3 }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.footerText, { color: colors.textMuted }]}>
+          Loading more videos...
+        </Text>
+      </View>
+    );
+  }, [isLoadingMore, itemHeight, colors]);
+
+  // Render empty state
+  const renderEmpty = useCallback(() => {
+    if (isLoading) {
+      return <VideoFeedSkeleton count={3} itemHeight={itemHeight} />;
+    }
+    return (
+      <View style={[styles.emptyContainer, { height: itemHeight }]}>
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>
+          No videos yet
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+          Pull down to refresh or check back later
+        </Text>
+      </View>
+    );
+  }, [isLoading, itemHeight, colors]);
+
+  // Animated container style
+  const animatedContainerStyle = useAnimatedStyle(() => ({
+    opacity: feedOpacity.value,
+  }));
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
+  // Show skeleton during initial load
+  if (isLoading && videos.length === 0) {
+    return <VideoFeedSkeleton count={3} itemHeight={itemHeight} />;
+  }
+
+  return (
+    <Animated.View
+      testID={testID}
+      style={[styles.container, animatedContainerStyle]}
+    >
+      <FlatList
+        ref={flatListRef}
+        data={videos}
+        renderItem={renderItem}
+        keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
+        // Snapping configuration
+        pagingEnabled
+        snapToInterval={itemHeight}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        // Viewability configuration
+        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
+        // Performance optimization
+        windowSize={LIST_OPTIMIZATION.windowSize}
+        maxToRenderPerBatch={LIST_OPTIMIZATION.maxToRenderPerBatch}
+        updateCellsBatchingPeriod={LIST_OPTIMIZATION.updateCellsBatchingPeriod}
+        initialNumToRender={LIST_OPTIMIZATION.initialNumToRender}
+        removeClippedSubviews={LIST_OPTIMIZATION.removeClippedSubviews}
+        // Scroll configuration
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+        overScrollMode="never"
+        // Initial scroll
+        initialScrollIndex={initialIndex}
+        // Pull to refresh
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl
+              refreshing={isRefreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressViewOffset={insets.top}
+            />
+          ) : undefined
+        }
+        // Infinite scroll
+        onEndReached={handleEndReached}
+        onEndReachedThreshold={0.5}
+        // Footer
+        ListFooterComponent={renderFooter}
+        // Empty state
+        ListEmptyComponent={renderEmpty}
+        // Header (optional)
+        ListHeaderComponent={ListHeaderComponent}
+        // Accessibility
+        accessibilityRole="list"
+        accessibilityLabel="Video feed"
+        // Error handling for initialScrollIndex
+        onScrollToIndexFailed={(info) => {
+          setTimeout(() => {
+            flatListRef.current?.scrollToIndex({
+              index: info.index,
+              animated: false,
+            });
+          }, 100);
+        }}
+        // Content styling
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingTop: insets.top },
+        ]}
+      />
+    </Animated.View>
+  );
+}
+
+// ============================================================================
+// STYLES
+// ============================================================================
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  contentContainer: {
+    flexGrow: 1,
+  },
+  footer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  footerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: SPACING.xl,
+  },
+  emptyTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['2xl'],
+    marginBottom: SPACING.sm,
+  },
+  emptySubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: 'center',
+  },
+});
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+export const VerticalVideoFeed = memo(VerticalVideoFeedComponent);
+export default VerticalVideoFeed;

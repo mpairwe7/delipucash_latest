@@ -134,7 +134,7 @@ export default function LoginScreen(): React.ReactElement {
     });
 
     if (response.success) {
-      router.replace("/(tabs)");
+      router.replace("/(tabs)/home-redesigned");
     } else {
       setGeneralError(response.error || "Login failed. Please try again.");
     }

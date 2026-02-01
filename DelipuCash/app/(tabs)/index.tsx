@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.lg,
   },
   searchResultsTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.semibold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
     marginBottom: SPACING.md,
   },

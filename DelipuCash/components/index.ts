@@ -89,6 +89,9 @@ export type {
   FABPosition,
 } from './ui/FloatingActionButton';
 
+export { ScreenWrapper, useScreenInsets } from './ui/ScreenWrapper';
+export type { ScreenWrapperProps, ScreenVariant } from './ui/ScreenWrapper';
+
 // Video Components
 export {
   VideoPlayer,
@@ -195,3 +198,83 @@ export {
   AnswerFeedback,
   SessionSummaryCard,
 } from './quiz';
+
+// Home Screen Components - 2025/2026 Modern Dashboard
+export {
+  // Skeleton loaders
+  SkeletonBase,
+  HeroCardSkeleton,
+  QuickActionSkeleton,
+  QuickActionsRowSkeleton,
+  VideoCardSkeleton,
+  VideoListSkeleton,
+  SurveyCardSkeleton,
+  QuestionCardSkeleton,
+  StatCardSkeleton,
+  WalletCardSkeleton,
+  DashboardSkeleton,
+  // Dashboard components
+  QuickActions,
+  PersonalizedHeader,
+  HeroRewardCard,
+  EarningOpportunityCard,
+  EarningOpportunitiesList,
+} from './home';
+export type {
+  QuickActionsProps,
+  QuickAction,
+  PersonalizedHeaderProps,
+  HeroRewardCardProps,
+  EarningOpportunityCardProps,
+  EarningOpportunitiesListProps,
+  EarningOpportunity,
+  OpportunityType,
+} from './home';
+
+// Feed Components - Industry Standard Q&A Feed System
+export {
+  // Core feed components
+  QuestionFeedItem,
+  FeedTabs,
+  // Gamification components
+  StreakCounter,
+  PointsDisplay,
+  DailyProgress,
+  LeaderboardSnippet,
+  AchievementBadge,
+  RewardProgress,
+  // Question creation wizard
+  CreateQuestionWizard,
+  // Skeleton loaders
+  QuestionFeedSkeleton,
+  GamificationSkeleton,
+  FeedTabsSkeleton,
+  StatsRowSkeleton,
+  ActionCardSkeleton,
+  SectionHeaderSkeleton,
+  FeedSkeleton,
+} from './feed';
+export type {
+  // Feed types
+  QuestionFeedItemProps,
+  FeedQuestion,
+  QuestionAuthor,
+  FeedTabsProps,
+  FeedTab,
+  // Gamification types
+  StreakCounterProps,
+  PointsDisplayProps,
+  DailyProgressProps,
+  LeaderboardSnippetProps,
+  LeaderboardUser,
+  AchievementBadgeProps,
+  RewardProgressProps,
+  RewardTier,
+  // Wizard types
+  CreateQuestionWizardProps,
+  QuestionFormData,
+  // Skeleton types
+  QuestionFeedSkeletonProps,
+  GamificationSkeletonProps,
+  FeedSkeletonProps,
+} from './feed';

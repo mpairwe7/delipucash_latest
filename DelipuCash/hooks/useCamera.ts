@@ -21,7 +21,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, AppState, AppStateStatus } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import * as MediaLibrary from 'expo-media-library';
 
 // ============================================================================
 // TYPES
@@ -30,6 +31,12 @@ import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
 export interface CameraState {
   /** Whether camera permissions have been granted */
   hasPermission: boolean | null;
+  /** Whether microphone permissions have been granted */
+  hasMicrophonePermission: boolean | null;
+  /** Whether media library permissions have been granted */
+  hasMediaLibraryPermission: boolean | null;
+  /** Whether all required permissions are granted */
+  hasAllPermissions: boolean;
   /** Whether camera is ready to use */
   isReady: boolean;
   /** Whether camera is currently active/mounted */
@@ -44,6 +51,10 @@ export interface CameraState {
   error: string | null;
   /** Whether permissions are being requested */
   isRequestingPermission: boolean;
+  /** Whether recording is in progress */
+  isRecording: boolean;
+  /** Recording output URI */
+  recordingUri: string | null;
 }
 
 export interface UseCameraOptions {
@@ -82,6 +93,12 @@ export interface UseCameraReturn extends CameraState {
   pause: () => void;
   /** Resume camera */
   resume: () => void;
+  /** Start video recording */
+  startRecording: () => Promise<void>;
+  /** Stop video recording */
+  stopRecording: () => Promise<string | null>;
+  /** Save recording to media library */
+  saveToMediaLibrary: (uri: string) => Promise<string | null>;
   /** Reset camera state */
   reset: () => void;
 }
@@ -108,15 +125,23 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     options.onError,
   ]);
   
-  // Use expo-camera's built-in permission hook
-  const [permission, requestPermission] = useCameraPermissions();
+  // Use expo-camera's built-in permission hooks
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
+  const [mediaLibraryPermission, requestMediaLibraryPermission] = MediaLibrary.usePermissions();
   
   // Camera ref
   const cameraRef = useRef<CameraView | null>(null);
   
+  // Recording ref to track recording state
+  const isRecordingRef = useRef(false);
+
   // State
   const [state, setState] = useState<CameraState>(() => ({
     hasPermission: null,
+    hasMicrophonePermission: null,
+    hasMediaLibraryPermission: null,
+    hasAllPermissions: false,
     isReady: false,
     isActive: true,
     facing: opts.initialFacing,
@@ -124,6 +149,8 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     zoom: 0,
     error: null,
     isRequestingPermission: false,
+    isRecording: false,
+    recordingUri: null,
   }));
   
   // Track if component is mounted
@@ -132,14 +159,15 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
   // ============================================================================
   // PERMISSION HANDLING
   // ============================================================================
-  
-  // Request permissions - defined before use in effects
+
+  // Request all permissions (camera, microphone, media library) - industry standard
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     // Web doesn't support camera in the same way
     if (Platform.OS === 'web') {
       setState(prev => ({ 
         ...prev, 
-        hasPermission: false, 
+        hasPermission: false,
+        hasAllPermissions: false,
         error: 'Camera not supported on web' 
       }));
       return false;
@@ -148,28 +176,48 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     setState(prev => ({ ...prev, isRequestingPermission: true, error: null }));
     
     try {
-      const result = await requestPermission();
-      const granted = result?.granted ?? false;
+      // Request all permissions in parallel for better UX
+      const [cameraResult, micResult, mediaResult] = await Promise.all([
+        requestCameraPermission(),
+        requestMicrophonePermission(),
+        requestMediaLibraryPermission(),
+      ]);
+
+      const cameraGranted = cameraResult?.granted ?? false;
+      const micGranted = micResult?.granted ?? false;
+      const mediaGranted = mediaResult?.granted ?? false;
+      const allGranted = cameraGranted && micGranted && mediaGranted;
       
       if (isMountedRef.current) {
+        let errorMessage: string | null = null;
+        if (!cameraGranted) errorMessage = 'Camera permission denied';
+        else if (!micGranted) errorMessage = 'Microphone permission denied';
+        else if (!mediaGranted) errorMessage = 'Media library permission denied';
+
         setState(prev => ({ 
           ...prev, 
-          hasPermission: granted,
+          hasPermission: cameraGranted,
+          hasMicrophonePermission: micGranted,
+          hasMediaLibraryPermission: mediaGranted,
+          hasAllPermissions: allGranted,
           isRequestingPermission: false,
-          error: granted ? null : 'Camera permission denied',
+          error: errorMessage,
         }));
         
-        opts.onPermissionChange(granted);
+        opts.onPermissionChange(allGranted);
       }
       
-      return granted;
+      return allGranted;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to request camera permission';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to request permissions';
       
       if (isMountedRef.current) {
         setState(prev => ({ 
           ...prev, 
           hasPermission: false,
+          hasMicrophonePermission: false,
+          hasMediaLibraryPermission: false,
+          hasAllPermissions: false,
           isRequestingPermission: false,
           error: errorMessage,
         }));
@@ -179,22 +227,31 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
       
       return false;
     }
-  }, [requestPermission, opts]);
+  }, [requestCameraPermission, requestMicrophonePermission, requestMediaLibraryPermission, opts]);
   
-  // Sync permission state from expo-camera hook
+  // Sync permission state from expo-camera hooks
   useEffect(() => {
-    if (permission !== undefined) {
-      const granted = permission?.granted ?? null;
-      
-      if (granted !== state.hasPermission) {
-        setState(prev => ({ ...prev, hasPermission: granted }));
-        
-        if (granted !== null) {
-          opts.onPermissionChange(granted);
-        }
+    const cameraGranted = cameraPermission?.granted ?? null;
+    const micGranted = microphonePermission?.granted ?? null;
+    const mediaGranted = mediaLibraryPermission?.granted ?? null;
+    const allGranted = (cameraGranted && micGranted && mediaGranted) ?? false;
+
+    if (cameraGranted !== state.hasPermission ||
+      micGranted !== state.hasMicrophonePermission ||
+      mediaGranted !== state.hasMediaLibraryPermission) {
+      setState(prev => ({
+        ...prev,
+        hasPermission: cameraGranted,
+        hasMicrophonePermission: micGranted,
+        hasMediaLibraryPermission: mediaGranted,
+        hasAllPermissions: allGranted,
+      }));
+
+      if (cameraGranted !== null) {
+        opts.onPermissionChange(allGranted);
       }
     }
-  }, [permission, state.hasPermission, opts]);
+  }, [cameraPermission?.granted, microphonePermission?.granted, mediaLibraryPermission?.granted, state.hasPermission, state.hasMicrophonePermission, state.hasMediaLibraryPermission, opts]);
   
   // Auto-request permissions if enabled
   useEffect(() => {
@@ -292,7 +349,10 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
   
   const reset = useCallback(() => {
     setState({
-      hasPermission: permission?.granted ?? null,
+      hasPermission: cameraPermission?.granted ?? null,
+      hasMicrophonePermission: microphonePermission?.granted ?? null,
+      hasMediaLibraryPermission: mediaLibraryPermission?.granted ?? null,
+      hasAllPermissions: (cameraPermission?.granted && microphonePermission?.granted && mediaLibraryPermission?.granted) ?? false,
       isReady: false,
       isActive: true,
       facing: opts.initialFacing,
@@ -300,18 +360,160 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
       zoom: 0,
       error: null,
       isRequestingPermission: false,
+      isRecording: false,
+      recordingUri: null,
     });
-  }, [permission, opts.initialFacing]);
+  }, [cameraPermission, microphonePermission, mediaLibraryPermission, opts.initialFacing]);
+
+  // ============================================================================
+  // VIDEO RECORDING - Industry Standard Implementation
+  // ============================================================================
+
+  /**
+   * Start video recording
+   * Requires camera and microphone permissions to be granted
+   */
+  const startRecording = useCallback(async (): Promise<void> => {
+    if (!cameraRef.current) {
+      setState(prev => ({ ...prev, error: 'Camera not ready' }));
+      opts.onError('Camera not ready');
+      return;
+    }
+
+    if (!state.hasAllPermissions) {
+      setState(prev => ({ ...prev, error: 'Permissions not granted' }));
+      opts.onError('Camera, microphone, or media library permissions not granted');
+      return;
+    }
+
+    if (isRecordingRef.current) {
+      console.warn('[useCamera] Already recording');
+      return;
+    }
+
+    try {
+      isRecordingRef.current = true;
+      setState(prev => ({ ...prev, isRecording: true, error: null, recordingUri: null }));
+
+      // Start recording - expo-camera will handle audio recording automatically
+      // when microphone permission is granted
+      const video = await cameraRef.current.recordAsync({
+        maxDuration: 3600, // 1 hour max (will be limited by app logic)
+      });
+
+      if (isMountedRef.current && video?.uri) {
+        setState(prev => ({
+          ...prev,
+          isRecording: false,
+          recordingUri: video.uri
+        }));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to start recording';
+
+      if (isMountedRef.current) {
+        setState(prev => ({
+          ...prev,
+          isRecording: false,
+          error: errorMessage
+        }));
+        opts.onError(errorMessage);
+      }
+    } finally {
+      isRecordingRef.current = false;
+    }
+  }, [state.hasAllPermissions, opts]);
+
+  /**
+   * Stop video recording
+   * Returns the URI of the recorded video, or null if no recording was in progress
+   */
+  const stopRecording = useCallback(async (): Promise<string | null> => {
+    if (!cameraRef.current) {
+      return null;
+    }
+
+    if (!isRecordingRef.current) {
+      console.warn('[useCamera] Not currently recording');
+      return null;
+    }
+
+    try {
+      cameraRef.current.stopRecording();
+
+      // Wait for recording to complete and state to update
+      return new Promise((resolve) => {
+        const checkInterval = setInterval(() => {
+          if (!isRecordingRef.current || state.recordingUri) {
+            clearInterval(checkInterval);
+            resolve(state.recordingUri);
+          }
+        }, 100);
+
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval);
+          resolve(state.recordingUri);
+        }, 5000);
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to stop recording';
+
+      if (isMountedRef.current) {
+        setState(prev => ({ ...prev, error: errorMessage }));
+        opts.onError(errorMessage);
+      }
+
+      return null;
+    }
+  }, [state.recordingUri, opts]);
+
+  /**
+   * Save recording to device media library
+   * Returns the asset URI if successful, null otherwise
+   */
+  const saveToMediaLibrary = useCallback(async (uri: string): Promise<string | null> => {
+    if (!state.hasMediaLibraryPermission) {
+      setState(prev => ({ ...prev, error: 'Media library permission not granted' }));
+      opts.onError('Media library permission not granted');
+      return null;
+    }
+
+    try {
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      return asset.uri;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save to media library';
+
+      if (isMountedRef.current) {
+        setState(prev => ({ ...prev, error: errorMessage }));
+        opts.onError(errorMessage);
+      }
+
+      return null;
+    }
+  }, [state.hasMediaLibraryPermission, opts]);
   
   // ============================================================================
-  // CLEANUP
+  // CLEANUP - Stop recording on unmount to prevent orphaned recordings
   // ============================================================================
   
   useEffect(() => {
     isMountedRef.current = true;
+    // Capture ref value for cleanup
+    const camera = cameraRef.current;
     
     return () => {
       isMountedRef.current = false;
+
+      // Stop recording if in progress when component unmounts
+      if (isRecordingRef.current && camera) {
+        try {
+          camera.stopRecording();
+        } catch {
+          // Ignore errors during cleanup
+        }
+      }
     };
   }, []);
   
@@ -331,6 +533,9 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     markReady,
     pause,
     resume,
+    startRecording,
+    stopRecording,
+    saveToMediaLibrary,
     reset,
   };
 }

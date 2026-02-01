@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -107,7 +107,7 @@ const formatDate = (date: string | Date | undefined): string => {
   }
 };
 
-export function RecentQuestionCard({
+function RecentQuestionCardComponent({
   question,
   onPress,
   style,
@@ -415,5 +415,9 @@ const styles = StyleSheet.create({
     paddingRight: SPACING.sm,
   },
 });
+
+// Memoize to prevent unnecessary re-renders in lists
+export const RecentQuestionCard = memo(RecentQuestionCardComponent);
+RecentQuestionCard.displayName = 'RecentQuestionCard';
 
 export default RecentQuestionCard;

@@ -40,6 +40,8 @@ import {
   PanResponder,
   GestureResponderEvent,
   Pressable,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -180,6 +182,8 @@ export interface VideoPlayerProps {
   onSpeedChange?: (speed: number) => void;
   /** Callback when video ends */
   onVideoEnd?: () => void;
+  /** Whether the screen containing the player is focused (for pausing on navigation) */
+  isFocused?: boolean;
   /** Test ID for testing */
   testID?: string;
 }
@@ -233,6 +237,7 @@ function VideoPlayerComponent({
   initialSpeed = 1,
   onSpeedChange,
   onVideoEnd,
+  isFocused = true,
   testID,
 }: VideoPlayerProps): React.ReactElement | null {
   const { colors } = useTheme();
@@ -389,6 +394,51 @@ function VideoPlayerComponent({
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => { });
     };
   }, [player]);
+
+  // Industry Standard: Pause video when app goes to background
+  // Following TikTok/YouTube/Instagram pattern - videos should pause when app is backgrounded
+  useEffect(() => {
+    const appStateRef = { current: AppState.currentState };
+
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      const wasActive = appStateRef.current === 'active';
+      const isActive = nextAppState === 'active';
+
+      if (wasActive && !isActive) {
+        // App going to background - pause video
+        try {
+          player?.pause();
+          setPlaybackState(PlaybackState.Paused);
+        } catch {
+          // Player may be released
+        }
+      }
+      // Note: We don't auto-resume on foreground - user should tap play
+      // This is the industry standard (TikTok/YouTube behavior)
+
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [player]);
+
+  // Industry Standard: Pause video when screen loses focus (navigation away)
+  // Following YouTube/TikTok pattern - videos should pause when navigating to another screen
+  useEffect(() => {
+    if (!isFocused && isPlaying) {
+      try {
+        player?.pause();
+        setPlaybackState(PlaybackState.Paused);
+      } catch {
+        // Player may be released
+      }
+    }
+    // Note: We don't auto-resume on focus return - user should tap play
+  }, [isFocused, isPlaying, player]);
 
   // Handle fullscreen orientation changes
   useEffect(() => {
@@ -1254,7 +1304,7 @@ const styles = StyleSheet.create({
   // Gesture indicators (volume/brightness)
   gestureIndicator: {
     position: 'absolute',
-    top: '40%',
+    top: '45%',
     alignSelf: 'center',
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.lg,
