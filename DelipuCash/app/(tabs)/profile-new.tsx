@@ -190,7 +190,7 @@ export default function ProfileScreen(): React.ReactElement {
     lastName: user?.lastName || '',
     email: user?.email || 'user@example.com',
     telephone: user?.telephone || '',
-    walletBalance: user?.walletBalance || userStats?.totalEarnings ? (userStats?.totalEarnings || 0) * 0.5 : 0,
+    walletBalance: user?.walletBalance ?? ((userStats?.totalEarnings || 0) * 0.5),
     totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
     totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
     streakDays: userStats?.currentStreak || 0,
