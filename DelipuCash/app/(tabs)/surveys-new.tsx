@@ -28,11 +28,14 @@ import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
 import {
   useAdsForPlacement,
   useBannerAds,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
 import {
+  AdPlacementWrapper,
   BetweenContentAd,
+  InFeedAd,
 } from "@/components/ads";
 import { useAuth, useAuthModal } from "@/utils/auth";
 import { useSearch } from "@/hooks/useSearch";
@@ -62,7 +65,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react-native";
-import React, { useCallback, useMemo, useState, useRef, useEffect } from "react";
+import React, { useCallback, useMemo, useState, useRef, useEffect, memo } from "react";
 import {
   Alert,
   Animated,
@@ -80,6 +83,17 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
 // ============================================================================
+// MEMOIZED COMPONENTS
+// ============================================================================
+
+/**
+ * Memoized item separator to prevent recreation on every render
+ */
+const MemoizedItemSeparator = memo(function ItemSeparator() {
+  return <View style={{ height: SPACING.md }} />;
+});
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -93,10 +107,11 @@ interface Tab {
 }
 
 interface ListItem {
-  type: 'survey' | 'ad' | 'header' | 'empty' | 'skeleton' | 'discover-section';
+  type: 'survey' | 'ad' | 'banner-ad' | 'featured-ad' | 'in-feed-ad' | 'header' | 'empty' | 'skeleton' | 'discover-section';
   data?: Survey | Ad;
   title?: string;
   key: string;
+  adVariant?: 'native' | 'banner' | 'featured' | 'in-feed';
 }
 
 // ============================================================================
@@ -159,9 +174,11 @@ export default function SurveysScreen(): React.ReactElement {
   }, [runningSurveys, auth?.user?.id]);
   const loadingMy = loadingRunning;
 
-  // Ad hooks
-  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 3);
-  const { refetch: refetchBannerAds } = useBannerAds(2);
+  // Ad hooks - TanStack Query for intelligent ad loading
+  // Following industry best practices: ads are contextually placed and non-intrusive
+  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 4);
+  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: featuredAds = [], refetch: refetchFeaturedAds } = useFeaturedAds(2);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
@@ -298,6 +315,7 @@ export default function SurveysScreen(): React.ReactElement {
     }
 
     // Insert surveys with occasional ads
+    // Industry Standard: Native ads blend with content, placed at natural break points
     currentSurveys.forEach((survey, index) => {
       items.push({
         type: 'survey',
@@ -305,19 +323,51 @@ export default function SurveysScreen(): React.ReactElement {
         key: `survey-${survey.id}`,
       });
 
-      // Insert ad every 4 surveys
+      // Insert native ad every 4 surveys
       if ((index + 1) % 4 === 0 && surveyAds[Math.floor((index + 1) / 4) - 1]) {
         const ad = surveyAds[Math.floor((index + 1) / 4) - 1];
         items.push({
           type: 'ad',
           data: ad,
           key: `ad-${ad.id}`,
+          adVariant: 'native',
+        });
+      }
+
+      // Insert in-feed ad every 8 surveys for variety
+      if ((index + 1) % 8 === 0 && bannerAds.length > 1) {
+        items.push({
+          type: 'in-feed-ad',
+          data: bannerAds[1],
+          key: `in-feed-ad-${index}`,
+          adVariant: 'in-feed',
         });
       }
     });
 
+    // Featured Ad - Premium placement for high-value ads (Industry Standard)
+    if (featuredAds.length > 0 && currentSurveys.length >= 2) {
+      items.push({
+        type: 'featured-ad',
+        data: featuredAds[0],
+        key: `featured-ad-${featuredAds[0].id}`,
+        adVariant: 'featured',
+      });
+    }
+
+    // Insert banner ad at the end if available
+    // Industry Standard: Banner ads at natural content boundaries, minimal disruption
+    if (bannerAds.length > 0 && currentSurveys.length >= 3) {
+      items.push({
+        type: 'banner-ad',
+        data: bannerAds[0],
+        key: `banner-ad-${bannerAds[0].id}`,
+        adVariant: 'banner',
+      });
+    }
+
     return items;
-  }, [currentSurveys, isLoading, surveyAds]);
+  }, [currentSurveys, isLoading, surveyAds, bannerAds, featuredAds]);
 
   // Handle tab change with animation
   const handleTabChange = useCallback((key: TabKey, index: number) => {
@@ -351,9 +401,10 @@ export default function SurveysScreen(): React.ReactElement {
       refetchSubscription(),
       refetchSurveyAds(),
       refetchBannerAds(),
+      refetchFeaturedAds(),
     ]);
     setRefreshing(false);
-  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds]);
+  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds, refetchFeaturedAds]);
 
   // Ad handlers
   const handleAdClick = useCallback((ad: Ad) => {
@@ -474,7 +525,43 @@ export default function SurveysScreen(): React.ReactElement {
             onAdClick={() => handleAdClick(ad)}
             onAdLoad={() => handleAdImpression(ad)}
             variant="native"
-            style={styles.adItem}
+            style={styles.betweenContentAd}
+          />
+        );
+
+      case 'banner-ad':
+        const bannerAd = item.data as Ad;
+        return (
+          <AdPlacementWrapper
+            ad={bannerAd}
+            placement="banner-bottom"
+            onAdClick={() => handleAdClick(bannerAd)}
+            onAdLoad={() => handleAdImpression(bannerAd)}
+            style={styles.bannerAdPlacement}
+          />
+        );
+
+      case 'featured-ad':
+        const featuredAd = item.data as Ad;
+        return (
+          <AdPlacementWrapper
+            ad={featuredAd}
+            placement="between-content"
+            onAdClick={() => handleAdClick(featuredAd)}
+            onAdLoad={() => handleAdImpression(featuredAd)}
+            style={styles.featuredAdPlacement}
+          />
+        );
+
+      case 'in-feed-ad':
+        const inFeedAd = item.data as Ad;
+        return (
+          <InFeedAd
+            ad={inFeedAd}
+            index={1}
+            onAdClick={() => handleAdClick(inFeedAd)}
+            onAdLoad={() => handleAdImpression(inFeedAd)}
+            style={styles.inFeedAd}
           />
         );
 
@@ -718,9 +805,6 @@ export default function SurveysScreen(): React.ReactElement {
   // Key extractor
   const keyExtractor = useCallback((item: ListItem) => item.key, []);
 
-  // Item separator
-  const ItemSeparator = useCallback(() => <View style={{ height: SPACING.md }} />, []);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
@@ -731,7 +815,7 @@ export default function SurveysScreen(): React.ReactElement {
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         ListHeaderComponent={ListHeader}
-        ItemSeparatorComponent={ItemSeparator}
+        ItemSeparatorComponent={MemoizedItemSeparator}
         contentContainerStyle={[
           styles.listContent,
           {
@@ -749,9 +833,10 @@ export default function SurveysScreen(): React.ReactElement {
         }
         // Performance optimizations
         removeClippedSubviews
-        maxToRenderPerBatch={10}
-        windowSize={5}
-        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={100}
+        windowSize={7}
+        initialNumToRender={4}
         getItemLayout={(_data, index) => ({
           length: 160, // Approximate item height
           offset: 160 * index,
@@ -984,9 +1069,38 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
-  // Ad item
-  adItem: {
+  // Ad Containers - Industry Standard: Non-intrusive, clearly labeled, smooth transitions
+  adContainer: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.xs,
+  },
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
+  },
+  // Featured Ad Placement - Premium positioning
+  featuredAdPlacement: {
+    marginVertical: SPACING.lg,
+  },
+  // In-feed Ad - Minimal footprint
+  inFeedAd: {
     marginVertical: SPACING.sm,
+  },
+  nativeAd: {
+    borderRadius: RADIUS.lg,
+    overflow: "hidden",
+  },
+  bannerAdContainer: {
+    marginVertical: SPACING.md,
+    alignItems: "center",
+  },
+  bannerAd: {
+    borderRadius: RADIUS.md,
+    overflow: "hidden",
+    width: "100%",
   },
 
   // Empty state

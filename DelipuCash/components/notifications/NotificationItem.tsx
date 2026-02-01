@@ -3,7 +3,7 @@
  * Card component for individual notification with swipe actions
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, memo } from 'react';
 import { StyleSheet, View, Pressable } from 'react-native';
 import Animated, { 
   FadeInDown,
@@ -312,4 +312,8 @@ export const NotificationItemComponent: React.FC<NotificationItemProps> = ({
   );
 };
 
-export default NotificationItemComponent;
+// Memoize to prevent unnecessary re-renders in lists
+export const NotificationItem = memo(NotificationItemComponent);
+NotificationItem.displayName = 'NotificationItem';
+
+export default NotificationItem;

@@ -26,7 +26,7 @@
  * - Reduced motion support via system settings
  */
 
-import React, { useCallback, useState, useMemo, useRef } from "react";
+import React, { useCallback, useState, useMemo, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -109,10 +109,17 @@ import {
 import {
   useBannerAds,
   useAdsForPlacement,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
-import { BannerAd, NativeAd } from "@/components/ads";
+import {
+  BannerAd,
+  NativeAd,
+  InFeedAd,
+  BetweenContentAd,
+  AdPlacementWrapper,
+} from "@/components/ads";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -134,6 +141,9 @@ type SectionType =
   | "explore"
   | "ad-banner"
   | "ad-native"
+  | "ad-featured"
+  | "ad-in-feed"
+  | "ad-between-content"
   | "footer-spacer";
 
 interface DashboardSection {
@@ -209,6 +219,53 @@ const AnimatedFlatList = Animated.createAnimatedComponent(
   FlatList<DashboardSection>
 );
 
+/**
+ * Memoized video item to prevent unnecessary re-renders
+ */
+const MemoizedVideoItem = memo(function VideoItem({
+  video,
+  onPress,
+}: {
+  video: any;
+  onPress: () => void;
+}) {
+  return (
+    <VideoCard
+      video={video}
+      variant="compact"
+      onPress={onPress}
+    />
+  );
+});
+
+/**
+ * Memoized survey item to prevent unnecessary re-renders
+ */
+const MemoizedSurveyItem = memo(function SurveyItem({
+  survey,
+  onPress,
+  variant,
+}: {
+  survey: any;
+  onPress: () => void;
+  variant?: "default" | "compact";
+}) {
+  return (
+    <SurveyCard
+      survey={survey}
+      variant={variant}
+      onPress={onPress}
+    />
+  );
+});
+
+/**
+ * Horizontal list separator - memoized to avoid recreation
+ */
+const HorizontalSeparator = memo(function HorizontalSeparator() {
+  return <View style={{ width: SPACING.md }} />;
+});
+
 export default function HomePage(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
@@ -247,9 +304,11 @@ export default function HomePage(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
-  // Ad hooks
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
-  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement("home", 2);
+  // Ad hooks - TanStack Query for intelligent ad loading
+  // Following industry best practices: ads are contextually placed and non-intrusive
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement("home", 4);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
@@ -272,7 +331,7 @@ export default function HomePage(): React.ReactElement {
       { id: "wallet-stats", type: "wallet-stats" },
     ];
 
-    // Add banner ad after stats
+    // Smart Banner Ad - Non-intrusive placement after stats (Industry Standard)
     if (bannerAds && bannerAds.length > 0) {
       sectionsList.push({ id: "ad-banner", type: "ad-banner", data: bannerAds[0] });
     }
@@ -287,7 +346,7 @@ export default function HomePage(): React.ReactElement {
       sectionsList.push({ id: "earning-opportunities", type: "earning-opportunities" });
     }
 
-    // Native ad
+    // In-Feed Native Ad - Blends with content between sections (Industry Standard)
     if (homeAds && homeAds.length > 0) {
       sectionsList.push({ id: "ad-native", type: "ad-native", data: homeAds[0] });
     }
@@ -297,13 +356,28 @@ export default function HomePage(): React.ReactElement {
       sectionsList.push({ id: "running-surveys", type: "running-surveys" });
     }
 
+    // Featured Ad - Premium placement for high-value ads (Industry Standard)
+    if (featuredAds && featuredAds.length > 0) {
+      sectionsList.push({ id: "ad-featured", type: "ad-featured", data: featuredAds[0] });
+    }
+
     // Upcoming surveys
     if (!upcomingSurveysLoading) {
       sectionsList.push({ id: "upcoming-surveys", type: "upcoming-surveys" });
     }
 
+    // Compact In-Feed Ad - Minimal footprint before statistics (Industry Standard)
+    if (bannerAds && bannerAds.length > 1) {
+      sectionsList.push({ id: "ad-in-feed", type: "ad-in-feed", data: bannerAds[1] });
+    }
+
     // Statistics
     sectionsList.push({ id: "statistics", type: "statistics" });
+
+    // Between Content Ad - Natural content boundary placement
+    if (homeAds && homeAds.length > 1) {
+      sectionsList.push({ id: "ad-between-content", type: "ad-between-content", data: homeAds[1] });
+    }
 
     // Explore section
     sectionsList.push({ id: "explore", type: "explore" });
@@ -315,6 +389,7 @@ export default function HomePage(): React.ReactElement {
   }, [
     bannerAds,
     homeAds,
+    featuredAds,
     trendingVideos,
     videosLoading,
     recentQuestions,
@@ -356,6 +431,7 @@ export default function HomePage(): React.ReactElement {
       refetchStats(),
       refetchBannerAds(),
       refetchHomeAds(),
+      refetchFeaturedAds(),
     ]);
     
     setRefreshing(false);
@@ -365,7 +441,7 @@ export default function HomePage(): React.ReactElement {
   }, [
     refetch, refetchVideos, refetchQuestions, refetchRunningSurveys,
     refetchUpcomingSurveys, refetchDailyReward, refetchStats,
-    refetchBannerAds, refetchHomeAds,
+    refetchBannerAds, refetchHomeAds, refetchFeaturedAds,
   ]);
 
   // Claim daily reward handler
@@ -400,12 +476,12 @@ export default function HomePage(): React.ReactElement {
 
   const handleWatchVideo = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push("/(tabs)/videos");
+    router.push("/(tabs)/videos-new");
   }, []);
 
   const handleTakeSurvey = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push("/(tabs)/surveys");
+    router.push("/(tabs)/surveys-new");
   }, []);
 
   const handleSearch = useCallback((query: string) => {
@@ -491,14 +567,14 @@ export default function HomePage(): React.ReactElement {
     
     switch (opportunity.type) {
       case "video":
-        router.push("/(tabs)/videos");
+        router.push("/(tabs)/videos-new");
         break;
       case "question":
         const questionId = opportunity.id.replace("question-", "");
         router.push(`/question/${questionId}` as Href);
         break;
       case "survey":
-        router.push("/(tabs)/surveys");
+        router.push("/(tabs)/surveys-new");
         break;
       case "instant-reward":
         router.push("/instant-reward-questions");
@@ -678,22 +754,25 @@ export default function HomePage(): React.ReactElement {
               <Section
                 title="Trending Videos"
                 icon="play-circle"
-                seeAllAction={() => router.push("/(tabs)/videos")}
+                seeAllAction={() => router.push("/(tabs)/videos-new")}
               >
                 <FlatList
                   horizontal
                   data={trendingVideos}
                   keyExtractor={(video) => video.id}
                   renderItem={({ item: video }) => (
-                    <VideoCard
+                    <MemoizedVideoItem
                       video={video}
-                      variant="compact"
-                      onPress={() => router.push("/(tabs)/videos")}
+                      onPress={() => router.push("/(tabs)/videos-new")}
                     />
                   )}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
-                  ItemSeparatorComponent={() => <View style={{ width: SPACING.md }} />}
+                  ItemSeparatorComponent={HorizontalSeparator}
+                  removeClippedSubviews
+                  maxToRenderPerBatch={4}
+                  windowSize={5}
+                  initialNumToRender={3}
                 />
               </Section>
             </View>
@@ -742,13 +821,64 @@ export default function HomePage(): React.ReactElement {
             </Animated.View>
           );
 
+        case "ad-featured":
+          if (!item.data) return null;
+          return (
+            <Animated.View
+              entering={FadeIn.delay(100).duration(300)}
+              style={[styles.sectionContainer, styles.adContainer]}
+            >
+              <AdPlacementWrapper
+                ad={item.data}
+                placement="between-content"
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(item.data)}
+                style={styles.featuredAdPlacement}
+              />
+            </Animated.View>
+          );
+
+        case "ad-in-feed":
+          if (!item.data) return null;
+          return (
+            <Animated.View
+              entering={FadeIn.delay(100).duration(300)}
+              style={[styles.sectionContainer, styles.adContainer]}
+            >
+              <InFeedAd
+                ad={item.data}
+                index={1}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(item.data)}
+                style={styles.inFeedAd}
+              />
+            </Animated.View>
+          );
+
+        case "ad-between-content":
+          if (!item.data) return null;
+          return (
+            <Animated.View
+              entering={FadeIn.delay(100).duration(300)}
+              style={[styles.sectionContainer, styles.adContainer]}
+            >
+              <BetweenContentAd
+                ad={item.data}
+                onAdClick={handleAdClick}
+                onAdLoad={() => handleAdImpression(item.data)}
+                variant="native"
+                style={styles.betweenContentAd}
+              />
+            </Animated.View>
+          );
+
         case "running-surveys":
           return (
             <View style={styles.sectionContainer}>
               <Section
                 title="Live Surveys"
                 icon="clipboard-text"
-                seeAllAction={() => router.push("/(tabs)/surveys")}
+                seeAllAction={() => router.push("/(tabs)/surveys-new")}
               >
                 <View style={styles.surveyStatusHeader}>
                   <View style={[styles.statusDot, { backgroundColor: colors.success }]} />
@@ -766,14 +896,18 @@ export default function HomePage(): React.ReactElement {
                     data={runningSurveys.slice(0, 4)}
                     keyExtractor={(survey) => survey.id}
                     renderItem={({ item: survey }) => (
-                      <SurveyCard
+                      <MemoizedSurveyItem
                         survey={survey}
                         onPress={() => router.push(`/survey/${survey.id}` as Href)}
                       />
                     )}
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.horizontalList}
-                    ItemSeparatorComponent={() => <View style={{ width: SPACING.md }} />}
+                    ItemSeparatorComponent={HorizontalSeparator}
+                    removeClippedSubviews
+                    maxToRenderPerBatch={3}
+                    windowSize={5}
+                    initialNumToRender={2}
                   />
                 ) : (
                   <View style={[styles.emptyState, { backgroundColor: colors.elevated }]}>
@@ -803,7 +937,7 @@ export default function HomePage(): React.ReactElement {
               <Section
                 title="Coming Soon"
                 icon="clipboard-clock"
-                seeAllAction={() => router.push("/(tabs)/surveys")}
+                seeAllAction={() => router.push("/(tabs)/surveys-new")}
               >
                 <View style={styles.surveyStatusHeader}>
                   <Clock size={12} color={colors.warning} />
@@ -820,7 +954,7 @@ export default function HomePage(): React.ReactElement {
                   data={upcomingSurveys.slice(0, 4)}
                   keyExtractor={(survey) => survey.id}
                   renderItem={({ item: survey }) => (
-                    <SurveyCard
+                    <MemoizedSurveyItem
                       survey={survey}
                       variant="compact"
                       onPress={() => router.push(`/survey/${survey.id}` as Href)}
@@ -828,7 +962,11 @@ export default function HomePage(): React.ReactElement {
                   )}
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.horizontalList}
-                  ItemSeparatorComponent={() => <View style={{ width: SPACING.md }} />}
+                  ItemSeparatorComponent={HorizontalSeparator}
+                  removeClippedSubviews
+                  maxToRenderPerBatch={3}
+                  windowSize={5}
+                  initialNumToRender={2}
                 />
               </Section>
             </View>
@@ -1000,10 +1138,14 @@ export default function HomePage(): React.ReactElement {
         }
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={Platform.OS === "android"}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={50}
-        windowSize={10}
-        initialNumToRender={6}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={100}
+        windowSize={7}
+        initialNumToRender={4}
+        // Performance optimizations
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+        }}
         // Accessibility
         accessibilityLabel="Dashboard"
         accessibilityRole="scrollbar"
@@ -1189,9 +1331,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
 
-  // Ads
+  // Ad Containers - Industry Standard: Non-intrusive, clearly labeled, smooth transitions
   adContainer: {
-    marginVertical: SPACING.xs,
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.xs,
   },
   bannerAd: {
     borderRadius: RADIUS.lg,
@@ -1200,5 +1343,27 @@ const styles = StyleSheet.create({
   nativeAd: {
     borderRadius: RADIUS.lg,
     overflow: "hidden",
+  },
+  // In-feed Ad - Minimal footprint
+  inFeedAd: {
+    marginVertical: SPACING.sm,
+  },
+  // Between content Ad - Natural content boundaries
+  betweenContentAd: {
+    marginVertical: SPACING.lg,
+    marginHorizontal: -SPACING.sm,
+  },
+  // Banner Ad Placement
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
+  },
+  // Featured Ad Placement - Premium positioning
+  featuredAdPlacement: {
+    marginVertical: SPACING.lg,
+  },
+  // Banner Ad Container
+  bannerAdContainer: {
+    marginVertical: SPACING.md,
+    alignItems: "center",
   },
 });

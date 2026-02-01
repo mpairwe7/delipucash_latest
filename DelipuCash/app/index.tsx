@@ -28,7 +28,6 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   HelpCircle,
-  PlayCircle,
   ClipboardCheck,
   Coins,
   ChevronRight,
@@ -58,13 +57,6 @@ const FEATURES: FeatureItem[] = [
     description: "Earn 10-50 pts each",
     color: "#6C63FF",
     accessibilityLabel: "Answer questions and earn 10 to 50 points each",
-  },
-  {
-    icon: PlayCircle,
-    title: "Watch Videos",
-    description: "Earn while you watch",
-    color: "#FF6B6B",
-    accessibilityLabel: "Watch videos and earn rewards while you watch",
   },
   {
     icon: ClipboardCheck,
@@ -236,27 +228,28 @@ const PrimaryCTAButton = React.memo(function PrimaryCTAButton({
   return (
     <Animated.View
       entering={FadeInUp.delay(900).springify().damping(12)}
-      style={buttonStyle}
     >
-      <Pressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[styles.primaryButton, { backgroundColor: colors.primary }]}
-        accessibilityRole="button"
-        accessibilityLabel="Get Started Free"
-        accessibilityHint="Create a free account and start earning rewards immediately"
-      >
-        <Sparkles size={18} color="#FFFFFF" strokeWidth={2} style={{ marginRight: 8 }} />
-        <Text
-          style={styles.primaryButtonText}
-          allowFontScaling
-          maxFontSizeMultiplier={1.2}
+      <Animated.View style={buttonStyle}>
+        <Pressable
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+          accessibilityRole="button"
+          accessibilityLabel="Get Started Free"
+          accessibilityHint="Create a free account and start earning rewards immediately"
         >
-          Get Started — Free
-        </Text>
-        <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
-      </Pressable>
+          <Sparkles size={18} color="#FFFFFF" strokeWidth={2} style={{ marginRight: 8 }} />
+          <Text
+            style={styles.primaryButtonText}
+            allowFontScaling
+            maxFontSizeMultiplier={1.2}
+          >
+            Get Started — Free
+          </Text>
+          <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+        </Pressable>
+      </Animated.View>
     </Animated.View>
   );
 });

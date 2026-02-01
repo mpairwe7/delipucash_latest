@@ -92,6 +92,8 @@ export interface SmartAdPlacementResult {
   shouldShowAd: boolean;
   /** Whether ad can be shown (passes all checks) */
   canShowAd: boolean;
+  /** Whether eligibility check is complete */
+  isReady: boolean;
   /** Reason why ad cannot be shown */
   blockedReason: string | null;
   /** Track impression when ad is viewed */
@@ -207,7 +209,8 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
 
   // ========== STATE ==========
   const [canShowAd, setCanShowAd] = useState(false);
-  const [blockedReason, setBlockedReason] = useState<string | null>(null);
+  const [blockedReason, setBlockedReason] = useState<string | null>('initializing');
+  const [isReady, setIsReady] = useState(false);
   const [isViewable, setIsViewable] = useState(false);
   const [viewabilityPercent, setViewabilityPercent] = useState(0);
   const [currentViewabilityTime, setCurrentViewabilityTime] = useState(0);
@@ -264,6 +267,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (forceShow) {
         setCanShowAd(true);
         setBlockedReason(null);
+        setIsReady(true);
         return;
       }
 
@@ -272,6 +276,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (!frequencyAllowed) {
         setCanShowAd(false);
         setBlockedReason('frequency_cap');
+        setIsReady(true);
         return;
       }
 
@@ -280,6 +285,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (isFatigued) {
         setCanShowAd(false);
         setBlockedReason('user_fatigue');
+        setIsReady(true);
         return;
       }
 
@@ -289,6 +295,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (adsInContext >= contextConfig.maxAds) {
         setCanShowAd(false);
         setBlockedReason('context_limit');
+        setIsReady(true);
         return;
       }
 
@@ -296,12 +303,14 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (lastAdTime > 0 && timeSinceLastAd < contextConfig.minInterval) {
         setCanShowAd(false);
         setBlockedReason('context_interval');
+        setIsReady(true);
         return;
       }
 
       // All checks passed
       setCanShowAd(true);
       setBlockedReason(null);
+      setIsReady(true);
     }
 
     checkEligibility();
@@ -445,6 +454,8 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
   }, [adId, viewabilityThreshold, startViewabilityTracking, stopViewabilityTracking]);
 
   const refresh = useCallback(() => {
+    setIsReady(false);
+    setBlockedReason('initializing');
     setRefreshKey(k => k + 1);
   }, []);
 
@@ -463,6 +474,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
   return {
     shouldShowAd,
     canShowAd,
+    isReady,
     blockedReason,
     trackImpression,
     trackClick,

@@ -182,6 +182,8 @@ export interface VideoPlayerProps {
   onSpeedChange?: (speed: number) => void;
   /** Callback when video ends */
   onVideoEnd?: () => void;
+  /** Whether the screen containing the player is focused (for pausing on navigation) */
+  isFocused?: boolean;
   /** Test ID for testing */
   testID?: string;
 }
@@ -235,6 +237,7 @@ function VideoPlayerComponent({
   initialSpeed = 1,
   onSpeedChange,
   onVideoEnd,
+  isFocused = true,
   testID,
 }: VideoPlayerProps): React.ReactElement | null {
   const { colors } = useTheme();
@@ -422,6 +425,20 @@ function VideoPlayerComponent({
       subscription.remove();
     };
   }, [player]);
+
+  // Industry Standard: Pause video when screen loses focus (navigation away)
+  // Following YouTube/TikTok pattern - videos should pause when navigating to another screen
+  useEffect(() => {
+    if (!isFocused && isPlaying) {
+      try {
+        player?.pause();
+        setPlaybackState(PlaybackState.Paused);
+      } catch {
+        // Player may be released
+      }
+    }
+    // Note: We don't auto-resume on focus return - user should tap play
+  }, [isFocused, isPlaying, player]);
 
   // Handle fullscreen orientation changes
   useEffect(() => {

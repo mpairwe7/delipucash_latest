@@ -709,10 +709,15 @@ const AdPlacementWrapperComponent: React.FC<AdPlacementWrapperProps> = ({
   if (!ad && (!ads || ads.length === 0)) return null;
   if (!visible) return null;
 
+  // Wait for eligibility check to complete
+  if (!smartPlacement.isReady) return null;
+
   // Check frequency cap (unless bypassed)
   if (!bypassFrequencyCap && !smartPlacement.canShowAd) {
-    // Log blocked reason for analytics
-    console.log(`[AdPlacement] Blocked: ${smartPlacement.blockedReason} for ad ${ad?.id}`);
+    // Log blocked reason for analytics (only if not initializing)
+    if (smartPlacement.blockedReason !== 'initializing') {
+      console.log(`[AdPlacement] Blocked: ${smartPlacement.blockedReason} for ad ${ad?.id}`);
+    }
     return null;
   }
 

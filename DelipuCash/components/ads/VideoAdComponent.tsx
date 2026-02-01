@@ -16,6 +16,8 @@ import {
   ActivityIndicator,
   Pressable,
   AccessibilityInfo,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -111,6 +113,8 @@ interface VideoAdComponentProps {
   aspectRatio?: number;
   maxHeight?: number;
   variant?: 'default' | 'minimal' | 'fullscreen' | 'inline';
+  /** Whether the ad is currently visible (for pausing when scrolled away or screen changes) */
+  isVisible?: boolean;
   style?: any;
 }
 
@@ -179,6 +183,7 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
   aspectRatio = 16 / 9,
   maxHeight = 300,
   variant = 'default',
+  isVisible = true,
   style,
 }) => {
   // ========== STATE (called unconditionally) ==========
@@ -295,6 +300,49 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
       playingSubscription.remove();
     };
   }, [videoPlayer, onAdLoad, onAdError, isValidAd]);
+
+  // Handle visibility changes (pause when scrolled off screen or screen loses focus)
+  // Industry standard: videos should pause when not visible to save resources and avoid sound overlap
+  useEffect(() => {
+    if (!isVisible && isPlaying && videoPlayer) {
+      try {
+        videoPlayer.pause();
+        setIsPlaying(false);
+      } catch {
+        // Player may be released
+      }
+    }
+  }, [isVisible, isPlaying, videoPlayer]);
+
+  // Industry Standard: Pause video when app goes to background
+  // Following TikTok/YouTube/Instagram pattern - videos should pause when app is backgrounded
+  useEffect(() => {
+    const appStateRef = { current: AppState.currentState };
+
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      const wasActive = appStateRef.current === 'active';
+      const isActive = nextAppState === 'active';
+
+      if (wasActive && !isActive && videoPlayer) {
+        // App going to background - pause video
+        try {
+          videoPlayer.pause();
+          setIsPlaying(false);
+        } catch {
+          // Player may be released
+        }
+      }
+      // Note: We don't auto-resume on foreground - user should tap play
+
+      appStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [videoPlayer]);
 
   // Progress tracking
   useEffect(() => {

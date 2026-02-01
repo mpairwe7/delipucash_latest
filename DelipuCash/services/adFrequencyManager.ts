@@ -39,7 +39,22 @@ export type AdPlacementType =
   | 'video'
   | 'story'
   | 'pre-roll'
-  | 'mid-roll';
+  | 'mid-roll'
+  | 'question'
+  | 'survey'
+  | 'home'
+  | 'banner-top'
+  | 'banner-bottom'
+  | 'between-content'
+  | 'featured'
+  | 'in-feed'
+  // Underscore variants (used by some components)
+  | 'pre_roll'
+  | 'mid_roll'
+  | 'banner_top'
+  | 'banner_bottom'
+  | 'between_content'
+  | 'in_feed';
 
 export interface FrequencyRule {
   /** Maximum impressions per time window */
@@ -154,6 +169,78 @@ const DEFAULT_FREQUENCY_CONFIG: FrequencyConfig = {
       maxImpressions: 3,
       windowMs: 60 * 60 * 1000,
       cooldownMs: 5 * 60 * 1000, // 5 minutes
+    },
+    // Context-specific placements
+    question: {
+      maxImpressions: 12,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 20 * 1000, // 20 seconds
+    },
+    survey: {
+      maxImpressions: 12,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 20 * 1000, // 20 seconds
+    },
+    home: {
+      maxImpressions: 15,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 15 * 1000, // 15 seconds
+    },
+    'banner-top': {
+      maxImpressions: 20,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 10 * 1000, // 10 seconds
+    },
+    'banner-bottom': {
+      maxImpressions: 20,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 10 * 1000, // 10 seconds
+    },
+    'between-content': {
+      maxImpressions: 10,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 30 * 1000, // 30 seconds
+    },
+    featured: {
+      maxImpressions: 8,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 45 * 1000, // 45 seconds
+    },
+    'in-feed': {
+      maxImpressions: 15,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 20 * 1000, // 20 seconds
+    },
+    // Underscore variants (aliases for components that convert hyphens to underscores)
+    pre_roll: {
+      maxImpressions: 4,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 3 * 60 * 1000,
+    },
+    mid_roll: {
+      maxImpressions: 3,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 5 * 60 * 1000,
+    },
+    banner_top: {
+      maxImpressions: 20,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 10 * 1000,
+    },
+    banner_bottom: {
+      maxImpressions: 20,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 10 * 1000,
+    },
+    between_content: {
+      maxImpressions: 10,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 30 * 1000,
+    },
+    in_feed: {
+      maxImpressions: 15,
+      windowMs: 60 * 60 * 1000,
+      cooldownMs: 20 * 1000,
     },
   },
   userFatigue: {
@@ -272,6 +359,18 @@ class AdFrequencyManagerClass {
     const now = Date.now();
     const rule = this.config.placements[placement];
 
+    // Safety check: if placement rule doesn't exist, use default feed rule or allow
+    if (!rule) {
+      console.warn(`[AdFrequencyManager] No rule defined for placement: ${placement}, using default`);
+      // Fall back to feed rule or return true if no rules defined
+      const fallbackRule = this.config.placements.feed;
+      if (!fallbackRule) return true;
+    }
+
+    // Use rule or fallback to feed
+    const activeRule = rule || this.config.placements.feed;
+    if (!activeRule) return true;
+
     // 1. Check global session limit
     if (this.state.sessionAdCount >= this.config.global.maxAdsPerSession) {
       console.log('[AdFrequencyManager] Session limit reached');
@@ -290,20 +389,20 @@ class AdFrequencyManagerClass {
 
     // 3. Check placement-specific limits
     const placementImpressions = this.state.impressions.filter(
-      (imp) => imp.placement === placement && imp.timestamp > now - rule.windowMs
+      (imp) => imp.placement === placement && imp.timestamp > now - activeRule.windowMs
     );
-    if (placementImpressions.length >= rule.maxImpressions) {
+    if (placementImpressions.length >= activeRule.maxImpressions) {
       console.log(`[AdFrequencyManager] Placement limit reached for ${placement}`);
       return false;
     }
 
     // 4. Check cooldown
-    if (rule.cooldownMs) {
+    if (activeRule.cooldownMs) {
       const lastImpression = this.state.impressions
         .filter((imp) => imp.placement === placement)
         .sort((a, b) => b.timestamp - a.timestamp)[0];
 
-      if (lastImpression && now - lastImpression.timestamp < rule.cooldownMs) {
+      if (lastImpression && now - lastImpression.timestamp < activeRule.cooldownMs) {
         console.log(`[AdFrequencyManager] Cooldown active for ${placement}`);
         return false;
       }
@@ -373,7 +472,8 @@ class AdFrequencyManagerClass {
     const now = Date.now();
     const rule = this.config.placements[placement];
 
-    if (!rule.cooldownMs) return 0;
+    // Safety check: if no rule defined, return 0 (allow immediately)
+    if (!rule || !rule.cooldownMs) return 0;
 
     const lastImpression = this.state.impressions
       .filter((imp) => imp.placement === placement)

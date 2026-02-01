@@ -109,6 +109,7 @@ import {
 import {
   InFeedAd,
   BetweenContentAd,
+  AdPlacementWrapper,
 } from "@/components/ads";
 
 // Hooks & Services
@@ -128,6 +129,7 @@ import {
 import {
   useAdsForPlacement,
   useBannerAds,
+  useFeaturedAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
@@ -229,7 +231,8 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Ads - Multiple ad placements following industry standards
   const { data: feedAds, refetch: refetchFeedAds } = useAdsForPlacement("question", 5);
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
@@ -345,9 +348,9 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     triggerHaptic("light");
-    await Promise.all([refetchFeed(), refetchUserStats(), refetchFeedAds(), refetchBannerAds()]);
+    await Promise.all([refetchFeed(), refetchUserStats(), refetchFeedAds(), refetchBannerAds(), refetchFeaturedAds()]);
     setRefreshing(false);
-  }, [refetchFeed, refetchUserStats, refetchFeedAds, refetchBannerAds]);
+  }, [refetchFeed, refetchUserStats, refetchFeedAds, refetchBannerAds, refetchFeaturedAds]);
 
   const handleTabChange = useCallback((tabId: string) => {
     setSelectedTab(tabId as FeedTabId);
@@ -505,6 +508,17 @@ export default function QuestionsScreen(): React.ReactElement {
         />
       </View>
 
+      {/* Smart Banner Ad - Non-intrusive placement after stats (Industry Standard) */}
+      {bannerAds && bannerAds.length > 0 && (
+        <AdPlacementWrapper
+          ad={bannerAds[0]}
+          placement="banner-top"
+          onAdClick={handleAdClick}
+          onAdLoad={() => handleAdImpression(bannerAds[0])}
+          style={styles.bannerAdPlacement}
+        />
+      )}
+
       {/* Answer & Earn CTA - For reward questions */}
       <Pressable
         style={[styles.earnCta, { backgroundColor: colors.card }]}
@@ -564,6 +578,17 @@ export default function QuestionsScreen(): React.ReactElement {
         <Zap size={20} color={colors.warning} strokeWidth={2} />
       </Pressable>
 
+      {/* In-Feed Native Ad - Blends with content between sections (Industry Standard) */}
+      {feedAds && feedAds.length > 0 && (
+        <BetweenContentAd
+          ad={feedAds[0]}
+          onAdClick={handleAdClick}
+          onAdLoad={() => handleAdImpression(feedAds[0])}
+          variant="native"
+          style={styles.betweenContentAd}
+        />
+      )}
+
       {/* Ask Questions CTA - Collaboration focused (Quora/Stack Overflow style) */}
       <Pressable
         style={[styles.askQuestionsCta, { backgroundColor: colors.card }]}
@@ -614,14 +639,25 @@ export default function QuestionsScreen(): React.ReactElement {
         onPress={() => console.log("View full leaderboard")}
       />
 
-      {/* Native Ad between gamification and feed - Industry Standard placement */}
-      {bannerAds && bannerAds.length > 0 && (
-        <BetweenContentAd
-          ad={bannerAds[0]}
+      {/* Featured Ad - Premium placement for high-value ads (Industry Standard) */}
+      {featuredAds && featuredAds.length > 0 && (
+        <AdPlacementWrapper
+          ad={featuredAds[0]}
+          placement="between-content"
           onAdClick={handleAdClick}
-          onAdLoad={() => handleAdImpression(bannerAds[0])}
-          variant="native"
-          style={styles.betweenContentAd}
+          onAdLoad={() => handleAdImpression(featuredAds[0])}
+          style={styles.featuredAdPlacement}
+        />
+      )}
+
+      {/* Compact Ad - Minimal footprint before feed tabs (Industry Standard) */}
+      {bannerAds && bannerAds.length > 1 && (
+        <InFeedAd
+          ad={bannerAds[1]}
+          index={1}
+          onAdClick={handleAdClick}
+          onAdLoad={() => handleAdImpression(bannerAds[1])}
+          style={styles.inFeedAd}
         />
       )}
 
@@ -660,7 +696,7 @@ export default function QuestionsScreen(): React.ReactElement {
   ), [
     isLoading, userStats, colors, selectedTab, handleTabChange, handleQuizStart,
     isSearching, searchQuery, searchResults, hasNoResults, setSearchQuery,
-    bannerAds, handleAdClick, handleAdImpression, setShowCreateWizard,
+    bannerAds, feedAds, featuredAds, handleAdClick, handleAdImpression, setShowCreateWizard,
     leaderboard, feedStats,
   ]);
 
@@ -809,10 +845,10 @@ export default function QuestionsScreen(): React.ReactElement {
         }
         // Performance optimizations
         removeClippedSubviews={true}
-        maxToRenderPerBatch={10}
-        windowSize={11}
-        initialNumToRender={7}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={5}
+        windowSize={7}
+        initialNumToRender={4}
+        updateCellsBatchingPeriod={100}
         getItemLayout={getItemLayout}
         // Viewability tracking - use stable callback pairs
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
@@ -1055,6 +1091,16 @@ const styles = StyleSheet.create({
   betweenContentAd: {
     marginTop: SPACING.md,
     marginBottom: SPACING.sm,
+  },
+
+  // Banner Ad Placement
+  bannerAdPlacement: {
+    marginVertical: SPACING.md,
+  },
+
+  // Featured Ad Placement - Premium positioning
+  featuredAdPlacement: {
+    marginVertical: SPACING.lg,
   },
 
   // Instant Reward Questions Card

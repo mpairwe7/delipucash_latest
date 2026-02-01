@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback } from "react";
+import React, { useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -115,7 +115,7 @@ const formatTimeAgo = (dateString: string): string => {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
-export function QuestionCard({
+function QuestionCardComponent({
   question,
   onPress,
   style,
@@ -356,5 +356,9 @@ const styles = StyleSheet.create({
     marginLeft: "auto",
   },
 });
+
+// Memoize to prevent unnecessary re-renders in lists
+export const QuestionCard = memo(QuestionCardComponent);
+QuestionCard.displayName = 'QuestionCard';
 
 export default QuestionCard;

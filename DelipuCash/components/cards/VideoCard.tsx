@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, memo } from "react";
 import {
   View,
   Text,
@@ -103,7 +103,7 @@ const SPRING_CONFIG = {
   mass: 0.5,
 };
 
-export function VideoCard({
+function VideoCardComponent({
   video,
   onPress,
   style,
@@ -544,5 +544,9 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
 });
+
+// Memoize to prevent unnecessary re-renders in lists
+export const VideoCard = memo(VideoCardComponent);
+VideoCard.displayName = 'VideoCard';
 
 export default VideoCard;

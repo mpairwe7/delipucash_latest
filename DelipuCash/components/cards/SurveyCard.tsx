@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, memo } from 'react';
 import {
   View,
   Text,
@@ -72,7 +72,7 @@ export interface SurveyCardProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function SurveyCard({
+function SurveyCardComponent({
   survey,
   onPress,
   style,
@@ -463,5 +463,9 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });
+
+// Memoize to prevent unnecessary re-renders in lists
+export const SurveyCard = memo(SurveyCardComponent);
+SurveyCard.displayName = 'SurveyCard';
 
 export default SurveyCard;

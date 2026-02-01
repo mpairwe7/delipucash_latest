@@ -246,152 +246,153 @@ export const TransactionsCard = memo(function TransactionsCard({
   return (
     <Animated.View
       entering={FadeInDown.delay(150).duration(400).springify()}
-      style={[cardAnimatedStyle]}
       testID={testID}
     >
-      <AnimatedTouchable
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        onPress={handlePress}
-        activeOpacity={0.95}
-        style={[styles.container, { backgroundColor: colors.card }, SHADOWS.md]}
-        accessibilityRole="button"
-        accessibilityLabel={`View transactions. Total earned ${formatCurrency(totalEarned)}. Current streak ${currentStreak} days.`}
-        accessibilityHint="Opens transaction history"
-      >
-        {/* Header with Title and Arrow */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <View style={[styles.iconContainer, { backgroundColor: withAlpha(colors.success, 0.1) }]}>
-              <TrendingUp size={ICON_SIZE.lg} color={colors.success} strokeWidth={2} />
-            </View>
-            <View>
-              <AccessibleText variant="h4" headingLevel={3}>
-                Activity & Earnings
-              </AccessibleText>
-              <AccessibleText variant="caption" color="textMuted">
-                Your transaction history
-              </AccessibleText>
-            </View>
-          </View>
-          <ChevronRight size={ICON_SIZE.lg} color={colors.textMuted} />
-        </View>
-
-        {/* Stats Row - Earned and Streak */}
-        <View style={styles.statsRow}>
-          {/* Total Earned */}
-          <View style={[styles.statCard, { backgroundColor: withAlpha(colors.success, 0.08) }]}>
-            <LinearGradient
-              colors={[withAlpha(colors.success, 0.15), 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.statGradient}
-            />
-            <View style={styles.statHeader}>
-              <Zap size={16} color={colors.success} strokeWidth={2} />
-              <AccessibleText variant="caption" color="textMuted">
-                Total Earned
-              </AccessibleText>
-            </View>
-            <AccessibleText
-              variant="h2"
-              bold
-              color="success"
-              style={styles.statValue}
-              accessibilityLabel={`Total earned: ${formatCurrency(totalEarned)}`}
-            >
-              {formatCurrency(totalEarned, isSmallScreen)}
-            </AccessibleText>
-            <AccessibleText variant="caption" color="success" style={styles.statSubtext}>
-              Lifetime earnings
-            </AccessibleText>
-          </View>
-
-          {/* Current Streak */}
-          <TouchableOpacity
-            onPress={handleStreakPress}
-            activeOpacity={0.8}
-            style={[styles.statCard, { backgroundColor: withAlpha(colors.warning, 0.08) }]}
-            accessibilityRole="button"
-            accessibilityLabel={`Current streak: ${currentStreak} days. Progress toward ${maxStreak} day goal.`}
-            accessibilityHint="View streak details"
-          >
-            <LinearGradient
-              colors={[withAlpha(colors.warning, 0.15), 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.statGradient}
-            />
-            <View style={styles.streakHeader}>
-              <Animated.View style={flameAnimatedStyle}>
-                <ProgressRing
-                  progress={streakProgress}
-                  size={48}
-                  strokeWidth={4}
-                  color={colors.warning}
-                  gradientEndColor={colors.error}
-                >
-                  <Flame size={18} color={colors.warning} strokeWidth={2} />
-                </ProgressRing>
-              </Animated.View>
-              <View style={styles.streakContent}>
-                <AccessibleText variant="h2" bold color="warning">
-                  {currentStreak}
+      <Animated.View style={[cardAnimatedStyle]}>
+        <AnimatedTouchable
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          onPress={handlePress}
+          activeOpacity={0.95}
+          style={[styles.container, { backgroundColor: colors.card }, SHADOWS.md]}
+          accessibilityRole="button"
+          accessibilityLabel={`View transactions. Total earned ${formatCurrency(totalEarned)}. Current streak ${currentStreak} days.`}
+          accessibilityHint="Opens transaction history"
+        >
+          {/* Header with Title and Arrow */}
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <View style={[styles.iconContainer, { backgroundColor: withAlpha(colors.success, 0.1) }]}>
+                <TrendingUp size={ICON_SIZE.lg} color={colors.success} strokeWidth={2} />
+              </View>
+              <View>
+                <AccessibleText variant="h4" headingLevel={3}>
+                  Activity & Earnings
                 </AccessibleText>
                 <AccessibleText variant="caption" color="textMuted">
-                  day streak
+                  Your transaction history
                 </AccessibleText>
               </View>
             </View>
-            <View style={styles.streakProgress}>
-              <View style={[styles.progressBar, { backgroundColor: withAlpha(colors.warning, 0.2) }]}>
-                <Animated.View
-                  entering={FadeIn.delay(300).duration(500)}
-                  style={[
-                    styles.progressFill,
-                    { 
-                      backgroundColor: colors.warning,
-                      width: `${streakProgress * 100}%`,
-                    },
-                  ]}
-                />
-              </View>
-              <AccessibleText variant="caption" color="textMuted">
-                {maxStreak - currentStreak} days to goal
-              </AccessibleText>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Recent Transactions */}
-        {displayTransactions.length > 0 && (
-          <View style={styles.transactionsSection}>
-            <View style={styles.transactionsHeader}>
-              <AccessibleText variant="label" color="textMuted">
-                Recent Activity
-              </AccessibleText>
-              <Clock size={14} color={colors.textMuted} />
-            </View>
-            <View style={styles.transactionsList}>
-              {displayTransactions.map((transaction) => (
-                <TransactionItem
-                  key={transaction.id}
-                  transaction={transaction}
-                  colors={colors}
-                />
-              ))}
-            </View>
+            <ChevronRight size={ICON_SIZE.lg} color={colors.textMuted} />
           </View>
-        )}
 
-        {/* View All Link */}
-        <View style={[styles.viewAllContainer, { borderTopColor: colors.border }]}>
-          <AccessibleText variant="button" color="primary">
-            View All Transactions
-          </AccessibleText>
-          <ChevronRight size={16} color={colors.primary} />
-        </View>
-      </AnimatedTouchable>
+          {/* Stats Row - Earned and Streak */}
+          <View style={styles.statsRow}>
+            {/* Total Earned */}
+            <View style={[styles.statCard, { backgroundColor: withAlpha(colors.success, 0.08) }]}>
+              <LinearGradient
+                colors={[withAlpha(colors.success, 0.15), 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statGradient}
+              />
+              <View style={styles.statHeader}>
+                <Zap size={16} color={colors.success} strokeWidth={2} />
+                <AccessibleText variant="caption" color="textMuted">
+                  Total Earned
+                </AccessibleText>
+              </View>
+              <AccessibleText
+                variant="h2"
+                bold
+                color="success"
+                style={styles.statValue}
+                accessibilityLabel={`Total earned: ${formatCurrency(totalEarned)}`}
+              >
+                {formatCurrency(totalEarned, isSmallScreen)}
+              </AccessibleText>
+              <AccessibleText variant="caption" color="success" style={styles.statSubtext}>
+                Lifetime earnings
+              </AccessibleText>
+            </View>
+
+            {/* Current Streak */}
+            <TouchableOpacity
+              onPress={handleStreakPress}
+              activeOpacity={0.8}
+              style={[styles.statCard, { backgroundColor: withAlpha(colors.warning, 0.08) }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Current streak: ${currentStreak} days. Progress toward ${maxStreak} day goal.`}
+              accessibilityHint="View streak details"
+            >
+              <LinearGradient
+                colors={[withAlpha(colors.warning, 0.15), 'transparent']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.statGradient}
+              />
+              <View style={styles.streakHeader}>
+                <Animated.View style={flameAnimatedStyle}>
+                  <ProgressRing
+                    progress={streakProgress}
+                    size={48}
+                    strokeWidth={4}
+                    color={colors.warning}
+                    gradientEndColor={colors.error}
+                  >
+                    <Flame size={18} color={colors.warning} strokeWidth={2} />
+                  </ProgressRing>
+                </Animated.View>
+                <View style={styles.streakContent}>
+                  <AccessibleText variant="h2" bold color="warning">
+                    {currentStreak}
+                  </AccessibleText>
+                  <AccessibleText variant="caption" color="textMuted">
+                    day streak
+                  </AccessibleText>
+                </View>
+              </View>
+              <View style={styles.streakProgress}>
+                <View style={[styles.progressBar, { backgroundColor: withAlpha(colors.warning, 0.2) }]}>
+                  <Animated.View
+                    entering={FadeIn.delay(300).duration(500)}
+                    style={[
+                      styles.progressFill,
+                      {
+                        backgroundColor: colors.warning,
+                        width: `${streakProgress * 100}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <AccessibleText variant="caption" color="textMuted">
+                  {maxStreak - currentStreak} days to goal
+                </AccessibleText>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Recent Transactions */}
+          {displayTransactions.length > 0 && (
+            <View style={styles.transactionsSection}>
+              <View style={styles.transactionsHeader}>
+                <AccessibleText variant="label" color="textMuted">
+                  Recent Activity
+                </AccessibleText>
+                <Clock size={14} color={colors.textMuted} />
+              </View>
+              <View style={styles.transactionsList}>
+                {displayTransactions.map((transaction) => (
+                  <TransactionItem
+                    key={transaction.id}
+                    transaction={transaction}
+                    colors={colors}
+                  />
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* View All Link */}
+          <View style={[styles.viewAllContainer, { borderTopColor: colors.border }]}>
+            <AccessibleText variant="button" color="primary">
+              View All Transactions
+            </AccessibleText>
+            <ChevronRight size={16} color={colors.primary} />
+          </View>
+        </AnimatedTouchable>
+      </Animated.View>
     </Animated.View>
   );
 });
