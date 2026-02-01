@@ -145,6 +145,7 @@ export default function VideosScreen(): React.ReactElement {
     setRefreshing,
     setLoadingMore,
     getVideoById,
+    setPlayerStatus,
     // Lifecycle management - Industry Standard: TikTok/YouTube/Instagram pattern
     setScreenFocused,
     setAppActive,
@@ -687,6 +688,8 @@ export default function VideosScreen(): React.ReactElement {
           progress={activeVideo.progress}
           onPlayPause={() => {
             // Toggle play/pause through store
+            const newStatus = activeVideo.status === 'playing' ? 'paused' : 'playing';
+            setPlayerStatus(newStatus);
           }}
           onClose={closeMiniPlayer}
           onExpand={expandMiniPlayer}

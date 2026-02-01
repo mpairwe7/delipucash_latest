@@ -208,7 +208,11 @@ function useViewabilityTracking(
 
   const updateVisibility = useCallback((percent: number) => {
     setViewabilityPercent(percent);
-    AdFrequencyManager.updateViewability(adId, percent >= 50, percent);
+
+    // Only update frequency manager if tracking is enabled
+    if (enabled) {
+      AdFrequencyManager.updateViewability(adId, percent >= 50, percent);
+    }
 
     if (percent >= 50 && visibleStartTimeRef.current === 0) {
       startTracking();
@@ -216,7 +220,7 @@ function useViewabilityTracking(
       stopTracking();
       visibleStartTimeRef.current = 0;
     }
-  }, [adId, startTracking, stopTracking]);
+  }, [adId, enabled, startTracking, stopTracking]);
 
   useEffect(() => {
     return () => {
@@ -689,7 +693,7 @@ const AdPlacementWrapperComponent: React.FC<AdPlacementWrapperProps> = ({
     placementType: frequencyPlacementType as any,
     contextType,
     position: feedPosition,
-    adId: ad?.id || 'unknown',
+    adId: ad?.id || ads?.[0]?.id || 'unknown',
     forceShow: bypassFrequencyCap,
     trackViewability,
   });
