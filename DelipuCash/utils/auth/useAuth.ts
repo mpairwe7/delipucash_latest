@@ -1,7 +1,92 @@
 import { USE_MOCK_AUTH, mockLogin, mockSignup } from "@/services/mockAuth";
+import { API_ROUTES } from "@/services/api";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useState } from "react";
 import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, authKey, useAuthModal, useAuthStore } from "./store";
+
+// API Base URL for real authentication
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+
+/**
+ * Real API login implementation
+ */
+async function apiLogin(credentials: LoginCredentials): Promise<AuthResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}${API_ROUTES.auth.login}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.success && data.token) {
+      return {
+        success: true,
+        user: data.user,
+        token: data.token,
+      };
+    }
+
+    return {
+      success: false,
+      error: data.message || "Login failed. Please check your credentials.",
+    };
+  } catch (error) {
+    console.error("Login API error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Network error. Please check your connection.",
+    };
+  }
+}
+
+/**
+ * Real API signup implementation
+ */
+async function apiSignup(credentials: SignupCredentials): Promise<AuthResponse> {
+  try {
+    const response = await fetch(`${API_BASE_URL}${API_ROUTES.auth.register}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: credentials.email,
+        password: credentials.password,
+        firstName: credentials.firstName || "",
+        lastName: credentials.lastName || "",
+        phone: credentials.phoneNumber || "",
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok && data.token) {
+      return {
+        success: true,
+        user: data.user,
+        token: data.token,
+      };
+    }
+
+    return {
+      success: false,
+      error: data.message || "Signup failed. Please try again.",
+    };
+  } catch (error) {
+    console.error("Signup API error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Network error. Please check your connection.",
+    };
+  }
+}
 
 /**
  * Options for requiring authentication
@@ -94,30 +179,34 @@ export const useAuth = (): UseAuthResult => {
 
   /**
    * Login with email and password
-   * Uses mock auth in development, real API in production
+   * Uses mock auth in development when USE_MOCK_AUTH is true, otherwise real API
    */
   const login = useCallback(
     async (credentials: LoginCredentials): Promise<AuthResponse> => {
       setIsLoading(true);
       try {
+        let response: AuthResponse;
+
         if (USE_MOCK_AUTH) {
-          const response = await mockLogin(credentials);
-          if (response.success && response.user && response.token) {
-            setAuth({
-              user: response.user,
-              token: response.token,
-            });
-            close();
-          }
-          return response;
+          response = await mockLogin(credentials);
         } else {
-          // Real API implementation would go here
-          // For now, return error indicating API not configured
-          return {
-            success: false,
-            error: "API not configured. Enable mock auth for development.",
-          };
+          response = await apiLogin(credentials);
         }
+
+        if (response.success && response.user && response.token) {
+          setAuth({
+            user: response.user,
+            token: response.token,
+          });
+          close();
+        }
+        return response;
+      } catch (error) {
+        console.error("Login error:", error);
+        return {
+          success: false,
+          error: "An unexpected error occurred. Please try again.",
+        };
       } finally {
         setIsLoading(false);
       }
@@ -127,29 +216,34 @@ export const useAuth = (): UseAuthResult => {
 
   /**
    * Register with credentials
-   * Uses mock auth in development, real API in production
+   * Uses mock auth in development when USE_MOCK_AUTH is true, otherwise real API
    */
   const register = useCallback(
     async (credentials: SignupCredentials): Promise<AuthResponse> => {
       setIsLoading(true);
       try {
+        let response: AuthResponse;
+
         if (USE_MOCK_AUTH) {
-          const response = await mockSignup(credentials);
-          if (response.success && response.user && response.token) {
-            setAuth({
-              user: response.user,
-              token: response.token,
-            });
-            close();
-          }
-          return response;
+          response = await mockSignup(credentials);
         } else {
-          // Real API implementation would go here
-          return {
-            success: false,
-            error: "API not configured. Enable mock auth for development.",
-          };
+          response = await apiSignup(credentials);
         }
+
+        if (response.success && response.user && response.token) {
+          setAuth({
+            user: response.user,
+            token: response.token,
+          });
+          close();
+        }
+        return response;
+      } catch (error) {
+        console.error("Registration error:", error);
+        return {
+          success: false,
+          error: "An unexpected error occurred. Please try again.",
+        };
       } finally {
         setIsLoading(false);
       }

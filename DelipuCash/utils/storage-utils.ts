@@ -1,10 +1,10 @@
 /**
  * Storage Utilities
- * File upload and storage management utilities with Firebase Storage support
+ * File upload and storage management utilities using Cloudflare R2 via backend
  * Design System Compliant - Uses consistent error handling and logging
  * 
  * Features:
- * - Firebase Storage integration for production
+ * - Cloudflare R2 integration via backend API
  * - Mock storage for development/testing
  * - Progress tracking with callbacks
  * - File validation (size, type)
@@ -13,8 +13,13 @@
  * - TypeScript strict mode compliant
  */
 
-import { ref, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, getMetadata } from "firebase/storage";
-import { storage } from "@/firebaseConfig";
+import {
+    uploadVideoToR2,
+    uploadThumbnailToR2,
+    getPresignedUploadUrl,
+    uploadToPresignedUrl,
+    UploadProgressEvent,
+} from "@/services/r2UploadService";
 
 // ============================================================================
 // TYPES
@@ -42,9 +47,10 @@ export interface UploadOptions {
   fileType?: string;
   onProgress?: UploadProgressCallback;
   maxSizeMB?: number;
-  useFirebase?: boolean;
+    useR2?: boolean;
   customFileName?: string;
   metadata?: Record<string, string>;
+    userId?: string;
 }
 
 export interface StorageConfig {
@@ -58,11 +64,10 @@ export interface StorageConfig {
 // ============================================================================
 
 // Environment-based configuration
-// Set to false to use Firebase Storage in production
 const IS_DEVELOPMENT = __DEV__ || false;
 
 const DEFAULT_CONFIG: StorageConfig = {
-  useMockStorage: IS_DEVELOPMENT, // Use mock in development, Firebase in production
+    useMockStorage: IS_DEVELOPMENT,
   maxRetries: 3,
   retryDelayMs: 1000,
 };
@@ -101,9 +106,9 @@ export const configureStorage = (config: Partial<StorageConfig>): void => {
 export const getStorageConfig = (): StorageConfig => ({ ...currentConfig });
 
 /**
- * Force use Firebase Storage (useful for testing)
+ * Force use R2 Storage (useful for testing)
  */
-export const useFirebaseStorage = (): void => {
+export const useR2Storage = (): void => {
   currentConfig.useMockStorage = false;
 };
 
@@ -133,7 +138,7 @@ export const generateFileName = (extension?: string): string => {
  */
 export const getFileExtension = (uri: string): string => {
   const parts = uri.split('.');
-  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase().split('?')[0] : '';
 };
 
 /**
@@ -236,154 +241,163 @@ const retryWithBackoff = async <T>(
   throw lastError;
 };
 
+/**
+ * Get extension from MIME type
+ */
+const getExtensionFromMimeType = (mimeType: string): string => {
+    const extensions: Record<string, string> = {
+        'video/mp4': 'mp4',
+        'video/quicktime': 'mov',
+        'video/webm': 'webm',
+        'video/x-m4v': 'm4v',
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'audio/mpeg': 'mp3',
+        'audio/wav': 'wav',
+        'audio/ogg': 'ogg',
+        'application/pdf': 'pdf',
+    };
+    return extensions[mimeType] || '';
+};
+
 // ============================================================================
-// FIREBASE STORAGE FUNCTIONS
+// R2 STORAGE FUNCTIONS (via Backend API)
 // ============================================================================
 
 /**
- * Upload file to Firebase Storage with progress tracking
+ * Upload file to R2 via backend with progress tracking
  * Production-ready implementation with retry logic
  */
-export const uploadToFirebase = async (
+export const uploadToR2 = async (
   uri: string,
   fileType: string,
   options?: UploadOptions
 ): Promise<UploadResult> => {
-  const { onProgress, maxSizeMB = MAX_FILE_SIZE_MB, customFileName, metadata = {} } = options || {};
+    const { onProgress, maxSizeMB = MAX_FILE_SIZE_MB, customFileName, userId } = options || {};
 
-  console.log(`[Storage/Firebase] Starting upload for: ${uri}`);
-  console.log(`[Storage/Firebase] File type: ${fileType}`);
+    console.log(`[Storage/R2] Starting upload for: ${uri}`);
+    console.log(`[Storage/R2] File type: ${fileType}`);
 
   try {
-    // Step 1: Fetch the file from URI and convert to Blob
-    console.log(`[Storage/Firebase] Fetching file from URI...`);
-    const response = await fetch(uri);
-
+      // Get file info
+      const response = await fetch(uri);
     if (!response.ok) {
-      console.error(`[Storage/Firebase] Network response failed. Status: ${response.status}`);
-      throw new Error(`Network response was not ok: ${response.status}`);
+        throw new Error(`Failed to fetch file: ${response.status}`);
     }
+      const blob = await response.blob();
 
-    const blob = await response.blob();
-    console.log(`[Storage/Firebase] Blob created - Size: ${blob.size} bytes, Type: ${blob.type}`);
-
-    // Step 2: Validate file size
+      // Validate file size
     const fileSizeMB = blob.size / (1024 * 1024);
     if (!validateFileSize(blob.size, maxSizeMB)) {
       throw new Error(`File size (${fileSizeMB.toFixed(2)}MB) exceeds maximum allowed (${maxSizeMB}MB)`);
     }
 
-    // Step 3: Get file metadata
     const extension = getFileExtension(uri) || getExtensionFromMimeType(blob.type);
     const mimeType = blob.type || getMimeType(extension);
     const fileName = customFileName || generateFileName(extension);
 
-    // Step 4: Validate file type
-    const allowedTypes = getAllowedTypes(fileType);
-    if (!validateFileType(mimeType, allowedTypes)) {
-      console.warn(`[Storage/Firebase] File type ${mimeType} may not be optimal for ${fileType}`);
-    }
-
-    // Step 5: Create storage reference
-    const storagePath = `${fileType}/${fileName}`;
-    const storageRef = ref(storage, storagePath);
-    console.log(`[Storage/Firebase] Storage path: ${storagePath}`);
-
-    // Step 6: Upload with progress tracking using uploadBytesResumable
-    let downloadURL: string;
-
-    if (onProgress) {
-      // Use resumable upload for progress tracking
-      const uploadTask = uploadBytesResumable(storageRef, blob, {
-        contentType: mimeType,
-        customMetadata: metadata,
-      });
-
-      downloadURL = await new Promise<string>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            const percentage = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-            onProgress({
-              bytesTransferred: snapshot.bytesTransferred,
-              totalBytes: snapshot.totalBytes,
-              percentage,
-              state: snapshot.state === 'running' ? 'running' :
-                snapshot.state === 'paused' ? 'paused' : 'running',
-            });
-            console.log(`[Storage/Firebase] Upload progress: ${percentage}%`);
-          },
-          (error) => {
-            console.error('[Storage/Firebase] Upload error:', error);
-            reject(error);
-          },
-          async () => {
-            try {
-              const url = await getDownloadURL(uploadTask.snapshot.ref);
+      // Convert onProgress to R2 format
+      const r2ProgressHandler = onProgress
+          ? (event: UploadProgressEvent) => {
               onProgress({
-                bytesTransferred: uploadTask.snapshot.totalBytes,
-                totalBytes: uploadTask.snapshot.totalBytes,
-                percentage: 100,
-                state: 'success',
+                  bytesTransferred: event.loaded,
+                  totalBytes: event.total,
+                  percentage: event.progress,
+                  state: event.progress === 100 ? 'success' : 'running',
               });
-              resolve(url);
-            } catch (error) {
-              reject(error);
-            }
           }
+          : undefined;
+
+      // Determine upload method based on file type
+      if (fileType === 'videos' || fileType === 'video') {
+          // Use video upload endpoint
+          const result = await uploadVideoToR2(
+              uri,
+              userId || 'anonymous',
+              {
+                  title: fileName,
+                  fileName,
+                  mimeType,
+              },
+              {
+                  onProgress: r2ProgressHandler,
+              }
+          );
+
+          if (!result.success || !result.data) {
+              throw new Error(result.error || 'Video upload failed');
+          }
+
+          return {
+              type: fileType,
+              downloadURL: result.data.videoUrl,
+              fileName: result.data.title || fileName,
+              size: blob.size,
+              mimeType,
+              storagePath: result.data.r2VideoKey,
+          };
+      } else if (fileType === 'thumbnails' || fileType === 'thumbnail' || fileType === 'images' || fileType === 'image') {
+          // Use thumbnail/image upload endpoint
+          const result = await uploadThumbnailToR2(
+              uri,
+              userId || 'anonymous',
+              undefined,
+              {
+                  onProgress: r2ProgressHandler,
+            }
         );
-      });
+
+          if (!result.success || !result.data) {
+              throw new Error(result.error || 'Image upload failed');
+          }
+
+          return {
+              type: fileType,
+              downloadURL: result.data.url,
+              fileName,
+              size: result.data.size,
+              mimeType: result.data.mimeType,
+              storagePath: result.data.key,
+          };
     } else {
-      // Simple upload without progress tracking
-      const uploadResult = await uploadBytes(storageRef, blob, {
-        contentType: mimeType,
-        customMetadata: metadata,
-      });
-      console.log(`[Storage/Firebase] Upload completed. Bytes: ${uploadResult.metadata.size}`);
-      downloadURL = await getDownloadURL(storageRef);
-    }
+          // Use presigned URL for other file types
+          const presignedResult = await getPresignedUploadUrl(
+              fileName,
+              mimeType,
+              userId || 'anonymous',
+              'video',
+              blob.size
+          );
 
-    console.log(`[Storage/Firebase] Download URL obtained: ${downloadURL}`);
+          if (!presignedResult.success || !presignedResult.data) {
+              throw new Error(presignedResult.error || 'Failed to get presigned URL');
+          }
 
-    return {
-      type: fileType,
-      downloadURL,
-      fileName,
-      size: blob.size,
-      mimeType,
-      storagePath,
-    };
+          await uploadToPresignedUrl(
+              presignedResult.data.uploadUrl,
+              uri,
+              mimeType,
+              {
+                  onProgress: r2ProgressHandler,
+              }
+          );
+
+          return {
+              type: fileType,
+            downloadURL: presignedResult.data.publicUrl,
+            fileName,
+            size: blob.size,
+            mimeType,
+            storagePath: presignedResult.data.key,
+        };
+      }
   } catch (error) {
-    console.error('[Storage/Firebase] Upload error:', error);
+      console.error('[Storage/R2] Upload error:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown upload error';
-    console.log(`[Storage/Firebase] Error details:
-      URI: ${uri}
-      File Type: ${fileType}
-      Error: ${errorMessage}
-    `);
-    throw new Error(`Firebase upload failed: ${errorMessage}`);
+      throw new Error(`R2 upload failed: ${errorMessage}`);
   }
-};
-
-/**
- * Get extension from MIME type
- */
-const getExtensionFromMimeType = (mimeType: string): string => {
-  const extensions: Record<string, string> = {
-    'video/mp4': 'mp4',
-    'video/quicktime': 'mov',
-    'video/webm': 'webm',
-    'video/x-m4v': 'm4v',
-    'image/jpeg': 'jpg',
-    'image/png': 'png',
-    'image/gif': 'gif',
-    'image/webp': 'webp',
-    'audio/mpeg': 'mp3',
-    'audio/wav': 'wav',
-    'audio/ogg': 'ogg',
-    'application/pdf': 'pdf',
-  };
-  return extensions[mimeType] || '';
 };
 
 // ============================================================================
@@ -461,7 +475,7 @@ export const uploadToMock = async (
 // ============================================================================
 
 /**
- * Main upload function - automatically chooses between Firebase and Mock
+ * Main upload function - automatically chooses between R2 and Mock
  * Based on configuration settings
  */
 export const uploadFile = async (
@@ -469,13 +483,13 @@ export const uploadFile = async (
   fileType: string,
   options?: UploadOptions
 ): Promise<UploadResult> => {
-  const useFirebase = options?.useFirebase ?? !currentConfig.useMockStorage;
+    const useR2 = options?.useR2 ?? !currentConfig.useMockStorage;
 
-  console.log(`[Storage] Upload mode: ${useFirebase ? 'Firebase' : 'Mock'}`);
+    console.log(`[Storage] Upload mode: ${useR2 ? 'R2' : 'Mock'}`);
 
-  if (useFirebase) {
-    // Use retry logic for Firebase uploads
-    return retryWithBackoff(() => uploadToFirebase(uri, fileType, options));
+    if (useR2) {
+        // Use retry logic for R2 uploads
+        return retryWithBackoff(() => uploadToR2(uri, fileType, options));
   } else {
     return uploadToMock(uri, fileType, options);
   }
@@ -483,12 +497,12 @@ export const uploadFile = async (
 
 /**
  * Upload multiple files with progress tracking
- * Works with both Firebase and Mock storage
+ * Works with both R2 and Mock storage
  */
 export const uploadMultipleFiles = async (
   files: { uri: string; fileType: string; options?: UploadOptions }[],
   onOverallProgress?: (completed: number, total: number, results: UploadResult[]) => void,
-  options?: { useFirebase?: boolean; parallel?: boolean }
+    options?: { useR2?: boolean; parallel?: boolean }
 ): Promise<UploadResult[]> => {
   const results: UploadResult[] = [];
   const total = files.length;
@@ -499,7 +513,7 @@ export const uploadMultipleFiles = async (
   if (parallel) {
     // Parallel upload (faster but may hit rate limits)
     const uploadPromises = files.map(async ({ uri, fileType, options: fileOptions }, index) => {
-      const result = await uploadFile(uri, fileType, { ...fileOptions, useFirebase: options?.useFirebase });
+        const result = await uploadFile(uri, fileType, { ...fileOptions, useR2: options?.useR2 });
       if (onOverallProgress) {
         onOverallProgress(index + 1, total, [...results, result]);
       }
@@ -508,10 +522,10 @@ export const uploadMultipleFiles = async (
 
     return Promise.all(uploadPromises);
   } else {
-  // Sequential upload (safer, respects rate limits)
+      // Sequential upload (safer, respects rate limits)
     for (let i = 0; i < files.length; i++) {
       const { uri, fileType, options: fileOptions } = files[i];
-      const result = await uploadFile(uri, fileType, { ...fileOptions, useFirebase: options?.useFirebase });
+        const result = await uploadFile(uri, fileType, { ...fileOptions, useR2: options?.useR2 });
       results.push(result);
 
       if (onOverallProgress) {
@@ -524,47 +538,48 @@ export const uploadMultipleFiles = async (
 };
 
 // ============================================================================
-// FIREBASE DELETE & METADATA FUNCTIONS
+// DELETE & METADATA FUNCTIONS (via Backend API)
 // ============================================================================
 
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+
 /**
- * Delete a file from Firebase Storage
+ * Delete a file from R2 storage via backend
  */
-export const deleteFromFirebase = async (filePathOrUrl: string): Promise<boolean> => {
-  console.log(`[Storage/Firebase] Deleting file: ${filePathOrUrl}`);
+export const deleteFromR2 = async (fileKey: string): Promise<boolean> => {
+    console.log(`[Storage/R2] Deleting file: ${fileKey}`);
   
   try {
-    // Extract storage path from URL if needed
-    let storagePath = filePathOrUrl;
+      const response = await fetch(`${API_BASE_URL}/api/r2/delete`, {
+          method: 'DELETE',
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ key: fileKey }),
+      });
 
-    if (filePathOrUrl.includes('firebasestorage.googleapis.com')) {
-      // Extract path from Firebase URL
-      const url = new URL(filePathOrUrl);
-      const pathMatch = url.pathname.match(/\/o\/(.+?)(\?|$)/);
-      if (pathMatch) {
-        storagePath = decodeURIComponent(pathMatch[1]);
-      }
+      if (!response.ok) {
+          throw new Error(`Delete failed: ${response.status}`);
     }
 
-    const storageRef = ref(storage, storagePath);
-    await deleteObject(storageRef);
-
-    console.log(`[Storage/Firebase] File deleted successfully: ${storagePath}`);
+      console.log(`[Storage/R2] File deleted successfully: ${fileKey}`);
     return true;
   } catch (error) {
-    console.error('[Storage/Firebase] Delete error:', error);
+      console.error('[Storage/R2] Delete error:', error);
     return false;
   }
 };
 
 /**
- * Delete a file from storage (unified - chooses Firebase or Mock)
+ * Delete a file from storage (unified - chooses R2 or Mock)
  */
-export const deleteFile = async (fileUrl: string, useFirebase?: boolean): Promise<boolean> => {
-  const shouldUseFirebase = useFirebase ?? !currentConfig.useMockStorage;
+export const deleteFile = async (fileUrl: string, useR2?: boolean): Promise<boolean> => {
+    const shouldUseR2 = useR2 ?? !currentConfig.useMockStorage;
 
-  if (shouldUseFirebase) {
-    return deleteFromFirebase(fileUrl);
+    if (shouldUseR2) {
+        // Extract key from URL if it's a full URL
+        const key = fileUrl.includes('/') ? fileUrl.split('/').pop() || fileUrl : fileUrl;
+        return deleteFromR2(key);
   }
 
   // Mock deletion
@@ -575,57 +590,16 @@ export const deleteFile = async (fileUrl: string, useFirebase?: boolean): Promis
 };
 
 /**
- * Get file metadata from Firebase Storage
+ * Get file metadata (mock implementation - R2 doesn't expose metadata directly)
  */
-export const getMetadataFromFirebase = async (filePathOrUrl: string): Promise<{
+export const getFileMetadata = async (fileUrl: string, _useR2?: boolean): Promise<{
   size?: number;
   contentType?: string;
   lastModified?: Date;
   customMetadata?: Record<string, string>;
 } | null> => {
-  try {
-    // Extract storage path from URL if needed
-    let storagePath = filePathOrUrl;
-
-    if (filePathOrUrl.includes('firebasestorage.googleapis.com')) {
-      const url = new URL(filePathOrUrl);
-      const pathMatch = url.pathname.match(/\/o\/(.+?)(\?|$)/);
-      if (pathMatch) {
-        storagePath = decodeURIComponent(pathMatch[1]);
-      }
-    }
-
-    const storageRef = ref(storage, storagePath);
-    const metadata = await getMetadata(storageRef);
-
-    return {
-      size: metadata.size,
-      contentType: metadata.contentType,
-      lastModified: metadata.updated ? new Date(metadata.updated) : undefined,
-      customMetadata: metadata.customMetadata,
-    };
-  } catch (error) {
-    console.error('[Storage/Firebase] Metadata fetch error:', error);
-    return null;
-  }
-};
-
-/**
- * Get file metadata (unified - chooses Firebase or Mock)
- */
-export const getFileMetadata = async (fileUrl: string, useFirebase?: boolean): Promise<{
-  size?: number;
-  contentType?: string;
-  lastModified?: Date;
-  customMetadata?: Record<string, string>;
-} | null> => {
-  const shouldUseFirebase = useFirebase ?? !currentConfig.useMockStorage;
-
-  if (shouldUseFirebase) {
-    return getMetadataFromFirebase(fileUrl);
-  }
-
-  // Mock metadata
+    // For R2, we'd need to implement a backend endpoint to get metadata
+    // For now, return mock metadata
   return {
     size: Math.floor(Math.random() * 10000000) + 1000000,
     contentType: fileUrl.includes('video') ? 'video/mp4' : 'image/jpeg',
@@ -636,27 +610,47 @@ export const getFileMetadata = async (fileUrl: string, useFirebase?: boolean): P
 /**
  * Check if a file exists in storage
  */
-export const fileExists = async (filePathOrUrl: string, useFirebase?: boolean): Promise<boolean> => {
-  const metadata = await getFileMetadata(filePathOrUrl, useFirebase);
+export const fileExists = async (filePathOrUrl: string, useR2?: boolean): Promise<boolean> => {
+    const metadata = await getFileMetadata(filePathOrUrl, useR2);
   return metadata !== null;
 };
 
 /**
- * Get download URL for a storage path
+ * Get download URL for a storage path (returns the path as-is for R2 since URLs are public)
  */
 export const getDownloadUrl = async (storagePath: string): Promise<string | null> => {
   if (currentConfig.useMockStorage) {
     return `${MOCK_STORAGE_BASE_URL}/${storagePath}`;
   }
 
-  try {
-    const storageRef = ref(storage, storagePath);
-    return await getDownloadURL(storageRef);
-  } catch (error) {
-    console.error('[Storage/Firebase] Get download URL error:', error);
-    return null;
-  }
+    // For R2, the path should already be a full URL or we need to construct it
+    // This would depend on your R2 bucket configuration
+    return storagePath;
 };
+
+// ============================================================================
+// BACKWARDS COMPATIBILITY ALIASES
+// ============================================================================
+
+/**
+ * @deprecated Use uploadToR2 instead
+ */
+export const uploadToFirebase = uploadToR2;
+
+/**
+ * @deprecated Use deleteFromR2 instead
+ */
+export const deleteFromFirebase = deleteFromR2;
+
+/**
+ * @deprecated Use useR2Storage instead
+ */
+export const useFirebaseStorage = useR2Storage;
+
+/**
+ * @deprecated Use getFileMetadata instead
+ */
+export const getMetadataFromFirebase = getFileMetadata;
 
 // ============================================================================
 // DEFAULT EXPORT
@@ -665,17 +659,16 @@ export const getDownloadUrl = async (storagePath: string): Promise<string | null
 export default {
   // Main upload functions
   uploadFile,
-  uploadToFirebase,
+    uploadToR2,
   uploadToMock,
   uploadMultipleFiles,
 
   // Delete functions
   deleteFile,
-  deleteFromFirebase,
+    deleteFromR2,
 
   // Metadata functions
-  getFileMetadata,
-  getMetadataFromFirebase,
+    getFileMetadata,
   fileExists,
   getDownloadUrl,
 
@@ -691,6 +684,12 @@ export default {
   // Configuration
   configureStorage,
   getStorageConfig,
-  useFirebaseStorage,
+    useR2Storage,
   useMockStorage,
+
+    // Backwards compatibility
+    uploadToFirebase: uploadToR2,
+    deleteFromFirebase: deleteFromR2,
+    useFirebaseStorage: useR2Storage,
+    getMetadataFromFirebase: getFileMetadata,
 };

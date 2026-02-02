@@ -77,7 +77,7 @@ const CLIENT_PLATFORM = "expo-react-native";
  * Generate a unique request ID for tracing
  */
 const generateRequestId = (): string => {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 };
 
 /**
@@ -1620,7 +1620,7 @@ export const rewardsApi = {
    * Bulk create reward questions from file upload
    * Supports multiple question types for enhanced quiz experience
    */
-  async bulkCreateQuestions(questions: Array<{
+  async bulkCreateQuestions(questions: {
     text: string;
     options: string[] | Record<string, string>;
     correctAnswer?: string | string[];
@@ -1631,7 +1631,7 @@ export const rewardsApi = {
     explanation?: string;
     timeLimit?: number;
     pointValue?: number;
-  }>, userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
+  }[], userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
     await delay(1500);
 
     const createdQuestions: RewardQuestion[] = [];

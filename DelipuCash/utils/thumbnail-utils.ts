@@ -95,7 +95,7 @@ export const generateThumbnailFromVideo = async (
 /**
  * Get the best available thumbnail URL for media content
  * Priority: thumbnailUrl > imageUrl > generated from videoUrl (only if thumbnailUrl is empty) > fallback placeholder
- * Handles Firebase Storage URLs and other video URLs without extensions
+ * Handles R2 Storage URLs and other video URLs without extensions
  */
 export const getBestThumbnailUrl = async (
   media: AdWithMedia,
@@ -144,7 +144,7 @@ export const getPlaceholderImage = (
 
 /**
  * Check if a URL is a video URL
- * Handles Firebase Storage URLs and other video URLs without extensions
+ * Handles R2 Storage URLs and other video URLs without extensions
  */
 export const isVideoUrl = (url: string): boolean => {
   if (!url) return false;
@@ -156,11 +156,9 @@ export const isVideoUrl = (url: string): boolean => {
     return true;
   }
 
-  // Check for Firebase Storage URLs (they don't have extensions)
-  // Firebase Storage URLs typically contain video content types
-  // We can't determine this from URL alone, so we'll assume it's a video
-  // if it's being used as videoUrl in the ad
-  if (lowerUrl.includes('firebasestorage.googleapis.com')) {
+  // Check for R2/Cloudflare Storage URLs (they don't have extensions)
+  // R2 URLs typically contain the bucket name or r2.dev domain
+  if (lowerUrl.includes('r2.dev') || lowerUrl.includes('r2.cloudflarestorage.com')) {
     return true;
   }
 

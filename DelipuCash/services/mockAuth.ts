@@ -3,13 +3,26 @@
  * 
  * @description Provides mock authentication for development and testing.
  * Validates credentials against mock user data.
+ *
+ * To test with real API:
+ * 1. Set USE_MOCK_AUTH to false below
+ * 2. Ensure EXPO_PUBLIC_API_URL is set in .env to your server URL
+ * 3. Make sure your server is running
  */
 
 import { mockCurrentUser, mockUsers } from "@/data/mockData";
 import { SubscriptionStatus, UserRole, type AppUser } from "@/types";
 
-// Development mode flag - set to false to use real API
-export const USE_MOCK_AUTH = __DEV__;
+/**
+ * Toggle between mock authentication and real API
+ * 
+ * Set to `false` to use real backend API for authentication
+ * Set to `true` or `__DEV__` for mock authentication
+ * 
+ * For testing real API in development:
+ * export const USE_MOCK_AUTH = false;
+ */
+export const USE_MOCK_AUTH = false; // Changed to false to test with real API
 
 export interface AuthResponse {
   success: boolean;
@@ -191,8 +204,18 @@ export const mockGetCurrentUser = async (): Promise<AuthResponse> => {
 
 /**
  * Test credentials for development
+ * 
+ * When USE_MOCK_AUTH is true: Uses mock credentials (john.doe@example.com)
+ * When USE_MOCK_AUTH is false: Uses real API - create a test account first
  */
-export const testCredentials = {
-  email: "john.doe@example.com",
-  password: "password123",
-};
+export const testCredentials = USE_MOCK_AUTH
+  ? {
+    email: "john.doe@example.com",
+    password: "password123",
+  }
+  : {
+    // For real API testing, use an account you've created in the database
+    // or leave empty to enter manually in the login screen
+    email: "",
+    password: "",
+  };
