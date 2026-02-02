@@ -1,133 +1,12 @@
 /**
- * Comprehensive Mock Data based on Prisma Schema
- * This file contains all mock data matching the database schema
+ * Mock Data for Seeding Script
+ * JavaScript version of the TypeScript mock data - synced with frontend
  */
 
-import {
-  AppUser,
-  Video,
-  Comment,
-  Survey,
-  UploadSurvey,
-  Ad,
-  RewardQuestion,
-  Question,
-  Response,
-  ResponseReply,
-  Reward,
-  Payment,
-  Notification,
-  LoginSession,
-  Transaction,
-  UserStats,
-  PaymentStatus,
-  SubscriptionStatus,
-  SubscriptionType,
-  NotificationType,
-  NotificationPriority,
-  UserRole,
-  QuizQuestion,
-} from "@/types";
-
 // ===========================================
-// Mock Users
+// Sample Video URLs and Thumbnails
 // ===========================================
-export const mockUsers: AppUser[] = [
-  {
-    id: "user_001",
-    email: "john.doe@example.com",
-    firstName: "John",
-    lastName: "Doe",
-    phone: "+256 700 123 456",
-    points: 12500,
-    avatar: "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png",
-    role: UserRole.ADMIN,
-    subscriptionStatus: SubscriptionStatus.ACTIVE,
-    surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
-    currentSubscriptionId: "sub_001",
-    privacySettings: { showEmail: false, showPhone: false },
-    createdAt: "2025-01-01T00:00:00Z",
-    updatedAt: "2026-01-04T00:00:00Z",
-  },
-  {
-    id: "user_002",
-    email: "sarah.johnson@example.com",
-    firstName: "Sarah",
-    lastName: "Johnson",
-    phone: "+256 700 234 567",
-    points: 8900,
-    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
-    role: UserRole.USER,
-    subscriptionStatus: SubscriptionStatus.ACTIVE,
-    surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
-    currentSubscriptionId: "sub_002",
-    privacySettings: null,
-    createdAt: "2025-02-15T00:00:00Z",
-    updatedAt: "2026-01-03T00:00:00Z",
-  },
-  {
-    id: "user_003",
-    email: "mike.chen@example.com",
-    firstName: "Mike",
-    lastName: "Chen",
-    phone: "+256 700 345 678",
-    points: 15200,
-    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
-    role: UserRole.MODERATOR,
-    subscriptionStatus: SubscriptionStatus.INACTIVE,
-    surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
-    currentSubscriptionId: null,
-    privacySettings: { showEmail: true, showPhone: false },
-    createdAt: "2025-03-10T00:00:00Z",
-    updatedAt: "2026-01-02T00:00:00Z",
-  },
-  {
-    id: "user_004",
-    email: "alice.smith@example.com",
-    firstName: "Alice",
-    lastName: "Smith",
-    phone: "+256 700 456 789",
-    points: 6750,
-    avatar: "https://randomuser.me/api/portraits/women/68.jpg",
-    role: UserRole.USER,
-    subscriptionStatus: SubscriptionStatus.PENDING,
-    surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
-    currentSubscriptionId: null,
-    privacySettings: null,
-    createdAt: "2025-04-20T00:00:00Z",
-    updatedAt: "2026-01-04T00:00:00Z",
-  },
-  {
-    id: "user_admin",
-    email: "admin@delipucash.com",
-    firstName: "Admin",
-    lastName: "User",
-    phone: "+256 700 000 001",
-    points: 100000,
-    avatar: "https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true",
-    role: UserRole.ADMIN,
-    subscriptionStatus: SubscriptionStatus.ACTIVE,
-    surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
-    currentSubscriptionId: "sub_admin",
-    privacySettings: { showEmail: false, showPhone: false },
-    createdAt: "2024-01-01T00:00:00Z",
-    updatedAt: "2026-01-28T00:00:00Z",
-  },
-];
-
-// Current logged in user (use admin for development)
-export const mockCurrentUser: AppUser = mockUsers[4]; // Admin user
-
-// ===========================================
-// Mock Videos - Using real sample videos from public sources
-// ===========================================
-
-/**
- * Sample video URLs from public sources for testing
- * These are royalty-free/public domain sample videos
- */
 const SAMPLE_VIDEOS = {
-  // Google/Sample video sources (public domain)
   bigBuckBunny: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
   elephantsDream: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
   forBiggerBlazes: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
@@ -143,9 +22,6 @@ const SAMPLE_VIDEOS = {
   whatCarCanYouGetForAGrand: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/WhatCarCanYouGetForAGrand.mp4",
 };
 
-/**
- * High-quality thumbnail URLs from picsum.photos (random images)
- */
 const SAMPLE_THUMBNAILS = {
   finance: "https://picsum.photos/seed/finance/400/225",
   tech: "https://picsum.photos/seed/tech/400/225",
@@ -161,7 +37,110 @@ const SAMPLE_THUMBNAILS = {
   rewards: "https://picsum.photos/seed/rewards/400/225",
 };
 
-export const mockVideos: Video[] = [
+// ===========================================
+// Helper Functions
+// ===========================================
+const getFutureDate = (daysFromNow) => {
+  const date = new Date();
+  date.setDate(date.getDate() + daysFromNow);
+  date.setHours(23, 59, 59, 0);
+  return date.toISOString();
+};
+
+const getTodayDate = () => {
+  return new Date().toISOString();
+};
+
+// ===========================================
+// Mock Users
+// ===========================================
+export const mockUsers = [
+  {
+    id: "user_001",
+    email: "john.doe@example.com",
+    firstName: "John",
+    lastName: "Doe",
+    phone: "+256 700 123 456",
+    points: 12500,
+    avatar: "https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_1280.png",
+    role: "ADMIN",
+    subscriptionStatus: "ACTIVE",
+    surveysubscriptionStatus: "ACTIVE",
+    currentSubscriptionId: "sub_001",
+    privacySettings: { showEmail: false, showPhone: false },
+    createdAt: "2025-01-01T00:00:00Z",
+    updatedAt: "2026-01-04T00:00:00Z",
+  },
+  {
+    id: "user_002",
+    email: "sarah.johnson@example.com",
+    firstName: "Sarah",
+    lastName: "Johnson",
+    phone: "+256 700 234 567",
+    points: 8900,
+    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
+    role: "USER",
+    subscriptionStatus: "ACTIVE",
+    surveysubscriptionStatus: "INACTIVE",
+    currentSubscriptionId: "sub_002",
+    privacySettings: null,
+    createdAt: "2025-02-15T00:00:00Z",
+    updatedAt: "2026-01-03T00:00:00Z",
+  },
+  {
+    id: "user_003",
+    email: "mike.chen@example.com",
+    firstName: "Mike",
+    lastName: "Chen",
+    phone: "+256 700 345 678",
+    points: 15200,
+    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+    role: "MODERATOR",
+    subscriptionStatus: "INACTIVE",
+    surveysubscriptionStatus: "ACTIVE",
+    currentSubscriptionId: null,
+    privacySettings: { showEmail: true, showPhone: false },
+    createdAt: "2025-03-10T00:00:00Z",
+    updatedAt: "2026-01-02T00:00:00Z",
+  },
+  {
+    id: "user_004",
+    email: "alice.smith@example.com",
+    firstName: "Alice",
+    lastName: "Smith",
+    phone: "+256 700 456 789",
+    points: 6750,
+    avatar: "https://randomuser.me/api/portraits/women/68.jpg",
+    role: "USER",
+    subscriptionStatus: "PENDING",
+    surveysubscriptionStatus: "INACTIVE",
+    currentSubscriptionId: null,
+    privacySettings: null,
+    createdAt: "2025-04-20T00:00:00Z",
+    updatedAt: "2026-01-04T00:00:00Z",
+  },
+  {
+    id: "user_admin",
+    email: "admin@delipucash.com",
+    firstName: "Admin",
+    lastName: "User",
+    phone: "+256 700 000 001",
+    points: 100000,
+    avatar: "https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true",
+    role: "ADMIN",
+    subscriptionStatus: "ACTIVE",
+    surveysubscriptionStatus: "ACTIVE",
+    currentSubscriptionId: "sub_admin",
+    privacySettings: { showEmail: false, showPhone: false },
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2026-01-28T00:00:00Z",
+  },
+];
+
+// ===========================================
+// Mock Videos
+// ===========================================
+export const mockVideos = [
   {
     id: "video_001",
     title: "How to Earn $100 Daily on Delipucash",
@@ -171,7 +150,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 892,
     views: 12450,
-    duration: 60, // 1:00
+    duration: 60,
     isBookmarked: false,
     commentsCount: 45,
     createdAt: "2026-01-02T08:00:00Z",
@@ -186,7 +165,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 456,
     views: 3240,
-    duration: 15, // 0:15
+    duration: 15,
     isBookmarked: true,
     commentsCount: 128,
     createdAt: "2026-01-04T14:00:00Z",
@@ -201,7 +180,7 @@ export const mockVideos: Video[] = [
     userId: "user_004",
     likes: 721,
     views: 8920,
-    duration: 15, // 0:15
+    duration: 15,
     isBookmarked: false,
     commentsCount: 32,
     createdAt: "2026-01-03T16:30:00Z",
@@ -216,7 +195,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 1204,
     views: 15680,
-    duration: 15, // 0:15
+    duration: 15,
     isBookmarked: true,
     commentsCount: 67,
     createdAt: "2026-01-01T12:00:00Z",
@@ -231,7 +210,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 543,
     views: 1200,
-    duration: 13, // 0:13
+    duration: 13,
     isBookmarked: false,
     commentsCount: 21,
     createdAt: "2025-12-28T10:00:00Z",
@@ -246,7 +225,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 387,
     views: 850,
-    duration: 160, // 2:40
+    duration: 160,
     isBookmarked: false,
     commentsCount: 15,
     createdAt: "2025-12-25T14:00:00Z",
@@ -261,7 +240,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 1567,
     views: 25000,
-    duration: 48, // 0:48
+    duration: 48,
     isBookmarked: true,
     commentsCount: 89,
     createdAt: "2026-01-05T09:00:00Z",
@@ -276,7 +255,7 @@ export const mockVideos: Video[] = [
     userId: "user_004",
     likes: 2340,
     views: 45000,
-    duration: 165, // 2:45
+    duration: 165,
     isBookmarked: false,
     commentsCount: 156,
     createdAt: "2026-01-06T11:30:00Z",
@@ -291,7 +270,7 @@ export const mockVideos: Video[] = [
     userId: "user_002",
     likes: 678,
     views: 8900,
-    duration: 59, // 0:59
+    duration: 59,
     isBookmarked: false,
     commentsCount: 42,
     createdAt: "2026-01-07T15:00:00Z",
@@ -306,7 +285,7 @@ export const mockVideos: Video[] = [
     userId: "user_003",
     likes: 445,
     views: 6200,
-    duration: 60, // 1:00
+    duration: 60,
     isBookmarked: true,
     commentsCount: 28,
     createdAt: "2026-01-08T10:00:00Z",
@@ -317,7 +296,7 @@ export const mockVideos: Video[] = [
 // ===========================================
 // Mock Comments
 // ===========================================
-export const mockComments: Comment[] = [
+export const mockComments = [
   {
     id: "comment_001",
     text: "This video really helped me understand how to earn more!",
@@ -347,7 +326,7 @@ export const mockComments: Comment[] = [
 // ===========================================
 // Mock Surveys
 // ===========================================
-export const mockSurveys: Survey[] = [
+export const mockSurveys = [
   {
     id: "survey_001",
     title: "Customer Satisfaction Survey",
@@ -407,9 +386,9 @@ export const mockSurveys: Survey[] = [
 ];
 
 // ===========================================
-// Mock Survey Questions (UploadSurvey)
+// Mock Survey Questions
 // ===========================================
-export const mockSurveyQuestions: UploadSurvey[] = [
+export const mockSurveyQuestions = [
   {
     id: "sq_001",
     text: "How satisfied are you with our platform?",
@@ -467,7 +446,7 @@ export const mockSurveyQuestions: UploadSurvey[] = [
 // ===========================================
 // Mock Ads
 // ===========================================
-export const mockAds: Ad[] = [
+export const mockAds = [
   {
     id: "ad_001",
     title: "Premium Subscription - 50% Off!",
@@ -555,7 +534,7 @@ export const mockAds: Ad[] = [
 // ===========================================
 // Mock Questions
 // ===========================================
-export const mockQuestions: Question[] = [
+export const mockQuestions = [
   {
     id: "question_001",
     text: "What is your favorite programming language and why?",
@@ -616,7 +595,7 @@ export const mockQuestions: Question[] = [
 // ===========================================
 // Mock Responses (Answers to Questions)
 // ===========================================
-export const mockResponses: Response[] = [
+export const mockResponses = [
   {
     id: "response_001",
     responseText: "TypeScript is my favorite because of its strong typing system and excellent IDE support. It catches errors at compile time and makes refactoring much safer.",
@@ -661,7 +640,7 @@ export const mockResponses: Response[] = [
 // ===========================================
 // Mock Response Replies
 // ===========================================
-export const mockResponseReplies: ResponseReply[] = [
+export const mockResponseReplies = [
   {
     id: "reply_001",
     replyText: "I agree! TypeScript has been a game changer for our team.",
@@ -683,32 +662,14 @@ export const mockResponseReplies: ResponseReply[] = [
 // ===========================================
 // Mock Reward Questions
 // ===========================================
-
-/**
- * Generate a future date for expiry (days from now)
- */
-const getFutureDate = (daysFromNow: number): string => {
-  const date = new Date();
-  date.setDate(date.getDate() + daysFromNow);
-  date.setHours(23, 59, 59, 0);
-  return date.toISOString();
-};
-
-/**
- * Get today's date in ISO format
- */
-const getTodayDate = (): string => {
-  return new Date().toISOString();
-};
-
-export const mockRewardQuestions: RewardQuestion[] = [
+export const mockRewardQuestions = [
   {
     id: "rq_001",
     text: "What is the capital of France?",
     options: { a: "London", b: "Berlin", c: "Paris", d: "Madrid" },
     correctAnswer: "c",
     rewardAmount: 5000,
-    expiryTime: getFutureDate(7), // 7 days from now
+    expiryTime: getFutureDate(7),
     isActive: true,
     userId: "user_002",
     createdAt: getTodayDate(),
@@ -726,7 +687,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Venus", b: "Mars", c: "Jupiter", d: "Saturn" },
     correctAnswer: "b",
     rewardAmount: 10000,
-    expiryTime: getFutureDate(14), // 14 days from now
+    expiryTime: getFutureDate(14),
     isActive: true,
     userId: "user_003",
     createdAt: getTodayDate(),
@@ -744,7 +705,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Atlantic Ocean", b: "Indian Ocean", c: "Pacific Ocean", d: "Arctic Ocean" },
     correctAnswer: "c",
     rewardAmount: 7500,
-    expiryTime: getFutureDate(5), // 5 days from now
+    expiryTime: getFutureDate(5),
     isActive: true,
     userId: "user_001",
     createdAt: getTodayDate(),
@@ -762,7 +723,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Vincent van Gogh", b: "Pablo Picasso", c: "Leonardo da Vinci", d: "Michelangelo" },
     correctAnswer: "c",
     rewardAmount: 15000,
-    expiryTime: getFutureDate(10), // 10 days from now
+    expiryTime: getFutureDate(10),
     isActive: true,
     userId: "user_002",
     createdAt: getTodayDate(),
@@ -780,7 +741,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Go", b: "Gd", c: "Au", d: "Ag" },
     correctAnswer: "c",
     rewardAmount: 8000,
-    expiryTime: getFutureDate(3), // 3 days from now
+    expiryTime: getFutureDate(3),
     isActive: true,
     userId: "user_003",
     createdAt: getTodayDate(),
@@ -798,7 +759,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "1943", b: "1944", c: "1945", d: "1946" },
     correctAnswer: "c",
     rewardAmount: 12000,
-    expiryTime: getFutureDate(21), // 21 days from now
+    expiryTime: getFutureDate(21),
     isActive: true,
     userId: "user_001",
     createdAt: getTodayDate(),
@@ -816,7 +777,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Monaco", b: "San Marino", c: "Vatican City", d: "Liechtenstein" },
     correctAnswer: "c",
     rewardAmount: 6000,
-    expiryTime: getFutureDate(12), // 12 days from now
+    expiryTime: getFutureDate(12),
     isActive: true,
     userId: "user_002",
     createdAt: getTodayDate(),
@@ -834,7 +795,7 @@ export const mockRewardQuestions: RewardQuestion[] = [
     options: { a: "Java", b: "C++", c: "Python", d: "Ruby" },
     correctAnswer: "c",
     rewardAmount: 20000,
-    expiryTime: getFutureDate(30), // 30 days from now
+    expiryTime: getFutureDate(30),
     isActive: true,
     userId: "user_003",
     createdAt: getTodayDate(),
@@ -849,9 +810,9 @@ export const mockRewardQuestions: RewardQuestion[] = [
 ];
 
 // ===========================================
-// Mock Quiz Questions (for Answer Questions & Earn)
+// Mock Quiz Questions
 // ===========================================
-export const mockQuizQuestions: QuizQuestion[] = [
+export const mockQuizQuestions = [
   {
     id: "quiz_001",
     text: "What is the largest planet in our solar system?",
@@ -997,439 +958,3 @@ export const mockQuizQuestions: QuizQuestion[] = [
     type: "boolean",
   },
 ];
-
-// ===========================================
-// Mock Rewards
-// ===========================================
-export const mockRewards: Reward[] = [
-  {
-    id: "reward_001",
-    userEmail: "john.doe@example.com",
-    points: 500,
-    description: "Completed Customer Satisfaction Survey",
-    createdAt: "2026-01-03T10:30:00Z",
-    updatedAt: "2026-01-03T10:30:00Z",
-  },
-  {
-    id: "reward_002",
-    userEmail: "john.doe@example.com",
-    points: 150,
-    description: "Answer accepted for question",
-    createdAt: "2026-01-03T10:15:00Z",
-    updatedAt: "2026-01-03T10:15:00Z",
-  },
-  {
-    id: "reward_003",
-    userEmail: "john.doe@example.com",
-    points: 50,
-    description: "Watched: How to Earn $100 Daily",
-    createdAt: "2026-01-02T16:45:00Z",
-    updatedAt: "2026-01-02T16:45:00Z",
-  },
-  {
-    id: "reward_004",
-    userEmail: "john.doe@example.com",
-    points: 100,
-    description: "Daily login bonus",
-    createdAt: "2026-01-04T08:00:00Z",
-    updatedAt: "2026-01-04T08:00:00Z",
-  },
-];
-
-// ===========================================
-// Mock Payments
-// ===========================================
-export const mockPayments: Payment[] = [
-  {
-    id: "payment_001",
-    amount: 50.0,
-    phoneNumber: "+256 700 123 456",
-    provider: "AIRTEL",
-    TransactionId: "TXN-20260102-001",
-    status: PaymentStatus.SUCCESSFUL,
-    subscriptionType: SubscriptionType.MONTHLY,
-    startDate: "2026-01-02T00:00:00Z",
-    endDate: "2026-02-02T00:00:00Z",
-    createdAt: "2026-01-02T14:20:00Z",
-    updatedAt: "2026-01-02T14:25:00Z",
-    userId: "user_001",
-  },
-  {
-    id: "payment_002",
-    amount: 100.0,
-    phoneNumber: "+256 700 123 456",
-    provider: "MTN",
-    TransactionId: "TXN-20260104-012",
-    status: PaymentStatus.PENDING,
-    subscriptionType: SubscriptionType.MONTHLY,
-    startDate: "2026-01-04T00:00:00Z",
-    endDate: "2026-02-04T00:00:00Z",
-    createdAt: "2026-01-04T11:00:00Z",
-    updatedAt: "2026-01-04T11:00:00Z",
-    userId: "user_001",
-  },
-];
-
-// ===========================================
-// Mock Transactions (Derived from payments and rewards)
-// ===========================================
-export const mockTransactions: Transaction[] = [
-  {
-    id: "txn_001",
-    type: "reward",
-    amount: 15.0,
-    status: PaymentStatus.SUCCESSFUL,
-    description: "Survey completion reward",
-    referenceId: "REW-20260103-001",
-    createdAt: "2026-01-03T10:30:00Z",
-  },
-  {
-    id: "txn_002",
-    type: "withdrawal",
-    amount: -50.0,
-    status: PaymentStatus.SUCCESSFUL,
-    description: "Airtel Money withdrawal",
-    referenceId: "WD-20260102-045",
-    paymentMethod: "AIRTEL",
-    phoneNumber: "+256 700 123 456",
-    createdAt: "2026-01-02T14:20:00Z",
-  },
-  {
-    id: "txn_003",
-    type: "reward",
-    amount: 5.0,
-    status: PaymentStatus.SUCCESSFUL,
-    description: "Question answer reward",
-    referenceId: "REW-20260102-034",
-    createdAt: "2026-01-02T09:15:00Z",
-  },
-  {
-    id: "txn_004",
-    type: "withdrawal",
-    amount: -100.0,
-    status: PaymentStatus.PENDING,
-    description: "MTN Mobile Money withdrawal",
-    referenceId: "WD-20260104-012",
-    paymentMethod: "MTN",
-    phoneNumber: "+256 700 123 456",
-    createdAt: "2026-01-04T11:00:00Z",
-  },
-  {
-    id: "txn_005",
-    type: "reward",
-    amount: 2.0,
-    status: PaymentStatus.SUCCESSFUL,
-    description: "Daily login bonus",
-    referenceId: "REW-20260104-001",
-    createdAt: "2026-01-04T08:00:00Z",
-  },
-  {
-    id: "txn_006",
-    type: "deposit",
-    amount: 200.0,
-    status: PaymentStatus.SUCCESSFUL,
-    description: "Account top-up",
-    referenceId: "DEP-20260101-001",
-    paymentMethod: "MTN",
-    phoneNumber: "+256 700 123 456",
-    createdAt: "2026-01-01T10:00:00Z",
-  },
-];
-
-// ===========================================
-// Mock Notifications
-// ===========================================
-export const mockNotifications: Notification[] = [
-  {
-    id: "notif_001",
-    userId: "user_001",
-    title: "Payment Successful!",
-    body: "Your withdrawal of $50.00 has been processed successfully.",
-    type: NotificationType.PAYMENT_SUCCESS,
-    priority: NotificationPriority.HIGH,
-    icon: "check-circle",
-    imageUrl: null,
-    actionUrl: "/transactions",
-    actionText: "View Transaction",
-    metadata: { amount: 50, transactionId: "WD-20260102-045" },
-    category: "payments",
-    read: true,
-    readAt: "2026-01-02T14:30:00Z",
-    archived: false,
-    archivedAt: null,
-    delivered: true,
-    deliveredAt: "2026-01-02T14:25:00Z",
-    expiresAt: null,
-    createdAt: "2026-01-02T14:25:00Z",
-    updatedAt: "2026-01-02T14:30:00Z",
-  },
-  {
-    id: "notif_002",
-    userId: "user_001",
-    title: "Reward Earned! 🎉",
-    body: "You earned 500 points for completing the Customer Satisfaction Survey.",
-    type: NotificationType.REWARD_EARNED,
-    priority: NotificationPriority.MEDIUM,
-    icon: "gift",
-    imageUrl: null,
-    actionUrl: "/rewards",
-    actionText: "View Rewards",
-    metadata: { points: 500, surveyId: "survey_001" },
-    category: "rewards",
-    read: false,
-    readAt: null,
-    archived: false,
-    archivedAt: null,
-    delivered: true,
-    deliveredAt: "2026-01-03T10:30:00Z",
-    expiresAt: null,
-    createdAt: "2026-01-03T10:30:00Z",
-    updatedAt: "2026-01-03T10:30:00Z",
-  },
-  {
-    id: "notif_003",
-    userId: "user_001",
-    title: "Survey Expiring Soon",
-    body: "The Product Feedback Survey is ending in 2 days. Don't miss out on $10.00!",
-    type: NotificationType.SURVEY_EXPIRING,
-    priority: NotificationPriority.MEDIUM,
-    icon: "clock",
-    imageUrl: null,
-    actionUrl: "/survey/survey_002",
-    actionText: "Take Survey",
-    metadata: { surveyId: "survey_002", expiresIn: "2 days" },
-    category: "surveys",
-    read: false,
-    readAt: null,
-    archived: false,
-    archivedAt: null,
-    delivered: true,
-    deliveredAt: "2026-01-04T09:00:00Z",
-    expiresAt: "2026-01-12T23:59:59Z",
-    createdAt: "2026-01-04T09:00:00Z",
-    updatedAt: "2026-01-04T09:00:00Z",
-  },
-  {
-    id: "notif_004",
-    userId: "user_001",
-    title: "Welcome to Delipucash! 👋",
-    body: "Start earning by completing surveys and answering questions.",
-    type: NotificationType.WELCOME,
-    priority: NotificationPriority.LOW,
-    icon: "star",
-    imageUrl: null,
-    actionUrl: "/",
-    actionText: "Get Started",
-    metadata: null,
-    category: "system",
-    read: true,
-    readAt: "2025-01-01T00:05:00Z",
-    archived: false,
-    archivedAt: null,
-    delivered: true,
-    deliveredAt: "2025-01-01T00:00:00Z",
-    expiresAt: null,
-    createdAt: "2025-01-01T00:00:00Z",
-    updatedAt: "2025-01-01T00:05:00Z",
-  },
-];
-
-// ===========================================
-// Mock Login Sessions
-// ===========================================
-export const mockLoginSessions: LoginSession[] = [
-  {
-    id: "session_001",
-    userId: "user_001",
-    deviceInfo: { platform: "iOS", model: "iPhone 14 Pro", os: "17.2" },
-    ipAddress: "192.168.1.100",
-    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X)",
-    location: "Kampala, Uganda",
-    isActive: true,
-    lastActivity: "2026-01-04T12:00:00Z",
-    loginTime: "2026-01-04T08:00:00Z",
-    logoutTime: null,
-    sessionToken: "jwt_token_here",
-    createdAt: "2026-01-04T08:00:00Z",
-    updatedAt: "2026-01-04T12:00:00Z",
-  },
-  {
-    id: "session_002",
-    userId: "user_001",
-    deviceInfo: { platform: "Web", browser: "Chrome", version: "120.0" },
-    ipAddress: "192.168.1.101",
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0",
-    location: "Kampala, Uganda",
-    isActive: false,
-    lastActivity: "2026-01-03T18:00:00Z",
-    loginTime: "2026-01-03T10:00:00Z",
-    logoutTime: "2026-01-03T18:00:00Z",
-    sessionToken: null,
-    createdAt: "2026-01-03T10:00:00Z",
-    updatedAt: "2026-01-03T18:00:00Z",
-  },
-];
-
-// ===========================================
-// Mock User Stats
-// ===========================================
-export const mockUserStats: UserStats = {
-  totalQuestions: 127,
-  totalAnswers: 234,
-  totalSurveysCompleted: 45,
-  totalVideosWatched: 89,
-  totalEarnings: 24880.0,
-  totalRewards: 1240,
-  currentStreak: 7,
-  questionsAnsweredToday: 5,
-  earningsToday: 22.5,
-  rewardsThisWeek: 125.0,
-};
-
-// ===========================================
-// Question Categories
-// ===========================================
-export const questionCategories = [
-  "Technology",
-  "Lifestyle",
-  "Business",
-  "Education",
-  "Health",
-  "Entertainment",
-  "Finance",
-  "Sports",
-  "Travel",
-  "Food",
-  "Other",
-];
-
-// ===========================================
-// Video Categories
-// ===========================================
-export const videoCategories = [
-  "Tutorial",
-  "Tips",
-  "Live",
-  "Entertainment",
-  "Education",
-  "Finance",
-  "Lifestyle",
-  "Other",
-];
-
-// ===========================================
-// Payment Methods
-// ===========================================
-export const paymentMethods = [
-  {
-    id: "AIRTEL",
-    name: "Airtel Money",
-    icon: "CreditCard",
-    minWithdrawal: 5.0,
-    maxWithdrawal: 1000.0,
-    processingTime: "5-10 minutes",
-  },
-  {
-    id: "MTN",
-    name: "MTN Mobile Money",
-    icon: "CreditCard",
-    minWithdrawal: 5.0,
-    maxWithdrawal: 1000.0,
-    processingTime: "5-10 minutes",
-  },
-];
-
-// ===========================================
-// Helper Functions
-// ===========================================
-
-/**
- * Format currency with dollar sign
- */
-export const formatCurrency = (amount: number): string => {
-  return `$${Math.abs(amount).toFixed(2)}`;
-};
-
-/**
- * Format date to relative time string
- */
-export const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) return `${days}d ago`;
-  if (hours > 0) return `${hours}h ago`;
-  if (minutes > 0) return `${minutes}m ago`;
-  return "Just now";
-};
-
-/**
- * Format duration from seconds to MM:SS
- */
-export const formatDuration = (seconds: number | null): string => {
-  if (!seconds) return "LIVE";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-};
-
-/**
- * Get user by ID
- */
-export const getUserById = (userId: string): AppUser | undefined => {
-  return mockUsers.find(user => user.id === userId);
-};
-
-/**
- * Get question by ID
- */
-export const getQuestionById = (questionId: string): Question | undefined => {
-  return mockQuestions.find(question => question.id === questionId);
-};
-
-/**
- * Get survey by ID
- */
-export const getSurveyById = (surveyId: string): Survey | undefined => {
-  return mockSurveys.find(survey => survey.id === surveyId);
-};
-
-/**
- * Get video by ID
- */
-export const getVideoById = (videoId: string): Video | undefined => {
-  return mockVideos.find(video => video.id === videoId);
-};
-
-/**
- * Get responses for a question
- */
-export const getResponsesForQuestion = (questionId: string): Response[] => {
-  return mockResponses.filter(response => response.questionId === questionId);
-};
-
-/**
- * Get survey questions for a survey
- */
-export const getSurveyQuestionsForSurvey = (surveyId: string): UploadSurvey[] => {
-  return mockSurveyQuestions.filter(sq => sq.surveyId === surveyId);
-};
-
-/**
- * Get user notifications
- */
-export const getUserNotifications = (userId: string): Notification[] => {
-  return mockNotifications.filter(notif => notif.userId === userId);
-};
-
-/**
- * Get unread notification count
- */
-export const getUnreadNotificationCount = (userId: string): number => {
-  return mockNotifications.filter(notif => notif.userId === userId && !notif.read).length;
-};

@@ -17,6 +17,7 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "db:seed": "node prisma/seed.mjs",
+    "seed:mock": "node scripts/seed-mock-data.mjs",
     "lint": "echo 'No linting configured'",
     "test": "node --test"
   },
