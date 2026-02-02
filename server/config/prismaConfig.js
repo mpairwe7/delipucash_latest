@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 
-const datasourceUrl = process.env.DATABASE_URL ?? process.env.DIRECT_DATABASE_URL
+const datasourceUrl = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL
 const accelerateUrl = process.env.ACCELERATE_URL ?? process.env.DATABASE_URL
 
 if (!datasourceUrl) {
