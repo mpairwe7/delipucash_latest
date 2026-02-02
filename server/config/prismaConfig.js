@@ -8,6 +8,8 @@ if (!datasourceUrl) {
     throw new Error('DATABASE_URL or DIRECT_DATABASE_URL is required for Prisma Client')
 }
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({
+    datasourceUrl: datasourceUrl,
+})
 
 export { prisma }
