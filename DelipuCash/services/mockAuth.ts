@@ -206,7 +206,7 @@ export const mockGetCurrentUser = async (): Promise<AuthResponse> => {
  * Test credentials for development
  * 
  * When USE_MOCK_AUTH is true: Uses mock credentials (john.doe@example.com)
- * When USE_MOCK_AUTH is false: Uses real API - create a test account first
+ * When USE_MOCK_AUTH is false: Uses real API test credentials
  */
 export const testCredentials = USE_MOCK_AUTH
   ? {
@@ -214,8 +214,7 @@ export const testCredentials = USE_MOCK_AUTH
     password: "password123",
   }
   : {
-    // For real API testing, use an account you've created in the database
-    // or leave empty to enter manually in the login screen
-    email: "",
-    password: "",
+    // Real API test credentials - admin account from database seed
+    email: "admin@delipucash.com",
+    password: "admin123456",
   };
