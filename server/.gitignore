@@ -40,3 +40,5 @@ jspm_packages
 
 .env
 /generated/prisma
+.vercel
+.env*.local

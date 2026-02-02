@@ -5,29 +5,25 @@ import { withAccelerate } from '@prisma/extension-accelerate';
 // Singleton pattern for Prisma Client in serverless environment
 const globalForPrisma = globalThis;
 
-
+// Use direct database URL for queries
 const datasourceUrl = process.env.DATABASE_URL ?? process.env.DIRECT_DATABASE_URL;
-const accelerateUrl = process.env.ACCELERATE_URL ?? process.env.DATABASE_URL;
 
 if (!datasourceUrl) {
   throw new Error('DATABASE_URL or DIRECT_DATABASE_URL is required for Prisma Client');
 }
 
-if (!accelerateUrl || accelerateUrl.trim() === '') {
-  throw new Error('ACCELERATE_URL (or fallback DATABASE_URL) is required for Prisma Accelerate');
-}
-
-
-
-// Prisma configuration
+// Prisma configuration with datasource override
 const prismaOptions = {
-  accelerateUrl,
+  datasources: {
+    db: {
+      url: datasourceUrl,
+    },
+  },
   log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
 };
 
-// Create the prisma instance with Accelerate
-const prisma = globalForPrisma.prisma
-  || new PrismaClient(prismaOptions).$extends(withAccelerate());
+// Create the prisma instance with Accelerate extension (but using direct database URL)
+const prisma = globalForPrisma.prisma || new PrismaClient(prismaOptions).$extends(withAccelerate());
 
 // Prevent multiple instances in development
 if (process.env.NODE_ENV !== 'production') {
