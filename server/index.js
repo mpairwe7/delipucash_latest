@@ -32,10 +32,10 @@ console.log('Bootstrapping API server...');
 
 const app = express();
 
-// Database connection (Vercel will handle serverless functions, so connection might be per request)
-if (process.env.VERCEL !== '1') {
-  connectDB(); // Only connect directly if not on Vercel
-}
+// Database connection
+// For Vercel serverless, we connect on each cold start
+// The connection is cached by the MongoDB driver
+connectDB();
 
 // Middleware
 app.use(express.json());
@@ -128,17 +128,19 @@ app.use('/api/*', (req, res) => {
 });
 
 // Start server for local development (not on Vercel)
-console.log('VERCEL env:', process.env.VERCEL);
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, async () => {
-    console.log(` Server running on port ${PORT}`);
-    console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(` Health check: http://localhost:${PORT}/api/health`);
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Health check: http://localhost:${PORT}/api/health`);
 
     // Ensure default admin user exists
     await ensureDefaultAdminExists();
   });
+} else {
+  // For Vercel, ensure admin exists on cold start
+  ensureDefaultAdminExists().catch(console.error);
 }
 
 // Export the app for Vercel serverless functions
