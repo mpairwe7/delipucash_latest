@@ -7,7 +7,7 @@ import {
     useTheme,
     withAlpha,
 } from "@/utils/theme";
-import { useUpload } from "@/utils/useUpload";
+import { useUploadAdMediaToR2 } from "@/services/r2UploadHooks";
 import { useCreateAd } from "@/services/adHooksRefactored";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -409,7 +409,9 @@ const AISuggestionsPanel: React.FC<{
 export default function AdRegistrationScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const [upload, { loading: uploading }] = useUpload();
+
+  // R2 upload hook for ad media
+  const { mutateAsync: uploadAdMedia, isPending: uploading, progress: uploadProgress } = useUploadAdMediaToR2();
   
   // TanStack Query mutation for creating ads
   const createAdMutation = useCreateAd();
@@ -570,25 +572,26 @@ export default function AdRegistrationScreen(): React.ReactElement {
     setMediaKind(isVideo ? "video" : "image");
 
     try {
-      const uploadResult = await upload({
-        reactNativeAsset: {
-          uri: asset.uri,
-          name: asset.fileName ?? asset.uri.split("/").pop() ?? undefined,
-          mimeType: asset.mimeType ?? undefined,
-        },
+      // Upload to Cloudflare R2
+      const uploadResult = await uploadAdMedia({
+        mediaUri: asset.uri,
+        userId: 'current-user-id', // TODO: Get from auth context
+        fileName: asset.fileName ?? asset.uri.split("/").pop() ?? undefined,
+        mimeType: asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
       });
-      if ("error" in uploadResult) {
-        Alert.alert("Upload failed", uploadResult.error);
+
+      if (!uploadResult.success) {
+        Alert.alert("Upload failed", uploadResult.error || "Please try again.");
         setUploadedUrl("");
       } else {
-        setUploadedUrl(uploadResult.url);
+        setUploadedUrl(uploadResult.data.url);
       }
     } catch (error) {
       console.error("Upload error", error);
       Alert.alert("Upload failed", "Please try again.");
       setUploadedUrl("");
     }
-  }, [upload]);
+  }, [uploadAdMedia]);
 
   const mediaPreview = useMemo(() => {
     if (!hasMedia) return null;
@@ -854,14 +857,34 @@ export default function AdRegistrationScreen(): React.ReactElement {
                   <TouchableOpacity 
                     style={[themedStyles.uploadPlaceholder, { borderColor: colors.border }]}
                     onPress={pickMedia}
+                    disabled={uploading}
                   >
-                    <MaterialCommunityIcons name="image-plus" size={48} color={colors.textMuted} />
-                    <Text style={[themedStyles.uploadPlaceholderText, { color: colors.textMuted }]}>
-                      Tap to upload image or video
-                    </Text>
-                    <Text style={[themedStyles.uploadHint, { color: colors.textMuted }]}>
-                      Recommended: 1200x628px (1.91:1) or 1080x1080 (1:1)
-                    </Text>
+                    {uploading ? (
+                      <>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                        <Text style={[themedStyles.uploadPlaceholderText, { color: colors.primary, marginTop: SPACING.sm }]}>
+                          Uploading to R2... {Math.round(uploadProgress)}%
+                        </Text>
+                        <View style={[themedStyles.progressBar, { backgroundColor: colors.border }]}>
+                          <View
+                            style={[
+                              themedStyles.progressFill,
+                              { backgroundColor: colors.primary, width: `${uploadProgress}%` }
+                            ]}
+                          />
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                          <MaterialCommunityIcons name="image-plus" size={48} color={colors.textMuted} />
+                          <Text style={[themedStyles.uploadPlaceholderText, { color: colors.textMuted }]}>
+                            Tap to upload image or video
+                          </Text>
+                          <Text style={[themedStyles.uploadHint, { color: colors.textMuted }]}>
+                            Recommended: 1200x628px (1.91:1) or 1080x1080 (1:1)
+                          </Text>
+                      </>
+                    )}
                   </TouchableOpacity>
                 )}
                 {mediaPreview}
@@ -1586,6 +1609,17 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"], insets: { t
       fontFamily: TYPOGRAPHY.fontFamily.regular,
       fontSize: TYPOGRAPHY.fontSize.xs,
       marginTop: SPACING.xs,
+    },
+    progressBar: {
+      width: "80%",
+      height: 4,
+      borderRadius: 2,
+      marginTop: SPACING.md,
+      overflow: "hidden",
+    },
+    progressFill: {
+      height: "100%",
+      borderRadius: 2,
     },
     // CTA Grid
     ctaGrid: {

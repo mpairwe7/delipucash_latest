@@ -1,5 +1,5 @@
 import { PrimaryButton, StatCard } from "@/components";
-import { formatDate } from "@/data/mockData";
+import { formatDate } from "@/services/api";
 import { useQuestion, useSubmitResponse } from "@/services/hooks";
 import {
     BORDER_WIDTH,

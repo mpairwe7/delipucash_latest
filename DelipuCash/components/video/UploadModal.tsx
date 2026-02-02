@@ -115,16 +115,16 @@ function UploadModalComponent({
   const storeUploadProgress = useVideoStore(selectUploadProgress);
   const storeCurrentUpload = useVideoStore(selectCurrentUpload);
   const { 
-    setUploadFile, 
-    setUploadProgress, 
-    cancelUpload, 
-    clearUpload,
+    startUpload,
+    updateUploadProgress,
+    cancelUpload,
+    completeUpload,
     setPremiumStatus 
   } = useVideoStore();
 
   // Use store progress for display when available (exposed for parent components)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const displayProgress = storeUploadProgress > 0 ? storeUploadProgress : 0;
+  const displayProgress = storeUploadProgress?.progress ?? 0;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const hasActiveUpload = storeCurrentUpload !== null;
 
@@ -133,8 +133,13 @@ function UploadModalComponent({
 
   // Sync premium status with store
   useEffect(() => {
-    setPremiumStatus(hasVideoPremium);
-  }, [hasVideoPremium, setPremiumStatus]);
+    setPremiumStatus({
+      hasVideoPremium,
+      maxUploadSize,
+      maxRecordingDuration: hasVideoPremium ? 1800 : 300,
+      maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
+    });
+  }, [hasVideoPremium, maxUploadSize, setPremiumStatus]);
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -158,8 +163,11 @@ function UploadModalComponent({
     setIsUploading(false);
     setSelectedFile(null);
     setFileSizeError(null);
-    clearUpload(); // Clear store state
-  }, [clearUpload]);
+    // Cancel any active upload
+    if (storeCurrentUpload) {
+      cancelUpload(storeCurrentUpload.fileId);
+    }
+  }, [cancelUpload, storeCurrentUpload]);
 
   // Handle file selection with size validation (client + server)
   const handleSelectFile = useCallback(async () => {
@@ -192,13 +200,14 @@ function UploadModalComponent({
       // Server-side validation for additional checks
       try {
         const validationResult = await validateUploadMutation.mutateAsync({
+          userId: '', // Will be populated from auth context on server
           fileSize,
           mimeType,
           fileName,
         });
 
-        if (!validationResult.allowed) {
-          setFileSizeError(validationResult.reason || 'File validation failed');
+        if (!validationResult.valid) {
+          setFileSizeError(validationResult.message || 'File validation failed');
           setSelectedFile(null);
           return;
         }
@@ -210,11 +219,10 @@ function UploadModalComponent({
       setFileSizeError(null);
       
       // Update store with file info
-      setUploadFile({
+      startUpload({
         uri: file.uri,
         name: fileName,
         size: fileSize,
-        mimeType,
       });
 
       setSelectedFile({
@@ -228,7 +236,7 @@ function UploadModalComponent({
     } catch {
       Alert.alert('Error', 'Failed to select video file. Please try again.');
     }
-  }, [maxUploadSize, hasVideoPremium, validateUploadMutation, setUploadFile]);
+  }, [maxUploadSize, hasVideoPremium, validateUploadMutation, startUpload]);
 
   // Navigate to subscription screen for upgrade
   const handleUpgrade = useCallback(() => {
@@ -272,15 +280,24 @@ function UploadModalComponent({
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsUploading(true);
-    setUploadProgress(0);
+
+    // Start upload tracking in store
+    const upload = startUpload({
+      name: selectedFile.name,
+      size: selectedFile.size,
+      uri: selectedFile.uri,
+    });
+
+    const fileId = upload?.fileId || '';
 
     try {
       // Simulate progress updates during upload
       const progressInterval = setInterval(() => {
-        setUploadProgress((prev) => {
-          const next = prev + Math.random() * 15;
-          return next > 90 ? 90 : next;
-        });
+        if (fileId) {
+          updateUploadProgress(fileId, {
+            progress: Math.min((storeUploadProgress?.progress ?? 0) + Math.random() * 15, 90),
+          });
+        }
       }, 300);
 
       await onUpload?.({
@@ -293,16 +310,20 @@ function UploadModalComponent({
       });
 
       clearInterval(progressInterval);
-      setUploadProgress(100);
+      if (fileId) {
+        completeUpload(fileId, '');
+      }
       resetForm();
       onClose();
     } catch {
-      cancelUpload();
+      if (fileId) {
+        cancelUpload(fileId);
+      }
       Alert.alert('Error', 'Failed to upload video. Please try again.');
     } finally {
       setIsUploading(false);
     }
-  }, [title, description, selectedFile, onUpload, resetForm, onClose, setUploadProgress, cancelUpload]);
+  }, [title, description, selectedFile, onUpload, resetForm, onClose, startUpload, updateUploadProgress, completeUpload, cancelUpload, storeUploadProgress]);
 
   const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
 

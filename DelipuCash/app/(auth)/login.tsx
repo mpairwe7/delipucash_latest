@@ -109,7 +109,7 @@ export default function LoginScreen(): React.ReactElement {
 
   const handleLogin = async (): Promise<void> => {
     const allTouched: TouchedFields = {};
-    (Object.keys(validationSchema) as Array<keyof ValidationSchema>).forEach(
+    (Object.keys(validationSchema) as (keyof ValidationSchema)[]).forEach(
       (key) => {
         allTouched[key] = true;
       }
@@ -256,7 +256,7 @@ export default function LoginScreen(): React.ReactElement {
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
             <Text style={[styles.signUpText, { color: colors.textSecondary }]}>
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
             </Text>
             <TouchableOpacity
               onPress={handleSignUp}

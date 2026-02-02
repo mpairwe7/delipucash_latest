@@ -33,7 +33,7 @@ import { router, Href } from "expo-router";
 import {
   paymentMethods,
   formatCurrency,
-} from "@/data/mockData";
+} from "@/services/api";
 import { useWithdraw, useUnreadCount } from "@/services/hooks";
 import useUser from "@/utils/useUser";
 import { useFormValidation, validators } from "@/utils/validation";

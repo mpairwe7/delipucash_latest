@@ -88,7 +88,10 @@ export function useSurveyOwnership(
     queryKey: surveyResponseKeys.ownership(surveyId || '', userId || ''),
     queryFn: async () => {
       if (!surveyId || !userId) return false;
-      return surveyApi.isSurveyOwner(surveyId, userId);
+      // Check ownership by comparing survey creator with user
+      const response = await surveyApi.getById(surveyId);
+      if (!response.success || !response.data) return false;
+      return response.data.userId === userId;
     },
     enabled: !!surveyId && !!userId,
     staleTime: 1000 * 60 * 10, // 10 minutes - ownership rarely changes
@@ -102,7 +105,7 @@ export function useSurveyOwnership(
  */
 export function useSurveyWithQuestions(
   surveyId: string | undefined
-): UseQueryResult<SurveyWithQuestions | null, Error> {
+): UseQueryResult<Survey | null, Error> {
   return useQuery({
     queryKey: surveyResponseKeys.detail(surveyId || ''),
     queryFn: async () => {
@@ -136,18 +139,21 @@ export function useSurveyResponses(
         };
       }
       
-      const response = await surveyApi.getResponses(surveyId, {
-        page: filters?.page || 1,
-        limit: filters?.limit || 100,
-        startDate: filters?.startDate,
-        endDate: filters?.endDate,
-      });
+      const response = await surveyApi.getResponses(
+        surveyId,
+        filters?.page || 1,
+        filters?.limit || 100
+      );
       
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch responses');
       }
       
-      return response.data;
+      // Transform PaginatedResponse to SurveyResponsesData format
+      return {
+        responses: response.data,
+        pagination: response.pagination,
+      };
     },
     enabled: options?.enabled !== false && !!surveyId,
     staleTime: 1000 * 60 * 2, // 2 minutes - responses can change
@@ -178,13 +184,29 @@ export function useSurveyAnalytics(
         };
       }
       
-      const response = await surveyApi.getDetailedAnalytics(surveyId);
+      // Use getAnalytics instead of getDetailedAnalytics
+      const response = await surveyApi.getAnalytics(surveyId);
       
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch analytics');
       }
       
-      return response.data;
+      // Map the API response to SurveyAnalyticsData format
+      return {
+        totalResponses: response.data.totalResponses,
+        completionRate: response.data.completionRate,
+        averageCompletionTime: response.data.averageTime,
+        responsesByDay: response.data.responsesByDay,
+        questionStats: response.data.questionStats.map(stat => ({
+          questionId: stat.questionId,
+          questionText: stat.questionText,
+          questionType: 'multiple_choice', // Default type since API doesn't provide it
+          answerDistribution: stat.responseDistribution.reduce((acc, item) => {
+            acc[item.option] = item.count;
+            return acc;
+          }, {} as Record<string, number>),
+        })),
+      };
     },
     enabled: options?.enabled !== false && !!surveyId,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -234,7 +256,7 @@ export function useSurveyResponseData(
     
     // Survey
     survey: survey.data,
-    questions: survey.data?.questions || [],
+    questions: survey.data?.uploads || [],
     
     // Responses
     responses: responses.data?.responses || [],
@@ -315,8 +337,15 @@ export function usePrefetchSurveyResponses() {
       queryClient.prefetchQuery({
         queryKey: surveyResponseKeys.list(surveyId, filters),
         queryFn: async () => {
-          const response = await surveyApi.getResponses(surveyId, filters);
-          return response.data;
+          const response = await surveyApi.getResponses(
+            surveyId,
+            filters?.page || 1,
+            filters?.limit || 100
+          );
+          return {
+            responses: response.data,
+            pagination: response.pagination,
+          };
         },
         staleTime: 1000 * 60 * 2,
       }),

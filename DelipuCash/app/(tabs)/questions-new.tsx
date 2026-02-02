@@ -147,7 +147,7 @@ import {
   COMPONENT_SIZE,
   withAlpha,
 } from "@/utils/theme";
-import { formatCurrency } from "@/data/mockData";
+import { formatCurrency } from "@/services";
 import { triggerHaptic } from "@/utils/quiz-utils";
 
 // Quiz Session

@@ -658,6 +658,146 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
 });
 
 // ============================================================================
+// AD MEDIA UPLOAD
+// ============================================================================
+
+/**
+ * Upload ad media (image or video) to R2
+ * Supports both images and videos for ad campaigns
+ */
+export const uploadAdMediaToR2 = asyncHandler(async (req, res) => {
+  const startTime = Date.now();
+
+  // Get file from request (can be image or video)
+  const mediaFile = req.file;
+
+  if (!mediaFile) {
+    return res.status(400).json({
+      success: false,
+      error: 'NO_FILE',
+      message: 'No media file provided',
+    });
+  }
+
+  const { userId, adId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      error: 'MISSING_USER_ID',
+      message: 'User ID is required',
+    });
+  }
+
+  // Verify user exists
+  const { exists, isPremium } = await getUserPremiumStatus(userId);
+
+  if (!exists) {
+    return res.status(404).json({
+      success: false,
+      error: 'USER_NOT_FOUND',
+      message: 'User not found',
+    });
+  }
+
+  // Determine if this is an image or video
+  const isVideo = mediaFile.mimetype.startsWith('video/');
+  const isImage = mediaFile.mimetype.startsWith('image/');
+
+  if (!isVideo && !isImage) {
+    return res.status(400).json({
+      success: false,
+      error: 'INVALID_FILE_TYPE',
+      message: 'File must be an image or video',
+    });
+  }
+
+  // Validate file size
+  const maxSize = isVideo
+    ? (isPremium ? FILE_LIMITS.PREMIUM_VIDEO_MAX_SIZE : FILE_LIMITS.FREE_VIDEO_MAX_SIZE)
+    : FILE_LIMITS.THUMBNAIL_MAX_SIZE;
+
+  if (mediaFile.size > maxSize) {
+    const maxSizeMB = (maxSize / (1024 * 1024)).toFixed(0);
+    return res.status(413).json({
+      success: false,
+      error: 'FILE_TOO_LARGE',
+      message: `File size exceeds ${maxSizeMB}MB limit`,
+      maxSize,
+      fileSize: mediaFile.size,
+      isPremium,
+      upgradeRequired: !isPremium && isVideo,
+    });
+  }
+
+  try {
+    let result;
+    const storagePath = isVideo ? 'ads/videos' : 'ads/images';
+    const key = generateObjectKey(storagePath, mediaFile.originalname, userId);
+
+    console.log(`[R2Controller] Starting ad media upload: ${mediaFile.originalname} (${(mediaFile.size / 1024 / 1024).toFixed(2)}MB)`);
+
+    if (isVideo) {
+      // Upload video to R2
+      result = await uploadVideo(
+        mediaFile.buffer,
+        mediaFile.originalname,
+        mediaFile.mimetype,
+        userId,
+        { isPremium }
+      );
+    } else {
+      // Upload image to R2
+      result = await uploadThumbnail(
+        mediaFile.buffer,
+        mediaFile.originalname,
+        mediaFile.mimetype,
+        userId
+      );
+    }
+
+    console.log(`[R2Controller] Ad media uploaded to R2: ${result.key}`);
+
+    // If adId is provided, update the ad record
+    if (adId) {
+      const updateData = isVideo
+        ? { videoUrl: result.url, thumbnailUrl: result.url }
+        : { imageUrl: result.url };
+
+      await prisma.ad.update({
+        where: { id: adId },
+        data: updateData,
+      });
+    }
+
+    const uploadTime = Date.now() - startTime;
+    console.log(`[R2Controller] Ad media upload complete in ${uploadTime}ms`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Ad media uploaded successfully',
+      media: {
+        url: result.url,
+        key: result.key,
+        size: mediaFile.size,
+        mimeType: mediaFile.mimetype,
+        type: isVideo ? 'video' : 'image',
+        etag: result.etag,
+      },
+      uploadTime,
+    });
+  } catch (error) {
+    console.error('[R2Controller] Ad media upload error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'UPLOAD_FAILED',
+      message: error.message || 'Failed to upload ad media',
+    });
+  }
+});
+
+// ============================================================================
 // DELETE VIDEO
 // ============================================================================
 
@@ -712,4 +852,5 @@ export default {
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
   deleteVideoFromR2,
+  uploadAdMediaToR2,
 };

@@ -10,6 +10,8 @@
  * - Background refetching when app comes to foreground
  * - Optimistic updates for ad interactions
  * - No redundant state between Query cache and Zustand store
+ * 
+ * REST API integration - No mock data fallbacks
  */
 
 import { useQuery, useMutation, useQueryClient, UseQueryResult } from '@tanstack/react-query';
@@ -18,16 +20,9 @@ import { Platform, AppState, AppStateStatus } from 'react-native';
 import type { Ad } from '../types';
 import type { AdType } from '../store/AdStore';
 import { adApi, type AdFilters, type CreateAdPayload, type UpdateAdPayload } from './adApi';
-import { MOCK_ADS } from '../data/mockAdData';
 
 // Import UI store for client-side interactions (NOT for caching server data)
 import { useAdUIStore, type AdPlacement } from '../store/AdUIStore';
-
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
-
-const USE_MOCK_DATA = true; // Toggle for development
 
 /** Time before data is considered stale (5 minutes) */
 const STALE_TIME = 1000 * 60 * 5;
@@ -88,27 +83,8 @@ export function useAds(filters?: AdFilters): UseQueryResult<AdsListData, Error> 
   return useQuery({
     queryKey: adQueryKeys.list(filters),
     queryFn: async (): Promise<AdsListData> => {
-      if (USE_MOCK_DATA) {
-        let filteredAds = [...MOCK_ADS];
-        
-        if (filters?.type) {
-          filteredAds = filteredAds.filter(ad => ad.type === filters.type);
-        }
-        if (filters?.isActive !== undefined) {
-          filteredAds = filteredAds.filter(ad => ad.isActive === filters.isActive);
-        }
-        if (filters?.sponsored !== undefined) {
-          filteredAds = filteredAds.filter(ad => ad.sponsored === filters.sponsored);
-        }
-        if (filters?.limit) {
-          filteredAds = filteredAds.slice(0, filters.limit);
-        }
-        
-        return { ads: filteredAds, total: filteredAds.length };
-      }
-      
       const response = await adApi.fetchAds(filters);
-      return { ads: response.data, total: response.total };
+      return { ads: response.data, total: response.pagination?.total ?? response.data.length };
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -124,11 +100,6 @@ export function useFeaturedAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.featured(limit),
     queryFn: async (): Promise<Ad[]> => {
-      if (USE_MOCK_DATA) {
-        const featured = MOCK_ADS.filter(ad => ad.type === 'featured' && ad.isActive);
-        return limit ? featured.slice(0, limit) : featured;
-      }
-      
       const response = await adApi.fetchFeaturedAds(limit);
       return response.data;
     },
@@ -144,11 +115,6 @@ export function useBannerAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.banners(limit),
     queryFn: async (): Promise<Ad[]> => {
-      if (USE_MOCK_DATA) {
-        const banners = MOCK_ADS.filter(ad => ad.type === 'banner' && ad.isActive);
-        return limit ? banners.slice(0, limit) : banners;
-      }
-      
       const response = await adApi.fetchBannerAds(limit);
       return response.data;
     },
@@ -164,11 +130,6 @@ export function useVideoAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.videos(limit),
     queryFn: async (): Promise<Ad[]> => {
-      if (USE_MOCK_DATA) {
-        const videos = MOCK_ADS.filter(ad => ad.videoUrl && ad.isActive);
-        return limit ? videos.slice(0, limit) : videos;
-      }
-      
       const response = await adApi.fetchVideoAds(limit);
       return response.data;
     },
@@ -184,12 +145,6 @@ export function useAdById(adId: string, enabled = true): UseQueryResult<Ad, Erro
   return useQuery({
     queryKey: adQueryKeys.detail(adId),
     queryFn: async (): Promise<Ad> => {
-      if (USE_MOCK_DATA) {
-        const ad = MOCK_ADS.find(a => a.id === adId);
-        if (!ad) throw new Error('Ad not found');
-        return ad;
-      }
-      
       const response = await adApi.fetchAdById(adId);
       return response.data;
     },
@@ -209,29 +164,6 @@ export function useAdsForPlacement(
   return useQuery({
     queryKey: adQueryKeys.placement(placement, limit),
     queryFn: async (): Promise<Ad[]> => {
-      if (USE_MOCK_DATA) {
-        let ads = MOCK_ADS.filter(ad => ad.isActive);
-        
-        switch (placement) {
-          case 'home':
-            ads = ads.filter(ad => ad.type === 'featured' || ad.type === 'banner');
-            break;
-          case 'feed':
-            ads = ads.filter(ad => ad.type === 'regular' || ad.type === 'banner');
-            break;
-          case 'video':
-            ads = ads.filter(ad => ad.videoUrl);
-            break;
-          case 'survey':
-            ads = ads.filter(ad => ad.type === 'compact' || ad.type === 'banner');
-            break;
-          default:
-            break;
-        }
-        
-        return limit ? ads.slice(0, limit) : ads;
-      }
-      
       const response = await adApi.fetchAdsForPlacement(placement, limit);
       return response.data;
     },
@@ -254,17 +186,6 @@ export function useRandomAd(
   return useQuery({
     queryKey: adQueryKeys.random(type, seed),
     queryFn: async (): Promise<Ad | null> => {
-      if (USE_MOCK_DATA) {
-        let pool = MOCK_ADS.filter(ad => ad.isActive);
-        if (type) {
-          // Map store AdType to database Ad type if needed
-          const mappedType = type === 'standard' ? 'regular' : type;
-          pool = pool.filter(ad => ad.type === mappedType);
-        }
-        if (pool.length === 0) return null;
-        return pool[Math.floor(Math.random() * pool.length)];
-      }
-      
       const response = await adApi.fetchRandomAd(type);
       return response.data;
     },
@@ -278,20 +199,16 @@ export function useRandomAd(
 /**
  * Hook to fetch user's created ads (for advertisers)
  */
-export function useUserAds(filters?: AdFilters): UseQueryResult<AdsListData, Error> {
+export function useUserAds(userId: string, filters?: AdFilters): UseQueryResult<AdsListData, Error> {
   return useQuery({
     queryKey: adQueryKeys.userAds(filters),
     queryFn: async (): Promise<AdsListData> => {
-      if (USE_MOCK_DATA) {
-        const userAds = MOCK_ADS.slice(0, 5);
-        return { ads: userAds, total: userAds.length };
-      }
-      
-      const response = await adApi.fetchUserAds(filters);
-      return { ads: response.data, total: response.total };
+      const response = await adApi.fetchUserAds(userId, filters);
+      return { ads: response.data, total: response.pagination?.total ?? response.data.length };
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
+    enabled: !!userId,
   });
 }
 
@@ -305,19 +222,16 @@ export function useAdAnalytics(
   return useQuery({
     queryKey: adQueryKeys.analytics(adId),
     queryFn: async (): Promise<AdAnalyticsData> => {
-      if (USE_MOCK_DATA) {
-        return {
-          impressions: Math.floor(Math.random() * 10000),
-          clicks: Math.floor(Math.random() * 500),
-          ctr: Math.random() * 5,
-          views: Math.floor(Math.random() * 8000),
-          completionRate: Math.random() * 80,
-          avgViewDuration: Math.floor(Math.random() * 30),
-        };
-      }
-      
       const response = await adApi.fetchAdAnalytics(adId);
-      return response.data;
+      // Map API response to AdAnalyticsData format
+      return {
+        impressions: response.data.impressions,
+        clicks: response.data.clicks,
+        ctr: response.data.ctr,
+        views: response.data.views,
+        completionRate: 0, // Not provided by API, default to 0
+        avgViewDuration: 0, // Not provided by API, default to 0
+      };
     },
     enabled: enabled && !!adId,
     staleTime: STALE_TIME,
@@ -719,11 +633,6 @@ export function useInvalidateAdCache() {
       queryClient.prefetchQuery({
         queryKey: adQueryKeys.detail(adId),
         queryFn: async () => {
-          if (USE_MOCK_DATA) {
-            const ad = MOCK_ADS.find(a => a.id === adId);
-            if (!ad) throw new Error('Ad not found');
-            return ad;
-          }
           const response = await adApi.fetchAdById(adId);
           return response.data;
         },

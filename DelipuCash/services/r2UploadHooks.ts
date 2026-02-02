@@ -34,11 +34,13 @@ import {
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
   getSignedPlaybackUrl,
+  uploadAdMediaToR2,
   VideoUploadResult,
   ThumbnailUploadResult,
   PresignedUploadResult,
   ValidateUploadResult,
   UploadProgressEvent,
+  AdMediaUploadResult,
 } from './r2UploadService';
 import { ApiResponse } from '@/types';
 
@@ -506,6 +508,91 @@ export function useR2VideoUpload() {
 }
 
 // ============================================================================
+// AD MEDIA UPLOAD HOOK
+// ============================================================================
+
+export interface UseUploadAdMediaParams {
+  mediaUri: string;
+  userId: string;
+  fileName?: string;
+  mimeType?: string;
+  adId?: string;
+}
+
+/**
+ * Hook to upload ad media (image or video) to R2 with progress tracking
+ * 
+ * @example
+ * ```tsx
+ * const { mutate, isPending, progress } = useUploadAdMediaToR2();
+ * 
+ * // Upload with progress
+ * mutate({
+ *   mediaUri: 'file:///path/to/image.jpg',
+ *   userId: 'user-123',
+ * });
+ * 
+ * // Display progress
+ * <ProgressBar progress={progress} />
+ * ```
+ */
+export function useUploadAdMediaToR2(): UseMutationResult<
+  ApiResponse<AdMediaUploadResult>,
+  Error,
+  UseUploadAdMediaParams
+> & UploadHookResult {
+  const [progress, setProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async (params: UseUploadAdMediaParams) => {
+      setProgress(0);
+      setIsUploading(true);
+
+      try {
+        const result = await uploadAdMediaToR2(
+          params.mediaUri,
+          params.userId,
+          {
+            fileName: params.fileName,
+            mimeType: params.mimeType,
+            adId: params.adId,
+          },
+          {
+            onProgress: (event: UploadProgressEvent) => {
+              setProgress(event.progress);
+            },
+            onComplete: () => {
+              setProgress(100);
+              setIsUploading(false);
+            },
+            onError: () => {
+              setIsUploading(false);
+            },
+          }
+        );
+
+        return result;
+      } catch (error) {
+        setIsUploading(false);
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      // Invalidate ads cache to refetch
+      queryClient.invalidateQueries({ queryKey: ['ads'] });
+    },
+  });
+
+  return {
+    ...mutation,
+    progress,
+    isUploading,
+  };
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -516,4 +603,5 @@ export {
   PresignedUploadResult,
   ValidateUploadResult,
   UploadProgressEvent,
+  AdMediaUploadResult,
 };

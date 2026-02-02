@@ -25,6 +25,7 @@ import {
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
   validateUploadRequest,
+  uploadAdMediaToR2,
 } from '../controllers/r2UploadController.mjs';
 
 const router = express.Router();
@@ -219,6 +220,26 @@ router.post(
  * Check file size against user's limits
  */
 router.post('/upload/validate', validateUploadRequest);
+
+// ============================================================================
+// AD MEDIA UPLOAD ROUTES
+// ============================================================================
+
+/**
+ * POST /api/r2/upload/ad-media
+ * Upload ad media (image or video) to R2
+ * 
+ * Body (multipart/form-data):
+ * - media: Image or video file
+ * - userId: User ID
+ * - adId: Optional ad ID to update
+ */
+router.post(
+  '/upload/ad-media',
+  mediaUpload.single('media'),
+  handleMulterError,
+  uploadAdMediaToR2
+);
 
 // ============================================================================
 // PRESIGNED URL ROUTES (Direct upload from client)

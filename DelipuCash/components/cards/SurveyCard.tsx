@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   statusText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -388,7 +388,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
   progressValue: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
   progressBarContainer: {
@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   actionText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   statsRow: {
@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   viewResponsesText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

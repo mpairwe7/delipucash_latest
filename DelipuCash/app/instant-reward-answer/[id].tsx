@@ -1,5 +1,5 @@
 import { PrimaryButton, StatCard } from "@/components";
-import { formatCurrency } from "@/data/mockData";
+import { formatCurrency } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useRewardQuestions } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { RewardAnswerResult } from "@/types";

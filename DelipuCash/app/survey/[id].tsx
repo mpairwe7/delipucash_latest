@@ -35,7 +35,7 @@ import {
   X,
 } from "lucide-react-native";
 import { PrimaryButton } from "@/components";
-import { formatCurrency, formatDuration } from "@/data/mockData";
+import { formatCurrency, formatDuration } from "@/services";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
 import { UploadSurvey } from "@/types";
 import { useAuth } from "@/utils/auth";
@@ -200,8 +200,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       title: surveyData.title,
       description: surveyData.description || "",
       rewardAmount: surveyData.rewardAmount || 0,
-      estimatedTime: (surveyData.questions?.length || 0) * 2,
-      questions: (surveyData.questions || []).map((q) => ({
+      estimatedTime: (surveyData.uploads?.length || 0) * 2,
+      questions: (surveyData.uploads || []).map((q: UploadSurvey) => ({
         id: q.id,
         text: q.text,
         type: (q.type as QuestionType) || "text",

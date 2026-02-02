@@ -77,7 +77,7 @@ import {
   getRedemptionOptions,
 } from '@/services/quizApi';
 import useUser from '@/utils/useUser';
-import { formatCurrency } from '@/data/mockData';
+import { formatCurrency } from '@/services';
 import {
   QuizSessionState,
   QuizAnswerResult,

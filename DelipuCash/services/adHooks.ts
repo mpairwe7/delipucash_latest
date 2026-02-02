@@ -1,13 +1,13 @@
 /**
  * Ad Hooks - React Query hooks for ad data fetching
  * Design System Compliant - Consistent with app data fetching patterns
+ * REST API integration - No mock data fallbacks
  */
 
+import React, { useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useAdStore } from '../store/AdStore';
-import type { AdPlacement, AdType, AdImpression } from '../store/AdStore';
+import type { AdPlacement, AdType } from '../store/AdStore';
 import {
   adApi,
   type AdFilters,
@@ -17,7 +17,6 @@ import {
   type CreateAdPayload,
   type UpdateAdPayload,
 } from './adApi';
-import { MOCK_ADS } from '../data/mockAdData';
 import type { Ad } from '../types';
 
 // ============================================================================
@@ -43,7 +42,6 @@ export const adQueryKeys = {
 // CONFIGURATION
 // ============================================================================
 
-const USE_MOCK_DATA = true; // Toggle for development
 const STALE_TIME = 5 * 60 * 1000; // 5 minutes
 const CACHE_TIME = 30 * 60 * 1000; // 30 minutes
 const REFETCH_INTERVAL = 10 * 60 * 1000; // 10 minutes
@@ -61,26 +59,6 @@ export const useAds = (filters?: AdFilters) => {
   return useQuery({
     queryKey: adQueryKeys.list(filters),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        // Filter mock data based on filters
-        let filteredAds = [...MOCK_ADS];
-        
-        if (filters?.type) {
-          filteredAds = filteredAds.filter(ad => ad.type === filters.type);
-        }
-        if (filters?.isActive !== undefined) {
-          filteredAds = filteredAds.filter(ad => ad.isActive === filters.isActive);
-        }
-        if (filters?.sponsored !== undefined) {
-          filteredAds = filteredAds.filter(ad => ad.sponsored === filters.sponsored);
-        }
-        if (filters?.limit) {
-          filteredAds = filteredAds.slice(0, filters.limit);
-        }
-        
-        return { data: filteredAds, total: filteredAds.length };
-      }
-      
       const response = await adApi.fetchAds(filters);
       return { data: response.data, total: response.pagination?.total || response.data.length };
     },
@@ -104,11 +82,6 @@ export const useFeaturedAds = (limit?: number) => {
   return useQuery({
     queryKey: adQueryKeys.featured(limit),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        const featured = MOCK_ADS.filter(ad => ad.type === 'featured' && ad.isActive);
-        return { data: limit ? featured.slice(0, limit) : featured };
-      }
-      
       const response = await adApi.fetchFeaturedAds(limit);
       return { data: response.data };
     },
@@ -130,11 +103,6 @@ export const useBannerAds = (limit?: number) => {
   return useQuery({
     queryKey: adQueryKeys.banners(limit),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        const banners = MOCK_ADS.filter(ad => ad.type === 'banner' && ad.isActive);
-        return { data: limit ? banners.slice(0, limit) : banners };
-      }
-      
       const response = await adApi.fetchBannerAds(limit);
       return { data: response.data };
     },
@@ -156,11 +124,6 @@ export const useVideoAds = (limit?: number) => {
   return useQuery({
     queryKey: adQueryKeys.videos(limit),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        const videos = MOCK_ADS.filter(ad => ad.videoUrl && ad.isActive);
-        return { data: limit ? videos.slice(0, limit) : videos };
-      }
-      
       const response = await adApi.fetchVideoAds(limit);
       return { data: response.data };
     },
@@ -180,12 +143,6 @@ export const useAdById = (adId: string, enabled = true) => {
   return useQuery({
     queryKey: adQueryKeys.detail(adId),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        const ad = MOCK_ADS.find(a => a.id === adId);
-        if (!ad) throw new Error('Ad not found');
-        return ad;
-      }
-      
       const response = await adApi.fetchAdById(adId);
       return response.data;
     },
@@ -202,27 +159,6 @@ export const useAdsForPlacement = (placement: AdPlacement, limit?: number) => {
   return useQuery({
     queryKey: adQueryKeys.placement(placement, limit),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        // Simulate placement-based filtering
-        let ads = MOCK_ADS.filter(ad => ad.isActive);
-        
-        switch (placement) {
-          case 'home':
-            ads = ads.filter(ad => ad.type === 'featured' || ad.type === 'banner');
-            break;
-          case 'feed':
-            ads = ads.filter(ad => ad.type === 'regular' || ad.type === 'banner');
-            break;
-          case 'video':
-            ads = ads.filter(ad => ad.videoUrl);
-            break;
-          default:
-            break;
-        }
-        
-        return { data: limit ? ads.slice(0, limit) : ads };
-      }
-      
       const response = await adApi.fetchAdsForPlacement(placement, limit);
       return { data: response.data };
     },
@@ -238,15 +174,6 @@ export const useRandomAd = (type?: AdType, enabled = true) => {
   return useQuery({
     queryKey: adQueryKeys.random(type),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        let pool = MOCK_ADS.filter(ad => ad.isActive);
-        if (type) {
-          pool = pool.filter(ad => ad.type === type);
-        }
-        if (pool.length === 0) return null;
-        return pool[Math.floor(Math.random() * pool.length)];
-      }
-      
       const response = await adApi.fetchRandomAd(type);
       return response.data;
     },
@@ -263,10 +190,6 @@ export const useUserAds = (userId?: string, filters?: AdFilters) => {
   return useQuery({
     queryKey: adQueryKeys.userAds(filters),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        return { data: MOCK_ADS.slice(0, 5), total: 5 };
-      }
-      
       if (!userId) {
         return { data: [], total: 0 };
       }
@@ -274,7 +197,7 @@ export const useUserAds = (userId?: string, filters?: AdFilters) => {
       const response = await adApi.fetchUserAds(userId, filters);
       return { data: response.data, total: response.pagination?.total || response.data.length };
     },
-    enabled: !!userId || USE_MOCK_DATA,
+    enabled: !!userId,
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
   });
@@ -287,17 +210,6 @@ export const useAdAnalytics = (adId: string, enabled = true) => {
   return useQuery({
     queryKey: adQueryKeys.analytics(adId),
     queryFn: async () => {
-      if (USE_MOCK_DATA) {
-        return {
-          impressions: Math.floor(Math.random() * 10000),
-          clicks: Math.floor(Math.random() * 500),
-          ctr: Math.random() * 5,
-          views: Math.floor(Math.random() * 8000),
-          completionRate: Math.random() * 80,
-          avgViewDuration: Math.floor(Math.random() * 30),
-        };
-      }
-      
       const response = await adApi.fetchAdAnalytics(adId);
       return response.data;
     },
@@ -312,13 +224,80 @@ export const useAdAnalytics = (adId: string, enabled = true) => {
 // ============================================================================
 
 /**
+ * Hook to track ad click
+ */
+export const useTrackAdClick = () => {
+  const { recordImpression } = useAdStore();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: AdClickPayload) => {
+      const response = await adApi.recordAdClick(payload);
+      return response;
+    },
+    onSuccess: (_, variables) => {
+      // Update local store
+      recordImpression({
+        adId: variables.adId,
+        timestamp: new Date().toISOString(),
+        placement: variables.placement as AdPlacement,
+        duration: 0,
+        wasClicked: true,
+        wasCompleted: false,
+      });
+      // Invalidate analytics queries
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.analytics(variables.adId) });
+    },
+  });
+};
+
+/**
+ * Hook to track ad impression
+ */
+export const useTrackAdImpression = () => {
+  const { recordImpression } = useAdStore();
+
+  return useMutation({
+    mutationFn: async (payload: AdImpressionPayload) => {
+      const response = await adApi.recordAdImpression(payload);
+      return response;
+    },
+    onSuccess: (_, variables) => {
+      recordImpression({
+        adId: variables.adId,
+        timestamp: new Date().toISOString(),
+        placement: variables.placement as AdPlacement,
+        duration: variables.duration || 0,
+        wasClicked: false,
+        wasCompleted: false,
+      });
+    },
+  });
+};
+
+/**
+ * Hook to track video ad progress
+ */
+export const useTrackVideoProgress = () => {
+  return useMutation({
+    mutationFn: async (payload: AdVideoProgressPayload) => {
+      const response = await adApi.recordVideoProgress(payload);
+      return response;
+    },
+  });
+};
+
+/**
  * Hook to create a new ad
  */
 export const useCreateAd = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (payload: CreateAdPayload) => adApi.createAd(payload),
+    mutationFn: async (payload: CreateAdPayload) => {
+      const response = await adApi.createAd(payload);
+      return response.data;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adQueryKeys.all });
     },
@@ -332,11 +311,13 @@ export const useUpdateAd = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ adId, payload }: { adId: string; payload: UpdateAdPayload }) =>
-      adApi.updateAd(adId, payload),
-    onSuccess: (_, { adId }) => {
-      queryClient.invalidateQueries({ queryKey: adQueryKeys.detail(adId) });
-      queryClient.invalidateQueries({ queryKey: adQueryKeys.lists() });
+    mutationFn: async ({ adId, payload }: { adId: string; payload: UpdateAdPayload }) => {
+      const response = await adApi.updateAd(adId, payload);
+      return response.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.detail(variables.adId) });
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.all });
     },
   });
 };
@@ -348,74 +329,12 @@ export const useDeleteAd = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (adId: string) => adApi.deleteAd(adId),
+    mutationFn: async (adId: string) => {
+      const response = await adApi.deleteAd(adId);
+      return response;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adQueryKeys.all });
-    },
-  });
-};
-
-// ============================================================================
-// ANALYTICS HOOKS
-// ============================================================================
-
-/**
- * Hook to record ad click
- */
-export const useRecordAdClick = () => {
-  const { recordClick } = useAdStore();
-
-  return useMutation({
-    mutationFn: (payload: AdClickPayload) => {
-      // Record locally
-      recordClick(payload.adId);
-      
-      // Send to server (fire and forget)
-      return adApi.recordAdClick(payload);
-    },
-  });
-};
-
-/**
- * Hook to record ad impression
- */
-export const useRecordAdImpression = () => {
-  const { recordImpression } = useAdStore();
-
-  return useMutation({
-    mutationFn: (payload: AdImpressionPayload) => {
-      // Record locally
-      const impression: AdImpression = {
-        adId: payload.adId,
-        timestamp: payload.timestamp,
-        placement: payload.placement,
-        duration: payload.duration,
-        wasClicked: false,
-        wasCompleted: false,
-      };
-      recordImpression(impression);
-      
-      // Send to server
-      return adApi.recordAdImpression(payload);
-    },
-  });
-};
-
-/**
- * Hook to record video ad progress
- */
-export const useRecordVideoProgress = () => {
-  const { recordCompletion } = useAdStore();
-
-  return useMutation({
-    mutationFn: (payload: AdVideoProgressPayload) => {
-      // Record completion if video was completed
-      if (payload.wasCompleted) {
-        recordCompletion(payload.adId);
-      }
-      
-      // Send to server
-      return adApi.recordVideoProgress(payload);
     },
   });
 };
@@ -425,168 +344,106 @@ export const useRecordVideoProgress = () => {
 // ============================================================================
 
 /**
- * Hook to track ad visibility and record impressions
+ * Hook for automatic impression tracking when ad becomes visible
  */
-export const useAdImpressionTracker = (
+export const useAdImpressionTracking = (
   ad: Ad | null,
   placement: AdPlacement,
-  isVisible: boolean
+  isVisible: boolean = true
 ) => {
-  const impressionRecorded = useRef(false);
-  const viewStartTime = useRef<number | null>(null);
-  const { mutate: recordImpression } = useRecordAdImpression();
+  const trackImpression = useTrackAdImpression();
+  const impressionStartRef = useRef<number | null>(null);
+  const hasTrackedRef = useRef(false);
+  const adIdRef = useRef(ad?.id);
+
+  // Update ref when ad changes
+  useEffect(() => {
+    adIdRef.current = ad?.id;
+  }, [ad?.id]);
 
   useEffect(() => {
     if (!ad || !isVisible) {
-      if (viewStartTime.current && ad) {
-        // Record view duration when ad becomes invisible
-        const duration = Date.now() - viewStartTime.current;
-        recordImpression({
-          adId: ad.id,
-          timestamp: new Date().toISOString(),
-          placement,
-          duration,
-          wasVisible: true,
-          viewportPercentage: 100,
-        });
+      // Reset when ad changes or becomes invisible
+      if (impressionStartRef.current && adIdRef.current) {
+        const duration = Date.now() - impressionStartRef.current;
+        if (duration >= 1000 && !hasTrackedRef.current) {
+          trackImpression.mutate({
+            adId: adIdRef.current,
+            timestamp: new Date().toISOString(),
+            placement,
+            duration: Math.floor(duration / 1000),
+            wasVisible: true,
+            viewportPercentage: 100,
+          });
+          hasTrackedRef.current = true;
+        }
       }
-      viewStartTime.current = null;
+      impressionStartRef.current = null;
       return;
     }
 
-    if (!impressionRecorded.current) {
-      viewStartTime.current = Date.now();
-      impressionRecorded.current = true;
-    }
+    impressionStartRef.current = Date.now();
+    hasTrackedRef.current = false;
 
     return () => {
-      if (viewStartTime.current && ad) {
-        const duration = Date.now() - viewStartTime.current;
-        recordImpression({
-          adId: ad.id,
-          timestamp: new Date().toISOString(),
-          placement,
-          duration,
-          wasVisible: true,
-          viewportPercentage: 100,
-        });
+      if (impressionStartRef.current && !hasTrackedRef.current && adIdRef.current) {
+        const duration = Date.now() - impressionStartRef.current;
+        if (duration >= 1000) {
+          trackImpression.mutate({
+            adId: adIdRef.current,
+            timestamp: new Date().toISOString(),
+            placement,
+            duration: Math.floor(duration / 1000),
+            wasVisible: true,
+            viewportPercentage: 100,
+          });
+        }
       }
     };
-  }, [ad, isVisible, placement, recordImpression]);
-
-  return { impressionRecorded: impressionRecorded.current };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ad?.id, isVisible, placement]);
 };
 
 /**
- * Hook to handle ad click with analytics
+ * Hook for ad rotation with configurable interval
  */
-export const useAdClickHandler = (placement: AdPlacement) => {
-  const { mutate: recordClick } = useRecordAdClick();
-
-  return useCallback(
-    (ad: Ad) => {
-      recordClick({
-        adId: ad.id,
-        timestamp: new Date().toISOString(),
-        placement,
-        deviceInfo: {
-          platform: Platform.OS,
-          version: Platform.Version.toString(),
-        },
-      });
-    },
-    [placement, recordClick]
-  );
-};
-
-/**
- * Hook to refresh ads on app focus
- */
-export const useAdRefreshOnFocus = () => {
-  const queryClient = useQueryClient();
+export const useAdRotation = (ads: Ad[], intervalMs: number = 10000) => {
+  const [currentIndex, setCurrentIndex] = React.useState(0);
 
   useEffect(() => {
-    const handleAppStateChange = (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active') {
-        // Refresh ads when app comes to foreground
-        queryClient.invalidateQueries({ 
-          queryKey: adQueryKeys.all,
-          refetchType: 'active',
-        });
-      }
-    };
+    if (ads.length <= 1) return;
 
-    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    const interval = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % ads.length);
+    }, intervalMs);
 
-    return () => {
-      subscription.remove();
-    };
-  }, [queryClient]);
-};
-
-/**
- * Hook to get ad preferences and update them
- */
-export const useAdPreferences = () => {
-  const { 
-    preferences, 
-    updatePreferences,
-    blockAdvertiser,
-    unblockAdvertiser,
-    blockCategory,
-    unblockCategory,
-  } = useAdStore();
+    return () => clearInterval(interval);
+  }, [ads.length, intervalMs]);
 
   return {
-    preferences,
-    updatePreferences,
-    blockAdvertiser,
-    unblockAdvertiser,
-    blockCategory,
-    unblockCategory,
-    togglePersonalizedAds: () => 
-      updatePreferences({ personalizedAds: !preferences.personalizedAds }),
-    setAdFrequency: (frequency: 'low' | 'medium' | 'high') =>
-      updatePreferences({ adFrequency: frequency }),
+    currentAd: ads[currentIndex] || null,
+    currentIndex,
+    setCurrentIndex,
+    totalAds: ads.length,
   };
 };
 
-// ============================================================================
-// COMBINED HOOKS
-// ============================================================================
-
-/**
- * Hook to get all ads for a page (combines multiple ad types)
- */
-export const usePageAds = (placement: AdPlacement) => {
-  const featuredQuery = useFeaturedAds(2);
-  const bannerQuery = useBannerAds(3);
-  const standardQuery = useAds({ isActive: true, limit: 5 });
-
-  const isLoading = 
-    featuredQuery.isLoading || 
-    bannerQuery.isLoading || 
-    standardQuery.isLoading;
-
-  const isError = 
-    featuredQuery.isError || 
-    bannerQuery.isError || 
-    standardQuery.isError;
-
-  const refetch = useCallback(async () => {
-    await Promise.all([
-      featuredQuery.refetch(),
-      bannerQuery.refetch(),
-      standardQuery.refetch(),
-    ]);
-  }, [featuredQuery, bannerQuery, standardQuery]);
-
-  return {
-    featuredAds: featuredQuery.data || [],
-    bannerAds: bannerQuery.data || [],
-    standardAds: standardQuery.data?.data || [],
-    isLoading,
-    isError,
-    refetch,
-  };
+export default {
+  useAds,
+  useFeaturedAds,
+  useBannerAds,
+  useVideoAds,
+  useAdById,
+  useAdsForPlacement,
+  useRandomAd,
+  useUserAds,
+  useAdAnalytics,
+  useTrackAdClick,
+  useTrackAdImpression,
+  useTrackVideoProgress,
+  useCreateAd,
+  useUpdateAd,
+  useDeleteAd,
+  useAdImpressionTracking,
+  useAdRotation,
 };

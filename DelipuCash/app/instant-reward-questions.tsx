@@ -5,7 +5,7 @@ import {
     StatCard,
     UploadRewardQuestionModal,
 } from "@/components";
-import { formatCurrency } from "@/data/mockData";
+import { formatCurrency } from "@/services";
 import { useRewardQuestions, useUserProfile } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import {

@@ -167,9 +167,10 @@ export function useVideoDetails(videoId: string): UseQueryResult<VideoWithDetail
  * ```
  */
 export function useLikeVideo(): UseMutationResult<
-  Video,
+  { likes: number; isLiked: boolean },
   Error,
-  { videoId: string; isLiked: boolean }
+  { videoId: string; isLiked: boolean },
+  { previousVideo: VideoWithDetails | undefined }
 > {
   const queryClient = useQueryClient();
 
@@ -255,7 +256,7 @@ export function useBookmarkVideo(): UseMutationResult<
  * recordView('video_001');
  * ```
  */
-export function useRecordVideoView(): UseMutationResult<Video, Error, string> {
+export function useRecordVideoView(): UseMutationResult<{ views: number }, Error, string> {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -328,8 +329,8 @@ export function useAddVideoComment(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ videoId, text, mediaUrls }) => {
-      const response = await videoApi.addComment(videoId, text, mediaUrls);
+    mutationFn: async ({ videoId, text }) => {
+      const response = await videoApi.addComment(videoId, text);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
@@ -633,7 +634,7 @@ export function useVideoState(videoId: string) {
     },
     bookmark: () => {
       if (video) {
-        bookmarkMutation.mutate({ videoId, isBookmarked: video.isBookmarked });
+        bookmarkMutation.mutate({ videoId, isBookmarked: video.isBookmarked ?? false });
       }
     },
     recordView: () => viewMutation.mutate(videoId),

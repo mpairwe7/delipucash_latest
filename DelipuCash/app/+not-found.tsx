@@ -76,7 +76,7 @@ function NotFoundScreen() {
       );
       if (isExpoSitemap) {
         if (hasTabsHome) {
-          router.replace('/(tabs)/home');
+          router.replace('/(tabs)/home-redesigned' as any);
         } else {
           router.replace('/');
         }

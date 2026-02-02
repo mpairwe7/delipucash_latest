@@ -468,6 +468,8 @@ export interface PaginatedResponse<T> {
     total: number;
     totalPages: number;
   };
+  error?: string;
+  message?: string;
 }
 
 // Transaction type for display purposes

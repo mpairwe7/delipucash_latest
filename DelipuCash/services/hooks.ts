@@ -21,10 +21,7 @@ import {
     Video,
 } from "@/types";
 import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
-import mockApis from "./api";
-
-// Alias for backwards compatibility
-const api = mockApis;
+import api from "./api";
 
 // Query Keys
 export const queryKeys = {
@@ -580,7 +577,7 @@ export function useSurveys(filters?: { status?: string; search?: string }): UseQ
 /**
  * Hook to fetch a single survey with questions
  */
-export function useSurvey(surveyId: string): UseQueryResult<(Survey & { questions: UploadSurvey[] }) | null, Error> {
+export function useSurvey(surveyId: string): UseQueryResult<Survey | null, Error> {
   return useQuery({
     queryKey: queryKeys.survey(surveyId),
     queryFn: async () => {
@@ -598,7 +595,7 @@ export function useSurvey(surveyId: string): UseQueryResult<(Survey & { question
 export function useCheckSurveyAttempt(
   surveyId: string, 
   userId: string | undefined
-): UseQueryResult<{ hasAttempted: boolean; attemptedAt: string | null; message: string }, Error> {
+): UseQueryResult<{ hasAttempted: boolean; attemptedAt: string | null; message?: string }, Error> {
   return useQuery({
     queryKey: ["surveyAttempt", surveyId, userId] as const,
     queryFn: async () => {
@@ -636,7 +633,7 @@ export function useSubmitSurvey(): UseMutationResult<{ reward: number }, Error, 
 /**
  * Hook to create a new survey
  */
-export function useCreateSurvey(): UseMutationResult<Survey & { questions: UploadSurvey[] }, Error, {
+export function useCreateSurvey(): UseMutationResult<Survey, Error, {
   title: string;
   description?: string;
   startDate: string;
@@ -670,8 +667,8 @@ export function useDeleteSurvey(): UseMutationResult<{ deleted: boolean }, Error
 
   return useMutation({
     mutationFn: async (surveyId) => {
-      const response = await api.surveys.delete?.(surveyId);
-      if (!response?.success) throw new Error(response?.error || "Failed to delete survey");
+      const response = await api.surveys.delete(surveyId);
+      if (!response.success) throw new Error(response.error || "Failed to delete survey");
       return response.data;
     },
     onSuccess: () => {
@@ -740,7 +737,7 @@ export function useInstantRewardQuestions(limit: number = 5): UseQueryResult<Que
 /**
  * Hook to fetch a single question with responses
  */
-export function useQuestion(questionId: string): UseQueryResult<(Question & { responses: Response[] }) | null, Error> {
+export function useQuestion(questionId: string): UseQueryResult<Question | null, Error> {
   return useQuery({
     queryKey: queryKeys.question(questionId),
     queryFn: async () => {
@@ -966,7 +963,8 @@ export function useUnreadCount(): UseQueryResult<number, Error> {
     queryFn: async () => {
       const response = await api.notifications.getUnreadCount();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      // Handle both number and object response formats
+      return typeof response.data === 'number' ? response.data : response.data?.count ?? 0;
     },
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 60, // Refetch every minute
@@ -1282,7 +1280,7 @@ export function useVideoLimits(userId: string | undefined): UseQueryResult<Video
     queryKey: videoLimitsQueryKeys.limits(userId || ''),
     queryFn: async () => {
       if (!userId) throw new Error('User ID is required');
-      const response = await videoApi.getVideoLimits(userId);
+      const response = await videoApi.getUserLimits(userId);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
@@ -1327,7 +1325,7 @@ export function useStartLivestream(): UseMutationResult<LivestreamSessionRespons
 /**
  * Hook to end a livestream session
  */
-export function useEndLivestream(): UseMutationResult<{ endedAt: string }, Error, EndLivestreamRequest> {
+export function useEndLivestream(): UseMutationResult<{ success: boolean; endedAt?: string }, Error, EndLivestreamRequest> {
   return useMutation({
     mutationFn: async (data: EndLivestreamRequest) => {
       const response = await videoApi.endLivestream(data);

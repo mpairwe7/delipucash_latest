@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate, getUserById } from "@/data/mockData";
+import { formatCurrency, formatDate } from "@/services/api";
 import { useQuestion, useSubmitResponse } from "@/services/hooks";
 import { Response } from "@/types";
 import {
@@ -143,7 +143,8 @@ export default function AnswerQuestionScreen(): React.ReactElement {
   // Transform question data for display
   const question: QuestionDisplay | null = React.useMemo(() => {
     if (!questionData) return null;
-    const questionUser = getUserById(questionData.userId || "");
+    // Use user data from API response
+    const questionUser = questionData.user;
     const userName = questionUser ? `${questionUser.firstName} ${questionUser.lastName}` : "Anonymous";
     return {
       id: questionData.id,
@@ -158,7 +159,8 @@ export default function AnswerQuestionScreen(): React.ReactElement {
       createdAt: questionData.createdAt,
       totalAnswers: questionData.responses?.length || 0,
       answers: (questionData.responses || []).map((r: Response, index: number) => {
-        const respUser = getUserById(r.userId);
+        // Use user data from response API response
+        const respUser = r.user;
         const respUserName = respUser ? `${respUser.firstName} ${respUser.lastName}` : "Anonymous";
         return {
           id: r.id,

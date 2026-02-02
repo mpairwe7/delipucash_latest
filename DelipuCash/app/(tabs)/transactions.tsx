@@ -24,7 +24,7 @@ import {
 import { useTransactions, useUnreadCount } from "@/services/hooks";
 import { NotificationBell } from "@/components";
 import { Transaction, PaymentStatus } from "@/types";
-import { formatCurrency, formatDate } from "@/data/mockData";
+import { formatCurrency, formatDate } from "@/services/api";
 
 type TransactionStatus = "PENDING" | "SUCCESSFUL" | "FAILED";
 type TransactionType = "reward" | "withdrawal" | "deposit" | "payment";

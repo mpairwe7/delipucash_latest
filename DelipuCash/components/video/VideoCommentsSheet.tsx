@@ -100,40 +100,6 @@ interface CommentWithLikes extends Comment {
 }
 
 // ============================================================================
-// MOCK DATA (replace with actual data fetching)
-// ============================================================================
-
-const MOCK_COMMENTS: CommentWithLikes[] = [
-  {
-    id: '1',
-    text: 'This is amazing! Great content 🔥',
-    userId: 'user1',
-    videoId: 'video1',
-    mediaUrls: [],
-    createdAt: new Date().toISOString(),
-    likes: 42,
-  },
-  {
-    id: '2',
-    text: 'Love this video! Keep up the great work.',
-    userId: 'user2',
-    videoId: 'video1',
-    mediaUrls: [],
-    createdAt: new Date().toISOString(),
-    likes: 18,
-  },
-  {
-    id: '3',
-    text: 'Can you make more videos like this? 👏',
-    userId: 'user3',
-    videoId: 'video1',
-    mediaUrls: [],
-    createdAt: new Date().toISOString(),
-    likes: 7,
-  },
-];
-
-// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -262,7 +228,7 @@ function VideoCommentsSheetComponent({
   const backdropOpacity = useSharedValue(0);
 
   // Local state
-  const [comments, setComments] = useState<CommentWithLikes[]>(propComments || MOCK_COMMENTS);
+  const [comments, setComments] = useState<CommentWithLikes[]>(propComments || []);
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());

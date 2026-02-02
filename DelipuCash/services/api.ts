@@ -1,33 +1,8 @@
 /**
  * API Service Layer
  * Centralized API routes and data fetching utilities
- * Uses mock data for development, can be switched to real API calls
+ * Uses REST API calls for all data operations - No mock data fallbacks
  */
-
-import {
-  getQuestionById,
-  getResponsesForQuestion,
-  getSurveyById,
-  getSurveyQuestionsForSurvey,
-  getUnreadNotificationCount,
-  getUserById,
-  getUserNotifications,
-  getVideoById,
-  mockAds,
-  mockComments,
-  mockCurrentUser,
-  mockLoginSessions,
-  mockNotifications,
-  mockPayments,
-  mockQuestions,
-  mockResponses,
-  mockRewardQuestions,
-  mockRewards,
-  mockSurveys,
-  mockTransactions,
-  mockUserStats,
-  mockVideos
-} from "@/data/mockData";
 import {
     Ad,
     ApiResponse,
@@ -36,14 +11,12 @@ import {
   LoginSession,
     Notification,
     PaginatedResponse,
-    Payment,
-    PaymentStatus,
+  Payment,
     Question,
     Response,
     Reward,
     RewardAnswerResult,
-    RewardQuestion,
-    SubscriptionType,
+  RewardQuestion,
     Survey,
     Transaction,
     UploadSurvey,
@@ -55,12 +28,12 @@ import {
 // API Configuration
 // ===========================================
 
-// Simulate network delay
-const delay = (ms: number = 500): Promise<void> => 
-  new Promise(resolve => setTimeout(resolve, ms));
-
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
-const isBackendConfigured = Boolean(process.env.EXPO_PUBLIC_API_URL);
+
+// Validate that API URL is configured
+if (!API_BASE_URL) {
+  console.warn('[API] EXPO_PUBLIC_API_URL is not configured. API calls will fail.');
+}
 
 // API Version for future compatibility
 const API_VERSION = "v1";
@@ -213,6 +186,8 @@ export const API_ROUTES = {
     like: (id: string) => `/api/videos/${id}/like`,
     bookmark: (id: string) => `/api/videos/${id}/bookmark`,
     comments: (id: string) => `/api/videos/${id}/comments`,
+    trending: "/api/videos/trending",
+    popular: "/api/videos/popular",
   },
   // Surveys
   surveys: {
@@ -228,10 +203,12 @@ export const API_ROUTES = {
   // Questions
   questions: {
     list: "/api/questions",
+    all: "/api/questions/all",
     get: (id: string) => `/api/questions/${id}`,
-    create: "/api/questions",
+    create: "/api/questions/create",
     responses: (id: string) => `/api/questions/${id}/responses`,
     submitResponse: (id: string) => `/api/questions/${id}/responses`,
+    vote: (id: string) => `/api/questions/${id}/vote`,
   },
   // Responses
   responses: {
@@ -256,182 +233,87 @@ export const API_ROUTES = {
     markRead: (id: string) => `/api/notifications/${id}/read`,
     markAllRead: "/api/notifications/read-all",
     delete: (id: string) => `/api/notifications/${id}`,
+    unreadCount: "/api/notifications/unread-count",
   },
   // Rewards
   rewards: {
     list: "/api/rewards",
     questions: "/api/rewards/questions",
+    question: (id: string) => `/api/rewards/questions/${id}`,
+    submitAnswer: (id: string) => `/api/rewards/questions/${id}/answer`,
     claim: (id: string) => `/api/rewards/${id}/claim`,
+    daily: "/api/rewards/daily",
   },
   // Ads
   ads: {
-    list: "/api/ads",
+    list: "/api/ads/all",
+    get: (id: string) => `/api/ads/${id}`,
     click: (id: string) => `/api/ads/${id}/click`,
+    impression: (id: string) => `/api/ads/${id}/impression`,
   },
 } as const;
 
 // ===========================================
 // User API
-// Integrates with backend REST API with mock fallback
+// Integrates with backend REST API
 // Backend routes: /api/users/* and /api/auth/*
 // ===========================================
 export const userApi = {
   /**
    * Get current user profile
-   * Backend: GET /api/auth/:userId (requires auth token)
-   * Fallback: mockCurrentUser
+   * Backend: GET /api/users/profile (requires auth token)
    */
   async getProfile(): Promise<ApiResponse<AppUser>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<AppUser>(API_ROUTES.user.profile);
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.getProfile] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: mockCurrentUser,
-    };
+    return fetchJson<AppUser>(API_ROUTES.user.profile);
   },
 
   /**
    * Update user profile
-   * Backend: PUT /api/auth/:userId (requires auth token)
-   * Fallback: mockCurrentUser with updates
+   * Backend: PUT /api/users/profile (requires auth token)
    */
   async updateProfile(data: Partial<AppUser>): Promise<ApiResponse<AppUser>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<AppUser>(API_ROUTES.user.update, {
-          method: 'PUT',
-          body: JSON.stringify(data),
-        });
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.updateProfile] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    const updatedUser = { ...mockCurrentUser, ...data, updatedAt: new Date().toISOString() };
-    return {
-      success: true,
-      data: updatedUser,
-      message: "Profile updated successfully",
-    };
+    return fetchJson<AppUser>(API_ROUTES.user.update, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   },
 
   /**
    * Get user statistics
-   * Backend: GET /api/users/:userId/stats (TODO: implement backend)
-   * Fallback: mockUserStats
+   * Backend: GET /api/users/stats
    */
   async getStats(): Promise<ApiResponse<UserStats>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<UserStats>(API_ROUTES.user.stats);
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.getStats] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: mockUserStats,
-    };
+    return fetchJson<UserStats>(API_ROUTES.user.stats);
   },
 
   /**
    * Get user by ID
    * Backend: GET /api/users/:userId
-   * Fallback: getUserById from mock data
    */
   async getById(userId: string): Promise<ApiResponse<AppUser | null>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<AppUser>(`/api/users/${userId}`);
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.getById] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    const user = getUserById(userId);
-    return {
-      success: true,
-      data: user || null,
-    };
+    return fetchJson<AppUser>(`/api/users/${userId}`);
   },
 
   /**
    * Get user login sessions
    * Backend: GET /api/users/login-activity (requires auth token)
-   * Fallback: mockLoginSessions filtered by user
    */
   async getSessions(): Promise<ApiResponse<LoginSession[]>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<LoginSession[]>('/api/users/login-activity');
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.getSessions] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: mockLoginSessions.filter(s => s.userId === mockCurrentUser.id),
-    };
+    return fetchJson<LoginSession[]>(API_ROUTES.user.sessions);
   },
 
   /**
    * Revoke a login session
-   * Backend: POST /api/users/signout-all-devices (for all) or individual session revoke
-   * Fallback: Update mock session to inactive
+   * Backend: POST /api/users/sessions/:sessionId/revoke
    */
   async revokeSession(sessionId: string): Promise<ApiResponse<{ revoked: boolean }>> {
-    if (isBackendConfigured) {
-      try {
-        // Note: Backend currently has signout-all-devices, may need individual session revoke endpoint
-        const response = await fetchJson<{ revoked: boolean }>(`/api/users/sessions/${sessionId}/revoke`, {
-          method: 'POST',
-        });
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.revokeSession] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    const sessionIndex = mockLoginSessions.findIndex(s => s.id === sessionId);
-    if (sessionIndex === -1) {
-      return { success: false, data: { revoked: false }, error: "Session not found" };
-    }
-    // Update session to inactive
-    mockLoginSessions[sessionIndex] = {
-      ...mockLoginSessions[sessionIndex],
-      isActive: false,
-      logoutTime: new Date().toISOString(),
-    };
-    return {
-      success: true,
-      data: { revoked: true },
-      message: "Session revoked successfully",
-    };
+    return fetchJson<{ revoked: boolean }>(`/api/users/sessions/${sessionId}/revoke`, {
+      method: 'POST',
+    });
   },
 
   /**
    * Toggle 2FA settings (enable/disable)
-   * When enabling: Sends verification code to email
-   * When disabling: Requires password verification
    * Backend: PUT /api/auth/two-factor
    */
   async updateTwoFactor(enabled: boolean, password?: string): Promise<ApiResponse<{
@@ -439,33 +321,11 @@ export const userApi = {
     codeSent?: boolean;
     email?: string;
     expiresIn?: number;
-    devCode?: string; // Only in dev mode
   }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<any>('/api/auth/two-factor', {
-          method: 'PUT',
-          body: JSON.stringify({ enabled, password }),
-        });
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.updateTwoFactor] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    if (enabled) {
-      return {
-        success: true,
-        data: { codeSent: true, email: 'us***@example.com', expiresIn: 600 },
-        message: "Verification code sent to your email",
-      };
-    }
-    return {
-      success: true,
-      data: { enabled: false },
-      message: "Two-factor authentication disabled",
-    };
+    return fetchJson<any>('/api/auth/two-factor', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, password }),
+    });
   },
 
   /**
@@ -473,31 +333,10 @@ export const userApi = {
    * Backend: POST /api/auth/two-factor/verify
    */
   async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<{ enabled: boolean }>('/api/auth/two-factor/verify', {
-          method: 'POST',
-          body: JSON.stringify({ code }),
-        });
-        return response;
-      } catch (error) {
-        console.log('[userApi.verify2FACode] Backend call failed:', error);
-      }
-    }
-    // Mock fallback - simulate verification
-    await delay();
-    if (code === '123456') {
-      return {
-        success: true,
-        data: { enabled: true },
-        message: "Two-factor authentication enabled successfully",
-      };
-    }
-    return {
-      success: false,
-      data: { enabled: false },
-      error: "Invalid verification code",
-    };
+    return fetchJson<{ enabled: boolean }>('/api/auth/two-factor/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
   },
 
   /**
@@ -505,101 +344,39 @@ export const userApi = {
    * Backend: POST /api/auth/two-factor/resend
    */
   async resend2FACode(): Promise<ApiResponse<{ codeSent: boolean; email: string; expiresIn: number }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<any>('/api/auth/two-factor/resend', {
-          method: 'POST',
-        });
-        return response;
-      } catch (error) {
-        console.log('[userApi.resend2FACode] Backend call failed:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: { codeSent: true, email: 'us***@example.com', expiresIn: 600 },
-      message: "New verification code sent",
-    };
+    return fetchJson<any>('/api/auth/two-factor/resend', {
+      method: 'POST',
+    });
   },
 
   /**
    * Change password
    * Backend: PUT /api/auth/change-password (requires auth token)
-   * Fallback: Simulate password change
    */
   async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<{ success: boolean }>('/api/auth/change-password', {
-          method: 'PUT',
-          body: JSON.stringify({ currentPassword, newPassword }),
-        });
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.changePassword] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay(800);
-    // Simulate password validation
-    if (currentPassword === newPassword) {
-      return { success: false, data: { success: false }, error: "New password must be different from current password" };
-    }
-    return {
-      success: true,
-      data: { success: true },
-      message: "Password changed successfully",
-    };
+    return fetchJson<{ success: boolean }>(API_ROUTES.auth.changePassword, {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
   },
 
   /**
    * Update privacy settings
    * Backend: PUT /api/users/privacy (requires auth token)
-   * Fallback: Return updated settings
    */
   async updatePrivacySettings(settings: { shareProfile: boolean; shareActivity: boolean }): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<{ shareProfile: boolean; shareActivity: boolean }>('/api/users/privacy', {
-          method: 'PUT',
-          body: JSON.stringify(settings),
-        });
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.updatePrivacySettings] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: settings,
-      message: "Privacy settings updated",
-    };
+    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy, {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
   },
 
   /**
    * Get privacy settings
    * Backend: GET /api/users/privacy (requires auth token)
-   * Fallback: Return default settings
    */
   async getPrivacySettings(): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
-    if (isBackendConfigured) {
-      try {
-        const response = await fetchJson<{ shareProfile: boolean; shareActivity: boolean }>('/api/users/privacy');
-        if (response.success) return response;
-      } catch (error) {
-        console.log('[userApi.getPrivacySettings] Backend call failed, using mock data:', error);
-      }
-    }
-    // Mock fallback
-    await delay();
-    return {
-      success: true,
-      data: { shareProfile: true, shareActivity: false },
-    };
+    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy);
   },
 };
 
@@ -611,26 +388,20 @@ export const videosApi = {
    * Get all videos
    */
   async getAll(params?: { page?: number; limit?: number; category?: string }): Promise<PaginatedResponse<Video>> {
-    await delay();
-    const { page = 1, limit = 10, category } = params || {};
-    let videos = [...mockVideos];
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    if (params?.category) searchParams.append('category', params.category);
     
-    if (category) {
-      videos = videos.filter(v => v.title?.toLowerCase().includes(category.toLowerCase()));
-    }
+    const queryString = searchParams.toString();
+    const path = queryString ? `${API_ROUTES.videos.list}?${queryString}` : API_ROUTES.videos.list;
     
-    const start = (page - 1) * limit;
-    const paginatedVideos = videos.slice(start, start + limit);
-    
+    const response = await fetchJson<{ data: Video[]; pagination: any }>(path);
     return {
-      success: true,
-      data: paginatedVideos,
-      pagination: {
-        page,
-        limit,
-        total: videos.length,
-        totalPages: Math.ceil(videos.length / limit),
-      },
+      success: response.success,
+      data: response.data?.data || [],
+      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      error: response.error,
     };
   },
 
@@ -638,253 +409,107 @@ export const videosApi = {
    * Get video by ID
    */
   async getById(videoId: string): Promise<ApiResponse<Video | null>> {
-    await delay();
-    const video = getVideoById(videoId);
-    return {
-      success: true,
-      data: video || null,
-    };
-  },
-
-  /**
-   * Like a video
-   */
-  async like(videoId: string): Promise<ApiResponse<Video>> {
-    await delay();
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: {} as Video, error: "Video not found" };
-    }
-    return {
-      success: true,
-      data: { ...video, likes: video.likes + 1 },
-      message: "Video liked",
-    };
-  },
-
-  /**
-   * Unlike a video
-   */
-  async unlike(videoId: string): Promise<ApiResponse<Video>> {
-    await delay();
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: {} as Video, error: "Video not found" };
-    }
-    return {
-      success: true,
-      data: { ...video, likes: Math.max(0, video.likes - 1) },
-      message: "Video unliked",
-    };
-  },
-
-  /**
-   * Share a video (track for analytics)
-   */
-  async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean }>> {
-    await delay();
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: { shared: false }, error: "Video not found" };
-    }
-    // In a real app, this would track the share event
-    return {
-      success: true,
-      data: { shared: true },
-      message: `Video shared via ${platform}`,
-    };
-  },
-
-  /**
-   * Bookmark a video
-   */
-  async bookmark(videoId: string): Promise<ApiResponse<Video>> {
-    await delay();
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: {} as Video, error: "Video not found" };
-    }
-    return {
-      success: true,
-      data: { ...video, isBookmarked: !video.isBookmarked },
-      message: video.isBookmarked ? "Bookmark removed" : "Video bookmarked",
-    };
-  },
-
-  /**
-   * Get video comments
-   */
-  async getComments(videoId: string): Promise<ApiResponse<Comment[]>> {
-    await delay();
-    const comments = mockComments.filter(c => c.videoId === videoId);
-    return {
-      success: true,
-      data: comments,
-    };
-  },
-
-  /**
-   * Upload a new video
-   */
-  async upload(videoData: {
-    title: string;
-    description?: string;
-    videoUrl: string;
-    thumbnail: string;
-    duration?: number;
-  }): Promise<ApiResponse<Video>> {
-    await delay(1000); // Longer delay to simulate upload
-    const newVideo: Video = {
-      id: `video_${Date.now()}`,
-      title: videoData.title,
-      description: videoData.description || null,
-      videoUrl: videoData.videoUrl,
-      thumbnail: videoData.thumbnail,
-      userId: mockCurrentUser.id,
-      likes: 0,
-      views: 0,
-      isBookmarked: false,
-      commentsCount: 0,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    return {
-      success: true,
-      data: newVideo,
-      message: "Video uploaded successfully",
-    };
+    return fetchJson<Video>(API_ROUTES.videos.get(videoId));
   },
 
   /**
    * Get trending videos
    */
   async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    await delay();
-    const trending = [...mockVideos]
-      .sort((a, b) => (b.views + b.likes * 2) - (a.views + a.likes * 2))
-      .slice(0, limit);
-    return {
-      success: true,
-      data: trending,
-    };
+    return fetchJson<Video[]>(`${API_ROUTES.videos.trending}?limit=${limit}`);
   },
 
   /**
    * Get live videos
    */
   async getLive(): Promise<ApiResponse<Video[]>> {
-    await delay();
-    const liveVideos = mockVideos.filter(v =>
-      v.videoUrl?.includes('.m3u8') || v.videoUrl?.includes('live')
-    );
-    return {
-      success: true,
-      data: liveVideos,
-    };
+    return fetchJson<Video[]>(`${API_ROUTES.videos.list}?live=true`);
   },
 
   /**
    * Get recommended videos for user
    */
   async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    await delay();
-    // Shuffle and return random videos as recommendations
-    const shuffled = [...mockVideos].sort(() => Math.random() - 0.5);
-    return {
-      success: true,
-      data: shuffled.slice(0, limit),
-    };
+    return fetchJson<Video[]>(`${API_ROUTES.videos.list}?recommended=true&limit=${limit}`);
+  },
+
+  /**
+   * Like a video
+   */
+  async like(videoId: string): Promise<ApiResponse<Video>> {
+    return fetchJson<Video>(API_ROUTES.videos.like(videoId), { method: 'POST' });
+  },
+
+  /**
+   * Unlike a video
+   */
+  async unlike(videoId: string): Promise<ApiResponse<Video>> {
+    return fetchJson<Video>(`/api/videos/${videoId}/unlike`, { method: 'POST' });
+  },
+
+  /**
+   * Share a video (track for analytics)
+   */
+  async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean }>> {
+    return fetchJson<{ shared: boolean }>(`/api/videos/${videoId}/share`, {
+      method: 'POST',
+      body: JSON.stringify({ platform }),
+    });
+  },
+
+  /**
+   * Bookmark a video
+   */
+  async bookmark(videoId: string): Promise<ApiResponse<Video>> {
+    return fetchJson<Video>(API_ROUTES.videos.bookmark(videoId), { method: 'POST' });
+  },
+
+  /**
+   * Remove bookmark
+   */
+  async removeBookmark(videoId: string): Promise<ApiResponse<Video>> {
+    return fetchJson<Video>(API_ROUTES.videos.bookmark(videoId), { method: 'DELETE' });
+  },
+
+  /**
+   * Get video comments
+   */
+  async getComments(videoId: string): Promise<ApiResponse<Comment[]>> {
+    return fetchJson<Comment[]>(API_ROUTES.videos.comments(videoId));
+  },
+
+  /**
+   * Add comment to video
+   */
+  async addComment(videoId: string, content: string, mediaUrls?: string[]): Promise<ApiResponse<Comment>> {
+    return fetchJson<Comment>(API_ROUTES.videos.comments(videoId), {
+      method: 'POST',
+      body: JSON.stringify({ content, mediaUrls }),
+    });
+  },
+
+  /**
+   * Upload a video
+   */
+  async upload(data: { title: string; description?: string; videoUrl: string; thumbnail: string; duration?: number }): Promise<ApiResponse<Video>> {
+    return fetchJson<Video>(API_ROUTES.videos.list, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   /**
    * Search videos
    */
   async search(query: string): Promise<ApiResponse<Video[]>> {
-    await delay();
-    const lowerQuery = query.toLowerCase();
-    const results = mockVideos.filter(v =>
-      (v.title?.toLowerCase().includes(lowerQuery)) ||
-      (v.description?.toLowerCase().includes(lowerQuery))
-    );
-    return {
-      success: true,
-      data: results,
-    };
+    return fetchJson<Video[]>(`${API_ROUTES.videos.list}?search=${encodeURIComponent(query)}`);
   },
 
   /**
    * Increment video view count
    */
   async incrementView(videoId: string): Promise<ApiResponse<Video>> {
-    await delay(100); // Quick operation
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: {} as Video, error: "Video not found" };
-    }
-    return {
-      success: true,
-      data: { ...video, views: video.views + 1 },
-    };
-  },
-
-  /**
-   * Add comment to video
-   */
-  async addComment(videoId: string, text: string, mediaUrls?: string[]): Promise<ApiResponse<Comment>> {
-    await delay();
-    const newComment: Comment = {
-      id: `comment_${Date.now()}`,
-      text,
-      mediaUrls: mediaUrls || [],
-      userId: mockCurrentUser.id,
-      videoId,
-      createdAt: new Date().toISOString(),
-    };
-    return {
-      success: true,
-      data: newComment,
-      message: "Comment added",
-    };
-  },
-
-  /**
-   * Get user's videos
-   */
-  async getUserVideos(userId: string): Promise<ApiResponse<Video[]>> {
-    await delay();
-    const userVideos = mockVideos.filter(v => v.userId === userId);
-    return {
-      success: true,
-      data: userVideos,
-    };
-  },
-
-  /**
-   * Get bookmarked videos
-   */
-  async getBookmarked(): Promise<ApiResponse<Video[]>> {
-    await delay();
-    const bookmarked = mockVideos.filter(v => v.isBookmarked);
-    return {
-      success: true,
-      data: bookmarked,
-    };
-  },
-
-  /**
-   * Delete a video
-   */
-  async delete(videoId: string): Promise<ApiResponse<{ deleted: boolean }>> {
-    await delay();
-    const video = getVideoById(videoId);
-    if (!video) {
-      return { success: false, data: { deleted: false }, error: "Video not found" };
-    }
-    return {
-      success: true,
-      data: { deleted: true },
-      message: "Video deleted successfully",
-    };
+    return fetchJson<Video>(`/api/videos/${videoId}/view`, { method: 'POST' });
   },
 };
 
@@ -895,205 +520,103 @@ export const surveysApi = {
   /**
    * Get all surveys
    */
-  async getAll(params?: { status?: string }): Promise<ApiResponse<Survey[]>> {
-    const statusPath = params?.status ? API_ROUTES.surveys.byStatus(params.status) : API_ROUTES.surveys.list;
+  async getAll(params?: { status?: string; page?: number; limit?: number }): Promise<PaginatedResponse<Survey>> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
 
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<Survey[]>(statusPath);
-      if (apiResponse.success) return apiResponse;
-      // fall through to mock on failure
-      console.warn("Falling back to mock surveys", apiResponse.error);
-    }
+    const queryString = searchParams.toString();
+    const path = queryString ? `${API_ROUTES.surveys.list}?${queryString}` : API_ROUTES.surveys.list;
 
-    await delay();
-    let surveys = [...mockSurveys];
-    if (params?.status) {
-      surveys = surveys.filter((s) => s.status === params.status);
-    }
-    return { success: true, data: surveys };
+    const response = await fetchJson<{ data: Survey[]; pagination: any }>(path);
+    return {
+      success: response.success,
+      data: response.data?.data || response.data || [],
+      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      error: response.error,
+    };
   },
 
   /**
    * Get running surveys
    */
   async getRunning(): Promise<ApiResponse<Survey[]>> {
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<Survey[]>(API_ROUTES.surveys.byStatus("running"));
-      if (apiResponse.success) return apiResponse;
-      console.warn("Falling back to mock running surveys", apiResponse.error);
-    }
-
-    await delay();
-    const surveys = mockSurveys.filter((s) => s.status === "running");
-    return { success: true, data: surveys };
+    return fetchJson<Survey[]>(API_ROUTES.surveys.byStatus('running'));
   },
 
   /**
    * Get upcoming surveys
    */
   async getUpcoming(): Promise<ApiResponse<Survey[]>> {
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<Survey[]>(API_ROUTES.surveys.byStatus("scheduled"));
-      if (apiResponse.success) return apiResponse;
-      console.warn("Falling back to mock upcoming surveys", apiResponse.error);
-    }
-
-    await delay();
-    const surveys = mockSurveys.filter((s) => s.status === "scheduled");
-    return { success: true, data: surveys };
+    return fetchJson<Survey[]>(API_ROUTES.surveys.byStatus('scheduled'));
   },
 
   /**
-   * Get survey by ID with questions
+   * Get survey by ID
    */
-  async getById(surveyId: string): Promise<ApiResponse<Survey & { questions: UploadSurvey[] } | null>> {
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<Survey & { uploads?: UploadSurvey[] }>(API_ROUTES.surveys.get(surveyId));
-      if (apiResponse.success) {
-        const surveyData = apiResponse.data;
-        const questions = (surveyData as any).uploads || [];
-        return { success: true, data: { ...surveyData, questions } };
-      }
-      console.warn("Falling back to mock survey", apiResponse.error);
-    }
+  async getById(surveyId: string): Promise<ApiResponse<Survey | null>> {
+    return fetchJson<Survey>(API_ROUTES.surveys.get(surveyId));
+  },
 
-    await delay();
-    const survey = getSurveyById(surveyId);
-    if (!survey) return { success: true, data: null };
-    const questions = getSurveyQuestionsForSurvey(surveyId);
-    return { success: true, data: { ...survey, uploads: questions, questions } };
+  /**
+   * Get survey questions
+   */
+  async getQuestions(surveyId: string): Promise<ApiResponse<UploadSurvey[]>> {
+    return fetchJson<UploadSurvey[]>(API_ROUTES.surveys.questions(surveyId));
+  },
+
+  /**
+   * Check if user has already attempted survey
+   */
+  async checkAttempt(surveyId: string, userId: string): Promise<ApiResponse<{ hasAttempted: boolean; attemptedAt: string | null }>> {
+    return fetchJson<{ hasAttempted: boolean; attemptedAt: string | null }>(`${API_ROUTES.surveys.get(surveyId)}/attempt?userId=${userId}`);
+  },
+
+  /**
+   * Submit survey response (alias for submitResponse)
+   */
+  async submit(surveyId: string, responses: Record<string, any>, userId?: string): Promise<ApiResponse<{ reward: number; message: string }>> {
+    return fetchJson<{ reward: number; message: string }>(API_ROUTES.surveys.submit(surveyId), {
+      method: 'POST',
+      body: JSON.stringify({ responses, userId }),
+    });
   },
 
   /**
    * Submit survey response
    */
-  async submit(surveyId: string, responses: Record<string, unknown> & { userId?: string }): Promise<ApiResponse<{ reward: number }>> {
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<{ message?: string }>(API_ROUTES.surveys.responses(surveyId), {
-        method: "POST",
-        body: JSON.stringify({ userId: responses.userId || mockCurrentUser.id, responses }),
-      });
-      if (apiResponse.success) {
-        return { success: true, data: { reward: 0 }, message: apiResponse.data?.message || "Survey submitted" };
-      }
-      console.warn("Falling back to mock submit", apiResponse.error);
-    }
-
-    await delay();
-    const survey = getSurveyById(surveyId);
-    if (!survey) return { success: false, data: { reward: 0 }, error: "Survey not found" };
-    return {
-      success: true,
-      data: { reward: survey.rewardAmount || 0 },
-      message: `Survey completed! You earned $${survey.rewardAmount?.toFixed(2)}`,
-    };
+  async submitResponse(surveyId: string, answers: Record<string, any>): Promise<ApiResponse<{ submitted: boolean; reward?: number }>> {
+    return fetchJson<{ submitted: boolean; reward?: number }>(API_ROUTES.surveys.submit(surveyId), {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    });
   },
 
   /**
-   * Create a new survey with questions
+   * Create a new survey
    */
-  async create(data: {
-    title: string;
-    description?: string;
-    startDate: string;
-    endDate: string;
-    questions: Omit<UploadSurvey, "id" | "userId" | "surveyId" | "createdAt" | "updatedAt">[];
-    userId?: string;
-  }): Promise<ApiResponse<Survey & { questions: UploadSurvey[] }>> {
-    const body = {
-      title: data.title,
-      description: data.description,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      userId: data.userId || mockCurrentUser.id,
-      questions: data.questions.map((q) => ({
-        text: q.text,
-        type: q.type,
-        options: typeof q.options === "string" ? JSON.parse(q.options) : q.options,
-        placeholder: q.placeholder || "",
-        minValue: q.minValue ?? null,
-        maxValue: q.maxValue ?? null,
-      })),
-    };
+  async create(surveyData: Partial<Survey> & { questions?: Partial<UploadSurvey>[] }): Promise<ApiResponse<Survey>> {
+    return fetchJson<Survey>(API_ROUTES.surveys.create, {
+      method: 'POST',
+      body: JSON.stringify(surveyData),
+    });
+  },
 
-    if (isBackendConfigured) {
-      const apiResponse = await fetchJson<Survey & { uploads?: UploadSurvey[] }>(API_ROUTES.surveys.create, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (apiResponse.success) {
-        const questions = (apiResponse.data as any).uploads || [];
-        return { success: true, data: { ...(apiResponse.data as Survey), questions }, message: "Survey created successfully" };
-      }
-      console.warn("Falling back to mock create", apiResponse.error);
-    }
-
-    await delay(1000);
-    const userId = data.userId || mockCurrentUser.id;
-    const newSurvey: Survey = {
-      id: `survey_${Date.now()}`,
-      title: data.title,
-      description: data.description || null,
-      userId,
-      startDate: data.startDate,
-      endDate: data.endDate,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      totalResponses: 0,
-      maxResponses: 500,
-      rewardAmount: 10.0,
-      status: "scheduled",
-    };
-
-    mockSurveys.push(newSurvey);
-
-    const createdQuestions: UploadSurvey[] = data.questions.map((q, index) => ({
-      ...q,
-      id: `sq_${Date.now()}_${index}`,
-      userId,
-      surveyId: newSurvey.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }));
-
-    mockQuestions.push(...createdQuestions);
-
-    return { success: true, data: { ...newSurvey, questions: createdQuestions }, message: "Survey created successfully" };
+  /**
+   * Get survey responses
+   */
+  async getResponses(surveyId: string): Promise<ApiResponse<any[]>> {
+    return fetchJson<any[]>(API_ROUTES.surveys.responses(surveyId));
   },
 
   /**
    * Delete a survey
    */
   async delete(surveyId: string): Promise<ApiResponse<{ deleted: boolean }>> {
-    await delay();
-    const surveyIndex = mockSurveys.findIndex((s) => s.id === surveyId);
-    if (surveyIndex === -1) {
-      return { success: false, data: { deleted: false }, error: "Survey not found" };
-    }
-    mockSurveys.splice(surveyIndex, 1);
-    return {
-      success: true,
-      data: { deleted: true },
-      message: "Survey deleted successfully",
-    };
-  },
-
-  /**
-   * Check if user has already attempted a survey
-   */
-  async checkAttempt(surveyId: string, userId: string): Promise<ApiResponse<{ hasAttempted: boolean; attemptedAt: string | null; message: string }>> {
-    await delay();
-    // In a real app, this would check the database
-    // For mock, we'll return a random result based on IDs
-    const hasAttempted = (surveyId.charCodeAt(0) + userId.charCodeAt(0)) % 3 === 0;
-    return {
-      success: true,
-      data: {
-        hasAttempted,
-        attemptedAt: hasAttempted ? new Date(Date.now() - 86400000).toISOString() : null,
-        message: hasAttempted ? "You have already completed this survey" : "Survey available",
-      },
-    };
+    return fetchJson<{ deleted: boolean }>(API_ROUTES.surveys.get(surveyId), {
+      method: 'DELETE',
+    });
   },
 };
 
@@ -1104,87 +627,92 @@ export const questionsApi = {
   /**
    * Get all questions
    */
-  async getAll(params?: { category?: string; page?: number; limit?: number }): Promise<PaginatedResponse<Question>> {
-    await delay();
-    const { page = 1, limit = 10, category } = params || {};
-    let questions = [...mockQuestions];
+  async getAll(params?: { page?: number; limit?: number; category?: string }): Promise<PaginatedResponse<Question>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    if (params?.category) searchParams.append('category', params.category);
+
+    const queryString = searchParams.toString();
+    const path = queryString ? `${API_ROUTES.questions.all}?${queryString}` : API_ROUTES.questions.all;
     
-    if (category) {
-      questions = questions.filter(q => q.category === category);
-    }
-    
-    const start = (page - 1) * limit;
-    const paginatedQuestions = questions.slice(start, start + limit);
-    
+    const response = await fetchJson<{ data: Question[]; pagination: any }>(path);
     return {
-      success: true,
-      data: paginatedQuestions,
-      pagination: {
-        page,
-        limit,
-        total: questions.length,
-        totalPages: Math.ceil(questions.length / limit),
-      },
+      success: response.success,
+      data: response.data?.data || response.data || [],
+      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      error: response.error,
     };
   },
 
   /**
-   * Get question by ID with responses
+   * Get recent questions
    */
-  async getById(questionId: string): Promise<ApiResponse<Question & { responses: Response[] } | null>> {
-    await delay();
-    const question = getQuestionById(questionId);
-    if (!question) {
-      return { success: true, data: null };
-    }
-    const responses = getResponsesForQuestion(questionId);
-    return {
-      success: true,
-      data: { ...question, responses },
-    };
+  async getRecent(limit: number = 10): Promise<ApiResponse<Question[]>> {
+    return fetchJson<Question[]>(`${API_ROUTES.questions.list}/recent?limit=${limit}`);
   },
 
   /**
-   * Submit response to question
+   * Get instant reward questions
+   */
+  async getInstantReward(): Promise<ApiResponse<Question[]>> {
+    return fetchJson<Question[]>(`${API_ROUTES.questions.list}/instant-reward`);
+  },
+
+  /**
+   * Get question by ID
+   */
+  async getById(questionId: string): Promise<ApiResponse<Question | null>> {
+    return fetchJson<Question>(API_ROUTES.questions.get(questionId));
+  },
+
+  /**
+   * Get responses for a question
+   */
+  async getResponses(questionId: string): Promise<ApiResponse<Response[]>> {
+    return fetchJson<Response[]>(API_ROUTES.questions.responses(questionId));
+  },
+
+  /**
+   * Submit response to a question
    */
   async submitResponse(questionId: string, responseText: string): Promise<ApiResponse<Response>> {
-    await delay();
-    const question = getQuestionById(questionId);
-    if (!question) {
-      return { success: false, data: {} as Response, error: "Question not found" };
-    }
-    
-    const newResponse: Response = {
-      id: `response_${Date.now()}`,
-      responseText,
-      userId: mockCurrentUser.id,
-      questionId,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      likesCount: 0,
-      dislikesCount: 0,
-      repliesCount: 0,
-      isLiked: false,
-      isDisliked: false,
-    };
-    
-    return {
-      success: true,
-      data: newResponse,
-      message: `Answer submitted! You earned $${question.rewardAmount?.toFixed(2)}`,
-    };
+    return fetchJson<Response>(API_ROUTES.questions.submitResponse(questionId), {
+      method: 'POST',
+      body: JSON.stringify({ responseText }),
+    });
+  },
+
+  /**
+   * Create a new question
+   */
+  async create(questionData: {
+    text: string;
+    category?: string;
+    rewardAmount?: number;
+    isInstantReward?: boolean;
+  }): Promise<ApiResponse<Question>> {
+    return fetchJson<Question>(API_ROUTES.questions.create, {
+      method: 'POST',
+      body: JSON.stringify(questionData),
+    });
+  },
+
+  /**
+   * Vote on a question
+   */
+  async vote(questionId: string, type: 'up' | 'down'): Promise<ApiResponse<Question>> {
+    return fetchJson<Question>(API_ROUTES.questions.vote(questionId), {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    });
   },
 
   /**
    * Get question categories
    */
   async getCategories(): Promise<ApiResponse<string[]>> {
-    await delay(200);
-    const categories = [...new Set(mockQuestions.map(q => q.category).filter(Boolean))];
-    return {
-      success: true,
-      data: categories as string[],
-    };
+    return fetchJson<string[]>('/api/questions/categories');
   },
 };
 
@@ -1196,49 +724,24 @@ export const responsesApi = {
    * Like a response
    */
   async like(responseId: string): Promise<ApiResponse<Response>> {
-    await delay();
-    const response = mockResponses.find(r => r.id === responseId);
-    if (!response) {
-      return { success: false, data: {} as Response, error: "Response not found" };
-    }
-    return {
-      success: true,
-      data: { 
-        ...response, 
-        likesCount: (response.likesCount || 0) + 1,
-        isLiked: true,
-      },
-    };
+    return fetchJson<Response>(API_ROUTES.responses.like(responseId), { method: 'POST' });
   },
 
   /**
    * Dislike a response
    */
   async dislike(responseId: string): Promise<ApiResponse<Response>> {
-    await delay();
-    const response = mockResponses.find(r => r.id === responseId);
-    if (!response) {
-      return { success: false, data: {} as Response, error: "Response not found" };
-    }
-    return {
-      success: true,
-      data: { 
-        ...response, 
-        dislikesCount: (response.dislikesCount || 0) + 1,
-        isDisliked: true,
-      },
-    };
+    return fetchJson<Response>(API_ROUTES.responses.dislike(responseId), { method: 'POST' });
   },
 
   /**
    * Reply to a response
    */
-  async reply(responseId: string, replyText: string): Promise<ApiResponse<{ message: string }>> {
-    await delay();
-    return {
-      success: true,
-      data: { message: "Reply posted successfully" },
-    };
+  async reply(responseId: string, replyText: string): Promise<ApiResponse<any>> {
+    return fetchJson<any>(API_ROUTES.responses.reply(responseId), {
+      method: 'POST',
+      body: JSON.stringify({ text: replyText }),
+    });
   },
 };
 
@@ -1247,23 +750,23 @@ export const responsesApi = {
 // ===========================================
 export const transactionsApi = {
   /**
-   * Get all transactions
+   * Get user transactions
    */
-  async getAll(params?: { type?: string; status?: string }): Promise<ApiResponse<Transaction[]>> {
-    await delay();
-    let transactions = [...mockTransactions];
+  async getAll(params?: { page?: number; limit?: number; type?: string }): Promise<PaginatedResponse<Transaction>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    if (params?.type) searchParams.append('type', params.type);
     
-    if (params?.type && params.type !== "all") {
-      transactions = transactions.filter(t => t.type === params.type);
-    }
+    const queryString = searchParams.toString();
+    const path = queryString ? `${API_ROUTES.transactions.list}?${queryString}` : API_ROUTES.transactions.list;
     
-    if (params?.status) {
-      transactions = transactions.filter(t => t.status === params.status);
-    }
-    
+    const response = await fetchJson<{ data: Transaction[]; pagination: any }>(path);
     return {
-      success: true,
-      data: transactions,
+      success: response.success,
+      data: response.data?.data || response.data || [],
+      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      error: response.error,
     };
   },
 
@@ -1271,12 +774,7 @@ export const transactionsApi = {
    * Get transaction by ID
    */
   async getById(transactionId: string): Promise<ApiResponse<Transaction | null>> {
-    await delay();
-    const transaction = mockTransactions.find(t => t.id === transactionId);
-    return {
-      success: true,
-      data: transaction || null,
-    };
+    return fetchJson<Transaction>(API_ROUTES.transactions.get(transactionId));
   },
 };
 
@@ -1285,41 +783,39 @@ export const transactionsApi = {
 // ===========================================
 export const paymentsApi = {
   /**
-   * Get all payments
+   * Get user payments
    */
   async getAll(): Promise<ApiResponse<Payment[]>> {
-    await delay();
-    return {
-      success: true,
-      data: mockPayments,
-    };
+    return fetchJson<Payment[]>(API_ROUTES.payments.list);
+  },
+
+  /**
+   * Create payment
+   */
+  async create(paymentData: {
+    amount: number;
+    type: string;
+    provider: string;
+  }): Promise<ApiResponse<Payment>> {
+    return fetchJson<Payment>(API_ROUTES.payments.create, {
+      method: 'POST',
+      body: JSON.stringify(paymentData),
+    });
   },
 
   /**
    * Request withdrawal
    */
-  async withdraw(data: { amount: number; phoneNumber: string; provider: string }): Promise<ApiResponse<Payment>> {
-    await delay(1000);
-    const newPayment: Payment = {
-      id: `payment_${Date.now()}`,
-      amount: data.amount,
-      phoneNumber: data.phoneNumber,
-      provider: data.provider,
-      TransactionId: `TXN-${new Date().toISOString().split("T")[0].replace(/-/g, "")}-${Math.floor(Math.random() * 1000)}`,
-      status: PaymentStatus.PENDING,
-      subscriptionType: SubscriptionType.MONTHLY,
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      userId: mockCurrentUser.id,
-    };
-    
-    return {
-      success: true,
-      data: newPayment,
-      message: "Withdrawal request submitted successfully",
-    };
+  async withdraw(data: {
+    amount: number;
+    provider: string;
+    phoneNumber?: string;
+    accountDetails?: Record<string, string>;
+  }): Promise<ApiResponse<Payment>> {
+    return fetchJson<Payment>(API_ROUTES.payments.withdraw, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 };
 
@@ -1328,55 +824,52 @@ export const paymentsApi = {
 // ===========================================
 export const notificationsApi = {
   /**
-   * Get all notifications for current user
+   * Get user notifications
    */
-  async getAll(): Promise<ApiResponse<Notification[]>> {
-    await delay();
-    const notifications = getUserNotifications(mockCurrentUser.id);
+  async getAll(params?: { page?: number; limit?: number; unreadOnly?: boolean }): Promise<PaginatedResponse<Notification>> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.append('page', String(params.page));
+    if (params?.limit) searchParams.append('limit', String(params.limit));
+    if (params?.unreadOnly) searchParams.append('unreadOnly', 'true');
+
+    const queryString = searchParams.toString();
+    const path = queryString ? `${API_ROUTES.notifications.list}?${queryString}` : API_ROUTES.notifications.list;
+
+    const response = await fetchJson<{ data: Notification[]; pagination: any }>(path);
     return {
-      success: true,
-      data: notifications,
+      success: response.success,
+      data: response.data?.data || response.data || [],
+      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      error: response.error,
     };
   },
 
   /**
-   * Get unread count
+   * Get unread notification count
    */
-  async getUnreadCount(): Promise<ApiResponse<number>> {
-    await delay(200);
-    const count = getUnreadNotificationCount(mockCurrentUser.id);
-    return {
-      success: true,
-      data: count,
-    };
+  async getUnreadCount(): Promise<ApiResponse<{ count: number }>> {
+    return fetchJson<{ count: number }>(API_ROUTES.notifications.unreadCount);
   },
 
   /**
    * Mark notification as read
    */
   async markRead(notificationId: string): Promise<ApiResponse<Notification>> {
-    await delay();
-    const notification = mockNotifications.find(n => n.id === notificationId);
-    if (!notification) {
-      return { success: false, data: {} as Notification, error: "Notification not found" };
-    }
-    return {
-      success: true,
-      data: { ...notification, read: true, readAt: new Date().toISOString() },
-    };
+    return fetchJson<Notification>(API_ROUTES.notifications.markRead(notificationId), { method: 'POST' });
   },
 
   /**
    * Mark all notifications as read
    */
-  async markAllRead(): Promise<ApiResponse<{ count: number }>> {
-    await delay();
-    const count = getUnreadNotificationCount(mockCurrentUser.id);
-    return {
-      success: true,
-      data: { count },
-      message: `${count} notifications marked as read`,
-    };
+  async markAllRead(): Promise<ApiResponse<{ updated: number }>> {
+    return fetchJson<{ updated: number }>(API_ROUTES.notifications.markAllRead, { method: 'POST' });
+  },
+
+  /**
+   * Delete notification
+   */
+  async delete(notificationId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return fetchJson<{ deleted: boolean }>(API_ROUTES.notifications.delete(notificationId), { method: 'DELETE' });
   },
 };
 
@@ -1385,193 +878,52 @@ export const notificationsApi = {
 // ===========================================
 export const rewardsApi = {
   /**
-   * Get all rewards for current user
+   * Get user rewards
    */
   async getAll(): Promise<ApiResponse<Reward[]>> {
-    await delay();
-    return {
-      success: true,
-      data: mockRewards,
-    };
+    return fetchJson<Reward[]>(API_ROUTES.rewards.list);
   },
 
   /**
    * Get reward questions
-   * Tries backend API first, falls back to mock data
    */
   async getQuestions(): Promise<ApiResponse<RewardQuestion[]>> {
-    // Try backend API first if configured
-    if (isBackendConfigured && API_BASE_URL) {
-      try {
-        const response = await fetchJson<{ rewardQuestions: RewardQuestion[]; message: string }>(
-          '/api/reward-questions/all'
-        );
-
-        if (response.success && response.data?.rewardQuestions && Array.isArray(response.data.rewardQuestions)) {
-          return {
-            success: true,
-            data: response.data.rewardQuestions,
-          };
-        }
-        // If backend returns error or empty, fall through to mock data
-        console.log('[RewardsAPI] Backend returned no data, using mock data fallback');
-      } catch (error) {
-        console.log('[RewardsAPI] Backend error, using mock data fallback:', error);
-      }
-    }
-
-    // Fallback to mock data
-    await delay();
-    return {
-      success: true,
-      data: mockRewardQuestions,
-    };
+    return fetchJson<RewardQuestion[]>(API_ROUTES.rewards.questions);
   },
 
   /**
    * Get reward question by ID
-   * Tries backend API first, falls back to mock data
    */
   async getQuestionById(questionId: string): Promise<ApiResponse<RewardQuestion | null>> {
-    // Try backend API first if configured
-    if (isBackendConfigured && API_BASE_URL) {
-      try {
-        const response = await fetchJson<{ rewardQuestion: RewardQuestion; message: string }>(
-          `/api/reward-questions/${questionId}`
-        );
-
-        if (response.success && response.data?.rewardQuestion) {
-          return {
-            success: true,
-            data: response.data.rewardQuestion,
-          };
-        }
-        // If backend returns error, fall through to mock data
-        console.log('[RewardsAPI] Backend returned no data for question, using mock data fallback');
-      } catch (error) {
-        console.log('[RewardsAPI] Backend error getting question by ID, using mock data fallback:', error);
-      }
-    }
-
-    // Fallback to mock data
-    await delay();
-    const question = mockRewardQuestions.find((q) => q.id === questionId) || null;
-    return {
-      success: true,
-      data: question,
-      error: question ? undefined : "Reward question not found",
-    };
+    return fetchJson<RewardQuestion>(API_ROUTES.rewards.question(questionId));
   },
 
   /**
-   * Submit an answer for a reward question
-   * For instant reward questions, phoneNumber and userEmail are used for automatic payout
+   * Submit answer to reward question
    */
-  async submitAnswer(
-    questionId: string,
-    answer: string,
-    phoneNumber?: string,
-    userEmail?: string
-  ): Promise<ApiResponse<RewardAnswerResult>> {
-    // If API is configured, call the real endpoint
-    if (API_BASE_URL) {
-      try {
-        const response = await fetchJson<RewardAnswerResult>(
-          `${API_BASE_URL}/api/reward-questions/submit-answer`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              rewardQuestionId: questionId,
-              selectedAnswer: answer,
-              phoneNumber,
-              userEmail,
-            }),
-          }
-        );
-
-        if (response.success && response.data) {
-          return {
-            success: true,
-            data: {
-              isCorrect: response.data.isCorrect ?? false,
-              rewardEarned: response.data.rewardEarned ?? response.data.pointsAwarded ?? 0,
-              remainingSpots: response.data.remainingSpots ?? 0,
-              isExpired: response.data.isExpired ?? false,
-              isCompleted: response.data.isCompleted ?? false,
-              message: response.data.message ?? '',
-              isWinner: response.data.isWinner ?? false,
-              position: response.data.position ?? null,
-              paymentStatus: response.data.paymentStatus ?? null,
-            },
-            message: response.data.message,
-          };
-        }
-
-        return {
-          success: false,
-          data: {} as RewardAnswerResult,
-          error: response.error || 'Failed to submit answer'
-        };
-      } catch (error) {
-        console.error('Submit answer error:', error);
-        return {
-          success: false,
-          data: {} as RewardAnswerResult,
-          error: error instanceof Error ? error.message : 'Network error'
-        };
-      }
-    }
-
-  // Mock implementation for development
-    await delay(500);
-    const question = mockRewardQuestions.find((q) => q.id === questionId);
-
-    if (!question) {
-      return { success: false, data: {} as RewardAnswerResult, error: "Reward question not found" };
-    }
-
-    const now = new Date();
-    const expiryDate = question.expiryTime ? new Date(question.expiryTime) : null;
-    const isExpired = Boolean(expiryDate && now > expiryDate);
-    const isCompleted = question.isCompleted || (question.winnersCount >= question.maxWinners);
-
-    const normalizedAnswer = answer.trim().toLowerCase();
-    const normalizedCorrect = question.correctAnswer.trim().toLowerCase();
-    const isCorrect = !isExpired && !isCompleted && normalizedAnswer === normalizedCorrect;
-
-    const rewardEarned = isCorrect ? question.rewardAmount : 0;
-    const remainingSpots = Math.max(question.maxWinners - question.winnersCount - (isCorrect ? 1 : 0), 0);
-
-    const message = isExpired
-      ? "This reward question has expired."
-      : isCompleted
-      ? "All rewards for this question have already been claimed."
-      : isCorrect
-          ? `Correct! You earned ${question.rewardAmount.toFixed(2)}. ${question.isInstantReward ? 'Payment is being processed to your phone.' : ''}`
-      : "Incorrect answer. Try another question.";
-
-    return {
-      success: true,
-      data: {
-        isCorrect,
-        rewardEarned,
-        remainingSpots,
-        isExpired,
-        isCompleted,
-        message,
-        isWinner: isCorrect && question.isInstantReward,
-        position: isCorrect && question.isInstantReward ? question.winnersCount + 1 : null,
-        paymentStatus: isCorrect && question.isInstantReward ? 'PENDING' : null,
-      },
-      message,
-    };
+  async submitAnswer(questionId: string, answer: string, paymentProvider?: string, phoneNumber?: string): Promise<ApiResponse<RewardAnswerResult>> {
+    return fetchJson<RewardAnswerResult>(API_ROUTES.rewards.submitAnswer(questionId), {
+      method: 'POST',
+      body: JSON.stringify({ answer, paymentProvider, phoneNumber }),
+    });
   },
 
   /**
-   * Create a new reward question
+   * Claim a reward
+   */
+  async claim(rewardId: string): Promise<ApiResponse<Reward>> {
+    return fetchJson<Reward>(API_ROUTES.rewards.claim(rewardId), { method: 'POST' });
+  },
+
+  /**
+   * Get daily reward
+   */
+  async claimDaily(): Promise<ApiResponse<{ reward: number; streak: number }>> {
+    return fetchJson<{ reward: number; streak: number }>(API_ROUTES.rewards.daily, { method: 'POST' });
+  },
+
+  /**
+   * Create a reward question
    */
   async createRewardQuestion(data: {
     text: string;
@@ -1585,40 +937,14 @@ export const rewardsApi = {
     paymentProvider?: string;
     phoneNumber?: string;
   }): Promise<ApiResponse<RewardQuestion>> {
-    await delay(1000);
-
-    const newQuestion: RewardQuestion = {
-      id: `reward_question_${Date.now()}`,
-      text: data.text,
-      options: Object.fromEntries(data.options.map((opt, i) => [String.fromCharCode(97 + i), opt])),
-      correctAnswer: data.correctAnswer,
-      rewardAmount: data.rewardAmount,
-      expiryTime: data.expiryTime || null,
-      isActive: true,
-      userId: data.userId,
-      isInstantReward: data.isInstantReward || false,
-      maxWinners: data.maxWinners || 1,
-      winnersCount: 0,
-      isCompleted: false,
-      paymentProvider: data.paymentProvider || null,
-      phoneNumber: data.phoneNumber || null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // Add to mock data
-    mockRewardQuestions.push(newQuestion);
-
-    return {
-      success: true,
-      data: newQuestion,
-      message: "Reward question created successfully",
-    };
+    return fetchJson<RewardQuestion>('/api/rewards/questions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   /**
-   * Bulk create reward questions from file upload
-   * Supports multiple question types for enhanced quiz experience
+   * Bulk create reward questions
    */
   async bulkCreateQuestions(questions: {
     text: string;
@@ -1632,72 +958,31 @@ export const rewardsApi = {
     timeLimit?: number;
     pointValue?: number;
   }[], userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
-    await delay(1500);
+    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/rewards/questions/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ questions, userId }),
+    });
+  },
 
-    const createdQuestions: RewardQuestion[] = [];
-    let failed = 0;
-
-    for (const q of questions) {
-      // Validate required fields
-      if (!q.text || q.text.trim().length < 5) {
-        failed++;
-        continue;
-      }
-
-      // Convert options to proper format
-      let optionsObj: Record<string, unknown>;
-      if (Array.isArray(q.options)) {
-        if (q.options.length < 2 && q.type !== 'text') {
-          failed++;
-          continue;
-        }
-        optionsObj = Object.fromEntries(q.options.map((opt, i) => [String.fromCharCode(97 + i), opt]));
-      } else if (q.options && typeof q.options === 'object') {
-        optionsObj = q.options;
-      } else if (q.type !== 'text') {
-        failed++;
-        continue;
-      } else {
-        optionsObj = {};
-      }
-
-      // Determine reward amount (prioritize pointValue for quiz questions)
-      const rewardAmount = q.pointValue || q.rewardAmount || 10;
-
-      const newQuestion: RewardQuestion = {
-        id: `reward_question_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        text: q.text.trim(),
-        options: optionsObj,
-        correctAnswer: Array.isArray(q.correctAnswer)
-          ? q.correctAnswer.join(',')
-          : (q.correctAnswer || Object.values(optionsObj)[0] as string || ''),
-        rewardAmount,
-        expiryTime: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        isActive: true,
-        userId,
-        isInstantReward: false, // Bulk uploaded questions are for quiz, not instant reward
-        maxWinners: 10,
-        winnersCount: 0,
-        isCompleted: false,
-        paymentProvider: null,
-        phoneNumber: null,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      mockRewardQuestions.push(newQuestion);
-      createdQuestions.push(newQuestion);
-    }
-
-    return {
-      success: true,
-      data: {
-        created: createdQuestions.length,
-        failed,
-        questions: createdQuestions,
-      },
-      message: `Successfully created ${createdQuestions.length} questions${failed > 0 ? `, ${failed} failed` : ''}`,
-    };
+  /**
+   * Upload bulk reward questions (alias for bulkCreateQuestions)
+   */
+  async uploadBulkQuestions(questions: {
+    text: string;
+    options: string[] | Record<string, string>;
+    correctAnswer?: string | string[];
+    category?: string;
+    rewardAmount?: number;
+    type?: 'single_choice' | 'multiple_choice' | 'boolean' | 'text' | 'checkbox';
+    difficulty?: 'easy' | 'medium' | 'hard';
+    explanation?: string;
+    timeLimit?: number;
+    pointValue?: number;
+  }[], userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
+    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/rewards/questions/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ questions, userId }),
+    });
   },
 };
 
@@ -1709,29 +994,104 @@ export const adsApi = {
    * Get active ads
    */
   async getActive(): Promise<ApiResponse<Ad[]>> {
-    await delay();
-    return {
-      success: true,
-      data: mockAds.filter(ad => ad.isActive),
-    };
+    return fetchJson<Ad[]>(API_ROUTES.ads.list);
+  },
+
+  /**
+   * Get ad by ID
+   */
+  async getById(adId: string): Promise<ApiResponse<Ad>> {
+    return fetchJson<Ad>(API_ROUTES.ads.get(adId));
   },
 
   /**
    * Track ad click
    */
   async trackClick(adId: string): Promise<ApiResponse<{ clicked: boolean }>> {
-    await delay(200);
-    return {
-      success: true,
-      data: { clicked: true },
-    };
+    return fetchJson<{ clicked: boolean }>(API_ROUTES.ads.click(adId), { method: 'POST' });
+  },
+
+  /**
+   * Track ad impression
+   */
+  async trackImpression(adId: string, data?: { duration?: number; viewportPercentage?: number }): Promise<ApiResponse<{ recorded: boolean }>> {
+    return fetchJson<{ recorded: boolean }>(API_ROUTES.ads.impression(adId), {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
   },
 };
 
 // ===========================================
+// Utility Functions (moved from mockData)
+// ===========================================
+
+/**
+ * Format currency amount
+ */
+export const formatCurrency = (amount: number, currency: string = 'UGX'): string => {
+  return new Intl.NumberFormat('en-UG', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(amount);
+};
+
+/**
+ * Format date
+ */
+export const formatDate = (dateString: string): string => {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+};
+
+/**
+ * Format relative time
+ */
+export const formatRelativeTime = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffSec < 60) return 'just now';
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffHour < 24) return `${diffHour}h ago`;
+  if (diffDay < 7) return `${diffDay}d ago`;
+  return formatDate(dateString);
+};
+
+/**
+ * Format duration from seconds to MM:SS
+ */
+export const formatDuration = (seconds: number | null): string => {
+  if (!seconds) return "LIVE";
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+};
+
+/**
+ * Payment methods available for withdrawals
+ */
+export const paymentMethods = [
+  { id: "mtn", name: "MTN Mobile Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
+  { id: "airtel", name: "Airtel Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
+  { id: "bank", name: "Bank Transfer", icon: "business", minWithdrawal: 50000, maxWithdrawal: 50000000, processingTime: "1-3 business days" },
+];
+
+// ===========================================
 // Default Export - All APIs
 // ===========================================
-const mockApis = {
+const apis = {
   user: userApi,
   videos: videosApi,
   surveys: surveysApi,
@@ -1744,4 +1104,4 @@ const mockApis = {
   ads: adsApi,
 };
 
-export default mockApis;
+export default apis;

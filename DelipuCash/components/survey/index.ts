@@ -12,7 +12,6 @@ export {
   TemplateCardSkeleton,
   SurveyListSkeleton,
   AnalyticsDashboardSkeleton,
-  TemplatesGallerySkeleton,
 } from './SurveySkeletons';
 
 // Templates Gallery

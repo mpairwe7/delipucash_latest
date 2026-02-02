@@ -2,16 +2,81 @@
  * Mock Authentication Service
  * 
  * @description Provides mock authentication for development and testing.
- * Validates credentials against mock user data.
+ * When USE_MOCK_AUTH is false, this module is not used - real API auth is used instead.
  *
  * To test with real API:
  * 1. Set USE_MOCK_AUTH to false below
  * 2. Ensure EXPO_PUBLIC_API_URL is set in .env to your server URL
  * 3. Make sure your server is running
+ *
+ * NOTE: This module contains inline mock data for testing purposes only.
+ * No external mock data imports - self-contained for optional testing.
  */
 
-import { mockCurrentUser, mockUsers } from "@/data/mockData";
 import { SubscriptionStatus, UserRole, type AppUser } from "@/types";
+
+// ============================================================================
+// INLINE MOCK DATA (for testing only when USE_MOCK_AUTH = true)
+// ============================================================================
+
+/**
+ * Mock current user for testing
+ */
+const mockCurrentUser: AppUser = {
+  id: "user_001",
+  email: "john.doe@example.com",
+  firstName: "John",
+  lastName: "Doe",
+  phone: "+256700123456",
+  points: 1250,
+  avatar: "https://ui-avatars.com/api/?name=John+Doe&background=random",
+  role: UserRole.USER,
+  subscriptionStatus: SubscriptionStatus.ACTIVE,
+  surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
+  currentSubscriptionId: "sub_001",
+  privacySettings: null,
+  createdAt: "2024-01-15T10:00:00Z",
+  updatedAt: "2025-01-20T12:00:00Z",
+};
+
+/**
+ * Mock users array for testing
+ */
+const mockUsers: AppUser[] = [
+  mockCurrentUser,
+  {
+    id: "user_002",
+    email: "jane.smith@example.com",
+    firstName: "Jane",
+    lastName: "Smith",
+    phone: "+256700234567",
+    points: 850,
+    avatar: "https://ui-avatars.com/api/?name=Jane+Smith&background=random",
+    role: UserRole.USER,
+    subscriptionStatus: SubscriptionStatus.INACTIVE,
+    surveysubscriptionStatus: SubscriptionStatus.INACTIVE,
+    currentSubscriptionId: null,
+    privacySettings: null,
+    createdAt: "2024-02-10T08:00:00Z",
+    updatedAt: "2025-01-18T14:00:00Z",
+  },
+  {
+    id: "admin_001",
+    email: "admin@delipucash.com",
+    firstName: "Admin",
+    lastName: "User",
+    phone: "+256700000001",
+    points: 0,
+    avatar: "https://ui-avatars.com/api/?name=Admin&background=random",
+    role: UserRole.ADMIN,
+    subscriptionStatus: SubscriptionStatus.ACTIVE,
+    surveysubscriptionStatus: SubscriptionStatus.ACTIVE,
+    currentSubscriptionId: null,
+    privacySettings: null,
+    createdAt: "2024-01-01T00:00:00Z",
+    updatedAt: "2025-01-01T00:00:00Z",
+  },
+];
 
 /**
  * Toggle between mock authentication and real API
@@ -24,12 +89,9 @@ import { SubscriptionStatus, UserRole, type AppUser } from "@/types";
  */
 export const USE_MOCK_AUTH = false; // Changed to false to test with real API
 
-export interface AuthResponse {
-  success: boolean;
-  user?: AppUser;
-  token?: string;
-  error?: string;
-}
+// Use AuthResponse from store for consistency
+import type { AuthResponse } from "@/utils/auth/store";
+export type { AuthResponse };
 
 export interface LoginCredentials {
   email: string;
@@ -110,8 +172,10 @@ export const mockLogin = async (
 
   return {
     success: true,
-    user,
-    token: generateMockToken(user.id),
+    data: {
+      user,
+      token: generateMockToken(user.id),
+    },
   };
 };
 
@@ -169,8 +233,10 @@ export const mockSignup = async (
 
   return {
     success: true,
-    user: newUser,
-    token: generateMockToken(newUser.id),
+    data: {
+      user: newUser,
+      token: generateMockToken(newUser.id),
+    },
   };
 };
 
@@ -185,8 +251,10 @@ export const mockRefreshToken = async (
   // In mock mode, just return the current user with a new token
   return {
     success: true,
-    user: mockCurrentUser,
-    token: generateMockToken(mockCurrentUser.id),
+    data: {
+      user: mockCurrentUser,
+      token: generateMockToken(mockCurrentUser.id),
+    },
   };
 };
 
@@ -198,7 +266,10 @@ export const mockGetCurrentUser = async (): Promise<AuthResponse> => {
 
   return {
     success: true,
-    user: mockCurrentUser,
+    data: {
+      user: mockCurrentUser,
+      token: '', // No new token for get current user
+    },
   };
 };
 

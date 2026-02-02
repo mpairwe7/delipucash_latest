@@ -36,12 +36,6 @@ import {
 } from '@tanstack/react-query';
 import { Question, Response, AppUser, ApiResponse } from '@/types';
 import { FeedQuestion, QuestionAuthor, LeaderboardUser } from '@/components/feed';
-import {
-  mockQuestions,
-  mockResponses,
-  mockCurrentUser,
-  mockUserStats,
-} from '@/data/mockData';
 
 // ===========================================
 // Types
@@ -269,57 +263,44 @@ export function useQuestionsFeed(
   return useQuery({
     queryKey: questionQueryKeys.feed(params),
     queryFn: async (): Promise<QuestionsFeedResult> => {
-      // Try backend first
-      if (isBackendConfigured) {
-        try {
-          const response = await fetchJson<Question[]>('/api/questions/all');
-          if (response.success && Array.isArray(response.data)) {
-            const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
-            const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
-            const start = (page - 1) * limit;
-            const paginatedQuestions = sortedQuestions.slice(start, start + limit);
+      const response = await fetchJson<Question[]>('/api/questions/all');
+      if (response.success && Array.isArray(response.data)) {
+        const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
+        const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+        const start = (page - 1) * limit;
+        const paginatedQuestions = sortedQuestions.slice(start, start + limit);
 
-            return {
-              questions: paginatedQuestions,
-              pagination: {
-                page,
-                limit,
-                total: sortedQuestions.length,
-                totalPages: Math.ceil(sortedQuestions.length / limit),
-                hasMore: start + limit < sortedQuestions.length,
-              },
-              stats: {
-                totalQuestions: response.data.length,
-                unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
-                rewardsCount: response.data.filter((q) => q.isInstantReward).length,
-              },
-            };
-          }
-        } catch (error) {
-          console.log('[useQuestionsFeed] Backend failed, using mock:', error);
-        }
+        return {
+          questions: paginatedQuestions,
+          pagination: {
+            page,
+            limit,
+            total: sortedQuestions.length,
+            totalPages: Math.ceil(sortedQuestions.length / limit),
+            hasMore: start + limit < sortedQuestions.length,
+          },
+          stats: {
+            totalQuestions: response.data.length,
+            unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
+            rewardsCount: response.data.filter((q) => q.isInstantReward).length,
+          },
+        };
       }
 
-      // Mock data fallback
-      await delay();
-      const feedQuestions = mockQuestions.map((q, i) => transformToFeedQuestion(q, i));
-      const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
-      const start = (page - 1) * limit;
-      const paginatedQuestions = sortedQuestions.slice(start, start + limit);
-
+      // Return empty state if API fails
       return {
-        questions: paginatedQuestions,
+        questions: [],
         pagination: {
           page,
           limit,
-          total: sortedQuestions.length,
-          totalPages: Math.ceil(sortedQuestions.length / limit),
-          hasMore: start + limit < sortedQuestions.length,
+          total: 0,
+          totalPages: 0,
+          hasMore: false,
         },
         stats: {
-          totalQuestions: mockQuestions.length,
-          unansweredCount: mockQuestions.filter((q) => (q.totalAnswers || 0) === 0).length,
-          rewardsCount: mockQuestions.filter((q) => q.isInstantReward).length,
+          totalQuestions: 0,
+          unansweredCount: 0,
+          rewardsCount: 0,
         },
       };
     },
@@ -370,24 +351,20 @@ export function useInfiniteQuestionsFeed(
       }
 
       await delay();
-      const feedQuestions = mockQuestions.map((q, i) => transformToFeedQuestion(q, i));
-      const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
-      const start = (pageParam - 1) * limit;
-      const paginatedQuestions = sortedQuestions.slice(start, start + limit);
-
+      // Return empty state when API fails and no backend
       return {
-        questions: paginatedQuestions,
+        questions: [],
         pagination: {
           page: pageParam,
           limit,
-          total: sortedQuestions.length,
-          totalPages: Math.ceil(sortedQuestions.length / limit),
-          hasMore: start + limit < sortedQuestions.length,
+          total: 0,
+          totalPages: 0,
+          hasMore: false,
         },
         stats: {
-          totalQuestions: mockQuestions.length,
-          unansweredCount: mockQuestions.filter((q) => (q.totalAnswers || 0) === 0).length,
-          rewardsCount: mockQuestions.filter((q) => q.isInstantReward).length,
+          totalQuestions: 0,
+          unansweredCount: 0,
+          rewardsCount: 0,
         },
       };
     },
@@ -426,16 +403,8 @@ export function useQuestionDetail(
       }
 
       await delay();
-      const question = mockQuestions.find((q) => q.id === questionId);
-      if (!question) {
-        throw new Error('Question not found');
-      }
-
-      const responses = mockResponses.filter((r) => r.questionId === questionId);
-      return {
-        ...transformToFeedQuestion(question),
-        responses,
-      };
+      // When backend is unavailable, throw error to indicate question not found
+      throw new Error('Question not found - API unavailable');
     },
     enabled: !!questionId,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -530,7 +499,7 @@ export function useCreateQuestion(): UseMutationResult<
             {
               method: 'POST',
               body: JSON.stringify({
-                userId: mockCurrentUser.id, // Would use actual auth user
+                // userId will be set by the backend from the auth token
                 ...data,
               }),
             }
@@ -538,17 +507,19 @@ export function useCreateQuestion(): UseMutationResult<
           if (response.success) {
             return response.data.question;
           }
+          throw new Error(response.error || 'Failed to create question');
         } catch (error) {
           console.log('[useCreateQuestion] Backend failed:', error);
+          throw error;
         }
       }
 
-      // Mock response
+      // Return mock response only for local development without backend
       await delay();
       const newQuestion: Question = {
         id: `question_${Date.now()}`,
         text: data.text,
-        userId: mockCurrentUser.id,
+        userId: 'local_user',
         category: data.category || 'General',
         rewardAmount: data.rewardAmount || 0,
         isInstantReward: data.isInstantReward || false,
@@ -584,25 +555,26 @@ export function useSubmitQuestionResponse(): UseMutationResult<
               method: 'POST',
               body: JSON.stringify({
                 responseText,
-                userId: mockCurrentUser.id,
+                // userId will be set by the backend from the auth token
               }),
             }
           );
           if (response.success) {
             return { ...response.data.response, rewardEarned: response.data.rewardEarned };
           }
+          throw new Error(response.error || 'Failed to submit response');
         } catch (error) {
           console.log('[useSubmitQuestionResponse] Backend failed:', error);
+          throw error;
         }
       }
 
-      // Mock response
+      // Mock response for local development
       await delay();
-      const question = mockQuestions.find((q) => q.id === questionId);
       const newResponse: Response = {
         id: `response_${Date.now()}`,
         responseText,
-        userId: mockCurrentUser.id,
+        userId: 'local_user',
         questionId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -614,7 +586,7 @@ export function useSubmitQuestionResponse(): UseMutationResult<
       };
       return {
         ...newResponse,
-        rewardEarned: question?.rewardAmount || 0,
+        rewardEarned: 0,
       };
     },
     onSuccess: (_, { questionId }) => {
@@ -683,15 +655,15 @@ export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Erro
         }
       }
 
-      // Mock stats
+      // Mock stats for local development
       await delay();
       return {
-        totalAnswered: mockUserStats.totalAnswers,
-        totalEarnings: mockUserStats.totalEarnings,
-        currentStreak: mockUserStats.currentStreak,
-        questionsAnsweredToday: mockUserStats.questionsAnsweredToday,
+        totalAnswered: 0,
+        totalEarnings: 0,
+        currentStreak: 0,
+        questionsAnsweredToday: 0,
         dailyTarget: 10,
-        weeklyProgress: [3, 5, 7, 4, 6, 8, 2],
+        weeklyProgress: [0, 0, 0, 0, 0, 0, 0],
       };
     },
     staleTime: 1000 * 60 * 2,
@@ -715,8 +687,9 @@ export function useQuestionCategories(): UseQueryResult<string[], Error> {
       }
 
       await delay(200);
-      const categories = [...new Set(mockQuestions.map((q) => q.category).filter(Boolean))];
-      return categories as string[];
+      // Return default categories when API unavailable
+      const defaultCategories = ['General', 'Technology', 'Science', 'Entertainment', 'Sports', 'Business'];
+      return defaultCategories;
     },
     staleTime: 1000 * 60 * 30, // 30 minutes
   });
@@ -747,13 +720,8 @@ export function useSearchQuestions(
       }
 
       await delay();
-      const searchLower = query.toLowerCase();
-      const results = mockQuestions.filter(
-        (q) =>
-          q.text.toLowerCase().includes(searchLower) ||
-          q.category?.toLowerCase().includes(searchLower)
-      );
-      return results.map((q, i) => transformToFeedQuestion(q, i));
+      // Return empty results when API unavailable
+      return [];
     },
     enabled: query.length > 2,
     staleTime: 1000 * 60, // 1 minute
@@ -767,28 +735,37 @@ export function usePrefetchQuestions() {
   const queryClient = useQueryClient();
 
   return useCallback(() => {
-    // Prefetch common tabs
+    // Prefetch common tabs by triggering the useQuestionsFeed queryFn
     const tabs: FeedTabId[] = ['for-you', 'latest', 'rewards'];
     tabs.forEach((tab) => {
       queryClient.prefetchQuery({
         queryKey: questionQueryKeys.feed({ tab }),
-        queryFn: async () => {
-          await delay(100);
-          const feedQuestions = mockQuestions.map((q, i) => transformToFeedQuestion(q, i));
+        queryFn: async (): Promise<QuestionsFeedResult> => {
+          const response = await fetchJson<Question[]>('/api/questions/all');
+          if (response.success && Array.isArray(response.data)) {
+            const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
+            const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+            return {
+              questions: sortedQuestions.slice(0, 20),
+              pagination: {
+                page: 1,
+                limit: 20,
+                total: sortedQuestions.length,
+                totalPages: Math.ceil(sortedQuestions.length / 20),
+                hasMore: sortedQuestions.length > 20,
+              },
+              stats: {
+                totalQuestions: response.data.length,
+                unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
+                rewardsCount: response.data.filter((q) => q.isInstantReward).length,
+              },
+            };
+          }
+          // Return empty state if API fails
           return {
-            questions: sortQuestionsByTab(feedQuestions, tab).slice(0, 20),
-            pagination: {
-              page: 1,
-              limit: 20,
-              total: mockQuestions.length,
-              totalPages: 1,
-              hasMore: false,
-            },
-            stats: {
-              totalQuestions: mockQuestions.length,
-              unansweredCount: mockQuestions.filter((q) => (q.totalAnswers || 0) === 0).length,
-              rewardsCount: mockQuestions.filter((q) => q.isInstantReward).length,
-            },
+            questions: [],
+            pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasMore: false },
+            stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
           };
         },
         staleTime: 1000 * 60 * 2,

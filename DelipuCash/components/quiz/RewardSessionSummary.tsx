@@ -41,7 +41,7 @@ import {
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
-import { formatCurrency } from '@/data/mockData';
+import { formatCurrency } from '@/services';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { REWARD_CONSTANTS } from '@/store/InstantRewardStore';
 import { triggerHaptic } from '@/utils/quiz-utils';

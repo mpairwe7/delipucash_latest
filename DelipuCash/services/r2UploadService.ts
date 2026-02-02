@@ -620,6 +620,86 @@ export async function getSignedPlaybackUrl(
 }
 
 // ============================================================================
+// AD MEDIA UPLOAD
+// ============================================================================
+
+export interface AdMediaUploadResult {
+  url: string;
+  key: string;
+  size: number;
+  mimeType: string;
+  type: 'image' | 'video';
+  etag?: string;
+}
+
+/**
+ * Upload ad media (image or video) to R2
+ * 
+ * @param mediaUri - Local media file URI
+ * @param userId - User ID
+ * @param metadata - Optional metadata
+ * @param options - Upload options (progress callback, etc.)
+ */
+export async function uploadAdMediaToR2(
+  mediaUri: string,
+  userId: string,
+  metadata: {
+    fileName?: string;
+    mimeType?: string;
+    adId?: string;
+  } = {},
+  options: UploadOptions = {}
+): Promise<ApiResponse<AdMediaUploadResult>> {
+  try {
+    const fileName = metadata.fileName || mediaUri.split('/').pop() || 'media';
+    const mimeType = metadata.mimeType || (mediaUri.toLowerCase().includes('.mp4') ? 'video/mp4' : 'image/jpeg');
+
+    // Create FormData
+    const formData = new FormData();
+    formData.append('media', assetToFormData(mediaUri, fileName, mimeType) as unknown as Blob);
+    formData.append('userId', userId);
+
+    if (metadata.adId) formData.append('adId', metadata.adId);
+
+    options.onStart?.();
+
+    // Upload with progress tracking
+    const response = await createProgressRequest(
+      `${API_BASE_URL}/api/r2/upload/ad-media`,
+      'POST',
+      formData,
+      options
+    );
+
+    const data = await response.json();
+    options.onComplete?.();
+
+    if (!response.ok) {
+      const error = new Error(data.message || 'Upload failed');
+      options.onError?.(error);
+      return {
+        success: false,
+        data: data as AdMediaUploadResult,
+        error: data.message,
+      };
+    }
+
+    return {
+      success: true,
+      data: data.media as AdMediaUploadResult,
+    };
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error('Upload failed');
+    options.onError?.(err);
+    return {
+      success: false,
+      data: {} as AdMediaUploadResult,
+      error: err.message,
+    };
+  }
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -634,6 +714,9 @@ export const r2UploadService = {
   // Thumbnail upload
   uploadThumbnailToR2,
   
+  // Ad media upload
+  uploadAdMediaToR2,
+
   // Presigned URLs
   getPresignedUploadUrl,
   uploadToPresignedUrl,

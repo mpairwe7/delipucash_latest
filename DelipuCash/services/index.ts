@@ -13,6 +13,15 @@
 // Core API - main unified API object
 export { default as api } from "./api";
 
+// Utility functions from api module
+export {
+    formatCurrency,
+    formatDate,
+    formatRelativeTime,
+    formatDuration,
+    paymentMethods,
+} from "./api";
+
 // Legacy hooks from ./hooks (excluding video hooks that are in videoHooks)
 export {
     // Query keys
@@ -82,11 +91,13 @@ export {
     useAdById as useLegacyAdById,
     useAdsForPlacement as useLegacyAdsForPlacement,
     useRandomAd as useLegacyRandomAd,
-    useRecordAdClick as useLegacyRecordAdClick,
-    useRecordAdImpression as useLegacyRecordAdImpression,
-    useAdRefreshOnFocus as useLegacyAdRefreshOnFocus,
-    useAdPreferences as useLegacyAdPreferences,
-    usePageAds as useLegacyPageAds,
+    useTrackAdClick as useLegacyTrackAdClick,
+    useTrackAdImpression as useLegacyTrackAdImpression,
+    useCreateAd as useLegacyCreateAd,
+    useUpdateAd as useLegacyUpdateAd,
+    useDeleteAd as useLegacyDeleteAd,
+    useAdImpressionTracking as useLegacyAdImpressionTracking,
+    useAdRotation as useLegacyAdRotation,
 } from "./adHooks";
 
 // Survey Response TanStack Query Hooks (NEW - Industry Standard)
@@ -116,6 +127,7 @@ export {
     uploadVideoToR2,
     uploadMediaToR2,
     uploadThumbnailToR2,
+    uploadAdMediaToR2,
     getPresignedUploadUrl,
     uploadToPresignedUrl,
     uploadLivestreamChunk,
@@ -127,6 +139,7 @@ export {
     type PresignedUploadResult,
     type ValidateUploadResult,
     type UploadProgressEvent,
+    type AdMediaUploadResult,
 } from "./r2UploadService";
 
 export {
@@ -137,6 +150,7 @@ export {
     useUploadVideoToR2,
     useUploadMediaToR2,
     useUploadThumbnailToR2,
+    useUploadAdMediaToR2,
     useGetPresignedUploadUrl,
     useUploadToPresignedUrl,
     useUploadLivestreamChunk,
@@ -147,5 +161,6 @@ export {
     type UseUploadVideoParams,
     type UseUploadMediaParams,
     type UseUploadThumbnailParams,
+    type UseUploadAdMediaParams,
     type UploadHookResult,
 } from "./r2UploadHooks";

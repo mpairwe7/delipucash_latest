@@ -900,7 +900,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
           contentContainerStyle={styles.responsesContent}
           showsVerticalScrollIndicator={false}
         >
-          {surveyQuestions?.map((question, index) => {
+          {surveyQuestions?.map((question: { id: string; text: string; type: string }, index: number) => {
             const answer = currentResponse.responses[question.id];
             
             return (

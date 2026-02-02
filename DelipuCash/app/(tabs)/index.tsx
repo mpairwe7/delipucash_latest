@@ -256,7 +256,7 @@ export default function HomePage(): React.ReactElement {
 
     switch (item.type) {
       case 'video':
-        router.push(`/(tabs)/videos`);
+        router.push(`/(tabs)/videos-new`);
         break;
       case 'question':
         router.push(`/question/${item.id}` as Href);
@@ -471,7 +471,7 @@ export default function HomePage(): React.ReactElement {
           title="Trending Videos"
           subtitle="Most watched this week"
           icon={<Play size={20} color={colors.error} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/videos")}
+          onSeeAll={() => router.push("/(tabs)/videos-new")}
         />
         <ScrollView
           horizontal
@@ -483,7 +483,7 @@ export default function HomePage(): React.ReactElement {
               key={video.id}
               video={video}
               variant="compact"
-              onPress={() => router.push(`/(tabs)/videos`)}
+              onPress={() => router.push(`/(tabs)/videos-new`)}
             />
           ))}
         </ScrollView>
@@ -493,7 +493,7 @@ export default function HomePage(): React.ReactElement {
           title="Questions & Rewards"
           subtitle="Answer and earn"
           icon={<Award size={20} color={colors.primary} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/questions")}
+          onSeeAll={() => router.push("/(tabs)/questions-new")}
         />
 
         {/* Recent Questions */}
@@ -524,7 +524,7 @@ export default function HomePage(): React.ReactElement {
           title="Running Surveys"
           subtitle="Complete and earn rewards"
           icon={<Zap size={20} color={colors.success} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/surveys")}
+          onSeeAll={() => router.push("/(tabs)/surveys-new")}
         />
         <View style={styles.surveysContainer}>
           {runningSurveys?.slice(0, 2).map((survey: Survey) => (
@@ -548,7 +548,7 @@ export default function HomePage(): React.ReactElement {
           title="Upcoming Surveys"
           subtitle="Don't miss out"
           icon={<Calendar size={20} color={colors.warning} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/surveys")}
+          onSeeAll={() => router.push("/(tabs)/surveys-new")}
         />
         <View style={styles.surveysContainer}>
           {upcomingSurveys?.slice(0, 2).map((survey: Survey) => (

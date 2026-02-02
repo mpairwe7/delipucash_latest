@@ -28,8 +28,10 @@ async function apiLogin(credentials: LoginCredentials): Promise<AuthResponse> {
     if (response.ok && data.success && data.token) {
       return {
         success: true,
-        user: data.user,
-        token: data.token,
+        data: {
+          user: data.user,
+          token: data.token,
+        },
       };
     }
 
@@ -70,8 +72,10 @@ async function apiSignup(credentials: SignupCredentials): Promise<AuthResponse> 
     if (response.ok && data.token) {
       return {
         success: true,
-        user: data.user,
-        token: data.token,
+        data: {
+          user: data.user,
+          token: data.token,
+        },
       };
     }
 
@@ -193,10 +197,10 @@ export const useAuth = (): UseAuthResult => {
           response = await apiLogin(credentials);
         }
 
-        if (response.success && response.user && response.token) {
+        if (response.success && response.data?.user && response.data?.token) {
           setAuth({
-            user: response.user,
-            token: response.token,
+            user: response.data.user,
+            token: response.data.token,
           });
           close();
         }
@@ -230,10 +234,10 @@ export const useAuth = (): UseAuthResult => {
           response = await apiSignup(credentials);
         }
 
-        if (response.success && response.user && response.token) {
+        if (response.success && response.data?.user && response.data?.token) {
           setAuth({
-            user: response.user,
-            token: response.token,
+            user: response.data.user,
+            token: response.data.token,
           });
           close();
         }

@@ -1,5 +1,5 @@
 import { PrimaryButton } from "@/components";
-import { formatCurrency } from "@/data/mockData";
+import { formatCurrency } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
 import { RewardAnswerResult } from "@/types";
 import {
