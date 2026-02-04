@@ -1,16 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildOptimizedQuery, paginate } from '../lib/queryStrategies.mjs';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
-// Note: modelCacheRecommendations in cacheStrategies maps Question to shortLived.
+// Test buildOptimizedQuery without cache strategies
 test('buildOptimizedQuery applies defaults and omits undefined', () => {
   const query = buildOptimizedQuery('Question');
 
   assert.deepEqual(query.orderBy, [{ createdAt: 'desc' }], 'default orderBy applied');
   assert.equal(query.skip, 0, 'default skip is zero');
   assert.equal(query.take, 100, 'default take is capped at DEFAULT_LIMIT');
-  assert.equal(query.cacheStrategy, cacheStrategies.shortLived, 'default cache strategy by model');
+  assert.ok(!('cacheStrategy' in query), 'no cacheStrategy in query');
   assert.ok(!('where' in query), 'where omitted when undefined');
   assert.ok(!('select' in query), 'select omitted when undefined');
   assert.ok(!('include' in query), 'include omitted when undefined');
@@ -28,7 +27,6 @@ test('buildOptimizedQuery caps take and passes where/select/include', () => {
     include: { user: true },
     skip: 10,
     take: 500, // should cap to 100
-    cacheStrategy: cacheStrategies.standard,
   });
 
   assert.deepEqual(query.where, { active: true });
@@ -36,7 +34,6 @@ test('buildOptimizedQuery caps take and passes where/select/include', () => {
   assert.deepEqual(query.include, { user: true });
   assert.equal(query.skip, 10);
   assert.equal(query.take, 100, 'take should be capped to DEFAULT_LIMIT');
-  assert.equal(query.cacheStrategy, cacheStrategies.standard, 'explicit cache override honored');
 });
 
 test('paginate returns skip/take respecting limits and page floor', () => {

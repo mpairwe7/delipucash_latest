@@ -2,7 +2,6 @@ import bcrypt from 'bcryptjs';
 import { errorHandler } from '../utils/error.mjs';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // ===========================================
 // User Profile Endpoints
@@ -26,7 +25,6 @@ export const getUserProfile = asyncHandler(async (req, res) => {
         firstName: true,
         lastName: true,
         phone: true,
-        phoneNumber: true,
         points: true,
         avatar: true,
         role: true,
@@ -36,8 +34,6 @@ export const getUserProfile = asyncHandler(async (req, res) => {
         createdAt: true,
         updatedAt: true,
       },
-      // Prisma Accelerate: Standard cache for user profile
-      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!user) {
@@ -48,11 +44,7 @@ export const getUserProfile = asyncHandler(async (req, res) => {
     console.log('✅ Profile retrieved for user ID:', userId);
     res.json({
       success: true,
-      data: {
-        ...user,
-        // Map phoneNumber to phone for frontend compatibility
-        phone: user.phone || user.phoneNumber,
-      }
+      data: user
     });
   } catch (error) {
     console.error("❌ Error fetching user profile:", error);
@@ -88,7 +80,6 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
         firstName: true,
         lastName: true,
         phone: true,
-        phoneNumber: true,
         points: true,
         avatar: true,
         role: true,
@@ -103,10 +94,7 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
     console.log('✅ Profile updated successfully for user ID:', userId);
     res.json({
       success: true,
-      data: {
-        ...updatedUser,
-        phone: updatedUser.phone || updatedUser.phoneNumber,
-      },
+      data: updatedUser,
       message: "Profile updated successfully"
     });
   } catch (error) {

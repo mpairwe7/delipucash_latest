@@ -128,6 +128,21 @@ export interface CreateAdPayload {
   
   // User ID
   userId: string;
+  
+  // R2 Storage Metadata (Cloudflare R2 / S3-compatible) - similar to Video model
+  r2ImageKey?: string;
+  r2VideoKey?: string;
+  r2ThumbnailKey?: string;
+  r2ImageEtag?: string;
+  r2VideoEtag?: string;
+  r2ThumbnailEtag?: string;
+  imageMimeType?: string;
+  videoMimeType?: string;
+  thumbnailMimeType?: string;
+  imageSizeBytes?: number;
+  videoSizeBytes?: number;
+  thumbnailSizeBytes?: number;
+  storageProvider?: string;
 }
 
 export interface UpdateAdPayload extends Partial<CreateAdPayload> {

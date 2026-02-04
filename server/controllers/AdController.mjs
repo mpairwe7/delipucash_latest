@@ -3,15 +3,33 @@ import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // ============================================================================
+// HELPER: Serialize BigInt values for JSON response
+// ============================================================================
+
+function serializeBigInt(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'bigint') return obj.toString();
+  if (Array.isArray(obj)) return obj.map(serializeBigInt);
+  if (typeof obj === 'object') {
+    const result = {};
+    for (const key in obj) {
+      result[key] = serializeBigInt(obj[key]);
+    }
+    return result;
+  }
+  return obj;
+}
+
+// ============================================================================
 // CONSTANTS - Industry Standard Ad Configuration
 // ============================================================================
 
 const VALID_AD_TYPES = ['regular', 'featured', 'banner', 'compact'];
-const VALID_PLACEMENTS = ['feed', 'interstitial', 'native', 'rewarded', 'story'];
+const VALID_PLACEMENTS = ['home', 'feed', 'survey', 'video', 'question', 'profile', 'explore', 'interstitial', 'native', 'rewarded', 'story'];
 const VALID_PRICING_MODELS = ['cpm', 'cpc', 'cpa', 'flat'];
 const VALID_CTA_TYPES = [
-  'learn_more', 'shop_now', 'sign_up', 'download', 'watch_video',
-  'get_offer', 'book_now', 'contact_us', 'apply_now', 'subscribe', 'none'
+  'learn_more', 'shop_now', 'sign_up', 'download', 'watch_video', 'watch_more',
+  'get_offer', 'book_now', 'contact_us', 'apply_now', 'subscribe', 'get_quote', 'none'
 ];
 const VALID_GENDERS = ['all', 'male', 'female', 'other'];
 const VALID_AGE_RANGES = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
@@ -59,6 +77,21 @@ export const createAd = asyncHandler(async (req, res) => {
         // Advanced
         priority = 5,
         frequency,
+        
+        // R2 Storage Metadata (Cloudflare R2 / S3-compatible)
+        r2ImageKey,
+        r2VideoKey,
+        r2ThumbnailKey,
+        r2ImageEtag,
+        r2VideoEtag,
+        r2ThumbnailEtag,
+        imageMimeType,
+        videoMimeType,
+        thumbnailMimeType,
+        imageSizeBytes,
+        videoSizeBytes,
+        thumbnailSizeBytes,
+        storageProvider = "r2",
       } = req.body;
   
       console.log("Creating ad campaign with data:", req.body);
@@ -184,6 +217,21 @@ export const createAd = asyncHandler(async (req, res) => {
           priority: validPriority,
           frequency: frequency ? parseInt(frequency) : null,
           
+          // R2 Storage Metadata (Cloudflare R2 / S3-compatible)
+          r2ImageKey: r2ImageKey || null,
+          r2VideoKey: r2VideoKey || null,
+          r2ThumbnailKey: r2ThumbnailKey || null,
+          r2ImageEtag: r2ImageEtag || null,
+          r2VideoEtag: r2VideoEtag || null,
+          r2ThumbnailEtag: r2ThumbnailEtag || null,
+          imageMimeType: imageMimeType || null,
+          videoMimeType: videoMimeType || null,
+          thumbnailMimeType: thumbnailMimeType || null,
+          imageSizeBytes: imageSizeBytes ? BigInt(imageSizeBytes) : null,
+          videoSizeBytes: videoSizeBytes ? BigInt(videoSizeBytes) : null,
+          thumbnailSizeBytes: thumbnailSizeBytes ? parseInt(thumbnailSizeBytes) : null,
+          storageProvider: storageProvider || 'r2',
+          
           // Initial stats
           views: 0,
           clicks: 0,
@@ -210,10 +258,10 @@ export const createAd = asyncHandler(async (req, res) => {
       res.status(201).json({
         success: true,
         message: "Ad campaign created successfully. Pending review.",
-        data: {
+        data: serializeBigInt({
           ...ad,
           estimatedReach
-        }
+        })
       });
       
       console.log("Ad campaign created:", ad.id);
@@ -261,7 +309,13 @@ function calculateEstimatedReach({ targetAgeRanges, targetGender, targetLocation
   
   // Placement affects reach
   const placementMultipliers = {
-    feed: 1,
+    home: 1,
+    feed: 0.9,
+    survey: 0.5,
+    video: 0.6,
+    question: 0.7,
+    profile: 0.4,
+    explore: 0.8,
     interstitial: 0.3,
     native: 0.8,
     rewarded: 0.4,

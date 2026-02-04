@@ -57,7 +57,7 @@ interface FormState {
   title: string;
   description: string;
   targetUrl: string;
-  type: "standard" | "featured" | "banner" | "compact";
+  type: "regular" | "featured" | "banner" | "compact";
   placement: AdPlacement;
   sponsored: boolean;
   isActive: boolean;
@@ -103,7 +103,7 @@ type MediaKind = "image" | "video" | null;
 
 // Configuration constants
 const typeLabels: Record<FormState["type"], { label: string; description: string }> = {
-  standard: { label: "Standard", description: "Standard feed ad" },
+  regular: { label: "Regular", description: "Standard feed ad" },
   featured: { label: "Featured", description: "Highlighted placement" },
   banner: { label: "Banner", description: "Top/bottom banner" },
   compact: { label: "Compact", description: "Small inline ad" },
@@ -424,7 +424,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
     title: "",
     description: "",
     targetUrl: "",
-    type: "standard",
+    type: "regular",
     placement: "feed",
     sponsored: true,
     isActive: true,
@@ -454,6 +454,13 @@ export default function AdRegistrationScreen(): React.ReactElement {
   const [mediaUri, setMediaUri] = useState<string>("");
   const [mediaKind, setMediaKind] = useState<MediaKind>(null);
   const [uploadedUrl, setUploadedUrl] = useState<string>("");
+  // R2 metadata state (similar to how Video screen stores it)
+  const [r2Metadata, setR2Metadata] = useState<{
+    key?: string;
+    etag?: string;
+    mimeType?: string;
+    size?: number;
+  } | null>(null);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -583,13 +590,22 @@ export default function AdRegistrationScreen(): React.ReactElement {
       if (!uploadResult.success) {
         Alert.alert("Upload failed", uploadResult.error || "Please try again.");
         setUploadedUrl("");
+        setR2Metadata(null);
       } else {
         setUploadedUrl(uploadResult.data.url);
+        // Store R2 metadata for Prisma (similar to Video screen)
+        setR2Metadata({
+          key: uploadResult.data.key,
+          etag: uploadResult.data.etag,
+          mimeType: uploadResult.data.mimeType,
+          size: uploadResult.data.size,
+        });
       }
     } catch (error) {
       console.error("Upload error", error);
       Alert.alert("Upload failed", "Please try again.");
       setUploadedUrl("");
+      setR2Metadata(null);
     }
   }, [uploadAdMedia]);
 
@@ -725,13 +741,28 @@ export default function AdRegistrationScreen(): React.ReactElement {
         priority: form.priority,
         frequency: Number(form.frequencyCap) || undefined,
         userId: 'current-user-id', // TODO: Get from auth context
+        // R2 Storage Metadata (Cloudflare R2 / S3-compatible) - similar to Video screen
+        ...(r2Metadata && mediaKind === 'image' && {
+          r2ImageKey: r2Metadata.key,
+          r2ImageEtag: r2Metadata.etag,
+          imageMimeType: r2Metadata.mimeType,
+          imageSizeBytes: r2Metadata.size,
+          storageProvider: 'r2',
+        }),
+        ...(r2Metadata && mediaKind === 'video' && {
+          r2VideoKey: r2Metadata.key,
+          r2VideoEtag: r2Metadata.etag,
+          videoMimeType: r2Metadata.mimeType,
+          videoSizeBytes: r2Metadata.size,
+          storageProvider: 'r2',
+        }),
       });
       
       Alert.alert("Ad Campaign Created!", "Your campaign is now under review and will be live within 24 hours.", [
         { text: "View Campaigns", onPress: () => router.push("/") },
         { text: "Create Another", onPress: () => {
           setForm({
-            title: "", description: "", targetUrl: "", type: "standard", placement: "feed",
+            title: "", description: "", targetUrl: "", type: "regular", placement: "feed",
             sponsored: true, isActive: true, pricingModel: "cpm", budget: "", bidAmount: "",
             dailyBudgetLimit: "", callToAction: "learn_more", headline: "",
             targetAgeRanges: ["18-24", "25-34"], targetGender: "all", targetLocations: [],
@@ -739,6 +770,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
           });
           setMediaUri("");
           setUploadedUrl("");
+          setR2Metadata(null);
           setMediaKind(null);
           setCurrentStep("media");
         }},
@@ -749,7 +781,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
     } finally {
       setSubmitting(false);
     }
-  }, [validate, createAdMutation, form, mediaKind, uploadedUrl]);
+  }, [validate, createAdMutation, form, mediaKind, uploadedUrl, r2Metadata]);
 
   return (
     <SafeAreaView style={themedStyles.safeArea} edges={['top', 'bottom']}> 

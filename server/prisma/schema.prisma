@@ -203,6 +203,22 @@ model Ad {
   rejectionReason   String?
   approvedAt        DateTime?
   approvedBy        String?   @db.Uuid
+  
+  // R2 Storage Metadata (Cloudflare R2 / S3-compatible) - similar to Video model
+  r2ImageKey        String?   // R2 object key for image file
+  r2VideoKey        String?   // R2 object key for video file
+  r2ThumbnailKey    String?   // R2 object key for thumbnail
+  r2ImageEtag       String?   // ETag for image cache validation
+  r2VideoEtag       String?   // ETag for video cache validation
+  r2ThumbnailEtag   String?   // ETag for thumbnail cache validation
+  imageMimeType     String?   // Image MIME type (e.g., image/jpeg)
+  videoMimeType     String?   // Video MIME type (e.g., video/mp4)
+  thumbnailMimeType String?   // Thumbnail MIME type (e.g., image/jpeg)
+  imageSizeBytes    BigInt?   // Image file size in bytes
+  videoSizeBytes    BigInt?   // Video file size in bytes
+  thumbnailSizeBytes Int?     // Thumbnail file size in bytes
+  storageProvider   String    @default("r2") // Storage provider: r2, supabase, uploadcare, etc.
+  
   user              AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -213,6 +229,8 @@ model Ad {
   @@index([lastShown])
   @@index([status])
   @@index([pricingModel])
+  @@index([r2ImageKey])
+  @@index([r2VideoKey])
 }
 
 model SurveyResponse {

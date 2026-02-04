@@ -758,11 +758,28 @@ export const uploadAdMediaToR2 = asyncHandler(async (req, res) => {
 
     console.log(`[R2Controller] Ad media uploaded to R2: ${result.key}`);
 
-    // If adId is provided, update the ad record
+    // If adId is provided, update the ad record with R2 metadata (similar to Video model)
     if (adId) {
       const updateData = isVideo
-        ? { videoUrl: result.url, thumbnailUrl: result.url }
-        : { imageUrl: result.url };
+        ? { 
+            videoUrl: result.url, 
+            thumbnailUrl: result.url,
+            // R2 metadata for video
+            r2VideoKey: result.key,
+            r2VideoEtag: result.etag,
+            videoMimeType: mediaFile.mimetype,
+            videoSizeBytes: BigInt(mediaFile.size),
+            storageProvider: 'r2',
+          }
+        : { 
+            imageUrl: result.url,
+            // R2 metadata for image
+            r2ImageKey: result.key,
+            r2ImageEtag: result.etag,
+            imageMimeType: mediaFile.mimetype,
+            imageSizeBytes: BigInt(mediaFile.size),
+            storageProvider: 'r2',
+          };
 
       await prisma.ad.update({
         where: { id: adId },

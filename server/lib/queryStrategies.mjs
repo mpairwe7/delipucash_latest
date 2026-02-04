@@ -1,16 +1,16 @@
-import cacheStrategies, { modelCacheRecommendations } from './cacheStrategies.mjs';
+// Query strategies without caching
+// Removed cache strategies for direct database queries
 
 // Upper bound to prevent unbounded queries while keeping UX responsive
 const DEFAULT_LIMIT = 100;
 
 /**
- * Build a query with safe defaults, pagination, and model-specific cache strategy.
- * Use alongside Prisma Accelerate to keep queries lean and cache-friendly.
+ * Build a query with safe defaults and pagination.
+ * Use for optimized Prisma queries without caching.
  *
- * @param {string} modelName - The Prisma/model name used as a key in `modelCacheRecommendations`
- *   to determine the default cache strategy when one is not explicitly provided.
+ * @param {string} modelName - The Prisma/model name (for reference only)
  * @param {object} [options] - Query options such as `where`, `orderBy`, `select`, `include`,
- *   `skip`, `take`, and an optional `cacheStrategy` to override the model-based default.
+ *   `skip`, `take`.
  */
 export function buildOptimizedQuery(modelName, options = {}) {
   const {
@@ -20,7 +20,6 @@ export function buildOptimizedQuery(modelName, options = {}) {
     include,
     skip,
     take,
-    cacheStrategy,
   } = options;
 
   const safeTake = Math.min(take ?? DEFAULT_LIMIT, DEFAULT_LIMIT);
@@ -28,7 +27,6 @@ export function buildOptimizedQuery(modelName, options = {}) {
     orderBy: orderBy ?? [{ createdAt: 'desc' }],
     skip: skip ?? 0,
     take: safeTake,
-    cacheStrategy: cacheStrategy ?? modelCacheRecommendations[modelName] ?? cacheStrategies.shortLived,
   };
 
   if (where !== undefined) {
