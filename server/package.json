@@ -13,7 +13,7 @@
     "build": "prisma generate",
     "clean": "rm -rf node_modules/.cache dist .turbo",
     "postinstall": "prisma generate",
-    "vercel-build": "prisma generate && prisma db push",
+    "vercel-build": "prisma generate && prisma migrate deploy",
     "db:push": "bun prisma db push",
     "db:studio": "bun prisma studio",
     "db:reset": "bun prisma migrate reset",
