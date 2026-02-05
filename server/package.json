@@ -11,6 +11,7 @@
     "dev": "bun --watch index.js",
     "start": "bun index.js",
     "build": "prisma generate",
+    "clean": "rm -rf node_modules/.cache dist .turbo",
     "postinstall": "prisma generate",
     "vercel-build": "prisma generate && prisma db push",
     "db:push": "bun prisma db push",
