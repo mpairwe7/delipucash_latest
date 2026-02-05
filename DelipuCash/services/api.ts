@@ -29,7 +29,7 @@ import {
 // ===========================================
 
 // Ensure the API URL always ends with /api
-const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app/api" || "192.168.100.48:3000";
 
 // Validate that API URL is configured
 if (!rawApiUrl) {

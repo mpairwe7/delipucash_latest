@@ -312,6 +312,18 @@ npx expo prebuild
 - iOS 13+
 - Android API 21+ (Android 5.0)
 
+# Check current firewall status
+sudo firewall-cmd --state
+
+# Allow TCP port 8081 (Metro bundler)
+sudo firewall-cmd --permanent --add-port=8081/tcp
+
+# Reload firewall to apply changes
+sudo firewall-cmd --reload
+
+# Verify the port is open
+sudo firewall-cmd --list-ports
+
 ## 📚 Additional Documentation
 
 - [Google Play Billing Setup](./docs/GOOGLE_PLAY_BILLING.md)

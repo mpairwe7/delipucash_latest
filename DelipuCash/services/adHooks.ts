@@ -60,7 +60,7 @@ export const useAds = (filters?: AdFilters) => {
     queryKey: adQueryKeys.list(filters),
     queryFn: async () => {
       const response = await adApi.fetchAds(filters);
-      return { data: response.data, total: response.pagination?.total || response.data.length };
+      return { data: response.data.all, total: response.pagination?.total || response.data.all.length };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -83,7 +83,7 @@ export const useFeaturedAds = (limit?: number) => {
     queryKey: adQueryKeys.featured(limit),
     queryFn: async () => {
       const response = await adApi.fetchFeaturedAds(limit);
-      return { data: response.data };
+      return { data: response };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -104,7 +104,7 @@ export const useBannerAds = (limit?: number) => {
     queryKey: adQueryKeys.banners(limit),
     queryFn: async () => {
       const response = await adApi.fetchBannerAds(limit);
-      return { data: response.data };
+      return { data: response };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -125,7 +125,7 @@ export const useVideoAds = (limit?: number) => {
     queryKey: adQueryKeys.videos(limit),
     queryFn: async () => {
       const response = await adApi.fetchVideoAds(limit);
-      return { data: response.data };
+      return { data: response };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -144,7 +144,7 @@ export const useAdById = (adId: string, enabled = true) => {
     queryKey: adQueryKeys.detail(adId),
     queryFn: async () => {
       const response = await adApi.fetchAdById(adId);
-      return response.data;
+      return response;
     },
     enabled: enabled && !!adId,
     staleTime: STALE_TIME,
@@ -160,7 +160,7 @@ export const useAdsForPlacement = (placement: AdPlacement, limit?: number) => {
     queryKey: adQueryKeys.placement(placement, limit),
     queryFn: async () => {
       const response = await adApi.fetchAdsForPlacement(placement, limit);
-      return { data: response.data };
+      return { data: response };
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -175,7 +175,7 @@ export const useRandomAd = (type?: AdType, enabled = true) => {
     queryKey: adQueryKeys.random(type),
     queryFn: async () => {
       const response = await adApi.fetchRandomAd(type);
-      return response.data;
+      return response;
     },
     enabled,
     staleTime: 0, // Always fetch fresh for random ads
@@ -195,7 +195,7 @@ export const useUserAds = (userId?: string, filters?: AdFilters) => {
       }
 
       const response = await adApi.fetchUserAds(userId, filters);
-      return { data: response.data, total: response.pagination?.total || response.data.length };
+      return { data: response.data.all, total: response.pagination?.total || response.data.all.length };
     },
     enabled: !!userId,
     staleTime: STALE_TIME,
