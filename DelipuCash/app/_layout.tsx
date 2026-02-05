@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, View, ErrorUtils } from 'react-native';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
 // import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -19,6 +19,50 @@ import { purchasesService } from '@/services/purchasesService';
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
 SplashScreen.preventAutoHideAsync();
+
+// Global error handler for keep-awake issues in Expo Go with New Architecture
+if (Platform.OS !== 'web') {
+  const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  console.warn = (...args) => {
+    // Filter out LayoutAnimation warnings in New Architecture
+    const warningMessage = args.join(' ');
+    if (warningMessage.includes('setLayoutAnimationEnabledExperimental') ||
+        warningMessage.includes('New Architecture')) {
+      return; // Suppress these warnings
+    }
+    originalConsoleWarn.apply(console, args);
+  };
+
+  console.error = (...args) => {
+    // Filter out keep-awake related errors in Expo Go
+    const errorMessage = args.join(' ');
+    if (errorMessage.includes('keep awake') || errorMessage.includes('activateKeepAwake')) {
+      console.warn('[Expo Go] Keep-awake functionality disabled due to New Architecture compatibility');
+      return;
+    }
+    originalConsoleError.apply(console, args);
+  };
+
+  // Handle unhandled promise rejections using ErrorUtils (React Native compatible)
+  // ErrorUtils may not be available in all environments
+  if (typeof ErrorUtils !== 'undefined' && ErrorUtils?.getGlobalHandler) {
+    const originalErrorHandler = ErrorUtils.getGlobalHandler();
+    ErrorUtils.setGlobalHandler((error, isFatal) => {
+      if (error && typeof error === 'object' && 'message' in error) {
+        if ((error.message as string).includes('keep awake')) {
+          console.warn('[Expo Go] Keep-awake error caught and ignored');
+          return; // Don't call the original handler for keep-awake errors
+        }
+      }
+      // Call original handler for other errors
+      if (originalErrorHandler) {
+        originalErrorHandler(error, isFatal);
+      }
+    });
+  }
+}
 
 export const unstable_settings = {
   initialRouteName: 'index',

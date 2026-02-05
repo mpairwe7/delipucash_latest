@@ -216,11 +216,15 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
 
   // ========== VIDEO PLAYER ==========
   const videoPlayer = useVideoPlayer(isValidAd ? (ad.videoUrl || '') : '', (player) => {
-    player.loop = loop;
-    player.muted = isMuted;
-    
-    if (autoPlay && !showThumbnail) {
-      player.play();
+    try {
+      player.loop = loop;
+      player.muted = isMuted;
+
+      if (autoPlay && !showThumbnail) {
+        player.play();
+      }
+    } catch (error) {
+      console.warn('[VideoAdComponent] Error configuring player:', error);
     }
   });
 
@@ -542,6 +546,13 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
             style={styles.video}
             contentFit="cover"
             nativeControls={false}
+            onError={(error) => {
+              console.warn('[VideoAdComponent] VideoView error:', error);
+              // Ignore keep-awake related errors in Expo Go
+              if (error?.message?.includes('keep awake')) {
+                return;
+              }
+            }}
           />
         </Pressable>
       )}

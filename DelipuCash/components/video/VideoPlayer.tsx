@@ -294,12 +294,16 @@ function VideoPlayerComponent({
   // VIDEO PLAYER INITIALIZATION
   // ============================================================================
 
-  // Initialize video player
+  // Initialize video player with error handling for keep-awake issues in Expo Go
   const player = useVideoPlayer(videoSource || '', (playerInstance) => {
-    playerInstance.loop = loop;
-    playerInstance.volume = volume;
-    if (autoPlay) {
-      playerInstance.play();
+    try {
+      playerInstance.loop = loop;
+      playerInstance.volume = volume;
+      if (autoPlay) {
+        playerInstance.play();
+      }
+    } catch (error) {
+      console.warn('[VideoPlayer] Error configuring player:', error);
     }
   });
 
@@ -928,6 +932,14 @@ function VideoPlayerComponent({
               allowsPictureInPicture
               contentFit="contain"
               nativeControls={false}
+              onError={(error) => {
+                console.warn('[VideoPlayer] VideoView error:', error);
+                // Ignore keep-awake related errors in Expo Go
+                if (error?.message?.includes('keep awake')) {
+                  return;
+                }
+                setPlaybackState(PlaybackState.Error);
+              }}
             />
           </Pressable>
 

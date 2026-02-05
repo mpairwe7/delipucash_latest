@@ -164,9 +164,13 @@ function InlineVideoPlayerComponent({
   // ============================================================================
   
   const player = useVideoPlayer(video.videoUrl || '', (player) => {
-    player.loop = true;
-    player.muted = isMuted;
-    player.volume = isMuted ? 0 : 1;
+    try {
+      player.loop = true;
+      player.muted = isMuted;
+      player.volume = isMuted ? 0 : 1;
+    } catch (error) {
+      console.warn('[InlineVideoPlayer] Error configuring player:', error);
+    }
   });
   
   // ============================================================================
@@ -430,6 +434,13 @@ function InlineVideoPlayerComponent({
                 style={styles.video}
                 contentFit="cover"
                 nativeControls={false}
+                onError={(error) => {
+                  console.warn('[InlineVideoPlayer] VideoView error:', error);
+                  // Ignore keep-awake related errors in Expo Go
+                  if (error?.message?.includes('keep awake')) {
+                    return;
+                  }
+                }}
               />
             </View>
           )}

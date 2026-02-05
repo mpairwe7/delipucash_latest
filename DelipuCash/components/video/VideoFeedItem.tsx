@@ -354,9 +354,13 @@ function VideoFeedItemComponent({
   // ============================================================================
 
   const player = useVideoPlayer(video.videoUrl || '', (playerInstance) => {
-    playerInstance.loop = true;
-    playerInstance.muted = isMuted;
-    playerInstance.volume = isMuted ? 0 : 1;
+    try {
+      playerInstance.loop = true;
+      playerInstance.muted = isMuted;
+      playerInstance.volume = isMuted ? 0 : 1;
+    } catch (error) {
+      console.warn('[VideoFeedItem] Error configuring player:', error);
+    }
   });
 
   // Track mounted state
@@ -722,6 +726,13 @@ function VideoFeedItemComponent({
                 style={styles.video}
                 contentFit="cover"
                 nativeControls={false}
+                onError={(error) => {
+                  console.warn('[VideoFeedItem] VideoView error:', error);
+                  // Ignore keep-awake related errors in Expo Go
+                  if (error?.message?.includes('keep awake')) {
+                    return;
+                  }
+                }}
               />
             )}
           </View>

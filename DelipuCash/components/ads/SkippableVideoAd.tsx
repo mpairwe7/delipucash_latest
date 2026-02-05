@@ -193,10 +193,14 @@ const SkippableVideoAdComponent: React.FC<SkippableVideoAdProps> = ({
   const ctaConfig = CTA_CONFIG[ad.callToAction || 'learn_more'] || CTA_CONFIG.learn_more;
 
   const player = useVideoPlayer(videoUrl, (p) => {
-    p.loop = loop;
-    p.muted = isMuted;
-    if (autoPlay && !showThumbnail) {
-      p.play();
+    try {
+      p.loop = loop;
+      p.muted = isMuted;
+      if (autoPlay && !showThumbnail) {
+        p.play();
+      }
+    } catch (error) {
+      console.warn('[SkippableVideoAd] Error configuring player:', error);
     }
   });
 
@@ -445,6 +449,13 @@ const SkippableVideoAdComponent: React.FC<SkippableVideoAdProps> = ({
           style={styles.video}
           contentFit="cover"
           nativeControls={false}
+          onError={(error) => {
+            console.warn('[SkippableVideoAd] VideoView error:', error);
+            // Ignore keep-awake related errors in Expo Go
+            if (error?.message?.includes('keep awake')) {
+              return;
+            }
+          }}
         />
 
         {/* Thumbnail Overlay */}
