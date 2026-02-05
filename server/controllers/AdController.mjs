@@ -1,6 +1,5 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // ============================================================================
 // HELPER: Serialize BigInt values for JSON response
