@@ -28,10 +28,12 @@ import {
 // API Configuration
 // ===========================================
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app/api" ;
+// Ensure the API URL always ends with /api
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
 // Validate that API URL is configured
-if (!API_BASE_URL) {
+if (!rawApiUrl) {
   console.warn('[API] EXPO_PUBLIC_API_URL is not configured. API calls will fail.');
 }
 
