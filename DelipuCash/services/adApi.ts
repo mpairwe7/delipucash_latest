@@ -157,7 +157,12 @@ export interface AdResponse {
 
 export interface AdsListResponse {
   success: boolean;
-  data: Ad[];
+  data: {
+    ads: Ad[];
+    featuredAd: Ad | null;
+    bannerAd: Ad | null;
+    all: Ad[];
+  };
   pagination?: {
     total: number;
     limit: number;
@@ -230,14 +235,11 @@ const AD_ENDPOINTS = {
   click: (id: string) => `/ads/${id}/click`,
   conversion: (id: string) => `/ads/${id}/conversion`,
   
-  // Legacy endpoints (for backward compatibility)
-  featured: '/ads/featured',
-  banners: '/ads/banners',
-  videos: '/ads/videos',
-  detail: (id: string) => `/ads/${id}`,
-  videoProgress: (id: string) => `/ads/${id}/video-progress`,
-  random: '/ads/random',
-  forPlacement: (placement: string) => `/ads/placement/${placement}`,
+  // Legacy endpoints (for backward compatibility) - Updated to use /all with filters
+  featured: '/ads/all?type=featured',
+  banners: '/ads/all?type=banner',
+  videos: '/ads/all?type=video',
+  forPlacement: (placement: string) => `/ads/all?placement=${placement}`,
 };
 
 // ============================================================================
@@ -271,11 +273,20 @@ export const fetchAds = async (filters?: AdFilters): Promise<AdsListResponse> =>
 /**
  * Fetch featured ads
  */
-export const fetchFeaturedAds = async (limit?: number): Promise<AdsListResponse> => {
+export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
   try {
     const url = limit ? `${AD_ENDPOINTS.featured}?limit=${limit}` : AD_ENDPOINTS.featured;
     const response = await api.get(url);
-    return response.data;
+    
+    // Return featured ads from the response
+    if (response.data.success && response.data.data) {
+      // Return featuredAd if available, otherwise return all featured type ads
+      const featuredAds = response.data.data.featuredAd ? [response.data.data.featuredAd] : 
+                         response.data.data.all.filter((ad: Ad) => ad.type === 'featured');
+      return featuredAds;
+    }
+    
+    return [];
   } catch (error: any) {
     console.error('Error fetching featured ads:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch featured ads');
@@ -285,11 +296,20 @@ export const fetchFeaturedAds = async (limit?: number): Promise<AdsListResponse>
 /**
  * Fetch banner ads
  */
-export const fetchBannerAds = async (limit?: number): Promise<AdsListResponse> => {
+export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
   try {
     const url = limit ? `${AD_ENDPOINTS.banners}?limit=${limit}` : AD_ENDPOINTS.banners;
     const response = await api.get(url);
-    return response.data;
+    
+    // Return banner ads from the response
+    if (response.data.success && response.data.data) {
+      // Return bannerAd if available, otherwise return all banner type ads
+      const bannerAds = response.data.data.bannerAd ? [response.data.data.bannerAd] : 
+                       response.data.data.all.filter((ad: Ad) => ad.type === 'banner');
+      return bannerAds;
+    }
+    
+    return [];
   } catch (error: any) {
     console.error('Error fetching banner ads:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch banner ads');
@@ -299,11 +319,19 @@ export const fetchBannerAds = async (limit?: number): Promise<AdsListResponse> =
 /**
  * Fetch video ads
  */
-export const fetchVideoAds = async (limit?: number): Promise<AdsListResponse> => {
+export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
   try {
     const url = limit ? `${AD_ENDPOINTS.videos}?limit=${limit}` : AD_ENDPOINTS.videos;
     const response = await api.get(url);
-    return response.data;
+    
+    // Return video ads from the response
+    if (response.data.success && response.data.data) {
+      // Return all video type ads
+      const videoAds = response.data.data.all.filter((ad: Ad) => ad.type === 'video');
+      return videoAds;
+    }
+    
+    return [];
   } catch (error: any) {
     console.error('Error fetching video ads:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch video ads');
@@ -313,10 +341,18 @@ export const fetchVideoAds = async (limit?: number): Promise<AdsListResponse> =>
 /**
  * Fetch a single ad by ID
  */
-export const fetchAdById = async (adId: string): Promise<AdResponse> => {
+export const fetchAdById = async (adId: string): Promise<Ad | null> => {
   try {
-    const response = await api.get(AD_ENDPOINTS.detail(adId));
-    return response.data;
+    // Since the backend doesn't have a detail endpoint, we'll use /all and filter
+    // This is not ideal for performance but works with the current backend
+    const response = await api.get('/ads/all?limit=100');
+    
+    if (response.data.success && response.data.data && response.data.data.all) {
+      const ad = response.data.data.all.find((ad: Ad) => ad.id === adId);
+      return ad || null;
+    }
+    
+    return null;
   } catch (error: any) {
     console.error('Error fetching ad:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch ad');
@@ -329,13 +365,20 @@ export const fetchAdById = async (adId: string): Promise<AdResponse> => {
 export const fetchAdsForPlacement = async (
   placement: AdPlacement, 
   limit?: number
-): Promise<AdsListResponse> => {
+): Promise<Ad[]> => {
   try {
     const url = limit 
       ? `${AD_ENDPOINTS.forPlacement(placement)}?limit=${limit}` 
       : AD_ENDPOINTS.forPlacement(placement);
     const response = await api.get(url);
-    return response.data;
+    
+    // Return ads from the response
+    if (response.data.success && response.data.data) {
+      // Return all ads for the placement
+      return response.data.data.all || [];
+    }
+    
+    return [];
   } catch (error: any) {
     console.error('Error fetching ads for placement:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch ads for placement');
@@ -345,11 +388,20 @@ export const fetchAdsForPlacement = async (
 /**
  * Fetch a random ad
  */
-export const fetchRandomAd = async (type?: AdType): Promise<AdResponse> => {
+export const fetchRandomAd = async (type?: AdType): Promise<Ad | null> => {
   try {
-    const url = type ? `${AD_ENDPOINTS.random}?type=${type}` : AD_ENDPOINTS.random;
+    // Use the /all endpoint with type filter if specified
+    const url = type ? `/ads/all?type=${type}&limit=10` : '/ads/all?limit=10';
     const response = await api.get(url);
-    return response.data;
+    
+    // Get a random ad from the results
+    if (response.data.success && response.data.data && response.data.data.all && response.data.data.all.length > 0) {
+      const ads = response.data.data.all;
+      const randomIndex = Math.floor(Math.random() * ads.length);
+      return ads[randomIndex];
+    }
+    
+    return null;
   } catch (error: any) {
     console.error('Error fetching random ad:', error);
     throw new Error(error.response?.data?.message || 'Failed to fetch random ad');

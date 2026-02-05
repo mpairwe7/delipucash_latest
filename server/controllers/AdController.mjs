@@ -397,7 +397,6 @@ export const getAllAds = asyncHandler(async (req, res) => {
       take: parseInt(limit),
       skip: parseInt(offset),
       include: { user: { select: { firstName: true, lastName: true, email: true } } },
-      cacheStrategy: cacheStrategies.longLived,
     });
 
     // Get total count for pagination
