@@ -131,7 +131,6 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
           },
         },
         orderBy: [{ createdAt: 'desc' }],
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 
@@ -229,7 +228,6 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
           },
         },
         orderBy: [{ createdAt: 'desc' }],
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 
@@ -383,7 +381,6 @@ export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
           },
         },
         orderBy: [{ createdAt: 'desc' }],
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 

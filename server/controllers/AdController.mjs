@@ -491,7 +491,6 @@ export const getAdsByUser = asyncHandler(async (req, res) => {
       orderBy: { createdAt: 'desc' },
       take: parseInt(limit),
       skip: parseInt(offset),
-      cacheStrategy: cacheStrategies.longLived,
     });
 
     const total = await prisma.ad.count({ where });

@@ -180,7 +180,6 @@ export const getSurveyById = asyncHandler(async (req, res) => {
         uploads: true,  // Include related questions
       },
       // Prisma Accelerate: Cache surveys for 5 min, serve stale for 1 min while revalidating
-      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!survey) {
@@ -396,7 +395,6 @@ export const getSurveyResponses = asyncHandler(async (req, res) => {
     const responses = await prisma.surveyResponse.findMany({
       where: { surveyId },
       // Prisma Accelerate: Short cache for responses (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
     });
 
     console.log('Responses fetched successfully:', responses);
@@ -447,7 +445,6 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
         uploads: true, // Include uploaded questions if needed
       },
       // Prisma Accelerate: Cache survey lists for 5 min, serve stale for 1 min
-      cacheStrategy: cacheStrategies.standard,
     });
 
     console.log(`Number of surveys found: ${surveys.length}`);

@@ -142,7 +142,6 @@ export const getUserStats = asyncHandler(async (req, res) => {
       prisma.appUser.findUnique({
         where: { id: userId },
         select: { points: true },
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     ]);
 
@@ -314,7 +313,6 @@ export const getUserSurveys = asyncHandler(async (req, res) => {
     const surveys = await prisma.survey.findMany({
       where: { appUser: { phoneNumber } },
       // Prisma Accelerate: Cache for 5 min, serve stale for 1 min while revalidating
-      cacheStrategy: cacheStrategies.standard,
     });
 
     res.json(surveys);
@@ -377,7 +375,6 @@ export const getPrivacySettings = asyncHandler(async (req, res) => {
         privacySettings: true
       },
       // Prisma Accelerate: Standard cache for user privacy settings
-      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!user) {
@@ -441,7 +438,6 @@ export const getLoginActivity = asyncHandler(async (req, res) => {
       orderBy: { loginTime: 'desc' },
       take: 10, // Limit to last 10 sessions
       // Prisma Accelerate: Short cache for login sessions
-      cacheStrategy: cacheStrategies.shortLived,
     });
 
     console.log('✅ Found', sessions.length, 'login sessions for user ID:', userId);

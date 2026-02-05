@@ -73,7 +73,6 @@ export const getQuestions = asyncHandler(async (_req, res) => {
         },
         orderBy: [{ createdAt: 'desc' }],
         take: 10, // preserve existing UX limit
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 
@@ -100,7 +99,6 @@ export const getQuestionById = asyncHandler(async (req, res) => {
       id: questionId,
     },
     // Prisma Accelerate: Short cache for individual questions
-    cacheStrategy: cacheStrategies.shortLived,
   });
 
   if (!question) {
@@ -173,7 +171,6 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
           },
         },
         orderBy: [{ createdAt: 'asc' }],
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 
@@ -328,7 +325,6 @@ export const getUploadedQuestions = asyncHandler(async (_req, res) => {
           maxValue: true,
         },
         orderBy: [{ createdAt: 'desc' }],
-        cacheStrategy: cacheStrategies.standard,
       }),
     );
 

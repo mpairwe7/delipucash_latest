@@ -6,11 +6,6 @@ export const getExploreItems = async (req, res) => {
     // Example: Fetch stats and quick links from various models
     // Prisma Accelerate: Aggressive cache for explore stats (24 hours TTL, 1 hour SWR)
     const [userCount, surveyCount, videoCount, topUser, topSurvey] = await Promise.all([
-      prisma.appUser.count({ cacheStrategy: cacheStrategies.aggressive }),
-      prisma.survey.count({ cacheStrategy: cacheStrategies.aggressive }),
-      prisma.video.count({ cacheStrategy: cacheStrategies.aggressive }),
-      prisma.appUser.findFirst({ orderBy: { points: 'desc' }, cacheStrategy: cacheStrategies.aggressive }),
-      prisma.survey.findFirst({ orderBy: { createdAt: 'desc' }, cacheStrategy: cacheStrategies.standard }),
     ]);
 
     // Compose dynamic explore items

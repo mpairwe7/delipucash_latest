@@ -193,7 +193,6 @@ export const getUserPoints = async (req, res, next) => {
       where: { id: String(userId) }, // Ensure it's a string
       select: { points: true },
       // Prisma Accelerate: Short cache for user points (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
     });
     
     if (!user) {

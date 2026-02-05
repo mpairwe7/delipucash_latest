@@ -193,7 +193,6 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
         }
       },
       // Prisma Accelerate: Short cache for notifications (30s TTL, 10s SWR)
-      cacheStrategy: cacheStrategies.shortLived,
     });
 
     // Get total count for pagination

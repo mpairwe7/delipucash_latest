@@ -12,7 +12,6 @@ export const addReward = asyncHandler(async (req, res) => {
     where: { phone: userPhoneNumber },
     select: { email: true },
     // Prisma Accelerate: Standard cache for user lookups
-    cacheStrategy: cacheStrategies.standard,
   });
 
   if (!user) {
@@ -39,7 +38,6 @@ export const getRewardsByUser = asyncHandler(async (req, res) => {
     where: { phone: phoneNumber },
     select: { email: true },
     // Prisma Accelerate: Standard cache for user lookups
-    cacheStrategy: cacheStrategies.standard,
   });
 
   if (!user) {
@@ -50,7 +48,6 @@ export const getRewardsByUser = asyncHandler(async (req, res) => {
     buildOptimizedQuery('Reward', {
       where: { userEmail: user.email },
       orderBy: [{ createdAt: 'desc' }],
-      cacheStrategy: cacheStrategies.shortLived,
     }),
   );
 
@@ -67,7 +64,6 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
       where: { id: userId },
       select: { email: true },
       // Prisma Accelerate: Standard cache for user lookups
-      cacheStrategy: cacheStrategies.standard,
     });
 
     if (!user) {
@@ -79,7 +75,6 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
       buildOptimizedQuery('Reward', {
         where: { userEmail: user.email },
         orderBy: [{ createdAt: 'desc' }],
-        cacheStrategy: cacheStrategies.shortLived,
       }),
     );
 
