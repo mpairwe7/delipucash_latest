@@ -8,8 +8,6 @@
  * If the database was recently reset, run `node prisma/seed.mjs` instead.
  */
 
-import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
 import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
@@ -43,23 +41,14 @@ export async function ensureDefaultAdminExists() {
   }
 
   const pool = new pg.Pool({ connectionString });
-  const adapter = new PrismaPg(pool);
-  const prisma = new PrismaClient({ adapter });
 
   try {
     // Check if admin already exists
-    const existingAdmin = await prisma.appUser.findUnique({
-      where: { email: DEFAULT_ADMIN.email },
-      select: {
-        id: true,
-        email: true,
-        firstName: true,
-        lastName: true,
-        role: true,
-      },
-    });
+    const existingAdminQuery = 'SELECT id, email, "firstName", "lastName", role FROM "AppUser" WHERE email = $1';
+    const existingAdminResult = await pool.query(existingAdminQuery, [DEFAULT_ADMIN.email]);
 
-    if (existingAdmin) {
+    if (existingAdminResult.rows.length > 0) {
+      const existingAdmin = existingAdminResult.rows[0];
       console.log('✅ Default admin user exists:', existingAdmin.email);
       return;
     }
@@ -68,21 +57,28 @@ export async function ensureDefaultAdminExists() {
     const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN.password, 10);
     
     // Create the admin user
-    const admin = await prisma.appUser.create({
-      data: {
-        email: DEFAULT_ADMIN.email,
-        password: hashedPassword,
-        firstName: DEFAULT_ADMIN.firstName,
-        lastName: DEFAULT_ADMIN.lastName,
-        phone: DEFAULT_ADMIN.phone,
-        role: DEFAULT_ADMIN.role,
-        points: 100000, // Give admin some initial points
-        subscriptionStatus: 'ACTIVE',
-        surveysubscriptionStatus: 'ACTIVE',
-        avatar: 'https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true',
-        privacySettings: { showEmail: false, showPhone: false },
-      },
-    });
+    const createAdminQuery = `
+      INSERT INTO "AppUser" (
+        email, password, "firstName", "lastName", phone, role, points, 
+        "subscriptionStatus", "surveysubscriptionStatus", avatar, "privacySettings"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING id, email, "firstName", "lastName", role
+    `;
+    const adminResult = await pool.query(createAdminQuery, [
+      DEFAULT_ADMIN.email,
+      hashedPassword,
+      DEFAULT_ADMIN.firstName,
+      DEFAULT_ADMIN.lastName,
+      DEFAULT_ADMIN.phone,
+      DEFAULT_ADMIN.role,
+      100000, // points
+      'ACTIVE', // subscriptionStatus
+      'ACTIVE', // surveysubscriptionStatus
+      'https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true',
+      JSON.stringify({ showEmail: false, showPhone: false }) // privacySettings
+    ]);
+
+    const admin = adminResult.rows[0];
 
     console.log('✅ Default admin user created successfully!');
     console.log('   📧 Email:', admin.email);
@@ -95,7 +91,6 @@ export async function ensureDefaultAdminExists() {
     console.error('⚠️ Could not ensure admin user exists:', error.message);
     console.log('   You can create the admin manually by running: node prisma/seed.mjs');
   } finally {
-    await prisma.$disconnect();
     await pool.end();
   }
 }

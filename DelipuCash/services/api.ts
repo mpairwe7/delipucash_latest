@@ -28,7 +28,7 @@ import {
 // API Configuration
 // ===========================================
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app" || "192.168.100.48:3000";
 
 // Validate that API URL is configured
 if (!API_BASE_URL) {
