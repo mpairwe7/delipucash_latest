@@ -178,8 +178,8 @@ export interface Ad {
   imageUrl: string | null;
   videoUrl: string | null;
   thumbnailUrl: string | null;
-  type: "regular" | "featured" | "banner" | "compact";
-  placement: "feed" | "interstitial" | "native" | "rewarded" | "story";
+  type: "regular" | "featured" | "banner" | "compact" | "video";
+  placement: "home" | "feed" | "survey" | "video" | "question" | "profile" | "explore" | "interstitial" | "native" | "rewarded" | "story";
   sponsored: boolean;
   views: number;
   clicks: number;

@@ -30,7 +30,6 @@ import {
 
 // Ensure the API URL always ends with /api
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
-const API_BASE_URL = rawApiUrl.endsWith('/api') ? rawApiUrl : `${rawApiUrl.replace(/\/$/, '')}/api`;
 
 // Validate that API URL is configured
 if (!rawApiUrl) {
