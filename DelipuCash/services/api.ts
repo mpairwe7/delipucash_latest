@@ -68,7 +68,7 @@ const getDefaultHeaders = (): Record<string, string> => ({
 });
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
-  const url = `${API_BASE_URL}${path}`;
+  const url = `${rawApiUrl}${path}`;
   try {
     const response = await fetch(url, {
       headers: {
