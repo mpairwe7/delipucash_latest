@@ -115,37 +115,6 @@ export default function TabLayout(): React.ReactElement {
           href: null,
         }}
       />
-      <Tabs.Screen
-        name="videos"
-        options={{
-          href: null,
-        }}
-      />
-      {/* Old screens hidden from tabs */}
-      <Tabs.Screen
-        name="home"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="questions"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="surveys"
-        options={{
-          href: null,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          href: null,
-        }}
-      />
     </Tabs>
   );
 }
