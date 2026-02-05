@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Platform, View, ErrorUtils } from 'react-native';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
@@ -77,8 +77,9 @@ if (Platform.OS !== 'web') {
   });
 }
 
-// Create QueryClient with retry and caching configuration for network resilience
-const createQueryClient = () => new QueryClient({
+// Create QueryClient at module level to avoid timing issues with expo-router
+// This ensures the QueryClient is always available when components mount
+const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       // Retry configuration for network resilience
@@ -105,7 +106,6 @@ const createQueryClient = () => new QueryClient({
 });
 
 export default function RootLayout() {
-  const queryClient = useRef(createQueryClient()).current;
   const colorScheme = useColorScheme();
   const { initiate, isReady } = useAuth();
 
