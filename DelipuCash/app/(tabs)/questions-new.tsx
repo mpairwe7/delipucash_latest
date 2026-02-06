@@ -175,7 +175,7 @@ const FEED_TABS: FeedTab[] = [
   { id: "my-activity", label: "My Activity", icon: User },
 ];
 
-const AD_INSERTION_INTERVAL = 5; // Insert ad every N questions
+const AD_INSERTION_INTERVAL = 3; // Insert ad every N questions in the feed
 
 // Stable viewability config (defined outside component to prevent recreation)
 const VIEWABILITY_CONFIG: ViewabilityConfig = {
@@ -320,7 +320,7 @@ export default function QuestionsScreen(): React.ReactElement {
   // Build feed items with ad insertion
   const feedItems = useMemo((): FeedItem[] => {
     const items: FeedItem[] = [];
-    
+
     displayQuestions.forEach((question, index) => {
       items.push({
         type: "question",
@@ -328,21 +328,26 @@ export default function QuestionsScreen(): React.ReactElement {
         id: `question-${question.id}`,
       });
 
-      // Insert ad every N questions
-      if ((index + 1) % AD_INSERTION_INTERVAL === 0 && feedAds) {
+      // Insert ad every N questions (context-aware for current tab)
+      const shouldInsertAd = (index + 1) % AD_INSERTION_INTERVAL === 0;
+      const hasAds = Array.isArray(feedAds) && feedAds.length > 0;
+
+      if (shouldInsertAd && hasAds) {
         const adIndex = Math.floor(index / AD_INSERTION_INTERVAL) % feedAds.length;
-        if (feedAds[adIndex]) {
+        const ad = feedAds[adIndex];
+
+        if (ad) {
           items.push({
             type: "ad",
-            data: feedAds[adIndex],
-            id: `ad-${feedAds[adIndex].id}-${index}`,
+            data: ad,
+            id: `ad-${ad.id}-${selectedTab}-${index}`,
           });
         }
       }
     });
 
     return items;
-  }, [displayQuestions, feedAds]);
+  }, [displayQuestions, feedAds, selectedTab]);
 
   // Event handlers
   const handleRefresh = useCallback(async () => {
