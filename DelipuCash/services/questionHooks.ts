@@ -263,9 +263,15 @@ export function useQuestionsFeed(
   return useQuery({
     queryKey: questionQueryKeys.feed(params),
     queryFn: async (): Promise<QuestionsFeedResult> => {
-      const response = await fetchJson<Question[]>('/api/questions/all');
-      if (response.success && Array.isArray(response.data)) {
-        const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
+      const response = await fetchJson<any>('/api/questions/all');
+      const questions = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+        ? response.data
+        : [];
+
+      if (response.success && Array.isArray(questions)) {
+        const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
         const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
         const start = (page - 1) * limit;
         const paginatedQuestions = sortedQuestions.slice(start, start + limit);
@@ -275,14 +281,17 @@ export function useQuestionsFeed(
           pagination: {
             page,
             limit,
-            total: sortedQuestions.length,
-            totalPages: Math.ceil(sortedQuestions.length / limit),
-            hasMore: start + limit < sortedQuestions.length,
+            total: response.data?.pagination?.total || sortedQuestions.length,
+            totalPages: response.data?.pagination?.totalPages || Math.ceil(sortedQuestions.length / limit),
+            hasMore:
+              response.data?.pagination?.total
+                ? start + limit < response.data.pagination.total
+                : start + limit < sortedQuestions.length,
           },
           stats: {
-            totalQuestions: response.data.length,
-            unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
-            rewardsCount: response.data.filter((q) => q.isInstantReward).length,
+            totalQuestions: questions.length,
+            unansweredCount: questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
+            rewardsCount: questions.filter((q: Question) => q.isInstantReward).length,
           },
         };
       }
@@ -322,9 +331,15 @@ export function useInfiniteQuestionsFeed(
       // Reuse the same logic as useQuestionsFeed
       if (isBackendConfigured) {
         try {
-          const response = await fetchJson<Question[]>('/api/questions/all');
-          if (response.success && Array.isArray(response.data)) {
-            const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
+          const response = await fetchJson<any>('/api/questions/all');
+          const questions = Array.isArray(response.data?.data)
+            ? response.data.data
+            : Array.isArray(response.data)
+            ? response.data
+            : [];
+
+          if (response.success && Array.isArray(questions)) {
+            const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
             const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
             const start = (pageParam - 1) * limit;
             const paginatedQuestions = sortedQuestions.slice(start, start + limit);
@@ -334,14 +349,17 @@ export function useInfiniteQuestionsFeed(
               pagination: {
                 page: pageParam,
                 limit,
-                total: sortedQuestions.length,
-                totalPages: Math.ceil(sortedQuestions.length / limit),
-                hasMore: start + limit < sortedQuestions.length,
+                total: response.data?.pagination?.total || sortedQuestions.length,
+                totalPages: response.data?.pagination?.totalPages || Math.ceil(sortedQuestions.length / limit),
+                hasMore:
+                  response.data?.pagination?.total
+                    ? start + limit < response.data.pagination.total
+                    : start + limit < sortedQuestions.length,
               },
               stats: {
-                totalQuestions: response.data.length,
-                unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
-                rewardsCount: response.data.filter((q) => q.isInstantReward).length,
+                totalQuestions: questions.length,
+                unansweredCount: questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
+                rewardsCount: questions.filter((q: Question) => q.isInstantReward).length,
               },
             };
           }
@@ -387,14 +405,17 @@ export function useQuestionDetail(
       if (isBackendConfigured) {
         try {
           const [questionRes, responsesRes] = await Promise.all([
-            fetchJson<Question>(`/api/questions/${questionId}`),
-            fetchJson<Response[]>(`/api/questions/${questionId}/responses`),
+            fetchJson<any>(`/api/questions/${questionId}`),
+            fetchJson<any>(`/api/questions/${questionId}/responses`),
           ]);
 
-          if (questionRes.success) {
+          const questionData = questionRes.data?.data ?? questionRes.data;
+          const responsesData = responsesRes.data?.data ?? responsesRes.data ?? [];
+
+          if (questionRes.success && questionData) {
             return {
-              ...transformToFeedQuestion(questionRes.data),
-              responses: responsesRes.success ? responsesRes.data : [],
+              ...transformToFeedQuestion(questionData as Question),
+              responses: Array.isArray(responsesData) ? (responsesData as Response[]) : [],
             };
           }
         } catch (error) {

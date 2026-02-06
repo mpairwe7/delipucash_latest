@@ -162,7 +162,7 @@ export const surveyApi = {
    * Get upcoming (scheduled) surveys
    */
   async getUpcoming(): Promise<ApiResponse<Survey[]>> {
-    return fetchJson<Survey[]>(SURVEY_ROUTES.byStatus("scheduled"));
+    return fetchJson<Survey[]>(SURVEY_ROUTES.byStatus("upcoming"));
   },
 
   /**

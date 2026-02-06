@@ -485,7 +485,7 @@ export const videosApi = {
   async addComment(videoId: string, content: string, mediaUrls?: string[]): Promise<ApiResponse<Comment>> {
     return fetchJson<Comment>(API_ROUTES.videos.comments(videoId), {
       method: 'POST',
-      body: JSON.stringify({ content, mediaUrls }),
+      body: JSON.stringify({ text: content, media: mediaUrls || [] }),
     });
   },
 
@@ -493,7 +493,7 @@ export const videosApi = {
    * Upload a video
    */
   async upload(data: { title: string; description?: string; videoUrl: string; thumbnail: string; duration?: number }): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(API_ROUTES.videos.list, {
+    return fetchJson<Video>(API_ROUTES.videos.create, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -510,7 +510,7 @@ export const videosApi = {
    * Increment video view count
    */
   async incrementView(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(`/api/videos/${videoId}/view`, { method: 'POST' });
+    return fetchJson<Video>(`/api/videos/${videoId}/views`, { method: 'POST' });
   },
 };
 
@@ -550,7 +550,7 @@ export const surveysApi = {
    * Get upcoming surveys
    */
   async getUpcoming(): Promise<ApiResponse<Survey[]>> {
-    return fetchJson<Survey[]>(API_ROUTES.surveys.byStatus('scheduled'));
+    return fetchJson<Survey[]>(API_ROUTES.surveys.byStatus('upcoming'));
   },
 
   /**

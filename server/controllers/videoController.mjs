@@ -275,8 +275,15 @@ export const getAllVideos = asyncHandler(async (req, res) => {
     })
 
     res.json({ 
+      success: true,
       message: "All videos fetched successfully", 
-      videos: formattedVideos
+      data: formattedVideos,
+      pagination: {
+        page: 1,
+        limit: formattedVideos.length,
+        total: formattedVideos.length,
+        totalPages: 1,
+      },
     });
   } catch (error) {
     console.error("VideoController: getAllVideos - Error occurred:", error);

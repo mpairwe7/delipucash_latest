@@ -68,6 +68,8 @@ export const getQuestions = asyncHandler(async (_req, res) => {
               id: true,
               firstName: true,
               lastName: true,
+              avatar: true,
+              points: true,
             },
           },
         },
@@ -76,11 +78,32 @@ export const getQuestions = asyncHandler(async (_req, res) => {
       }),
     );
 
-    // Log the retrieved data
-    console.log('Retrieved Questions:', questions);
+    const formattedQuestions = questions.map((q) => ({
+      ...q,
+      // Frontend expects these computed fields even though they are not persisted
+      totalAnswers: q.responses?.length || 0,
+      rewardAmount: q.rewardAmount || 0,
+      isInstantReward: q.isInstantReward || false,
+      category: q.category || 'General',
+      user: q.user
+        ? {
+            ...q.user,
+            avatar: q.user.avatar,
+            points: q.user.points,
+          }
+        : null,
+    }));
 
-    // Send the questions as a JSON response
-    res.json(questions);
+    res.json({
+      success: true,
+      data: formattedQuestions,
+      pagination: {
+        page: 1,
+        limit: formattedQuestions.length,
+        total: formattedQuestions.length,
+        totalPages: 1,
+      },
+    });
   } catch (error) {
     // Log any errors that occur
     console.error('Error retrieving questions:', error);
@@ -98,6 +121,12 @@ export const getQuestionById = asyncHandler(async (req, res) => {
     where: {
       id: questionId,
     },
+    include: {
+      responses: true,
+      user: {
+        select: { id: true, firstName: true, lastName: true, avatar: true, points: true },
+      },
+    },
     // Prisma Accelerate: Short cache for individual questions
   });
 
@@ -106,7 +135,15 @@ export const getQuestionById = asyncHandler(async (req, res) => {
     throw new Error('Question not found');
   }
 
-  res.json(question);
+  const formatted = {
+    ...question,
+    totalAnswers: question.responses?.length || 0,
+    rewardAmount: question.rewardAmount || 0,
+    isInstantReward: question.isInstantReward || false,
+    category: question.category || 'General',
+  };
+
+  res.json({ success: true, data: formatted });
 });
 
 // Create a Response for a Question
@@ -119,7 +156,13 @@ export const createResponse = asyncHandler(async (req, res) => {
   const { questionId } = req.params;
 
   // Extract responseText and userId from the request body
-  const { responseText, userId } = req.body;
+  let { responseText, userId } = req.body;
+
+  // Fallback to any existing user for mock/demo flows
+  if (!userId) {
+    const fallbackUser = await prisma.appUser.findFirst({ select: { id: true } });
+    userId = fallbackUser?.id;
+  }
 
   try {
     // Log the data being used to create the response
@@ -132,13 +175,26 @@ export const createResponse = asyncHandler(async (req, res) => {
         responseText,
         userId,
       },
+      include: {
+        user: {
+          select: { id: true, firstName: true, lastName: true, avatar: true },
+        },
+      },
     });
 
     // Log the successfully created response
     console.log('Response created successfully:', response);
 
     // Send a success response to the client
-    res.status(201).json({ message: 'Response created successfully', response });
+    res.status(201).json({
+      success: true,
+      message: 'Response created successfully',
+      response: {
+        ...response,
+        createdAt: response.createdAt.toISOString(),
+        updatedAt: response.updatedAt.toISOString(),
+      },
+    });
   } catch (error) {
     // Log any errors that occur during the process
     console.error('Error creating response:', error);
@@ -151,10 +207,11 @@ export const createResponse = asyncHandler(async (req, res) => {
 // Get All Responses for a Question
 export const getResponsesForQuestion = asyncHandler(async (req, res) => {
   const { questionId } = req.params;
-  const { userId } = req.query; // Optional userId to check user's like/dislike status
+  const { userId, page = 1, limit = 20 } = req.query; // Optional userId to check user's like/dislike status
 
   try {
     // Fetch responses for the question, including user details and timestamps
+    const skip = (Number(page) - 1) * Number(limit);
     const responses = await prisma.response.findMany(
       buildOptimizedQuery('Response', {
         where: { questionId },
@@ -162,15 +219,20 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
           id: true,
           responseText: true,
           createdAt: true,
+          updatedAt: true,
+          userId: true,
           user: {
             select: {
               id: true,
               firstName: true,
               lastName: true,
+              avatar: true,
             },
           },
         },
         orderBy: [{ createdAt: 'asc' }],
+        skip,
+        take: Number(limit),
       }),
     );
 
@@ -232,7 +294,22 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
     console.log('Fetched enhanced responses:', enhancedResponses);
 
     // Send the enhanced responses as a JSON response
-    res.status(200).json(enhancedResponses);
+    const total = await prisma.response.count({ where: { questionId } });
+
+    res.status(200).json({
+      success: true,
+      data: enhancedResponses.map((r) => ({
+        ...r,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
   } catch (error) {
     // Log any errors that occur during the process
     console.error('Error fetching responses:', error);
