@@ -100,8 +100,8 @@ export function useFeaturedAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.featured(limit),
     queryFn: async (): Promise<Ad[]> => {
-      const response = await adApi.fetchFeaturedAds(limit);
-      return response.data;
+      const ads = await adApi.fetchFeaturedAds(limit);
+      return ads ?? [];
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -115,8 +115,8 @@ export function useBannerAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.banners(limit),
     queryFn: async (): Promise<Ad[]> => {
-      const response = await adApi.fetchBannerAds(limit);
-      return response.data;
+      const ads = await adApi.fetchBannerAds(limit);
+      return ads ?? [];
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -130,8 +130,8 @@ export function useVideoAds(limit?: number): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.videos(limit),
     queryFn: async (): Promise<Ad[]> => {
-      const response = await adApi.fetchVideoAds(limit);
-      return response.data;
+      const ads = await adApi.fetchVideoAds(limit);
+      return ads ?? [];
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -141,12 +141,12 @@ export function useVideoAds(limit?: number): UseQueryResult<Ad[], Error> {
 /**
  * Hook to fetch a single ad by ID
  */
-export function useAdById(adId: string, enabled = true): UseQueryResult<Ad, Error> {
+export function useAdById(adId: string, enabled = true): UseQueryResult<Ad | null, Error> {
   return useQuery({
     queryKey: adQueryKeys.detail(adId),
-    queryFn: async (): Promise<Ad> => {
+    queryFn: async (): Promise<Ad | null> => {
       const response = await adApi.fetchAdById(adId);
-      return response.data;
+      return response ?? null;
     },
     enabled: enabled && !!adId,
     staleTime: STALE_TIME,
@@ -164,8 +164,8 @@ export function useAdsForPlacement(
   return useQuery({
     queryKey: adQueryKeys.placement(placement, limit),
     queryFn: async (): Promise<Ad[]> => {
-      const response = await adApi.fetchAdsForPlacement(placement, limit);
-      return response.data;
+      const ads = await adApi.fetchAdsForPlacement(placement, limit);
+      return ads ?? [];
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -186,8 +186,8 @@ export function useRandomAd(
   return useQuery({
     queryKey: adQueryKeys.random(type, seed),
     queryFn: async (): Promise<Ad | null> => {
-      const response = await adApi.fetchRandomAd(type);
-      return response.data;
+      const ad = await adApi.fetchRandomAd(type);
+      return ad ?? null;
     },
     enabled: options?.enabled !== false,
     staleTime: 1000 * 60, // 1 minute for random ads
@@ -634,7 +634,7 @@ export function useInvalidateAdCache() {
         queryKey: adQueryKeys.detail(adId),
         queryFn: async () => {
           const response = await adApi.fetchAdById(adId);
-          return response.data;
+          return response ?? null;
         },
       });
     },
