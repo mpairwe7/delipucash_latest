@@ -1,7 +1,6 @@
 import asyncHandler from "express-async-handler";
 import prisma from '../lib/prisma.mjs';
 import { errorHandler } from "../utils/error.mjs";
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Notification templates inspired by fintech apps
 const NOTIFICATION_TEMPLATES = {
@@ -132,15 +131,43 @@ const createNotificationFromTemplateHelper = async (userId, templateKey, data = 
   });
 };
 
+const resolveUserId = async (userIdFromRequest) => {
+  if (userIdFromRequest) return userIdFromRequest;
+
+  const fallbackUser = await prisma.appUser.findFirst({ select: { id: true } });
+  return fallbackUser?.id || null;
+};
+
+const seedSampleNotifications = async (userId) => {
+  const existingCount = await prisma.notification.count({ where: { userId } });
+  if (existingCount > 0) return;
+
+  const samplePayloads = [
+    { key: "PAYMENT_SUCCESS", data: { amount: "50,000" } },
+    { key: "REWARD_EARNED", data: { points: "150", surveyTitle: "Consumer Preferences" } },
+    { key: "SECURITY_ALERT", data: {} },
+    { key: "SURVEY_EXPIRING", data: { surveyTitle: "Mobile Banking Experience", timeLeft: "2 hours" } },
+    { key: "ACHIEVEMENT", data: { achievement: "Survey Master" } },
+    { key: "REFERRAL_BONUS", data: { bonus: "5,000", referredUser: "John" } },
+    { key: "SUBSCRIPTION_ACTIVE", data: { subscriptionType: "Premium" } },
+    { key: "WELCOME", data: {} },
+  ];
+
+  await Promise.all(
+    samplePayloads.map(({ key, data }) => createNotificationFromTemplateHelper(userId, key, data))
+  );
+};
+
 // Get notifications for a user with advanced filtering and pagination
 export const getUserNotifications = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
+  const userIdFromParams = req.params.userId;
   const { 
     page = 1, 
     limit = 20, 
     type, 
     category, 
     read, 
+    unreadOnly,
     priority,
     sortBy = 'createdAt',
     sortOrder = 'desc'
@@ -153,6 +180,14 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
   }
 
   try {
+    const userId = await resolveUserId(userIdFromParams);
+
+    if (!userId) {
+      return res.status(404).json({ success: false, error: 'No user found for notifications' });
+    }
+
+    await seedSampleNotifications(userId);
+
     console.log(`getUserNotifications: Fetching notifications for user ${userId}`);
     console.log(`getUserNotifications: Prisma client status:`, typeof prisma, prisma ? 'defined' : 'undefined');
 
@@ -161,7 +196,11 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
     
     if (type) where.type = type;
     if (category) where.category = category;
-    if (read !== undefined) where.read = read === 'true';
+    if (unreadOnly === 'true') {
+      where.read = false;
+    } else if (read !== undefined) {
+      where.read = read === 'true';
+    }
     if (priority) where.priority = priority;
     
     // Don't show expired notifications
@@ -213,7 +252,8 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
     console.log(`getUserNotifications: Returning ${notifications.length} notifications`);
     
     res.json({
-      notifications,
+      success: true,
+      data: notifications,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -232,6 +272,12 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
     console.error('getUserNotifications: Error fetching notifications:', error);
     errorHandler(error, res);
   }
+});
+
+export const getNotifications = asyncHandler(async (req, res) => {
+  // Reuse getUserNotifications logic with optional userId query
+  req.params.userId = req.query.userId;
+  return getUserNotifications(req, res);
 });
 
 // Create a new notification with enhanced features
@@ -293,8 +339,9 @@ export const createNotification = asyncHandler(async (req, res) => {
     console.log(`createNotification: Created notification ${notification.id}`);
     
     res.status(201).json({ 
+      success: true,
       message: 'Notification created successfully',
-      notification
+      data: notification
     });
   } catch (error) {
     console.error('createNotification: Error creating notification:', error);
@@ -312,8 +359,9 @@ export const createNotificationFromTemplate = asyncHandler(async (req, res) => {
     const notification = await createNotificationFromTemplateHelper(userId, templateKey, data);
     
     res.status(201).json({ 
+      success: true,
       message: 'Notification created successfully from template',
-      notification
+      data: notification
     });
   } catch (error) {
     console.error('createNotificationFromTemplate: Error creating notification:', error);
@@ -337,8 +385,9 @@ export const markNotificationAsRead = asyncHandler(async (req, res) => {
     });
     
     res.json({ 
+      success: true,
       message: 'Notification marked as read',
-      notification
+      data: notification
     });
   } catch (error) {
     console.error('markNotificationAsRead: Error marking notification as read:', error);
@@ -373,13 +422,30 @@ export const markMultipleNotificationsAsRead = asyncHandler(async (req, res) => 
     });
     
     res.json({ 
+      success: true,
       message: `${result.count} notifications marked as read`,
-      count: result.count
+      data: { count: result.count }
     });
   } catch (error) {
     console.error('markMultipleNotificationsAsRead: Error marking notifications as read:', error);
     errorHandler(error, res);
   }
+});
+
+export const markAllNotificationsAsRead = asyncHandler(async (req, res) => {
+  const { userId: userIdFromBody } = req.body;
+  const userId = await resolveUserId(userIdFromBody);
+
+  if (!userId) {
+    return res.status(404).json({ success: false, error: 'No user found for notifications' });
+  }
+
+  const result = await prisma.notification.updateMany({
+    where: { userId, read: false },
+    data: { read: true, readAt: new Date() }
+  });
+
+  res.json({ success: true, data: { updated: result.count } });
 });
 
 // Archive notification
@@ -398,8 +464,9 @@ export const archiveNotification = asyncHandler(async (req, res) => {
     });
     
     res.json({ 
+      success: true,
       message: 'Notification archived',
-      notification
+      data: notification
     });
   } catch (error) {
     console.error('archiveNotification: Error archiving notification:', error);
@@ -407,9 +474,25 @@ export const archiveNotification = asyncHandler(async (req, res) => {
   }
 });
 
+export const deleteNotification = asyncHandler(async (req, res) => {
+  const { notificationId } = req.params;
+
+  try {
+    await prisma.notification.delete({ where: { id: notificationId } });
+    res.json({ success: true, data: { deleted: true, id: notificationId } });
+  } catch (error) {
+    console.error('deleteNotification: Error deleting notification:', error);
+    errorHandler(error, res);
+  }
+});
+
 // Get notification statistics
 export const getNotificationStats = asyncHandler(async (req, res) => {
-  const { userId } = req.params;
+  const userId = await resolveUserId(req.params.userId || req.query.userId);
+
+  if (!userId) {
+    return res.status(404).json({ success: false, error: 'No user found for notifications' });
+  }
 
   try {
     console.log(`getNotificationStats: Getting stats for user ${userId}`);
@@ -445,27 +528,42 @@ export const getNotificationStats = asyncHandler(async (req, res) => {
     ]);
 
     res.json({
-      total: totalNotifications,
-      unread: unreadCount,
-      read: readCount,
-      archived: archivedCount,
-      categories: categoryStats.reduce((acc, item) => {
-        acc[item.category] = item._count.category;
-        return acc;
-      }, {}),
-      types: typeStats.reduce((acc, item) => {
-        acc[item.type] = item._count.type;
-        return acc;
-      }, {}),
-      priorities: priorityStats.reduce((acc, item) => {
-        acc[item.priority] = item._count.priority;
-        return acc;
-      }, {})
+      success: true,
+      data: {
+        total: totalNotifications,
+        unread: unreadCount,
+        read: readCount,
+        archived: archivedCount,
+        categories: categoryStats.reduce((acc, item) => {
+          acc[item.category] = item._count.category;
+          return acc;
+        }, {}),
+        types: typeStats.reduce((acc, item) => {
+          acc[item.type] = item._count.type;
+          return acc;
+        }, {}),
+        priorities: priorityStats.reduce((acc, item) => {
+          acc[item.priority] = item._count.priority;
+          return acc;
+        }, {})
+      }
     });
   } catch (error) {
     console.error('getNotificationStats: Error getting notification stats:', error);
     errorHandler(error, res);
   }
+});
+
+export const getUnreadCount = asyncHandler(async (req, res) => {
+  const userId = await resolveUserId(req.query.userId || req.params.userId);
+
+  if (!userId) {
+    return res.status(404).json({ success: false, error: 'No user found for notifications' });
+  }
+
+  const count = await prisma.notification.count({ where: { userId, read: false, archived: false } });
+
+  res.json({ success: true, data: { count } });
 });
 
 // Delete expired notifications (cleanup function)

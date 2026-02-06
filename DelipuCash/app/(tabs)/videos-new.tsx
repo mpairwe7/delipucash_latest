@@ -55,7 +55,6 @@ import {
 } from '@/utils/theme';
 import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
 import {
-  useVideos,
   useTrendingVideos,
   useLikeVideo,
   useUnlikeVideo,
@@ -63,12 +62,14 @@ import {
   useShareVideo,
   useUnreadCount,
 } from '@/services/hooks';
+import { useInfiniteVideos } from '@/services/videoHooks';
 import {
   VerticalVideoFeed,
   VideoPlayer,
   EnhancedMiniPlayer,
   VideoCommentsSheet,
   UploadModal,
+  VideoErrorBoundary,
 } from '@/components/video';
 import { LiveStreamScreen } from '@/components/livestream';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
@@ -165,10 +166,18 @@ export default function VideosScreen(): React.ReactElement {
   const [showSearchResults, setShowSearchResults] = useState(false);
 
   // ============================================================================
-  // DATA HOOKS
+  // DATA HOOKS - Using infinite query for proper pagination/infinite scroll
   // ============================================================================
 
-  const { data: videosData, isLoading, refetch, isFetching } = useVideos({ limit: 30 });
+  const {
+    data: videosData,
+    isLoading,
+    refetch,
+    isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteVideos({ limit: 15 });
   const { data: trendingVideos } = useTrendingVideos(20);
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideo } = useLikeVideo();
@@ -246,7 +255,10 @@ export default function VideosScreen(): React.ReactElement {
   // COMPUTED DATA
   // ============================================================================
 
-  const allVideos = useMemo(() => videosData?.videos || [], [videosData?.videos]);
+  const allVideos = useMemo(() => {
+    if (!videosData?.pages) return [];
+    return videosData.pages.flatMap((page) => page.videos);
+  }, [videosData?.pages]);
 
   // Search hook for video search functionality
   const {
@@ -368,9 +380,12 @@ export default function VideosScreen(): React.ReactElement {
   }, [refetch, setRefreshing]);
 
   const handleEndReached = useCallback(() => {
-    // Implement pagination when API supports it
-    setLoadingMore(false);
-  }, [setLoadingMore]);
+    // Use infinite query's fetchNextPage for proper pagination
+    if (hasNextPage && !isFetchingNextPage) {
+      setLoadingMore(true);
+      fetchNextPage().finally(() => setLoadingMore(false));
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setLoadingMore]);
 
   const handleLike = useCallback((video: Video) => {
     const isCurrentlyLiked = likedVideoIds.has(video.id);
@@ -649,11 +664,13 @@ export default function VideosScreen(): React.ReactElement {
           trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial']}
         />
 
-      {/* Main Video Feed */}
+      {/* Main Video Feed - wrapped in error boundary for crash isolation */}
+      <VideoErrorBoundary>
       <VerticalVideoFeed
         videos={videos}
         isLoading={isLoading}
         isRefreshing={isFetching}
+        isLoadingMore={isFetchingNextPage}
         onRefresh={handleRefresh}
         onEndReached={handleEndReached}
         onLike={handleLike}
@@ -664,6 +681,7 @@ export default function VideosScreen(): React.ReactElement {
         onVideoEnd={handleVideoEnd}
         testID="video-feed"
       />
+      </VideoErrorBoundary>
 
       {/* Full Screen Video Player */}
       {ui.showFullPlayer && currentVideoData && (

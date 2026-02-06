@@ -46,7 +46,6 @@ import Animated, {
 import {
   Gesture,
   GestureDetector,
-  GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -292,7 +291,6 @@ function EnhancedMiniPlayerComponent({
   // ============================================================================
 
   return (
-    <GestureHandlerRootView style={styles.gestureRoot}>
       <GestureDetector gesture={panGesture}>
         <Animated.View
           testID={testID}
@@ -390,7 +388,6 @@ function EnhancedMiniPlayerComponent({
         </View>
       </Animated.View>
     </GestureDetector>
-    </GestureHandlerRootView>
   );
 }
 
@@ -398,15 +395,7 @@ function EnhancedMiniPlayerComponent({
 // STYLES
 // ============================================================================
 
-const styles = StyleSheet.create({
-  gestureRoot: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: Z_INDEX.fixed,
-  },
-  container: {
+const styles = StyleSheet.create({\n  container: {
     position: 'absolute',
     left: SPACING.sm,
     right: SPACING.sm,

@@ -35,7 +35,6 @@ import {
   Dimensions,
   ViewToken,
   RefreshControl,
-  Platform,
   AccessibilityInfo,
   Text,
   ActivityIndicator,
@@ -56,6 +55,8 @@ import {
   useVideoFeedStore,
   selectActiveVideo,
   selectIsPlaybackAllowed,
+  selectLikedVideoIds,
+  selectBookmarkedVideoIds,
 } from '@/store/VideoFeedStore';
 import { VideoFeedItem } from './VideoFeedItem';
 import { VideoFeedSkeleton } from './VideoFeedSkeleton';
@@ -75,11 +76,11 @@ const VIEWABILITY_CONFIG = {
 
 /** FlatList optimization settings - tuned for TikTok-style vertical video feeds */
 const LIST_OPTIMIZATION = {
-  windowSize: 3, // Reduced from 5 - only render 3 screens worth of content for better perf
-  maxToRenderPerBatch: 2, // Reduced from 3 - render fewer items per batch
-  updateCellsBatchingPeriod: 100, // Increased from 50ms - batch updates less frequently
-  initialNumToRender: 1, // Reduced from 2 - start with just 1 item for faster initial render
-  removeClippedSubviews: Platform.OS === 'android', // Android only for stability
+  windowSize: 5, // Render 5 screens worth of content for smoother scrolling
+  maxToRenderPerBatch: 2, // Render 2 items per batch
+  updateCellsBatchingPeriod: 100, // Batch updates every 100ms
+  initialNumToRender: 2, // Start with 2 items for faster initial render with less jank
+  removeClippedSubviews: true, // Enable on both platforms - prevents off-screen items from consuming resources
 };
 
 // ============================================================================
@@ -147,6 +148,8 @@ function VerticalVideoFeedComponent({
   // Store state
   const activeVideo = useVideoFeedStore(selectActiveVideo);
   const isPlaybackAllowed = useVideoFeedStore(selectIsPlaybackAllowed);
+  const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
+  const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
   // Note: feedMode and ui available via store if needed
   const {
     setVideos,
@@ -324,6 +327,7 @@ function VerticalVideoFeedComponent({
   // Render video item - optimized to pass stable references
   // Industry Standard: Only set isActive=true if playback is actually allowed
   // This ensures videos pause when screen loses focus or app backgrounds
+  // isLiked/isBookmarked passed as props to avoid per-item store subscriptions
   const renderItem = useCallback(
     ({ item, index }: { item: Video; index: number }) => (
       <VideoFeedItem
@@ -332,6 +336,8 @@ function VerticalVideoFeedComponent({
         itemHeight={itemHeight}
         isActive={activeVideoId === item.id && isPlaybackAllowed}
         isMuted={isMuted}
+        isLiked={likedVideoIds.has(item.id)}
+        isBookmarked={bookmarkedVideoIds.has(item.id)}
         onLike={handleLike}
         onComment={handleComment}
         onShare={handleShare}
@@ -347,6 +353,8 @@ function VerticalVideoFeedComponent({
       activeVideoId,
       isPlaybackAllowed,
       isMuted,
+      likedVideoIds,
+      bookmarkedVideoIds,
       handleLike,
       handleComment,
       handleShare,

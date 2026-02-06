@@ -34,6 +34,9 @@ export type { EnhancedMiniPlayerProps } from './EnhancedMiniPlayer';
 export { VideoCommentsSheet } from './VideoCommentsSheet';
 export type { VideoCommentsSheetProps } from './VideoCommentsSheet';
 
+// Video Error Boundary (Crash isolation for video components)
+export { VideoErrorBoundary } from './VideoErrorBoundary';
+
 // ============================================================================
 // LEGACY PLAYER COMPONENTS (Backward Compatibility)
 // ============================================================================

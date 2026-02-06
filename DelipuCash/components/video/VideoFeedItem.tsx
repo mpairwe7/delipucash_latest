@@ -58,7 +58,6 @@ import Animated, {
 import {
   Gesture,
   GestureDetector,
-  GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -85,7 +84,7 @@ import {
   withAlpha,
 } from '@/utils/theme';
 import { Video } from '@/types';
-import { useVideoFeedStore, selectIsVideoLiked, selectIsVideoBookmarked } from '@/store/VideoFeedStore';
+import { useVideoFeedStore } from '@/store/VideoFeedStore';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 
 // ============================================================================
@@ -113,6 +112,10 @@ export interface VideoFeedItemProps {
   isActive: boolean;
   /** Whether video is muted */
   isMuted: boolean;
+  /** Whether this video is liked (passed from parent to avoid per-item store subscriptions) */
+  isLiked: boolean;
+  /** Whether this video is bookmarked (passed from parent to avoid per-item store subscriptions) */
+  isBookmarked: boolean;
   /** Like handler - receives video object */
   onLike: (video: Video) => void;
   /** Comment handler - receives video object */
@@ -292,6 +295,8 @@ function VideoFeedItemComponent({
   itemHeight,
   isActive,
   isMuted,
+  isLiked,
+  isBookmarked,
   onLike,
   onComment,
   onShare,
@@ -303,10 +308,11 @@ function VideoFeedItemComponent({
 }: VideoFeedItemProps): React.ReactElement {
   const { colors } = useTheme();
 
-  // Store selectors
-  const isLiked = useVideoFeedStore(selectIsVideoLiked(video.id));
-  const isBookmarked = useVideoFeedStore(selectIsVideoBookmarked(video.id));
-  const { toggleMute, setPlayerStatus, setProgress } = useVideoFeedStore();
+  // Use stable action refs from store - avoids subscribing to state changes
+  // Actions are stable functions that never change, so getState() is safe
+  const toggleMute = useVideoFeedStore((s) => s.toggleMute);
+  const setPlayerStatus = useVideoFeedStore((s) => s.setPlayerStatus);
+  const setProgress = useVideoFeedStore((s) => s.setProgress);
 
   // ============================================================================
   // STATE
@@ -514,7 +520,7 @@ function VideoFeedItemComponent({
         // Player may have been released, stop the interval
         clearInterval(interval);
       }
-    }, 100);
+    }, 250);
 
     return () => clearInterval(interval);
   }, [player, isActive, isPlaying, setProgress, onVideoEnd, video]);
@@ -708,7 +714,7 @@ function VideoFeedItemComponent({
   const isLive = video.videoUrl?.includes('.m3u8') || video.videoUrl?.includes('live');
 
   return (
-    <GestureHandlerRootView style={{ height: itemHeight }}>
+    <View style={{ height: itemHeight }}>
       <GestureDetector gesture={composedGesture}>
         <Animated.View
           testID={testID}
@@ -938,7 +944,7 @@ function VideoFeedItemComponent({
           <SeekIndicator visible={showSeekIndicator} side={seekSide} amount={seekAmount} />
         </Animated.View>
       </GestureDetector>
-    </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -1213,6 +1219,7 @@ const styles = StyleSheet.create({
  * - video.id changes (different video)
  * - isActive changes (play/pause state)
  * - isMuted changes (audio state)
+ * - isLiked / isBookmarked changes (engagement state)
  * - itemHeight changes (layout)
  * - screenReaderEnabled changes (accessibility)
  * 
@@ -1228,6 +1235,8 @@ function arePropsEqual(
     prevProps.video.commentsCount === nextProps.video.commentsCount &&
     prevProps.isActive === nextProps.isActive &&
     prevProps.isMuted === nextProps.isMuted &&
+    prevProps.isLiked === nextProps.isLiked &&
+    prevProps.isBookmarked === nextProps.isBookmarked &&
     prevProps.itemHeight === nextProps.itemHeight &&
     prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&
     prevProps.index === nextProps.index
