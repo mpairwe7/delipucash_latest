@@ -17,6 +17,11 @@ import {
   UploadSurvey,
   PaginatedResponse,
 } from "@/types";
+import { useAuthStore } from '@/utils/auth/store';
+
+/** Get current authenticated user ID from auth store */
+const getCurrentUserId = (): string | null =>
+  useAuthStore.getState().auth?.user?.id || null;
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
 
@@ -258,7 +263,7 @@ export const surveyApi = {
   }): Promise<ApiResponse<Survey>> {
     return fetchJson<Survey>(SURVEY_ROUTES.create, {
       method: "POST",
-      body: JSON.stringify(surveyData),
+      body: JSON.stringify({ ...surveyData, userId: getCurrentUserId() }),
     });
   },
 

@@ -245,7 +245,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // User permissions
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
-  const isAuthenticated = !!user && !userLoading;
+  const isAuthenticated = !!user;
   const isLoading = isFeedLoading || userLoading;
 
   // Extract questions from feed data

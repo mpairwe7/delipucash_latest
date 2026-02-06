@@ -454,20 +454,34 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
   }
 });
 
-// Get Survey Responses
+// Get Survey Responses (with pagination)
 export const getSurveyResponses = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
+  const { page = 1, limit = 20 } = req.query;
 
-  console.log('Fetching responses for survey:', surveyId);
+  const skip = (Number(page) - 1) * Number(limit);
 
   try {
-    const responses = await prisma.surveyResponse.findMany({
-      where: { surveyId },
-      // Prisma Accelerate: Short cache for responses (30s TTL, 10s SWR)
-    });
+    const [responses, total] = await Promise.all([
+      prisma.surveyResponse.findMany({
+        where: { surveyId },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.surveyResponse.count({ where: { surveyId } }),
+    ]);
 
-    console.log('Responses fetched successfully:', responses);
-    res.status(200).json(responses);
+    res.status(200).json({
+      success: true,
+      data: responses,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
   } catch (error) {
     console.error('Error fetching survey responses:', error);
     res.status(500).json({ message: 'Error fetching survey responses', error: error.message });
@@ -498,9 +512,14 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
     whereClause = {
       startDate: { gt: currentDate }, // Surveys that have not started yet
     };
+  } else if (status === 'completed') {
+    console.log('Filtering for completed surveys');
+    whereClause = {
+      endDate: { lt: currentDate }, // Surveys that have ended
+    };
   } else {
     console.error(`Invalid status provided: ${status}`);
-    return res.status(400).json({ message: 'Invalid status. Use "running" or "upcoming".' });
+    return res.status(400).json({ message: 'Invalid status. Use "running", "upcoming", or "completed".' });
   }
 
   console.log('Where clause for query:', whereClause);

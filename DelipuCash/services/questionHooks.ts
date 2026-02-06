@@ -36,6 +36,7 @@ import {
 } from '@tanstack/react-query';
 import { Question, Response, AppUser, ApiResponse } from '@/types';
 import { FeedQuestion, QuestionAuthor, LeaderboardUser } from '@/components/feed';
+import { useAuthStore } from '@/utils/auth/store';
 
 // ===========================================
 // Types
@@ -104,6 +105,10 @@ export interface UserQuestionsStats {
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
 const isBackendConfigured = Boolean(API_BASE_URL);
+
+/** Get current authenticated user ID from auth store */
+const getCurrentUserId = (): string | null =>
+  useAuthStore.getState().auth?.user?.id || null;
 
 const delay = (ms: number = 300): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -465,11 +470,12 @@ export function useVoteQuestion(): UseMutationResult<
     mutationFn: async ({ questionId, type }) => {
       if (isBackendConfigured) {
         try {
+          const userId = getCurrentUserId();
           const response = await fetchJson<{ upvotes: number; downvotes: number }>(
             `/api/questions/${questionId}/vote`,
             {
               method: 'POST',
-              body: JSON.stringify({ type }),
+              body: JSON.stringify({ type, userId }),
             }
           );
           if (response.success) {
@@ -568,13 +574,14 @@ export function useCreateQuestion(): UseMutationResult<
     mutationFn: async (data) => {
       if (isBackendConfigured) {
         try {
+          const userId = getCurrentUserId();
           const response = await fetchJson<{ question: Question }>(
             '/api/questions/create',
             {
               method: 'POST',
               body: JSON.stringify({
-                // userId will be set by the backend from the auth token
                 ...data,
+                userId,
               }),
             }
           );
@@ -624,12 +631,14 @@ export function useSubmitQuestionResponse(): UseMutationResult<
     mutationFn: async ({ questionId, responseText }) => {
       if (isBackendConfigured) {
         try {
+          const userId = getCurrentUserId();
           const response = await fetchJson<{ response: Response; rewardEarned?: number }>(
             `/api/questions/${questionId}/responses`,
             {
               method: 'POST',
               body: JSON.stringify({
                 responseText,
+                userId,
               }),
             }
           );

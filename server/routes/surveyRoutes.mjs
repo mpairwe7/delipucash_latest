@@ -1,5 +1,5 @@
 import express from 'express';
-import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys } from '../controllers/surveyController.mjs';
+import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys, updateSurvey, deleteSurvey } from '../controllers/surveyController.mjs';
 
 const router = express.Router();
 
@@ -20,5 +20,7 @@ router.post('/:surveyId/responses', submitSurveyResponse);
 router.get('/:surveyId/responses', getSurveyResponses);
 
 router.get('/:surveyId', getSurveyById);
+router.put('/:surveyId', updateSurvey);
+router.delete('/:surveyId', deleteSurvey);
 
 export default router;

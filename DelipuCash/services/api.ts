@@ -23,6 +23,11 @@ import {
     UserStats,
     Video,
 } from "@/types";
+import { useAuthStore } from '@/utils/auth/store';
+
+/** Get current authenticated user ID from auth store */
+const getCurrentUserId = (): string | null =>
+  useAuthStore.getState().auth?.user?.id || null;
 
 // ===========================================
 // API Configuration
@@ -590,7 +595,7 @@ export const surveysApi = {
   async submitResponse(surveyId: string, answers: Record<string, any>): Promise<ApiResponse<{ submitted: boolean; reward?: number }>> {
     return fetchJson<{ submitted: boolean; reward?: number }>(API_ROUTES.surveys.submit(surveyId), {
       method: 'POST',
-      body: JSON.stringify({ answers }),
+      body: JSON.stringify({ responses: answers, userId: getCurrentUserId() }),
     });
   },
 
@@ -600,7 +605,7 @@ export const surveysApi = {
   async create(surveyData: Partial<Survey> & { questions?: Partial<UploadSurvey>[] }): Promise<ApiResponse<Survey>> {
     return fetchJson<Survey>(API_ROUTES.surveys.create, {
       method: 'POST',
-      body: JSON.stringify(surveyData),
+      body: JSON.stringify({ ...surveyData, userId: getCurrentUserId() }),
     });
   },
 
@@ -680,7 +685,7 @@ export const questionsApi = {
   async submitResponse(questionId: string, responseText: string): Promise<ApiResponse<Response>> {
     return fetchJson<Response>(API_ROUTES.questions.submitResponse(questionId), {
       method: 'POST',
-      body: JSON.stringify({ responseText }),
+      body: JSON.stringify({ responseText, userId: getCurrentUserId() }),
     });
   },
 
@@ -695,7 +700,7 @@ export const questionsApi = {
   }): Promise<ApiResponse<Question>> {
     return fetchJson<Question>(API_ROUTES.questions.create, {
       method: 'POST',
-      body: JSON.stringify(questionData),
+      body: JSON.stringify({ ...questionData, userId: getCurrentUserId() }),
     });
   },
 
@@ -705,7 +710,7 @@ export const questionsApi = {
   async vote(questionId: string, type: 'up' | 'down'): Promise<ApiResponse<Question>> {
     return fetchJson<Question>(API_ROUTES.questions.vote(questionId), {
       method: 'POST',
-      body: JSON.stringify({ type }),
+      body: JSON.stringify({ type, userId: getCurrentUserId() }),
     });
   },
 
@@ -725,14 +730,20 @@ export const responsesApi = {
    * Like a response
    */
   async like(responseId: string): Promise<ApiResponse<Response>> {
-    return fetchJson<Response>(API_ROUTES.responses.like(responseId), { method: 'POST' });
+    return fetchJson<Response>(API_ROUTES.responses.like(responseId), {
+      method: 'POST',
+      body: JSON.stringify({ userId: getCurrentUserId(), isLiked: true }),
+    });
   },
 
   /**
    * Dislike a response
    */
   async dislike(responseId: string): Promise<ApiResponse<Response>> {
-    return fetchJson<Response>(API_ROUTES.responses.dislike(responseId), { method: 'POST' });
+    return fetchJson<Response>(API_ROUTES.responses.dislike(responseId), {
+      method: 'POST',
+      body: JSON.stringify({ userId: getCurrentUserId(), isDisliked: true }),
+    });
   },
 
   /**
@@ -741,7 +752,7 @@ export const responsesApi = {
   async reply(responseId: string, replyText: string): Promise<ApiResponse<any>> {
     return fetchJson<any>(API_ROUTES.responses.reply(responseId), {
       method: 'POST',
-      body: JSON.stringify({ text: replyText }),
+      body: JSON.stringify({ replyText, userId: getCurrentUserId() }),
     });
   },
 };
