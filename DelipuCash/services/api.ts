@@ -181,9 +181,9 @@ export const API_ROUTES = {
   },
   // Videos
   videos: {
-    list: "/api/videos",
+    list: "/api/videos/all",
     get: (id: string) => `/api/videos/${id}`,
-    create: "/api/videos",
+    create: "/api/videos/create",
     like: (id: string) => `/api/videos/${id}/like`,
     bookmark: (id: string) => `/api/videos/${id}/bookmark`,
     comments: (id: string) => `/api/videos/${id}/comments`,
@@ -192,10 +192,10 @@ export const API_ROUTES = {
   },
   // Surveys
   surveys: {
-    list: "/api/surveys",
+    list: "/api/surveys/all",
     get: (id: string) => `/api/surveys/${id}`,
     questions: (id: string) => `/api/surveys/${id}/questions`,
-    submit: (id: string) => `/api/surveys/${id}/submit`,
+    submit: (id: string) => `/api/surveys/${id}/responses`,
     create: "/api/surveys/upload",
     createDraft: "/api/surveys/create",
     byStatus: (status: string) => `/api/surveys/status/${status}`,

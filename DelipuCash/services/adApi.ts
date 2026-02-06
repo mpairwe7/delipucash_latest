@@ -213,33 +213,33 @@ export interface AdAnalyticsResponse {
 
 const AD_ENDPOINTS = {
   // Public
-  list: '/ads/all',
-  userAds: (userId: string) => `/ads/user/${userId}`,
-  create: '/ads/create',
+  list: '/api/ads/all',
+  userAds: (userId: string) => `/api/ads/user/${userId}`,
+  create: '/api/ads/create',
   
   // Management
-  update: (id: string) => `/ads/${id}/update`,
-  delete: (id: string) => `/ads/${id}/delete`,
-  analytics: (id: string) => `/ads/${id}/analytics`,
-  pause: (id: string) => `/ads/${id}/pause`,
-  resume: (id: string) => `/ads/${id}/resume`,
+  update: (id: string) => `/api/ads/${id}/update`,
+  delete: (id: string) => `/api/ads/${id}/delete`,
+  analytics: (id: string) => `/api/ads/${id}/analytics`,
+  pause: (id: string) => `/api/ads/${id}/pause`,
+  resume: (id: string) => `/api/ads/${id}/resume`,
   
   // Admin
-  pending: '/ads/admin/pending',
-  approve: (id: string) => `/ads/${id}/approve`,
-  reject: (id: string) => `/ads/${id}/reject`,
+  pending: '/api/ads/admin/pending',
+  approve: (id: string) => `/api/ads/${id}/approve`,
+  reject: (id: string) => `/api/ads/${id}/reject`,
   
   // Tracking
-  view: (id: string) => `/ads/${id}/view`,
-  impression: (id: string) => `/ads/${id}/impression`,
-  click: (id: string) => `/ads/${id}/click`,
-  conversion: (id: string) => `/ads/${id}/conversion`,
+  view: (id: string) => `/api/ads/${id}/view`,
+  impression: (id: string) => `/api/ads/${id}/impression`,
+  click: (id: string) => `/api/ads/${id}/click`,
+  conversion: (id: string) => `/api/ads/${id}/conversion`,
   
   // Legacy endpoints (for backward compatibility) - Updated to use /all with filters
-  featured: '/ads/all?type=featured',
-  banners: '/ads/all?type=banner',
-  videos: '/ads/all?type=video',
-  forPlacement: (placement: string) => `/ads/all?placement=${placement}`,
+  featured: '/api/ads/all?type=featured',
+  banners: '/api/ads/all?type=banner',
+  videos: '/api/ads/all?type=video',
+  forPlacement: (placement: string) => `/api/ads/all?placement=${placement}`,
 };
 
 // ============================================================================
@@ -275,7 +275,7 @@ export const fetchAds = async (filters?: AdFilters): Promise<AdsListResponse> =>
  */
 export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
   try {
-    const url = limit ? `${AD_ENDPOINTS.featured}?limit=${limit}` : AD_ENDPOINTS.featured;
+    const url = limit ? `${AD_ENDPOINTS.featured}&limit=${limit}` : AD_ENDPOINTS.featured;
     const response = await api.get(url);
     
     // Return featured ads from the response
@@ -298,7 +298,7 @@ export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
  */
 export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
   try {
-    const url = limit ? `${AD_ENDPOINTS.banners}?limit=${limit}` : AD_ENDPOINTS.banners;
+    const url = limit ? `${AD_ENDPOINTS.banners}&limit=${limit}` : AD_ENDPOINTS.banners;
     const response = await api.get(url);
     
     // Return banner ads from the response
@@ -321,7 +321,7 @@ export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
  */
 export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
   try {
-    const url = limit ? `${AD_ENDPOINTS.videos}?limit=${limit}` : AD_ENDPOINTS.videos;
+    const url = limit ? `${AD_ENDPOINTS.videos}&limit=${limit}` : AD_ENDPOINTS.videos;
     const response = await api.get(url);
     
     // Return video ads from the response
@@ -345,7 +345,7 @@ export const fetchAdById = async (adId: string): Promise<Ad | null> => {
   try {
     // Since the backend doesn't have a detail endpoint, we'll use /all and filter
     // This is not ideal for performance but works with the current backend
-    const response = await api.get('/ads/all?limit=100');
+    const response = await api.get(AD_ENDPOINTS.list + '?limit=100');
     
     if (response.data.success && response.data.data && response.data.data.all) {
       const ad = response.data.data.all.find((ad: Ad) => ad.id === adId);
@@ -368,7 +368,7 @@ export const fetchAdsForPlacement = async (
 ): Promise<Ad[]> => {
   try {
     const url = limit 
-      ? `${AD_ENDPOINTS.forPlacement(placement)}?limit=${limit}` 
+      ? `${AD_ENDPOINTS.forPlacement(placement)}&limit=${limit}` 
       : AD_ENDPOINTS.forPlacement(placement);
     const response = await api.get(url);
     
@@ -391,7 +391,7 @@ export const fetchAdsForPlacement = async (
 export const fetchRandomAd = async (type?: AdType): Promise<Ad | null> => {
   try {
     // Use the /all endpoint with type filter if specified
-    const url = type ? `/ads/all?type=${type}&limit=10` : '/ads/all?limit=10';
+    const url = type ? `${AD_ENDPOINTS.list}?type=${type}&limit=10` : `${AD_ENDPOINTS.list}?limit=10`;
     const response = await api.get(url);
     
     // Get a random ad from the results

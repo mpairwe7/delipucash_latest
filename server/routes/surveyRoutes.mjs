@@ -1,7 +1,10 @@
 import express from 'express';
-import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, checkSurveyAttempt } from '../controllers/surveyController.mjs';
+import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, checkSurveyAttempt, getAllSurveys } from '../controllers/surveyController.mjs';
 
 const router = express.Router();
+
+// Route to get all surveys (with optional status filter)
+router.get('/all', getAllSurveys);
 
 // Route to create a new survey
 router.post('/create', createSurvey);

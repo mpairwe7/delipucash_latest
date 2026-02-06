@@ -454,3 +454,74 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
     res.status(500).json({ message: 'Error retrieving surveys', error: error.message });
   }
 });
+
+// Get All Surveys
+export const getAllSurveys = asyncHandler(async (req, res) => {
+  console.log('Request received to get all surveys');
+  
+  const { page = 1, limit = 20, status } = req.query;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const currentDate = new Date();
+  
+  let whereClause = {};
+  
+  // Optional status filter
+  if (status === 'running') {
+    whereClause = {
+      startDate: { lte: currentDate },
+      endDate: { gte: currentDate },
+    };
+  } else if (status === 'upcoming') {
+    whereClause = {
+      startDate: { gt: currentDate },
+    };
+  } else if (status === 'completed') {
+    whereClause = {
+      endDate: { lt: currentDate },
+    };
+  }
+  // If no status, return all surveys
+  
+  try {
+    const [surveys, total] = await Promise.all([
+      prisma.survey.findMany({
+        where: whereClause,
+        include: {
+          uploads: true,
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: parseInt(limit),
+      }),
+      prisma.survey.count({ where: whereClause }),
+    ]);
+
+    console.log(`Surveys fetched: ${surveys.length} of ${total}`);
+    
+    res.json({
+      success: true,
+      data: surveys,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (error) {
+    console.error('Error retrieving all surveys:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error retrieving surveys', 
+      error: error.message 
+    });
+  }
+});

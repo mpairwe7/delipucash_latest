@@ -58,9 +58,15 @@ export const useAds = (filters?: AdFilters) => {
 
   return useQuery({
     queryKey: adQueryKeys.list(filters),
-    queryFn: async () => {
-      const response = await adApi.fetchAds(filters);
-      return { data: response.data.all, total: response.pagination?.total || response.data.all.length };
+    queryFn: async (): Promise<{ data: Ad[]; total: number }> => {
+      try {
+        const response = await adApi.fetchAds(filters);
+        const ads = response?.data?.all ?? [];
+        return { data: ads, total: response?.pagination?.total ?? ads.length };
+      } catch (error) {
+        console.error('Error in useAds:', error);
+        return { data: [], total: 0 };
+      }
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -81,9 +87,14 @@ export const useFeaturedAds = (limit?: number) => {
 
   return useQuery({
     queryKey: adQueryKeys.featured(limit),
-    queryFn: async () => {
-      const response = await adApi.fetchFeaturedAds(limit);
-      return { data: response };
+    queryFn: async (): Promise<{ data: Ad[] }> => {
+      try {
+        const response = await adApi.fetchFeaturedAds(limit);
+        return { data: response ?? [] };
+      } catch (error) {
+        console.error('Error in useFeaturedAds:', error);
+        return { data: [] };
+      }
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -102,9 +113,14 @@ export const useBannerAds = (limit?: number) => {
 
   return useQuery({
     queryKey: adQueryKeys.banners(limit),
-    queryFn: async () => {
-      const response = await adApi.fetchBannerAds(limit);
-      return { data: response };
+    queryFn: async (): Promise<{ data: Ad[] }> => {
+      try {
+        const response = await adApi.fetchBannerAds(limit);
+        return { data: response ?? [] };
+      } catch (error) {
+        console.error('Error in useBannerAds:', error);
+        return { data: [] };
+      }
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -123,9 +139,14 @@ export const useVideoAds = (limit?: number) => {
 
   return useQuery({
     queryKey: adQueryKeys.videos(limit),
-    queryFn: async () => {
-      const response = await adApi.fetchVideoAds(limit);
-      return { data: response };
+    queryFn: async (): Promise<{ data: Ad[] }> => {
+      try {
+        const response = await adApi.fetchVideoAds(limit);
+        return { data: response ?? [] };
+      } catch (error) {
+        console.error('Error in useVideoAds:', error);
+        return { data: [] };
+      }
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,
@@ -158,9 +179,14 @@ export const useAdById = (adId: string, enabled = true) => {
 export const useAdsForPlacement = (placement: AdPlacement, limit?: number) => {
   return useQuery({
     queryKey: adQueryKeys.placement(placement, limit),
-    queryFn: async () => {
-      const response = await adApi.fetchAdsForPlacement(placement, limit);
-      return { data: response };
+    queryFn: async (): Promise<{ data: Ad[] }> => {
+      try {
+        const response = await adApi.fetchAdsForPlacement(placement, limit);
+        return { data: response ?? [] };
+      } catch (error) {
+        console.error('Error in useAdsForPlacement:', error);
+        return { data: [] };
+      }
     },
     staleTime: STALE_TIME,
     gcTime: CACHE_TIME,

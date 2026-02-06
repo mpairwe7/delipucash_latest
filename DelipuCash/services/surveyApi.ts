@@ -21,10 +21,10 @@ if (!API_BASE_URL) {
 
 // API Routes
 const SURVEY_ROUTES = {
-  list: "/api/surveys",
+  list: "/api/surveys/all",
   get: (id: string) => `/api/surveys/${id}`,
   questions: (id: string) => `/api/surveys/${id}/questions`,
-  submit: (id: string) => `/api/surveys/${id}/submit`,
+  submit: (id: string) => `/api/surveys/${id}/responses`,
   create: "/api/surveys/upload",
   responses: (id: string) => `/api/surveys/${id}/responses`,
   checkAttempt: (id: string, userId: string) => `/api/surveys/${id}/attempt?userId=${userId}`,

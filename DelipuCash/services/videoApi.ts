@@ -21,7 +21,7 @@ if (!API_BASE_URL) {
 
 // API Routes
 const VIDEO_ROUTES = {
-  list: "/api/videos",
+  list: "/api/videos/all",
   get: (id: string) => `/api/videos/${id}`,
   like: (id: string) => `/api/videos/${id}/like`,
   unlike: (id: string) => `/api/videos/${id}/unlike`,
@@ -31,10 +31,10 @@ const VIDEO_ROUTES = {
   live: "/api/videos/live",
   recommended: "/api/videos/recommended",
   search: "/api/videos/search",
-  upload: "/api/videos",
-  delete: (id: string) => `/api/videos/${id}`,
-  update: (id: string) => `/api/videos/${id}`,
-  incrementView: (id: string) => `/api/videos/${id}/view`,
+  upload: "/api/videos/create",
+  delete: (id: string) => `/api/videos/delete/${id}`,
+  update: (id: string) => `/api/videos/update/${id}`,
+  incrementView: (id: string) => `/api/videos/${id}/views`,
   analytics: (id: string) => `/api/videos/${id}/analytics`,
   popular: "/api/videos/popular",
   byUser: (userId: string) => `/api/videos/user/${userId}`,
