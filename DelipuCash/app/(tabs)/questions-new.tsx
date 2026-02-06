@@ -349,7 +349,7 @@ export default function QuestionsScreen(): React.ReactElement {
     if (question.isInstantReward) {
       router.push(`/instant-reward-answer/${question.id}` as Href);
     } else {
-      router.push(`/question-comments/${question.id}` as Href);
+      router.push({ pathname: "/question-detail", params: { id: question.id } } as Href);
     }
   }, [isAuthenticated]);
 

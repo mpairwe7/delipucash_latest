@@ -4,7 +4,7 @@
  * Consolidates common patterns across:
  * - question/[id].tsx (answer a question)
  * - question-answer/[id].tsx (answer variant)
- * - question-comments/[id].tsx (discussion/comments)
+ * - question-detail.tsx (discussion/comments)
  * - reward-question/[id].tsx (reward question answering)
  *
  * Inspired by:

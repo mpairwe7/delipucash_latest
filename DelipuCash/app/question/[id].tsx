@@ -210,7 +210,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
 
   const handleOpenDiscussion = (): void => {
     if (!question) return;
-    router.push(`/question-comments/${question.id}`);
+    router.push({ pathname: "/question-detail", params: { id: question.id } });
   };
 
   // Loading state

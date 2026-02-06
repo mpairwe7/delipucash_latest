@@ -53,7 +53,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
   const handleDiscussion = (): void => {
     if (!question) return;
-    router.push(`/question-comments/${question.id}`);
+    router.push({ pathname: "/question-detail", params: { id: question.id } });
   };
 
   const handleSubmit = (): void => {
