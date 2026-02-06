@@ -1,7 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { ObjectId } from 'mongodb';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
