@@ -153,6 +153,9 @@ import { triggerHaptic } from "@/utils/quiz-utils";
 // Quiz Session
 import QuizSessionScreen from "@/app/quiz-session";
 
+// Error Boundary
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -259,36 +262,8 @@ export default function QuestionsScreen(): React.ReactElement {
     };
   }, [feedData]);
 
-  // Filter questions based on selected tab
-  const filteredQuestions = useMemo((): FeedQuestion[] => {
-    switch (selectedTab) {
-      case "for-you":
-        // AI/personalized - mix of trending, rewards, and recent
-        return [...allQuestions].sort((a, b) => {
-          const scoreA = (a.isHot ? 10 : 0) + (a.isTrending ? 8 : 0) + (a.isInstantReward ? 15 : 0);
-          const scoreB = (b.isHot ? 10 : 0) + (b.isTrending ? 8 : 0) + (b.isInstantReward ? 15 : 0);
-          return scoreB - scoreA;
-        });
-      
-      case "latest":
-        return [...allQuestions].sort((a, b) => 
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
-      
-      case "unanswered":
-        return allQuestions.filter(q => (q.totalAnswers || 0) === 0);
-      
-      case "rewards":
-        return allQuestions.filter(q => q.isInstantReward && q.rewardAmount);
-      
-      case "my-activity":
-        // Would filter by user's questions/answers - mock for now
-        return allQuestions.slice(0, 5);
-      
-      default:
-        return allQuestions;
-    }
-  }, [allQuestions, selectedTab]);
+  // Note: Tab-based sorting/filtering is already handled by useQuestionsFeed → sortQuestionsByTab
+  // No duplicate sorting needed here — allQuestions arrives pre-sorted by the active tab.
 
   // Search
   const {
@@ -302,7 +277,7 @@ export default function QuestionsScreen(): React.ReactElement {
     submitSearch,
     hasNoResults,
   } = useSearch({
-    data: filteredQuestions,
+    data: allQuestions,
     searchFields: ["text", "category"],
     storageKey: "@questions_search_history",
     debounceMs: 250,
@@ -315,7 +290,7 @@ export default function QuestionsScreen(): React.ReactElement {
     },
   });
 
-  const displayQuestions = isSearching ? searchResults : filteredQuestions;
+  const displayQuestions = isSearching ? searchResults : allQuestions;
 
   // Build feed items with ad insertion
   const feedItems = useMemo((): FeedItem[] => {
@@ -782,11 +757,9 @@ export default function QuestionsScreen(): React.ReactElement {
 
   const keyExtractor = useCallback((item: FeedItem) => item.id, []);
 
-  const getItemLayout = useCallback((_data: ArrayLike<FeedItem> | null | undefined, index: number) => ({
-    length: 160, // Approximate item height
-    offset: 160 * index,
-    index,
-  }), []);
+  // NOTE: getItemLayout removed — items have variable heights (questions vs ads vs CTAs)
+  // Using a fixed height causes layout jumps and scroll position issues.
+  // FlatList performance is maintained via removeClippedSubviews + windowSize + maxToRenderPerBatch.
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -828,39 +801,41 @@ export default function QuestionsScreen(): React.ReactElement {
       </Animated.View>
 
       {/* Main Feed */}
-      <FlatList
-        ref={flatListRef}
-        data={feedItems}
-        renderItem={renderItem}
-        keyExtractor={keyExtractor}
-        ListHeaderComponent={renderHeader}
-        ListEmptyComponent={renderEmptyState}
-        contentContainerStyle={[
-          styles.listContent,
-          { paddingBottom: insets.bottom + 80 }, // Extra space for FAB
-        ]}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-        // Performance optimizations
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        windowSize={7}
-        initialNumToRender={4}
-        updateCellsBatchingPeriod={100}
-        getItemLayout={getItemLayout}
-        // Viewability tracking - use stable callback pairs
-        viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
-        // Accessibility
-        accessibilityRole="list"
-        accessibilityLabel="Questions feed"
-      />
+      <ErrorBoundary screenName="Questions Feed">
+        <FlatList
+          ref={flatListRef}
+          data={feedItems}
+          renderItem={renderItem}
+          keyExtractor={keyExtractor}
+          ListHeaderComponent={renderHeader}
+          ListEmptyComponent={renderEmptyState}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingBottom: insets.bottom + 80 }, // Extra space for FAB
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          // Performance optimizations (2024+ best practices)
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={5}
+          windowSize={3} // 3 screens buffer — reduces memory while keeping smooth scroll
+          initialNumToRender={4}
+          updateCellsBatchingPeriod={100}
+          // No getItemLayout — items have variable heights (questions/ads/CTAs)
+          // Viewability tracking - stable callback pairs
+          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
+          // Accessibility
+          accessibilityRole="list"
+          accessibilityLabel="Questions feed"
+        />
+      </ErrorBoundary>
 
       {/* Floating Action Button */}
       <Animated.View

@@ -1,5 +1,5 @@
 import express from 'express';
-import { createQuestion, getQuestions,uploadQuestions ,createResponse, getResponsesForQuestion, getUploadedQuestions} from '../controllers/questionController.mjs';
+import { createQuestion, getQuestions, uploadQuestions, createResponse, getResponsesForQuestion, getUploadedQuestions, voteQuestion, getQuestionById } from '../controllers/questionController.mjs';
 
 const router = express.Router();
 
@@ -18,7 +18,9 @@ router.get('/uploaded', getUploadedQuestions);
 
 router.post('/loadquestions',  uploadQuestions);
 
+router.post("/:questionId/vote", voteQuestion);
 router.post("/:questionId/responses", createResponse);
 router.get("/:questionId/responses", getResponsesForQuestion);
+router.get("/:questionId", getQuestionById);
 
 export default router;

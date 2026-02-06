@@ -49,42 +49,51 @@ export const createQuestion = asyncHandler(async (req, res) => {
 
 
 
-// Get All Questions
-// Get Most Recent 10 Questions
-export const getQuestions = asyncHandler(async (_req, res) => {
+// Get All Questions (with pagination)
+export const getQuestions = asyncHandler(async (req, res) => {
   try {
-    const questions = await prisma.question.findMany(
-      buildOptimizedQuery('Question', {
-        select: {
-          id: true,
-          text: true,
-          userId: true,
-          createdAt: true,
-          updatedAt: true,
-          responses: true,
-          attempts: true,
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
-              points: true,
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [questions, total] = await Promise.all([
+      prisma.question.findMany(
+        buildOptimizedQuery('Question', {
+          select: {
+            id: true,
+            text: true,
+            userId: true,
+            createdAt: true,
+            updatedAt: true,
+            _count: { select: { responses: true } },
+            rewardAmount: true,
+            isInstantReward: true,
+            category: true,
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+                points: true,
+              },
             },
           },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-        take: 10, // preserve existing UX limit
-      }),
-    );
+          orderBy: [{ createdAt: 'desc' }],
+          skip,
+          take: limit,
+        }),
+      ),
+      prisma.question.count(),
+    ]);
 
     const formattedQuestions = questions.map((q) => ({
       ...q,
-      // Frontend expects these computed fields even though they are not persisted
-      totalAnswers: q.responses?.length || 0,
+      totalAnswers: q._count?.responses || 0,
       rewardAmount: q.rewardAmount || 0,
       isInstantReward: q.isInstantReward || false,
       category: q.category || 'General',
+      _count: undefined,
       user: q.user
         ? {
             ...q.user,
@@ -98,17 +107,14 @@ export const getQuestions = asyncHandler(async (_req, res) => {
       success: true,
       data: formattedQuestions,
       pagination: {
-        page: 1,
-        limit: formattedQuestions.length,
-        total: formattedQuestions.length,
-        totalPages: 1,
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
-    // Log any errors that occur
     console.error('Error retrieving questions:', error);
-
-    // Send an error response to the client
     res.status(500).json({ message: 'Failed to retrieve questions', error: error.message });
   }
 });
@@ -210,8 +216,17 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
   const { userId, page = 1, limit = 20 } = req.query; // Optional userId to check user's like/dislike status
 
   try {
-    // Fetch responses for the question, including user details and timestamps
+    // Fetch responses with counts in a single query (avoids N+1)
     const skip = (Number(page) - 1) * Number(limit);
+
+    // Build include clause conditionally based on whether userId is provided
+    const likesInclude = userId
+      ? { where: { userId: String(userId) }, select: { id: true } }
+      : false;
+    const dislikesInclude = userId
+      ? { where: { userId: String(userId) }, select: { id: true } }
+      : false;
+
     const responses = await prisma.response.findMany(
       buildOptimizedQuery('Response', {
         where: { questionId },
@@ -229,6 +244,15 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
               avatar: true,
             },
           },
+          _count: {
+            select: {
+              likes: true,
+              dislikes: true,
+              replies: true,
+            },
+          },
+          ...(likesInclude && { likes: likesInclude }),
+          ...(dislikesInclude && { dislikes: dislikesInclude }),
         },
         orderBy: [{ createdAt: 'asc' }],
         skip,
@@ -236,62 +260,18 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
       }),
     );
 
-    // Enhance responses with like/dislike/reply counts and user status
-    const enhancedResponses = await Promise.all(
-      responses.map(async (response) => {
-        // Get counts
-        const likeCount = await prisma.responseLike.count({
-          where: { responseId: response.id },
-        });
-
-        const dislikeCount = await prisma.responseDislike.count({
-          where: { responseId: response.id },
-        });
-
-        const replyCount = await prisma.responseReply.count({
-          where: { responseId: response.id },
-        });
-
-        let isLiked = false;
-        let isDisliked = false;
-
-        // Check user's like/dislike status if userId is provided
-        if (userId) {
-          const userLike = await prisma.responseLike.findUnique({
-            where: {
-              userId_responseId: {
-                userId,
-                responseId: response.id,
-              },
-            },
-          });
-
-          const userDislike = await prisma.responseDislike.findUnique({
-            where: {
-              userId_responseId: {
-                userId,
-                responseId: response.id,
-              },
-            },
-          });
-
-          isLiked = !!userLike;
-          isDisliked = !!userDislike;
-        }
-
-        return {
-          ...response,
-          likeCount,
-          dislikeCount,
-          replyCount,
-          isLiked,
-          isDisliked,
-        };
-      })
-    );
-
-    // Log the fetched responses for debugging
-    console.log('Fetched enhanced responses:', enhancedResponses);
+    // Map to expected format using aggregated counts (no extra queries)
+    const enhancedResponses = responses.map((response) => ({
+      ...response,
+      likeCount: response._count?.likes || 0,
+      dislikeCount: response._count?.dislikes || 0,
+      replyCount: response._count?.replies || 0,
+      isLiked: userId ? (response.likes?.length || 0) > 0 : false,
+      isDisliked: userId ? (response.dislikes?.length || 0) > 0 : false,
+      _count: undefined,
+      likes: undefined,
+      dislikes: undefined,
+    }));
 
     // Send the enhanced responses as a JSON response
     const total = await prisma.response.count({ where: { questionId } });
@@ -424,6 +404,63 @@ export const getUploadedQuestions = asyncHandler(async (_req, res) => {
 
 
 
+
+// Vote on a question (upvote / downvote toggle)
+export const voteQuestion = asyncHandler(async (req, res) => {
+  const { questionId } = req.params;
+  const { type, userId } = req.body; // type: 'up' | 'down'
+
+  if (!type || !['up', 'down'].includes(type)) {
+    return res.status(400).json({ message: 'Invalid vote type. Must be "up" or "down".' });
+  }
+
+  if (!userId) {
+    return res.status(400).json({ message: 'User ID is required.' });
+  }
+
+  try {
+    const question = await prisma.question.findUnique({ where: { id: questionId } });
+    if (!question) {
+      return res.status(404).json({ message: 'Question not found.' });
+    }
+
+    // Check for existing vote by this user on this question
+    const existingVote = await prisma.questionVote.findUnique({
+      where: { userId_questionId: { userId, questionId } },
+    });
+
+    if (existingVote) {
+      if (existingVote.type === type) {
+        // Toggle off: user clicks same vote type again
+        await prisma.questionVote.delete({
+          where: { id: existingVote.id },
+        });
+      } else {
+        // Switch vote type
+        await prisma.questionVote.update({
+          where: { id: existingVote.id },
+          data: { type },
+        });
+      }
+    } else {
+      // New vote
+      await prisma.questionVote.create({
+        data: { userId, questionId, type },
+      });
+    }
+
+    // Return current counts
+    const [upvotes, downvotes] = await Promise.all([
+      prisma.questionVote.count({ where: { questionId, type: 'up' } }),
+      prisma.questionVote.count({ where: { questionId, type: 'down' } }),
+    ]);
+
+    res.json({ success: true, upvotes, downvotes });
+  } catch (error) {
+    console.error('Error voting on question:', error);
+    res.status(500).json({ message: 'Failed to vote', error: error.message });
+  }
+});
 
 export const AddRewardQuestion = asyncHandler(async (req, res) => {
   const { text, options, correctAnswer, userId } = req.body;

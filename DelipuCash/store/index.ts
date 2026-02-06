@@ -104,6 +104,33 @@ export {
   selectHasFilters,
 } from './SurveyResponseUIStore';
 
+// ============================================================================
+// Survey Attempt Store (NEW - Industry Standard)
+// Draft auto-save, progress tracking, submission guard
+// Use with TanStack Query hooks for server state
+// ============================================================================
+export {
+  useSurveyAttemptStore,
+  // Selectors
+  selectActiveSurveyId,
+  selectAnswers,
+  selectCurrentIndex,
+  selectTotalQuestions,
+  selectSubmissionStatus,
+  selectSubmissionError,
+  selectSubmittedReward,
+  selectDrafts,
+  selectIsSubmitting,
+} from './SurveyAttemptStore';
+export type {
+  AnswerValue,
+  DraftAnswers,
+  SurveyAttemptDraft,
+  SubmissionStatus,
+  SurveyAttemptState,
+  SurveyAttemptActions,
+} from './SurveyAttemptStore';
+
 // Legacy Survey Response Store (deprecated - kept for backward compatibility)
 // TODO: Migrate remaining usages to TanStack Query + SurveyResponseUIStore
 export { useSurveyResponseStore } from './SurveyStore';
@@ -165,6 +192,7 @@ export {
   selectTotalRewardsEarned,
   selectWalletState,
   selectCurrentQuestionState,
+  selectCanRedeem,
 } from './InstantRewardStore';
 export type {
   AttemptedRewardQuestion,

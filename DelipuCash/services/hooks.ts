@@ -613,20 +613,43 @@ export function useCheckSurveyAttempt(
 
 /**
  * Hook to submit survey response
+ * Industry standard: sends userId, invalidates caches, prevents re-submission
  */
-export function useSubmitSurvey(): UseMutationResult<{ reward: number }, Error, { surveyId: string; responses: Record<string, unknown> }> {
+export function useSubmitSurvey(): UseMutationResult<
+  { reward: number; submitted: boolean; responseId?: string; message: string },
+  Error,
+  { surveyId: string; responses: Record<string, unknown>; userId: string }
+> {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: async ({ surveyId, responses }) => {
-      const response = await api.surveys.submit(surveyId, responses);
+    mutationFn: async ({ surveyId, responses, userId }) => {
+      const response = await api.surveys.submit(surveyId, responses, userId);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Invalidate surveys list to update response counts
       queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+      
+      // Optimistic update: mark survey as attempted in cache
+      queryClient.setQueryData(
+        ["surveyAttempt", variables.surveyId, variables.userId],
+        {
+          hasAttempted: true,
+          attemptedAt: new Date().toISOString(),
+          message: 'Survey completed successfully',
+        }
+      );
+      
+      // Invalidate survey responses cache
+      queryClient.invalidateQueries({ 
+        queryKey: ["surveyResponses", "list", variables.surveyId] 
+      });
     },
+    retry: 1, // Retry once on failure (network issues)
+    retryDelay: 2000,
   });
 }
 

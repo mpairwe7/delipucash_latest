@@ -327,23 +327,54 @@ export const checkSurveyAttempt = asyncHandler(async (req, res) => {
 
 export const submitSurveyResponse = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
-  const { userId, responses } = req.body;
+  const { userId, responses, answers } = req.body;
+
+  // Accept either "responses" or "answers" key for backward compatibility
+  const responseData = responses || answers;
 
   console.log('Submitting survey response for survey:', surveyId);
   console.log('User ID:', userId);
-  console.log('Responses:', JSON.stringify(responses, null, 2));
+
+  // Validate required fields
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      submitted: false,
+      message: 'User ID is required to submit a survey response.',
+    });
+  }
+
+  if (!responseData || typeof responseData !== 'object' || Object.keys(responseData).length === 0) {
+    return res.status(400).json({
+      success: false,
+      submitted: false,
+      message: 'Survey responses are required and must contain at least one answer.',
+    });
+  }
 
   try {
-    // Debug: Check if prisma is initialized
-    if (!prisma) {
-      console.error('Prisma client is not initialized');
-      throw new Error('Database connection error');
+    // Verify survey exists and is still active
+    const survey = await prisma.survey.findUnique({
+      where: { id: surveyId },
+      include: { uploads: true },
+    });
+
+    if (!survey) {
+      return res.status(404).json({
+        success: false,
+        submitted: false,
+        message: 'Survey not found.',
+      });
     }
 
-    // Debug: Check if surveyResponse exists
-    if (!prisma.surveyResponse) {
-      console.error('prisma.surveyResponse is undefined. Available models:', Object.keys(prisma));
-      throw new Error('Database model error');
+    // Check if survey is still within its valid date range
+    const now = new Date();
+    if (survey.endDate && new Date(survey.endDate) < now) {
+      return res.status(410).json({
+        success: false,
+        submitted: false,
+        message: 'This survey has ended and is no longer accepting responses.',
+      });
     }
 
     // Industry Standard: Check for existing attempt (single attempt per user)
@@ -356,30 +387,69 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
 
     if (existingResponse) {
       console.log('User has already attempted this survey:', existingResponse.id);
-      return res.status(409).json({ 
+      return res.status(409).json({
+        success: false,
+        submitted: false,
         message: 'You have already completed this survey. Only one attempt is allowed per user.',
         alreadyAttempted: true,
         attemptedAt: existingResponse.createdAt,
       });
     }
 
+    // Validate that all required questions have answers
+    const requiredQuestionIds = (survey.uploads || []).map(q => q.id);
+    const answeredIds = Object.keys(responseData);
+    const missingRequired = requiredQuestionIds.filter(id => !answeredIds.includes(id));
+
+    if (missingRequired.length > 0) {
+      console.log('Missing required answers:', missingRequired);
+      // Log warning but allow partial submissions (some surveys have optional questions)
+    }
+
     // Save the responses
-    const response = await prisma.surveyResponse.create({
+    const surveyResponse = await prisma.surveyResponse.create({
       data: {
         userId,
         surveyId,
-        responses: JSON.stringify(responses),
+        responses: JSON.stringify(responseData),
       },
     });
 
-    console.log('Survey response submitted successfully:', response);
-    res.status(201).json({ message: 'Survey response submitted successfully', response });
+    // Calculate reward (from survey's rewardAmount field)
+    const reward = survey.rewardAmount || 0;
+
+    // Award reward points to user if applicable
+    if (reward > 0) {
+      try {
+        await prisma.appUser.update({
+          where: { id: userId },
+          data: {
+            points: { increment: reward },
+          },
+        });
+        console.log(`Awarded ${reward} points to user ${userId}`);
+      } catch (rewardError) {
+        console.error('Error awarding reward points:', rewardError);
+        // Don't fail the submission if reward fails
+      }
+    }
+
+    console.log('Survey response submitted successfully:', surveyResponse.id);
+    res.status(201).json({
+      success: true,
+      submitted: true,
+      message: 'Survey response submitted successfully!',
+      reward,
+      responseId: surveyResponse.id,
+      submittedAt: surveyResponse.createdAt,
+    });
   } catch (error) {
     console.error('Error submitting survey response:', error);
-    res.status(500).json({ 
-      message: 'Error submitting survey response', 
+    res.status(500).json({
+      success: false,
+      submitted: false,
+      message: 'Error submitting survey response',
       error: error.message,
-      stack: error.stack // Include stack trace for debugging
     });
   }
 });

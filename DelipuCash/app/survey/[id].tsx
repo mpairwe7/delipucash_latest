@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import {
+  Award,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
@@ -30,13 +31,16 @@ import {
   ListChecks,
   Lock,
   MessageCircle,
+  RefreshCw,
   Shield,
   Star,
   X,
 } from "lucide-react-native";
+import * as Haptics from "expo-haptics";
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/services";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
+import { useSurveyAttemptStore } from "@/store/SurveyAttemptStore";
 import { UploadSurvey } from "@/types";
 import { useAuth } from "@/utils/auth";
 import {
@@ -135,8 +139,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const { auth } = useAuth();
   const userId = auth?.user?.id;
 
-  const { data: surveyData, isLoading, error } = useSurvey(id || "");
-  const submitSurvey = useSubmitSurvey();
+  // Server state: TanStack Query
+  const { data: surveyData, isLoading, error, refetch } = useSurvey(id || "");
+  const submitSurveyMutation = useSubmitSurvey();
   
   // Check if user has already attempted this survey (single attempt enforcement)
   const { 
@@ -144,9 +149,12 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     isLoading: checkingAttempt 
   } = useCheckSurveyAttempt(id || "", userId);
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
+  // Client state: Zustand store (draft auto-save, progress tracking)
+  const attemptStore = useSurveyAttemptStore();
+
+  // Local UI state
   const [showReview, setShowReview] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [isReducedMotion, setIsReducedMotion] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   
@@ -157,6 +165,28 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
   const modalScale = useRef(new Animated.Value(0.95)).current;
+  const successScale = useRef(new Animated.Value(0)).current;
+
+  // Initialize attempt store when survey loads
+  useEffect(() => {
+    if (surveyData && id && !attemptStatus?.hasAttempted) {
+      const totalQ = surveyData.uploads?.length || 0;
+      if (totalQ > 0) {
+        attemptStore.startAttempt(id, totalQ);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surveyData, id, attemptStatus?.hasAttempted]);
+
+  // Clean up on unmount — save draft if not submitted
+  useEffect(() => {
+    return () => {
+      if (attemptStore.submissionStatus !== 'submitted') {
+        attemptStore.abandonAttempt();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check for reduced motion preference (accessibility - WCAG 2.1)
   useEffect(() => {
@@ -213,6 +243,10 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     };
   }, [surveyData]);
 
+  // Derive state from store
+  const currentIndex = attemptStore.currentQuestionIndex;
+  const answers = attemptStore.answers;
+
   const question = survey?.questions[currentIndex];
   const isLastQuestion = survey ? currentIndex === survey.questions.length - 1 : false;
   const progress = survey ? ((currentIndex + 1) / survey.questions.length) * 100 : 0;
@@ -267,43 +301,81 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     }
   }, 0) || 0;
 
+  // Use store's setAnswer for auto-save
   const setAnswer = (value: AnswerValue): void => {
     if (!question) return;
-    setAnswers((prev) => ({ ...prev, [question.id]: value }));
+    attemptStore.setAnswer(question.id, value);
   };
 
   const handleNext = (): void => {
     if (!question || (question.required && !isQuestionAnswered())) return;
 
+    // Haptic feedback on navigation
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+
     if (isLastQuestion) {
       openReviewModal();
     } else {
-      setCurrentIndex((prev) => prev + 1);
+      attemptStore.goNext();
     }
   };
 
   const handlePrevious = (): void => {
     if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      attemptStore.goPrevious();
     }
   };
 
   const handleSubmit = (): void => {
-    if (!survey) return;
+    if (!survey || !userId) {
+      Alert.alert("Error", "You must be logged in to submit a survey.");
+      return;
+    }
 
-    submitSurvey.mutate(
-      { surveyId: survey.id, responses: answers },
+    // Guard against double-submit
+    if (attemptStore.submissionStatus === 'submitting' || attemptStore.submissionStatus === 'submitted') {
+      return;
+    }
+
+    attemptStore.setSubmitting();
+
+    submitSurveyMutation.mutate(
+      { surveyId: survey.id, responses: answers, userId },
       {
         onSuccess: (data) => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+          attemptStore.setSubmitted(data.reward || 0);
           closeReviewModal();
-          Alert.alert(
-            "Survey submitted",
-            `Thanks for completing the survey. You earned ${formatCurrency(data.reward)}!`,
-            [{ text: "OK", onPress: () => router.back() }]
-          );
+          setShowSuccess(true);
+          // Animate success
+          Animated.spring(successScale, {
+            toValue: 1,
+            useNativeDriver: true,
+            damping: 12,
+            stiffness: 120,
+          }).start();
         },
-        onError: () => {
-          Alert.alert("Error", "Failed to submit survey. Please try again.");
+        onError: (err) => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+          const message = err.message || "Failed to submit survey. Please try again.";
+          
+          // Check for already attempted error
+          if (message.toLowerCase().includes('already completed') || message.toLowerCase().includes('already attempted')) {
+            attemptStore.setSubmissionError(message);
+            closeReviewModal();
+            Alert.alert(
+              "Already Completed",
+              "You have already completed this survey. Only one attempt per user is allowed.",
+              [{ text: "OK", onPress: () => router.back() }]
+            );
+          } else {
+            attemptStore.setSubmissionError(message);
+            Alert.alert("Submission Failed", message, [
+              { text: "Try Again", onPress: () => attemptStore.resetSubmission() },
+              { text: "Cancel", style: "cancel" },
+            ]);
+          }
         },
       }
     );
@@ -359,6 +431,49 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
   }, []);
+
+  // ============================================================================
+  // SUCCESS STATE
+  // ============================================================================
+  if (showSuccess) {
+    return (
+      <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
+        <StatusBar style={statusBarStyle} />
+        <Animated.View
+          style={[
+            styles.successIcon,
+            {
+              backgroundColor: withAlpha(colors.primary, 0.12),
+              transform: [{ scale: successScale }],
+            },
+          ]}
+        >
+          <Award size={56} color={colors.primary} strokeWidth={1.5} />
+        </Animated.View>
+        <Text style={[styles.stateTitle, { color: colors.text }]}>Survey Completed!</Text>
+        <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300 }]}>
+          Thank you for your responses. Your feedback is valuable.
+        </Text>
+        {(attemptStore.submittedReward ?? 0) > 0 && (
+          <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.primary, 0.14) }]}>
+            <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
+            <Text style={[styles.rewardBadgeText, { color: colors.primary }]}>
+              You earned {formatCurrency(attemptStore.submittedReward || 0)}!
+            </Text>
+          </View>
+        )}
+        <PrimaryButton
+          title="Back to Surveys"
+          onPress={() => {
+            attemptStore.reset();
+            router.back();
+          }}
+          style={{ marginTop: SPACING.xl, minWidth: 200 }}
+          accessibilityLabel="Go back to browse surveys"
+        />
+      </View>
+    );
+  }
 
   // Loading state
   if (isLoading || checkingAttempt) {
@@ -674,7 +789,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             return (
               <TouchableOpacity
                 key={q.id}
-                onPress={() => setCurrentIndex(idx)}
+                onPress={() => attemptStore.setCurrentIndex(idx)}
                 style={[
                   styles.stepChip,
                   {
@@ -748,8 +863,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         <PrimaryButton
           title={isLastQuestion ? "Review & Submit" : "Next"}
           onPress={handleNext}
-          disabled={(question?.required && !isQuestionAnswered()) || submitSurvey.isPending}
-          loading={submitSurvey.isPending && isLastQuestion}
+          disabled={(question?.required && !isQuestionAnswered()) || attemptStore.submissionStatus === 'submitting'}
+          loading={attemptStore.submissionStatus === 'submitting' && isLastQuestion}
           style={styles.navButton}
           rightIcon={!isLastQuestion ? <ChevronRight size={16} color={colors.primaryText} strokeWidth={1.5} /> : <CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
         />
@@ -797,7 +912,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               <PrimaryButton
                 title="Submit now"
                 onPress={handleSubmit}
-                loading={submitSurvey.isPending}
+                loading={attemptStore.submissionStatus === 'submitting'}
+                disabled={attemptStore.submissionStatus === 'submitting'}
                 rightIcon={<CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
                 accessibilityLabel="Submit survey responses"
               />
@@ -1170,6 +1286,28 @@ const styles = StyleSheet.create({
   attemptedDateText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  // Success state styles
+  successIcon: {
+    width: 100,
+    height: 100,
+    borderRadius: RADIUS["2xl"],
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: SPACING.lg,
+  },
+  rewardBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.full,
+    marginTop: SPACING.md,
+  },
+  rewardBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
   },
   // Keyboard accessory styles for iOS
   keyboardAccessory: {

@@ -162,29 +162,47 @@ export const questionQueryKeys = {
 // ===========================================
 
 /**
- * Transform backend question to FeedQuestion format
+ * Simple deterministic hash from string → number.
+ * Used to generate stable pseudo-random values from question IDs
+ * so metrics don't change on every refetch.
+ */
+function hashCode(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+/**
+ * Transform backend question to FeedQuestion format.
+ * Uses deterministic hash-based values instead of Math.random()
+ * so metrics remain stable across refetches.
  */
 function transformToFeedQuestion(
   question: Question & { user?: Partial<AppUser> },
   index?: number
 ): FeedQuestion {
-  // Generate author from user data or mock
+  const hash = hashCode(question.id || `q-${index}`);
+
+  // Generate author from user data or fallback
   const author: QuestionAuthor = question.user
     ? {
         id: question.user.id || question.userId || 'anonymous',
         name: `${question.user.firstName || 'Anonymous'} ${question.user.lastName || 'User'}`.trim(),
         avatar: question.user.avatar || undefined,
-        reputation: question.user.points || Math.floor(Math.random() * 5000) + 100,
+        reputation: question.user.points || (hash % 5000) + 100,
         badge: question.user.points && question.user.points > 1000 ? 'top-contributor' : undefined,
       }
     : {
         id: question.userId || 'anonymous',
         name: 'Anonymous User',
-        reputation: Math.floor(Math.random() * 5000) + 100,
-        badge: Math.random() > 0.7 ? 'top-contributor' : undefined,
+        reputation: (hash % 5000) + 100,
+        badge: undefined,
       };
 
   // Calculate engagement metrics
+  const totalAnswers = question.totalAnswers || 0;
   const daysSinceCreation = Math.floor(
     (Date.now() - new Date(question.createdAt).getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -192,13 +210,13 @@ function transformToFeedQuestion(
   return {
     ...question,
     author,
-    upvotes: Math.floor(Math.random() * 50) + (question.totalAnswers || 0) * 2,
-    downvotes: Math.floor(Math.random() * 5),
-    followersCount: Math.floor(Math.random() * 100) + 5,
-    isHot: daysSinceCreation <= 1 && (question.totalAnswers || 0) > 5,
-    isTrending: daysSinceCreation <= 3 && (question.totalAnswers || 0) > 10,
-    hasExpertAnswer: Math.random() > 0.8,
-    hasAcceptedAnswer: Math.random() > 0.6,
+    upvotes: totalAnswers * 2 + (hash % 20),
+    downvotes: (hash >> 4) % 5,
+    followersCount: (hash % 80) + 5,
+    isHot: daysSinceCreation <= 1 && totalAnswers > 5,
+    isTrending: daysSinceCreation <= 3 && totalAnswers > 10,
+    hasExpertAnswer: totalAnswers > 3,
+    hasAcceptedAnswer: totalAnswers > 0,
     userHasVoted: null,
   };
 }
@@ -433,7 +451,8 @@ export function useQuestionDetail(
 }
 
 /**
- * Vote on a question (optimistic update)
+ * Vote on a question (optimistic update with toggle)
+ * SO/Reddit-style: clicking same vote type un-votes, clicking opposite switches
  */
 export function useVoteQuestion(): UseMutationResult<
   { success: boolean; upvotes: number; downvotes: number },
@@ -470,33 +489,67 @@ export function useVoteQuestion(): UseMutationResult<
       };
     },
     onMutate: async ({ questionId, type }) => {
-      // Optimistic update
-      await queryClient.cancelQueries({ queryKey: questionQueryKeys.all });
+      // Cancel in-flight queries to avoid race conditions
+      await queryClient.cancelQueries({ queryKey: ['questions', 'feed'] });
 
-      // Update all feed queries optimistically
+      // Snapshot for rollback
+      const previousData = queryClient.getQueriesData<QuestionsFeedResult>({
+        queryKey: ['questions', 'feed'],
+      });
+
+      // Optimistic update with toggle logic (SO/Reddit-style)
       queryClient.setQueriesData<QuestionsFeedResult>(
         { queryKey: ['questions', 'feed'] },
         (old) => {
           if (!old) return old;
           return {
             ...old,
-            questions: old.questions.map((q) =>
-              q.id === questionId
-                ? {
-                    ...q,
-                    upvotes: type === 'up' ? (q.upvotes || 0) + 1 : q.upvotes,
-                    downvotes: type === 'down' ? (q.downvotes || 0) + 1 : q.downvotes,
-                    userHasVoted: type,
-                  }
-                : q
-            ),
+            questions: old.questions.map((q) => {
+              if (q.id !== questionId) return q;
+
+              const prevVote = q.userHasVoted;
+              let newUpvotes = q.upvotes || 0;
+              let newDownvotes = q.downvotes || 0;
+              let newVote: 'up' | 'down' | null;
+
+              if (prevVote === type) {
+                // Toggle off: user clicks same vote type again
+                newVote = null;
+                if (type === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
+                else newDownvotes = Math.max(0, newDownvotes - 1);
+              } else {
+                // Switch vote or new vote
+                if (prevVote === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
+                if (prevVote === 'down') newDownvotes = Math.max(0, newDownvotes - 1);
+                if (type === 'up') newUpvotes += 1;
+                else newDownvotes += 1;
+                newVote = type;
+              }
+
+              return {
+                ...q,
+                upvotes: newUpvotes,
+                downvotes: newDownvotes,
+                userHasVoted: newVote,
+              };
+            }),
           };
         }
       );
+
+      return { previousData };
     },
-    onError: () => {
-      // Revert on error
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.all });
+    onError: (_err, _vars, context) => {
+      // Rollback to snapshot on error
+      if (context?.previousData) {
+        context.previousData.forEach(([queryKey, data]) => {
+          if (data) queryClient.setQueryData(queryKey, data);
+        });
+      }
+    },
+    onSettled: () => {
+      // Refetch to sync with server after settling
+      queryClient.invalidateQueries({ queryKey: ['questions', 'feed'] });
     },
   });
 }
@@ -557,7 +610,8 @@ export function useCreateQuestion(): UseMutationResult<
 }
 
 /**
- * Submit response to a question
+ * Submit response to a question (with optimistic update)
+ * Immediately adds the response to the UI while server processes
  */
 export function useSubmitQuestionResponse(): UseMutationResult<
   Response & { rewardEarned?: number },
@@ -576,7 +630,6 @@ export function useSubmitQuestionResponse(): UseMutationResult<
               method: 'POST',
               body: JSON.stringify({
                 responseText,
-                // userId will be set by the backend from the auth token
               }),
             }
           );
@@ -605,12 +658,73 @@ export function useSubmitQuestionResponse(): UseMutationResult<
         isLiked: false,
         isDisliked: false,
       };
-      return {
-        ...newResponse,
-        rewardEarned: 0,
-      };
+      return { ...newResponse, rewardEarned: 0 };
     },
-    onSuccess: (_, { questionId }) => {
+    onMutate: async ({ questionId, responseText }) => {
+      // Cancel related queries
+      await queryClient.cancelQueries({ queryKey: questionQueryKeys.detail(questionId) });
+
+      // Snapshot for rollback
+      const previousDetail = queryClient.getQueryData(
+        questionQueryKeys.detail(questionId)
+      );
+
+      // Optimistically add response to detail view
+      queryClient.setQueryData(
+        questionQueryKeys.detail(questionId),
+        (old: (FeedQuestion & { responses: Response[] }) | undefined) => {
+          if (!old) return old;
+          const optimisticResponse: Response = {
+            id: `optimistic_${Date.now()}`,
+            responseText,
+            userId: 'current_user',
+            questionId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            likesCount: 0,
+            dislikesCount: 0,
+            repliesCount: 0,
+            isLiked: false,
+            isDisliked: false,
+          };
+          return {
+            ...old,
+            totalAnswers: (old.totalAnswers || 0) + 1,
+            responses: [optimisticResponse, ...(old.responses || [])],
+          };
+        }
+      );
+
+      // Optimistically increment answer count in feed
+      queryClient.setQueriesData<QuestionsFeedResult>(
+        { queryKey: ['questions', 'feed'] },
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            questions: old.questions.map((q) =>
+              q.id === questionId
+                ? { ...q, totalAnswers: (q.totalAnswers || 0) + 1 }
+                : q
+            ),
+          };
+        }
+      );
+
+      return { previousDetail };
+    },
+    onError: (_err, { questionId }, context) => {
+      // Rollback on error
+      if (context?.previousDetail) {
+        queryClient.setQueryData(
+          questionQueryKeys.detail(questionId),
+          context.previousDetail
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: ['questions', 'feed'] });
+    },
+    onSettled: (_, __, { questionId }) => {
+      // Refetch to sync with server
       queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(questionId) });
       queryClient.invalidateQueries({ queryKey: questionQueryKeys.all });
       queryClient.invalidateQueries({ queryKey: questionQueryKeys.userStats });

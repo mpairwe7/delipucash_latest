@@ -395,7 +395,8 @@ function EnhancedMiniPlayerComponent({
 // STYLES
 // ============================================================================
 
-const styles = StyleSheet.create({\n  container: {
+const styles = StyleSheet.create({
+  container: {
     position: 'absolute',
     left: SPACING.sm,
     right: SPACING.sm,

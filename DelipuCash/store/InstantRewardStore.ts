@@ -725,6 +725,12 @@ export const selectRedemptionState = (state: InstantRewardUIState) => ({
   history: state.redemptionHistory,
 });
 
+/** Reactive selector for canRedeem — subscribes to state changes unlike the imperative action */
+export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
+  const totalPoints = (state.attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+};
+
 export const selectOfflineQueueState = (state: InstantRewardUIState) => ({
   pendingCount: state.pendingSubmissions.length,
   isOnline: state.isOnline,

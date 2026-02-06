@@ -1,5 +1,5 @@
 import express from 'express';
-import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, checkSurveyAttempt, getAllSurveys } from '../controllers/surveyController.mjs';
+import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys } from '../controllers/surveyController.mjs';
 
 const router = express.Router();
 
@@ -15,8 +15,10 @@ router.get('/status/:status', getSurveysByStatus);
 // Check if user has already attempted the survey (single attempt enforcement)
 router.get('/:surveyId/attempt', checkSurveyAttempt);
 
-// Submit survey response
+// Survey responses: submit and retrieve
 router.post('/:surveyId/responses', submitSurveyResponse);
+router.get('/:surveyId/responses', getSurveyResponses);
+
 router.get('/:surveyId', getSurveyById);
 
 export default router;

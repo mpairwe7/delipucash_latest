@@ -2,6 +2,12 @@
  * Survey API Service
  * Dedicated API layer for survey-related operations
  * REST API integration - No mock data fallbacks
+ *
+ * Industry best practices:
+ * - Typed request/response contracts
+ * - Auth token forwarding
+ * - Proper error mapping
+ * - Request deduplication via TanStack Query (consumer-side)
  */
 
 import {
@@ -41,27 +47,47 @@ export interface SurveyAttemptStatus {
   message: string;
 }
 
-// Helper to fetch JSON
+// Survey submission response
+export interface SurveySubmissionResult {
+  success: boolean;
+  submitted: boolean;
+  reward: number;
+  responseId?: string;
+  submittedAt?: string;
+  message: string;
+  alreadyAttempted?: boolean;
+}
+
+// Helper to fetch JSON with optional auth token
 async function fetchJson<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  authToken?: string | null
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${path}`;
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(init?.headers as Record<string, string> || {}),
+    };
+
+    // Attach auth token if available
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
       ...init,
+      headers,
     });
 
     const json = await response.json();
+
     if (!response.ok) {
       return {
         success: false,
         data: json as T,
-        error: json?.message || "Request failed",
+        error: json?.message || json?.error || `Request failed with status ${response.status}`,
       };
     }
 
@@ -195,16 +221,18 @@ export const surveyApi = {
 
   /**
    * Submit survey response
+   * Sends userId + answers to the backend for recording
    */
   async submitResponse(
     surveyId: string,
-    answers: Record<string, any>
-  ): Promise<ApiResponse<{ submitted: boolean; reward?: number; message?: string }>> {
-    return fetchJson<{ submitted: boolean; reward?: number; message?: string }>(
+    answers: Record<string, any>,
+    userId: string
+  ): Promise<ApiResponse<SurveySubmissionResult>> {
+    return fetchJson<SurveySubmissionResult>(
       SURVEY_ROUTES.submit(surveyId),
       {
         method: "POST",
-        body: JSON.stringify({ answers }),
+        body: JSON.stringify({ userId, responses: answers }),
       }
     );
   },
