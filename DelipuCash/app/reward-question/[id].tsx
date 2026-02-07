@@ -201,12 +201,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Zustand selectors (granular — avoids full-store re-render) ──
   const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
-  const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
-  const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
   const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
   const confirmReward = useInstantRewardStore((s) => s.confirmReward);
   const walletBalance = useInstantRewardStore((s) => s.walletBalance);
   const sessionState = useInstantRewardStore((s) => s.sessionState);
+  // Subscribe to attemptHistory so memos re-run when questions are marked attempted
+  const attemptHistory = useInstantRewardStore((s) => s.attemptHistory);
   const sessionSummary = useInstantRewardStore((s) => s.sessionSummary);
   const startSession = useInstantRewardStore((s) => s.startSession);
   const endSession = useInstantRewardStore((s) => s.endSession);
@@ -239,23 +239,39 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     }
   }, [allQuestions, sessionState, startSession]);
 
+  // ── Reset local state when navigating to a new question ──
+  useEffect(() => {
+    setSelectedOption(null);
+    setResult(null);
+    setIsTransitioning(false);
+    fadeAnim.setValue(1);
+    slideAnim.setValue(0);
+  }, [questionId, fadeAnim, slideAnim]);
+
   // ── Unanswered questions for auto-transition ──
+  // Uses attemptHistory as dependency so this re-evaluates after markQuestionAttempted
   const unansweredQuestions = useMemo(() => {
     if (!allQuestions) return [];
     return allQuestions.filter(
-      (q) => !hasAttemptedQuestion(q.id) && q.id !== questionId && !q.isCompleted
+      (q) =>
+        q.id !== questionId &&
+        !q.isCompleted &&
+        !attemptHistory?.attemptedQuestionIds.includes(q.id)
     );
-  }, [allQuestions, questionId, hasAttemptedQuestion]);
+  }, [allQuestions, questionId, attemptHistory]);
 
   // ── Check if user has already attempted this question ──
   const previousAttempt = useMemo(() => {
-    if (!questionId) return null;
-    return getAttemptedQuestion(questionId);
-  }, [questionId, getAttemptedQuestion]);
+    if (!questionId || !attemptHistory) return null;
+    return attemptHistory.attemptedQuestions.find(
+      (a) => a.questionId === questionId
+    ) ?? null;
+  }, [questionId, attemptHistory]);
 
   const hasAlreadyAttempted = useMemo(() => {
-    return hasAttemptedQuestion(questionId);
-  }, [questionId, hasAttemptedQuestion]);
+    if (!attemptHistory) return false;
+    return attemptHistory.attemptedQuestionIds.includes(questionId);
+  }, [questionId, attemptHistory]);
 
   // ── Live countdown timer ──
   useEffect(() => {

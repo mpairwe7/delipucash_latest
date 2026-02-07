@@ -99,7 +99,7 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
-import { useUnreadCount } from "@/services/hooks";
+import { useUnreadCount, useRewardQuestions } from "@/services/hooks";
 import {
   useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
@@ -719,6 +719,9 @@ export default function QuestionsScreen(): React.ReactElement {
     []
   );
 
+  // Fetch reward questions for CTA navigation
+  const { data: rewardQuestions } = useRewardQuestions();
+
   // Navigate to reward-question flow (quiz session) for "Answer & Earn"
   const handleAnswerEarnPress = useCallback(() => {
     if (!isAuthenticated) {
@@ -727,16 +730,19 @@ export default function QuestionsScreen(): React.ReactElement {
     }
     triggerHaptic("light");
 
-    // Find first reward question for direct entry, otherwise listing
-    const firstReward = allQuestions.find((q) => q.isInstantReward);
+    // Find first available reward question from the reward questions API
+    const firstReward = rewardQuestions?.find((q) => !q.isCompleted);
 
     if (firstReward) {
       router.push(`/reward-question/${firstReward.id}` as Href);
+    } else if (rewardQuestions && rewardQuestions.length > 0) {
+      // All completed — go to first one anyway
+      router.push(`/reward-question/${rewardQuestions[0].id}` as Href);
     } else {
-      // Fallback to the reward questions listing screen
+      // No reward questions loaded yet — go to the listing screen
       router.push("/instant-reward-questions" as Href);
     }
-  }, [isAuthenticated, allQuestions]);
+  }, [isAuthenticated, rewardQuestions]);
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({
