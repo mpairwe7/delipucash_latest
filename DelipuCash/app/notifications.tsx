@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, memo } from "react";
 import {
   FlatList,
   RefreshControl,
@@ -109,6 +109,21 @@ export default function NotificationsScreen(): React.ReactElement {
     [colors, handleMarkRead],
   );
 
+  const keyExtractor = useCallback((item: Notification) => item.id, []);
+
+  const emptyComponent = useMemo(
+    () => (
+      <View style={[styles.emptyState, { borderColor: colors.border }]}>
+        <BellRing size={28} color={colors.textMuted} strokeWidth={1.5} />
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>No notifications yet</Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+          Stay tuned — updates from surveys, rewards, and payments will appear here.
+        </Text>
+      </View>
+    ),
+    [colors],
+  );
+
   const onRefresh = useCallback(() => {
     markNotificationsSeen();
     refetch();
@@ -139,7 +154,7 @@ export default function NotificationsScreen(): React.ReactElement {
       </View>
       <FlatList
         data={notifications}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         contentContainerStyle={[
           styles.listContent,
           {
@@ -154,15 +169,12 @@ export default function NotificationsScreen(): React.ReactElement {
             tintColor={colors.primary}
           />
         }
-        ListEmptyComponent={
-          <View style={[styles.emptyState, { borderColor: colors.border }]}>
-            <BellRing size={28} color={colors.textMuted} strokeWidth={1.5} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No notifications yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-              Stay tuned — updates from surveys, rewards, and payments will appear here.
-            </Text>
-          </View>
-        }
+        ListEmptyComponent={emptyComponent}
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        initialNumToRender={6}
       />
     </View>
   );

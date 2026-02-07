@@ -259,6 +259,27 @@ export const SurveyTemplatesGallery: React.FC<TemplatesGalleryProps> = ({
     </TouchableOpacity>
   );
 
+  // Stable FlatList callbacks
+  const templateKeyExtractor = useCallback((item: SurveyTemplate) => item.id, []);
+
+  const renderTemplate = useCallback(
+    ({ item }: { item: SurveyTemplate }) => <TemplateCard template={item} />,
+    [colors, handleTemplatePress]
+  );
+
+  const templateEmptyComponent = useMemo(
+    () => (
+      <View style={styles.emptyContainer}>
+        <FileText size={48} color={colors.textMuted} strokeWidth={1} />
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>No templates found</Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+          Try adjusting your search or category filter
+        </Text>
+      </View>
+    ),
+    [colors]
+  );
+
   // Template preview modal
   const TemplatePreviewModal: React.FC = () => {
     if (!previewTemplate) return null;
@@ -490,23 +511,18 @@ export const SurveyTemplatesGallery: React.FC<TemplatesGalleryProps> = ({
         {/* Templates Grid */}
         <FlatList
             data={filteredTemplates}
-            keyExtractor={(item) => item.id}
+            keyExtractor={templateKeyExtractor}
             numColumns={2}
             columnWrapperStyle={styles.templateRow}
             contentContainerStyle={styles.templateList}
-            renderItem={({ item }) => <TemplateCard template={item} />}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <FileText size={48} color={colors.textMuted} strokeWidth={1} />
-                <Text style={[styles.emptyStateTitle, { color: colors.text }]}>
-                  No templates found
-                </Text>
-                <Text style={[styles.emptyStateText, { color: colors.textMuted }]}>
-                  Try adjusting your search or category filter
-                </Text>
-              </View>
-            }
+            renderItem={renderTemplate}
+            ListEmptyComponent={templateEmptyComponent}
             showsVerticalScrollIndicator={false}
+            // Performance optimizations
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={6}
+            windowSize={5}
+            initialNumToRender={4}
           />
 
         {/* Template Preview Modal */}
@@ -868,6 +884,23 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
     color: '#FFF',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.xl * 2,
+    paddingHorizontal: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  emptyTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    marginTop: SPACING.md,
+  },
+  emptySubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: 'center',
   },
 });
 

@@ -41,10 +41,6 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
-  withRepeat,
-  withSequence,
-  withTiming,
-  FadeIn,
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
@@ -301,25 +297,12 @@ function QuestionFeedItemComponent({
 }: QuestionFeedItemProps): React.ReactElement {
   const { colors } = useTheme();
 
-  // Animation values
+  // Animation values — press feedback only (no entering/glow animations to keep list fast)
   const scale = useSharedValue(1);
   const pressed = useSharedValue(0);
-  const glowOpacity = useSharedValue(0);
 
-  // Start glow animation only for visible reward questions (index > 0 means animated batch)
-  React.useEffect(() => {
-    if (showRewardGlow && question.isInstantReward && question.rewardAmount) {
-      glowOpacity.value = withRepeat(
-        withSequence(
-          withTiming(0.8, { duration: 1200 }),
-          withTiming(0.3, { duration: 1200 })
-        ),
-        -1,
-        true
-      );
-    }
-    return () => { glowOpacity.value = 0; };
-  }, [showRewardGlow, question.isInstantReward, question.rewardAmount, glowOpacity]);
+  // Static glow instead of animated — eliminates long-lived Reanimated nodes per item
+  const showGlow = showRewardGlow && question.isInstantReward && Boolean(question.rewardAmount);
 
   // Press handlers
   const handlePressIn = useCallback(() => {
@@ -368,21 +351,25 @@ function QuestionFeedItemComponent({
     opacity: interpolate(pressed.value, [0, 1], [0.5, 1], Extrapolation.CLAMP),
   }));
 
-  const animatedGlowStyle = useAnimatedStyle(() => ({
-    opacity: glowOpacity.value,
-  }));
+  // Derived values — memoized to avoid new object creation per render
+  const categoryColor = useMemo(
+    () => getCategoryColor(question.category, colors),
+    [question.category, colors]
+  );
+  const timeAgo = useMemo(
+    () => formatTimeAgo(question.createdAt),
+    [question.createdAt]
+  );
+  const timeRemaining = useMemo(
+    () => question.timeRemaining ? formatTimeRemaining(question.timeRemaining) : null,
+    [question.timeRemaining]
+  );
+  const authorBadge = useMemo(
+    () => question.author?.badge ? getBadgeInfo(question.author.badge, colors) : null,
+    [question.author?.badge, colors]
+  );
 
-  // Derived values
-  const categoryColor = getCategoryColor(question.category, colors);
-  const timeAgo = formatTimeAgo(question.createdAt);
-  const timeRemaining = question.timeRemaining 
-    ? formatTimeRemaining(question.timeRemaining) 
-    : null;
-  const authorBadge = question.author?.badge 
-    ? getBadgeInfo(question.author.badge, colors) 
-    : null;
-
-  // Accessibility label
+  // Accessibility label — granular deps instead of entire question object
   const accessibilityLabel = useMemo(() => {
     const parts = [
       `Question: ${question.text}`,
@@ -397,16 +384,16 @@ function QuestionFeedItemComponent({
       `Posted ${timeAgo.accessible}`,
     ].filter(Boolean);
     return parts.join(". ");
-  }, [question, timeAgo, timeRemaining]);
-
-  // Cap stagger animation to first batch — items beyond index 0 passed from
-  // parent render instantly (index is capped to 0 by parent for later items)
-  const enteringAnimation = index > 0
-    ? FadeIn.delay(index * 50).duration(300)
-    : FadeIn.duration(200);
+  }, [
+    question.text, question.category, question.author?.name,
+    question.author?.reputation, question.totalAnswers,
+    question.hasAcceptedAnswer, question.hasExpertAnswer,
+    question.isInstantReward, question.rewardAmount,
+    timeRemaining, timeAgo,
+  ]);
 
   return (
-    <Animated.View entering={enteringAnimation}>
+    <View>
       <AnimatedPressable
         onPress={handlePress}
         onPressIn={handlePressIn}
@@ -424,13 +411,12 @@ function QuestionFeedItemComponent({
           style,
         ]}
       >
-        {/* Reward Glow Effect */}
-        {showRewardGlow && question.isInstantReward && question.rewardAmount && (
-          <Animated.View
+        {/* Reward Glow Effect — static opacity instead of animated to keep list performant */}
+        {showGlow && (
+          <View
             style={[
               styles.rewardGlow,
-              { backgroundColor: withAlpha(colors.warning, 0.15) },
-              animatedGlowStyle,
+              { backgroundColor: withAlpha(colors.warning, 0.15), opacity: 0.5 },
             ]}
           />
         )}
@@ -706,7 +692,7 @@ function QuestionFeedItemComponent({
           </Animated.View>
         </View>
       </AnimatedPressable>
-    </Animated.View>
+    </View>
   );
 }
 

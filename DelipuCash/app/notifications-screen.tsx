@@ -342,6 +342,8 @@ export default function NotificationsScreen() {
     [handleNotificationPress, handleMarkAsRead]
   );
 
+  const keyExtractor = useCallback((item: NotificationItem) => item.id, []);
+
   const renderHeader = useCallback(() => {
     if (!stats) return null;
 
@@ -469,7 +471,7 @@ export default function NotificationsScreen() {
         <FlatList
           data={notifications}
           renderItem={renderNotification}
-          keyExtractor={item => item.id}
+          keyExtractor={keyExtractor}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListHeaderComponent={renderHeader}
@@ -481,6 +483,11 @@ export default function NotificationsScreen() {
               tintColor={colors.primary}
             />
           }
+          // Performance optimizations
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={8}
+          windowSize={7}
+          initialNumToRender={6}
         />
       )}
     </SafeAreaView>

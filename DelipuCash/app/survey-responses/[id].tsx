@@ -761,6 +761,11 @@ const SurveyResponsesScreen = (): React.ReactElement => {
         keyExtractor={(item) => item.questionId}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={6}
+        windowSize={7}
+        initialNumToRender={5}
         renderItem={({ item: aggregate, index }) => {
           const isExpanded = expandedQuestionId === aggregate.questionId;
           

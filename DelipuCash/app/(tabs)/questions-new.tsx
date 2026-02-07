@@ -173,9 +173,6 @@ const VIEWABILITY_CONFIG: ViewabilityConfig = {
   minimumViewTime: 1000,
 };
 
-// Cap FadeIn stagger to first batch only — items beyond this render instantly
-const MAX_ANIMATED_INDEX = 8;
-
 // ============================================================================
 // EXTRACTED MEMOIZED HEADER
 // ============================================================================
@@ -941,7 +938,7 @@ export default function QuestionsScreen(): React.ReactElement {
             onPressById={handleQuestionPressById}
             onVoteById={handleVoteById}
             variant={index === 0 ? "featured" : "default"}
-            index={index < MAX_ANIMATED_INDEX ? index : 0}
+            index={0}
             showRewardGlow={question.isInstantReward}
             testID={`question-${question.id}`}
           />
@@ -1101,13 +1098,13 @@ export default function QuestionsScreen(): React.ReactElement {
           onEndReachedThreshold={0.5}
           // Scroll tracking — FAB auto-hide + per-tab position
           onScroll={handleScroll}
-          scrollEventThrottle={16}
+          scrollEventThrottle={100}
           // Performance optimizations
           removeClippedSubviews={true}
-          maxToRenderPerBatch={8}
+          maxToRenderPerBatch={6}
           windowSize={5}
           initialNumToRender={4}
-          updateCellsBatchingPeriod={100}
+          updateCellsBatchingPeriod={150}
           viewabilityConfigCallbackPairs={
             viewabilityConfigCallbackPairs.current
           }

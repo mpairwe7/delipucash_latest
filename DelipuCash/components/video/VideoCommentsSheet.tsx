@@ -20,7 +20,7 @@
  * ```
  */
 
-import React, { memo, useCallback, useEffect, useState, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -308,6 +308,33 @@ function VideoCommentsSheetComponent({
     inputRef.current?.focus();
   }, []);
 
+  // Stable FlatList callbacks
+  const commentKeyExtractor = useCallback((item: CommentWithLikes) => item.id, []);
+
+  const renderComment = useCallback(
+    ({ item }: { item: CommentWithLikes }) => (
+      <CommentItem
+        comment={item}
+        onLike={() => handleLikeComment(item.id)}
+        onReply={() => handleReply(item.id)}
+        isLiked={likedComments.has(item.id)}
+      />
+    ),
+    [handleLikeComment, handleReply, likedComments],
+  );
+
+  const commentsEmptyComponent = useMemo(
+    () => (
+      <View style={styles.emptyContainer}>
+        <MessageCircle size={48} color={colors.textMuted} />
+        <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+          No comments yet. Be the first!
+        </Text>
+      </View>
+    ),
+    [colors.textMuted],
+  );
+
   // ============================================================================
   // GESTURE HANDLER (Reanimated v3 Gesture API)
   // ============================================================================
@@ -395,25 +422,16 @@ function VideoCommentsSheetComponent({
           {/* Comments List */}
           <FlatList
             data={comments}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-              <CommentItem
-                comment={item}
-                onLike={() => handleLikeComment(item.id)}
-                onReply={() => handleReply(item.id)}
-                isLiked={likedComments.has(item.id)}
-              />
-            )}
+            keyExtractor={commentKeyExtractor}
+            renderItem={renderComment}
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <MessageCircle size={48} color={colors.textMuted} />
-                <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                  No comments yet. Be the first!
-                </Text>
-              </View>
-            }
+            ListEmptyComponent={commentsEmptyComponent}
+            // Performance optimizations
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={10}
+            windowSize={7}
+            initialNumToRender={8}
           />
 
           {/* Input */}
