@@ -103,15 +103,8 @@ export default function QuestionCommentsScreen(): React.ReactElement {
     }
   }, [question, dislikeResponse]);
 
-  if (isLoading) {
-    return <QuestionDetailLoading />;
-  }
-
-  if (error || !question) {
-    return <QuestionDetailError message="Question not found" />;
-  }
-
-  const renderResponse = ({ item }: { item: ReturnType<typeof transformResponses>[number] }) => (
+  // Memoized renderItem — stable reference for FlatList
+  const renderResponse = useCallback(({ item }: { item: ReturnType<typeof transformResponses>[number] }) => (
     <ResponseCard
       response={item}
       isLiked={liked[item.id]}
@@ -120,7 +113,17 @@ export default function QuestionCommentsScreen(): React.ReactElement {
       onDislike={toggleDislike}
       colors={colors}
     />
-  );
+  ), [liked, disliked, toggleLike, toggleDislike, colors]);
+
+  const keyExtractor = useCallback((item: ReturnType<typeof transformResponses>[number]) => item.id, []);
+
+  if (isLoading) {
+    return <QuestionDetailLoading />;
+  }
+
+  if (error || !question) {
+    return <QuestionDetailError message="Question not found" />;
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -134,7 +137,7 @@ export default function QuestionCommentsScreen(): React.ReactElement {
 
       <FlatList
         data={responses}
-        keyExtractor={(item) => item.id}
+        keyExtractor={keyExtractor}
         renderItem={renderResponse}
         style={styles.list}
         contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + COMPONENT_SIZE.input.large }}
@@ -170,6 +173,11 @@ export default function QuestionCommentsScreen(): React.ReactElement {
           />
         }
         showsVerticalScrollIndicator={false}
+        // Performance optimizations
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        initialNumToRender={6}
       />
 
       <View

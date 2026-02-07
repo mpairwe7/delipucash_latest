@@ -197,6 +197,42 @@ export function useRandomAd(
 }
 
 /**
+ * Consolidated ad data for a screen — fetches feed, banner, and featured
+ * ads in a single query to avoid 3 parallel requests on mount.
+ */
+export interface ScreenAdsData {
+  feedAds: Ad[];
+  bannerAds: Ad[];
+  featuredAds: Ad[];
+}
+
+export function useScreenAds(
+  placement: AdPlacement,
+  options?: { feedLimit?: number; bannerLimit?: number; featuredLimit?: number; enabled?: boolean }
+): UseQueryResult<ScreenAdsData, Error> {
+  const { feedLimit = 5, bannerLimit = 3, featuredLimit = 2, enabled = true } = options ?? {};
+
+  return useQuery({
+    queryKey: [...adQueryKeys.all, 'screen', placement, feedLimit, bannerLimit, featuredLimit],
+    queryFn: async (): Promise<ScreenAdsData> => {
+      const [feedAds, bannerAds, featuredAds] = await Promise.all([
+        adApi.fetchAdsForPlacement(placement, feedLimit).catch(() => []),
+        adApi.fetchBannerAds(bannerLimit).catch(() => []),
+        adApi.fetchFeaturedAds(featuredLimit).catch(() => []),
+      ]);
+      return {
+        feedAds: feedAds ?? [],
+        bannerAds: bannerAds ?? [],
+        featuredAds: featuredAds ?? [],
+      };
+    },
+    enabled,
+    staleTime: STALE_TIME,
+    gcTime: GC_TIME,
+  });
+}
+
+/**
  * Hook to fetch user's created ads (for advertisers)
  */
 export function useUserAds(userId: string, filters?: AdFilters): UseQueryResult<AdsListData, Error> {

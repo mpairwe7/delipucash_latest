@@ -286,7 +286,11 @@ export function useQuestionsFeed(
   return useQuery({
     queryKey: questionQueryKeys.feed(params),
     queryFn: async (): Promise<QuestionsFeedResult> => {
-      const response = await fetchJson<any>('/api/questions/all');
+      // Pass tab, page, limit to backend for server-side pagination
+      const queryStr = `?tab=${tab}&page=${page}&limit=${limit}`;
+      const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
+
+      // Handle paginated response from backend
       const questions = Array.isArray(response.data?.data)
         ? response.data.data
         : Array.isArray(response.data)
@@ -295,49 +299,49 @@ export function useQuestionsFeed(
 
       if (response.success && Array.isArray(questions)) {
         const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
-        const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
-        const start = (page - 1) * limit;
-        const paginatedQuestions = sortedQuestions.slice(start, start + limit);
+
+        // If backend returned pre-sorted/filtered data (has pagination meta), use as-is
+        const hasPagination = response.data?.pagination?.total != null;
+        const sortedQuestions = hasPagination
+          ? feedQuestions
+          : sortQuestionsByTab(feedQuestions, tab);
+
+        // Use backend pagination when available, fall back to client-side
+        const paginatedQuestions = hasPagination
+          ? sortedQuestions
+          : sortedQuestions.slice((page - 1) * limit, (page - 1) * limit + limit);
+
+        const total = response.data?.pagination?.total ?? sortedQuestions.length;
 
         return {
           questions: paginatedQuestions,
           pagination: {
             page,
             limit,
-            total: response.data?.pagination?.total || sortedQuestions.length,
-            totalPages: response.data?.pagination?.totalPages || Math.ceil(sortedQuestions.length / limit),
-            hasMore:
-              response.data?.pagination?.total
-                ? start + limit < response.data.pagination.total
-                : start + limit < sortedQuestions.length,
+            total,
+            totalPages: response.data?.pagination?.totalPages ?? Math.ceil(total / limit),
+            hasMore: response.data?.pagination?.hasMore ?? (page * limit < total),
           },
-          stats: {
-            totalQuestions: questions.length,
-            unansweredCount: questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
-            rewardsCount: questions.filter((q: Question) => q.isInstantReward).length,
+          stats: response.data?.stats ?? {
+            totalQuestions: total,
+            unansweredCount: response.data?.pagination
+              ? 0 // backend should provide; avoid iterating full set client-side
+              : questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
+            rewardsCount: response.data?.pagination
+              ? 0
+              : questions.filter((q: Question) => q.isInstantReward).length,
           },
         };
       }
 
-      // Return empty state if API fails
       return {
         questions: [],
-        pagination: {
-          page,
-          limit,
-          total: 0,
-          totalPages: 0,
-          hasMore: false,
-        },
-        stats: {
-          totalQuestions: 0,
-          unansweredCount: 0,
-          rewardsCount: 0,
-        },
+        pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
+        stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
       };
     },
     staleTime: 1000 * 60 * 2, // 2 minutes
-    gcTime: 1000 * 60 * 10, // 10 minutes (formerly cacheTime)
+    gcTime: 1000 * 60 * 10, // 10 minutes
   });
 }
 
@@ -351,68 +355,55 @@ export function useInfiniteQuestionsFeed(
   return useInfiniteQuery({
     queryKey: ['questions', 'infinite', tab, limit],
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      // Reuse the same logic as useQuestionsFeed
-      if (isBackendConfigured) {
-        try {
-          const response = await fetchJson<any>('/api/questions/all');
-          const questions = Array.isArray(response.data?.data)
-            ? response.data.data
-            : Array.isArray(response.data)
-            ? response.data
-            : [];
+      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
-          if (response.success && Array.isArray(questions)) {
-            const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
-            const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
-            const start = (pageParam - 1) * limit;
-            const paginatedQuestions = sortedQuestions.slice(start, start + limit);
+      const questions = Array.isArray(response.data?.data)
+        ? response.data.data
+        : Array.isArray(response.data)
+        ? response.data
+        : [];
 
-            return {
-              questions: paginatedQuestions,
-              pagination: {
-                page: pageParam,
-                limit,
-                total: response.data?.pagination?.total || sortedQuestions.length,
-                totalPages: response.data?.pagination?.totalPages || Math.ceil(sortedQuestions.length / limit),
-                hasMore:
-                  response.data?.pagination?.total
-                    ? start + limit < response.data.pagination.total
-                    : start + limit < sortedQuestions.length,
-              },
-              stats: {
-                totalQuestions: questions.length,
-                unansweredCount: questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
-                rewardsCount: questions.filter((q: Question) => q.isInstantReward).length,
-              },
-            };
-          }
-        } catch (error) {
-          console.log('[useInfiniteQuestionsFeed] Backend failed, using mock:', error);
-        }
+      if (response.success && Array.isArray(questions)) {
+        const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
+        const hasPagination = response.data?.pagination?.total != null;
+        const sortedQuestions = hasPagination
+          ? feedQuestions
+          : sortQuestionsByTab(feedQuestions, tab);
+        const paginatedQuestions = hasPagination
+          ? sortedQuestions
+          : sortedQuestions.slice((pageParam - 1) * limit, (pageParam - 1) * limit + limit);
+
+        const total = response.data?.pagination?.total ?? sortedQuestions.length;
+
+        return {
+          questions: paginatedQuestions,
+          pagination: {
+            page: pageParam,
+            limit,
+            total,
+            totalPages: response.data?.pagination?.totalPages ?? Math.ceil(total / limit),
+            hasMore: response.data?.pagination?.hasMore ?? (pageParam * limit < total),
+          },
+          stats: response.data?.stats ?? {
+            totalQuestions: total,
+            unansweredCount: 0,
+            rewardsCount: 0,
+          },
+        };
       }
 
-      await delay();
-      // Return empty state when API fails and no backend
       return {
         questions: [],
-        pagination: {
-          page: pageParam,
-          limit,
-          total: 0,
-          totalPages: 0,
-          hasMore: false,
-        },
-        stats: {
-          totalQuestions: 0,
-          unansweredCount: 0,
-          rewardsCount: 0,
-        },
+        pagination: { page: pageParam, limit, total: 0, totalPages: 0, hasMore: false },
+        stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
       };
     },
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.pagination.hasMore ? lastPage.pagination.page + 1 : undefined,
     staleTime: 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 10,
   });
 }
 
@@ -879,33 +870,38 @@ export function usePrefetchQuestions() {
   const queryClient = useQueryClient();
 
   return useCallback(() => {
-    // Prefetch common tabs by triggering the useQuestionsFeed queryFn
     const tabs: FeedTabId[] = ['for-you', 'latest', 'rewards'];
     tabs.forEach((tab) => {
       queryClient.prefetchQuery({
         queryKey: questionQueryKeys.feed({ tab }),
         queryFn: async (): Promise<QuestionsFeedResult> => {
-          const response = await fetchJson<Question[]>('/api/questions/all');
-          if (response.success && Array.isArray(response.data)) {
-            const feedQuestions = response.data.map((q, i) => transformToFeedQuestion(q, i));
-            const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+          const queryStr = `?tab=${tab}&page=1&limit=20`;
+          const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
+          const questions = Array.isArray(response.data?.data)
+            ? response.data.data
+            : Array.isArray(response.data)
+            ? response.data
+            : [];
+
+          if (response.success && Array.isArray(questions)) {
+            const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
+            const total = response.data?.pagination?.total ?? feedQuestions.length;
             return {
-              questions: sortedQuestions.slice(0, 20),
+              questions: feedQuestions.slice(0, 20),
               pagination: {
                 page: 1,
                 limit: 20,
-                total: sortedQuestions.length,
-                totalPages: Math.ceil(sortedQuestions.length / 20),
-                hasMore: sortedQuestions.length > 20,
+                total,
+                totalPages: Math.ceil(total / 20),
+                hasMore: total > 20,
               },
-              stats: {
-                totalQuestions: response.data.length,
-                unansweredCount: response.data.filter((q) => (q.totalAnswers || 0) === 0).length,
-                rewardsCount: response.data.filter((q) => q.isInstantReward).length,
+              stats: response.data?.stats ?? {
+                totalQuestions: total,
+                unansweredCount: 0,
+                rewardsCount: 0,
               },
             };
           }
-          // Return empty state if API fails
           return {
             questions: [],
             pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasMore: false },

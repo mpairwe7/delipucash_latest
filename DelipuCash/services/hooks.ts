@@ -991,6 +991,7 @@ export function useUnreadCount(): UseQueryResult<number, Error> {
     },
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 60, // Refetch every minute
+    refetchIntervalInBackground: false, // Don't poll when app is backgrounded
   });
 }
 

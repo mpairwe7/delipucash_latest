@@ -380,8 +380,14 @@ function QuestionFeedItemComponent({
     return parts.join(". ");
   }, [question, timeAgo, timeRemaining]);
 
+  // Cap stagger animation to first batch — items beyond index 0 passed from
+  // parent render instantly (index is capped to 0 by parent for later items)
+  const enteringAnimation = index > 0
+    ? FadeIn.delay(index * 50).duration(300)
+    : FadeIn.duration(200);
+
   return (
-    <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
+    <Animated.View entering={enteringAnimation}>
       <AnimatedPressable
         onPress={handlePress}
         onPressIn={handlePressIn}

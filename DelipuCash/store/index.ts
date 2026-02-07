@@ -251,6 +251,14 @@ export type {
 } from './VideoStore';
 
 // ============================================================================
+// Question UI Store - Tab persistence for question screen
+// ============================================================================
+export {
+  useQuestionUIStore,
+  selectSelectedTab,
+} from './QuestionUIStore';
+
+// ============================================================================
 // Video Feed Store (NEW 2025 - TikTok/Reels/Shorts Style)
 // Advanced video feed orchestration with visibility-based playback
 // ============================================================================
