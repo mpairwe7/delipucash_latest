@@ -18,7 +18,7 @@
  * 
  * @example
  * ```tsx
- * const { data, isLoading, refetch } = useQuestionsFeed({ tab: 'for-you' });
+ * const { data, fetchNextPage } = useInfiniteQuestionsFeed('for-you');
  * const { mutate: vote } = useVoteQuestion();
  * const { mutate: create } = useCreateQuestion();
  * ```
@@ -32,7 +32,7 @@ import {
   UseQueryResult,
   UseMutationResult,
   useInfiniteQuery,
-  UseInfiniteQueryResult,
+  keepPreviousData,
 } from '@tanstack/react-query';
 import { Question, Response, AppUser, ApiResponse } from '@/types';
 import { FeedQuestion, QuestionAuthor, LeaderboardUser } from '@/components/feed';
@@ -43,13 +43,6 @@ import { useAuthStore } from '@/utils/auth/store';
 // ===========================================
 
 export type FeedTabId = 'for-you' | 'latest' | 'unanswered' | 'rewards' | 'my-activity';
-
-export interface QuestionsFeedParams {
-  tab: FeedTabId;
-  page?: number;
-  limit?: number;
-  userId?: string;
-}
 
 export interface QuestionsFeedResult {
   questions: FeedQuestion[];
@@ -153,13 +146,10 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiRespon
 
 export const questionQueryKeys = {
   all: ['questions'] as const,
-  feed: (params: QuestionsFeedParams) => ['questions', 'feed', params] as const,
   detail: (id: string) => ['questions', 'detail', id] as const,
   responses: (id: string) => ['questions', 'responses', id] as const,
   leaderboard: ['questions', 'leaderboard'] as const,
   userStats: ['questions', 'userStats'] as const,
-  categories: ['questions', 'categories'] as const,
-  search: (query: string) => ['questions', 'search', query] as const,
 };
 
 // ===========================================
@@ -276,127 +266,55 @@ function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQues
 // ===========================================
 
 /**
- * Fetch questions feed with tab filtering
- */
-export function useQuestionsFeed(
-  params: QuestionsFeedParams
-): UseQueryResult<QuestionsFeedResult, Error> {
-  const { tab, page = 1, limit = 20 } = params;
-
-  return useQuery({
-    queryKey: questionQueryKeys.feed(params),
-    queryFn: async (): Promise<QuestionsFeedResult> => {
-      // Pass tab, page, limit to backend for server-side pagination
-      const queryStr = `?tab=${tab}&page=${page}&limit=${limit}`;
-      const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
-
-      // Handle paginated response from backend
-      const questions = Array.isArray(response.data?.data)
-        ? response.data.data
-        : Array.isArray(response.data)
-        ? response.data
-        : [];
-
-      if (response.success && Array.isArray(questions)) {
-        const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
-
-        // If backend returned pre-sorted/filtered data (has pagination meta), use as-is
-        const hasPagination = response.data?.pagination?.total != null;
-        const sortedQuestions = hasPagination
-          ? feedQuestions
-          : sortQuestionsByTab(feedQuestions, tab);
-
-        // Use backend pagination when available, fall back to client-side
-        const paginatedQuestions = hasPagination
-          ? sortedQuestions
-          : sortedQuestions.slice((page - 1) * limit, (page - 1) * limit + limit);
-
-        const total = response.data?.pagination?.total ?? sortedQuestions.length;
-
-        return {
-          questions: paginatedQuestions,
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: response.data?.pagination?.totalPages ?? Math.ceil(total / limit),
-            hasMore: response.data?.pagination?.hasMore ?? (page * limit < total),
-          },
-          stats: response.data?.stats ?? {
-            totalQuestions: total,
-            unansweredCount: response.data?.pagination
-              ? 0 // backend should provide; avoid iterating full set client-side
-              : questions.filter((q: Question) => (q.totalAnswers || 0) === 0).length,
-            rewardsCount: response.data?.pagination
-              ? 0
-              : questions.filter((q: Question) => q.isInstantReward).length,
-          },
-        };
-      }
-
-      return {
-        questions: [],
-        pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
-        stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
-      };
-    },
-    staleTime: 1000 * 60 * 2, // 2 minutes
-    gcTime: 1000 * 60 * 10, // 10 minutes
-  });
-}
-
-/**
  * Infinite scroll questions feed
  */
 export function useInfiniteQuestionsFeed(
   tab: FeedTabId,
   limit: number = 20
-): UseInfiniteQueryResult<{ pages: QuestionsFeedResult[] }, Error> {
+) {
   return useInfiniteQuery({
     queryKey: ['questions', 'infinite', tab, limit],
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
       const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
+      if (!response.success) {
+        console.warn('[useInfiniteQuestionsFeed] API error:', response.error);
+        throw new Error(response.error || 'Failed to fetch questions');
+      }
+
       const questions = Array.isArray(response.data?.data)
         ? response.data.data
         : Array.isArray(response.data)
         ? response.data
         : [];
 
-      if (response.success && Array.isArray(questions)) {
-        const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
-        const hasPagination = response.data?.pagination?.total != null;
-        const sortedQuestions = hasPagination
-          ? feedQuestions
-          : sortQuestionsByTab(feedQuestions, tab);
-        const paginatedQuestions = hasPagination
-          ? sortedQuestions
-          : sortedQuestions.slice((pageParam - 1) * limit, (pageParam - 1) * limit + limit);
-
-        const total = response.data?.pagination?.total ?? sortedQuestions.length;
-
-        return {
-          questions: paginatedQuestions,
-          pagination: {
-            page: pageParam,
-            limit,
-            total,
-            totalPages: response.data?.pagination?.totalPages ?? Math.ceil(total / limit),
-            hasMore: response.data?.pagination?.hasMore ?? (pageParam * limit < total),
-          },
-          stats: response.data?.stats ?? {
-            totalQuestions: total,
-            unansweredCount: 0,
-            rewardsCount: 0,
-          },
-        };
+      if (!Array.isArray(questions)) {
+        console.warn('[useInfiniteQuestionsFeed] Unexpected response shape:', response.data);
+        throw new Error('Invalid response format from questions API');
       }
 
+      const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
+
+      // Always apply client-side tab filtering — backend doesn't filter by tab yet
+      const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+
+      const total = response.data?.pagination?.total ?? sortedQuestions.length;
+
       return {
-        questions: [],
-        pagination: { page: pageParam, limit, total: 0, totalPages: 0, hasMore: false },
-        stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
+        questions: sortedQuestions,
+        pagination: {
+          page: pageParam,
+          limit,
+          total,
+          totalPages: response.data?.pagination?.totalPages ?? Math.ceil(total / limit),
+          hasMore: response.data?.pagination?.hasMore ?? (pageParam * limit < total),
+        },
+        stats: response.data?.stats ?? {
+          totalQuestions: total,
+          unansweredCount: 0,
+          rewardsCount: 0,
+        },
       };
     },
     initialPageParam: 1,
@@ -404,6 +322,7 @@ export function useInfiniteQuestionsFeed(
       lastPage.pagination.hasMore ? lastPage.pagination.page + 1 : undefined,
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -487,66 +406,65 @@ export function useVoteQuestion(): UseMutationResult<
     },
     onMutate: async ({ questionId, type }) => {
       // Cancel in-flight queries to avoid race conditions
-      await queryClient.cancelQueries({ queryKey: ['questions', 'feed'] });
+      await queryClient.cancelQueries({ queryKey: ['questions'] });
 
       // Snapshot for rollback
-      const previousData = queryClient.getQueriesData<QuestionsFeedResult>({
-        queryKey: ['questions', 'feed'],
+      const previousInfiniteData = queryClient.getQueriesData({
+        queryKey: ['questions', 'infinite'],
       });
 
-      // Optimistic update with toggle logic (SO/Reddit-style)
-      queryClient.setQueriesData<QuestionsFeedResult>(
-        { queryKey: ['questions', 'feed'] },
-        (old) => {
-          if (!old) return old;
+      // SO/Reddit-style toggle vote logic
+      const updateQuestion = (q: FeedQuestion): FeedQuestion => {
+        if (q.id !== questionId) return q;
+
+        const prevVote = q.userHasVoted;
+        let newUpvotes = q.upvotes || 0;
+        let newDownvotes = q.downvotes || 0;
+        let newVote: 'up' | 'down' | null;
+
+        if (prevVote === type) {
+          newVote = null;
+          if (type === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
+          else newDownvotes = Math.max(0, newDownvotes - 1);
+        } else {
+          if (prevVote === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
+          if (prevVote === 'down') newDownvotes = Math.max(0, newDownvotes - 1);
+          if (type === 'up') newUpvotes += 1;
+          else newDownvotes += 1;
+          newVote = type;
+        }
+
+        return { ...q, upvotes: newUpvotes, downvotes: newDownvotes, userHasVoted: newVote };
+      };
+
+      // Optimistic update for infinite feed queries
+      queryClient.setQueriesData(
+        { queryKey: ['questions', 'infinite'] },
+        (old: any) => {
+          if (!old?.pages) return old;
           return {
             ...old,
-            questions: old.questions.map((q) => {
-              if (q.id !== questionId) return q;
-
-              const prevVote = q.userHasVoted;
-              let newUpvotes = q.upvotes || 0;
-              let newDownvotes = q.downvotes || 0;
-              let newVote: 'up' | 'down' | null;
-
-              if (prevVote === type) {
-                // Toggle off: user clicks same vote type again
-                newVote = null;
-                if (type === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
-                else newDownvotes = Math.max(0, newDownvotes - 1);
-              } else {
-                // Switch vote or new vote
-                if (prevVote === 'up') newUpvotes = Math.max(0, newUpvotes - 1);
-                if (prevVote === 'down') newDownvotes = Math.max(0, newDownvotes - 1);
-                if (type === 'up') newUpvotes += 1;
-                else newDownvotes += 1;
-                newVote = type;
-              }
-
-              return {
-                ...q,
-                upvotes: newUpvotes,
-                downvotes: newDownvotes,
-                userHasVoted: newVote,
-              };
-            }),
+            pages: old.pages.map((page: QuestionsFeedResult) => ({
+              ...page,
+              questions: page.questions.map(updateQuestion),
+            })),
           };
         }
       );
 
-      return { previousData };
+      return { previousInfiniteData };
     },
     onError: (_err, _vars, context) => {
       // Rollback to snapshot on error
-      if (context?.previousData) {
-        context.previousData.forEach(([queryKey, data]) => {
+      if (context?.previousInfiniteData) {
+        context.previousInfiniteData.forEach(([queryKey, data]: [any, any]) => {
           if (data) queryClient.setQueryData(queryKey, data);
         });
       }
     },
     onSettled: () => {
-      // Refetch to sync with server after settling
-      queryClient.invalidateQueries({ queryKey: ['questions', 'feed'] });
+      // Only refetch actively rendered queries, not all tab caches
+      queryClient.invalidateQueries({ queryKey: ['questions', 'infinite'], refetchType: 'active' });
     },
   });
 }
@@ -695,18 +613,21 @@ export function useSubmitQuestionResponse(): UseMutationResult<
         }
       );
 
-      // Optimistically increment answer count in feed
-      queryClient.setQueriesData<QuestionsFeedResult>(
-        { queryKey: ['questions', 'feed'] },
-        (old) => {
-          if (!old) return old;
+      // Optimistically increment answer count in infinite feed
+      queryClient.setQueriesData(
+        { queryKey: ['questions', 'infinite'] },
+        (old: any) => {
+          if (!old?.pages) return old;
           return {
             ...old,
-            questions: old.questions.map((q) =>
-              q.id === questionId
-                ? { ...q, totalAnswers: (q.totalAnswers || 0) + 1 }
-                : q
-            ),
+            pages: old.pages.map((page: QuestionsFeedResult) => ({
+              ...page,
+              questions: page.questions.map((q: FeedQuestion) =>
+                q.id === questionId
+                  ? { ...q, totalAnswers: (q.totalAnswers || 0) + 1 }
+                  : q
+              ),
+            })),
           };
         }
       );
@@ -721,7 +642,6 @@ export function useSubmitQuestionResponse(): UseMutationResult<
           context.previousDetail
         );
       }
-      queryClient.invalidateQueries({ queryKey: ['questions', 'feed'] });
     },
     onSettled: (_, __, { questionId }) => {
       // Refetch to sync with server
@@ -806,64 +726,6 @@ export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Erro
 }
 
 /**
- * Fetch question categories
- */
-export function useQuestionCategories(): UseQueryResult<string[], Error> {
-  return useQuery({
-    queryKey: questionQueryKeys.categories,
-    queryFn: async () => {
-      if (isBackendConfigured) {
-        try {
-          const response = await fetchJson<string[]>('/api/questions/categories');
-          if (response.success) return response.data;
-        } catch (error) {
-          console.log('[useQuestionCategories] Backend failed, using mock:', error);
-        }
-      }
-
-      await delay(200);
-      // Return default categories when API unavailable
-      const defaultCategories = ['General', 'Technology', 'Science', 'Entertainment', 'Sports', 'Business'];
-      return defaultCategories;
-    },
-    staleTime: 1000 * 60 * 30, // 30 minutes
-  });
-}
-
-/**
- * Search questions
- */
-export function useSearchQuestions(
-  query: string
-): UseQueryResult<FeedQuestion[], Error> {
-  return useQuery({
-    queryKey: questionQueryKeys.search(query),
-    queryFn: async () => {
-      if (!query.trim()) return [];
-
-      if (isBackendConfigured) {
-        try {
-          const response = await fetchJson<Question[]>(
-            `/api/questions/search?q=${encodeURIComponent(query)}`
-          );
-          if (response.success) {
-            return response.data.map((q, i) => transformToFeedQuestion(q, i));
-          }
-        } catch (error) {
-          console.log('[useSearchQuestions] Backend failed, using mock:', error);
-        }
-      }
-
-      await delay();
-      // Return empty results when API unavailable
-      return [];
-    },
-    enabled: query.length > 2,
-    staleTime: 1000 * 60, // 1 minute
-  });
-}
-
-/**
  * Prefetch questions for better UX
  */
 export function usePrefetchQuestions() {
@@ -871,102 +733,52 @@ export function usePrefetchQuestions() {
 
   return useCallback(() => {
     const tabs: FeedTabId[] = ['for-you', 'latest', 'rewards'];
+    const limit = 20;
     tabs.forEach((tab) => {
-      queryClient.prefetchQuery({
-        queryKey: questionQueryKeys.feed({ tab }),
+      queryClient.prefetchInfiniteQuery({
+        queryKey: ['questions', 'infinite', tab, limit],
         queryFn: async (): Promise<QuestionsFeedResult> => {
-          const queryStr = `?tab=${tab}&page=1&limit=20`;
+          const queryStr = `?tab=${tab}&page=1&limit=${limit}`;
           const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
+
+          if (!response.success) {
+            throw new Error(response.error || 'Prefetch failed');
+          }
+
           const questions = Array.isArray(response.data?.data)
             ? response.data.data
             : Array.isArray(response.data)
             ? response.data
             : [];
 
-          if (response.success && Array.isArray(questions)) {
-            const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
-            const total = response.data?.pagination?.total ?? feedQuestions.length;
-            return {
-              questions: feedQuestions.slice(0, 20),
-              pagination: {
-                page: 1,
-                limit: 20,
-                total,
-                totalPages: Math.ceil(total / 20),
-                hasMore: total > 20,
-              },
-              stats: response.data?.stats ?? {
-                totalQuestions: total,
-                unansweredCount: 0,
-                rewardsCount: 0,
-              },
-            };
-          }
+          const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
+          const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+          const total = response.data?.pagination?.total ?? sortedQuestions.length;
+
           return {
-            questions: [],
-            pagination: { page: 1, limit: 20, total: 0, totalPages: 0, hasMore: false },
-            stats: { totalQuestions: 0, unansweredCount: 0, rewardsCount: 0 },
+            questions: sortedQuestions.slice(0, limit),
+            pagination: {
+              page: 1,
+              limit,
+              total,
+              totalPages: Math.ceil(total / limit),
+              hasMore: total > limit,
+            },
+            stats: response.data?.stats ?? {
+              totalQuestions: total,
+              unansweredCount: 0,
+              rewardsCount: 0,
+            },
           };
         },
+        initialPageParam: 1,
         staleTime: 1000 * 60 * 2,
       });
     });
   }, [queryClient]);
 }
 
-/**
- * Combined hook for questions screen state
- */
-export function useQuestionsScreen(initialTab: FeedTabId = 'for-you') {
-  const feedQuery = useQuestionsFeed({ tab: initialTab });
-  const statsQuery = useUserQuestionsStats();
-  const leaderboardQuery = useQuestionsLeaderboard(3);
-  const voteMutation = useVoteQuestion();
-  const createMutation = useCreateQuestion();
-  const prefetch = usePrefetchQuestions();
-
-  const isLoading = feedQuery.isLoading || statsQuery.isLoading;
-  const isRefreshing = feedQuery.isFetching && !feedQuery.isLoading;
-
-  const refetchAll = useCallback(async () => {
-    await Promise.all([
-      feedQuery.refetch(),
-      statsQuery.refetch(),
-      leaderboardQuery.refetch(),
-    ]);
-  }, [feedQuery, statsQuery, leaderboardQuery]);
-
-  return {
-    // Feed data
-    questions: feedQuery.data?.questions || [],
-    pagination: feedQuery.data?.pagination,
-    feedStats: feedQuery.data?.stats,
-
-    // User stats
-    userStats: statsQuery.data,
-
-    // Leaderboard
-    leaderboard: leaderboardQuery.data,
-
-    // Loading states
-    isLoading,
-    isRefreshing,
-    isFeedError: feedQuery.isError,
-    feedError: feedQuery.error,
-
-    // Actions
-    refetch: refetchAll,
-    refetchFeed: feedQuery.refetch,
-    vote: voteMutation.mutate,
-    isVoting: voteMutation.isPending,
-    createQuestion: createMutation.mutate,
-    isCreating: createMutation.isPending,
-    prefetch,
-  };
-}
-
 export default {
-  useQuestionsFeed,
   useInfiniteQuestionsFeed,
   useQuestionDetail,
   useVoteQuestion,
@@ -974,8 +786,5 @@ export default {
   useSubmitQuestionResponse,
   useQuestionsLeaderboard,
   useUserQuestionsStats,
-  useQuestionCategories,
-  useSearchQuestions,
   usePrefetchQuestions,
-  useQuestionsScreen,
 };

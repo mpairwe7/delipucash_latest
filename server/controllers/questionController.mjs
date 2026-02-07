@@ -5,7 +5,13 @@ import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
 // Create a Question
 export const createQuestion = asyncHandler(async (req, res) => {
-  const { text, userId } = req.body;
+  const {
+    text,
+    userId,
+    category = 'General',
+    rewardAmount = 0,
+    isInstantReward = false,
+  } = req.body;
 
   console.log('Incoming request to create question:', { text, userId });
 
@@ -33,6 +39,11 @@ export const createQuestion = asyncHandler(async (req, res) => {
     const question = await prisma.question.create({
       data: {
         text,
+        category: category || 'General',
+        rewardAmount: Number.isFinite(Number(rewardAmount))
+          ? Number(rewardAmount)
+          : 0,
+        isInstantReward: Boolean(isInstantReward),
         user: {
           connect: { id: userId }, // Explicitly connect the user
         },
@@ -63,12 +74,13 @@ export const getQuestions = asyncHandler(async (req, res) => {
             id: true,
             text: true,
             userId: true,
+            category: true,
+            rewardAmount: true,
+            isInstantReward: true,
+            viewCount: true,
             createdAt: true,
             updatedAt: true,
             _count: { select: { responses: true } },
-            rewardAmount: true,
-            isInstantReward: true,
-            category: true,
             user: {
               select: {
                 id: true,
@@ -90,9 +102,10 @@ export const getQuestions = asyncHandler(async (req, res) => {
     const formattedQuestions = questions.map((q) => ({
       ...q,
       totalAnswers: q._count?.responses || 0,
-      rewardAmount: q.rewardAmount || 0,
-      isInstantReward: q.isInstantReward || false,
+      rewardAmount: q.rewardAmount ?? 0,
+      isInstantReward: q.isInstantReward ?? false,
       category: q.category || 'General',
+      viewCount: q.viewCount ?? 0,
       _count: undefined,
       user: q.user
         ? {
@@ -144,9 +157,10 @@ export const getQuestionById = asyncHandler(async (req, res) => {
   const formatted = {
     ...question,
     totalAnswers: question.responses?.length || 0,
-    rewardAmount: question.rewardAmount || 0,
-    isInstantReward: question.isInstantReward || false,
+    rewardAmount: question.rewardAmount ?? 0,
+    isInstantReward: question.isInstantReward ?? false,
     category: question.category || 'General',
+    viewCount: question.viewCount ?? 0,
   };
 
   res.json({ success: true, data: formatted });

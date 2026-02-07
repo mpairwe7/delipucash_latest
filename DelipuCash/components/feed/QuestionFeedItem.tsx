@@ -110,10 +110,14 @@ export interface FeedQuestion extends Question {
 export interface QuestionFeedItemProps {
   /** Question data object */
   question: FeedQuestion;
-  /** Press handler for navigation */
+  /** Press handler for navigation (legacy — inline closure per item) */
   onPress?: () => void;
-  /** Vote handler (upvote/downvote) */
+  /** ID-based press handler — stable reference, avoids inline closures in renderItem */
+  onPressById?: (id: string, isInstantReward?: boolean) => void;
+  /** Vote handler (legacy — inline closure per item) */
   onVote?: (type: "up" | "down") => void;
+  /** ID-based vote handler — stable reference, avoids inline closures in renderItem */
+  onVoteById?: (id: string, type: "up" | "down") => void;
   /** Follow question handler */
   onFollow?: () => void;
   /** Custom container style */
@@ -285,7 +289,9 @@ const VoteButton = memo(function VoteButton({
 function QuestionFeedItemComponent({
   question,
   onPress,
+  onPressById,
   onVote,
+  onVoteById,
   onFollow,
   style,
   variant = "default",
@@ -300,7 +306,7 @@ function QuestionFeedItemComponent({
   const pressed = useSharedValue(0);
   const glowOpacity = useSharedValue(0);
 
-  // Start glow animation for reward questions
+  // Start glow animation only for visible reward questions (index > 0 means animated batch)
   React.useEffect(() => {
     if (showRewardGlow && question.isInstantReward && question.rewardAmount) {
       glowOpacity.value = withRepeat(
@@ -312,6 +318,7 @@ function QuestionFeedItemComponent({
         true
       );
     }
+    return () => { glowOpacity.value = 0; };
   }, [showRewardGlow, question.isInstantReward, question.rewardAmount, glowOpacity]);
 
   // Press handlers
@@ -325,10 +332,22 @@ function QuestionFeedItemComponent({
     pressed.value = withSpring(0, SPRING_CONFIG);
   }, [scale, pressed]);
 
+  // Prefer stable ID-based handlers; fall back to legacy closure props
   const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress?.();
-  }, [onPress]);
+    if (onPressById) onPressById(question.id, question.isInstantReward);
+    else onPress?.();
+  }, [onPressById, onPress, question.id, question.isInstantReward]);
+
+  const handleVoteUp = useCallback(() => {
+    if (onVoteById) onVoteById(question.id, "up");
+    else onVote?.("up");
+  }, [onVoteById, onVote, question.id]);
+
+  const handleVoteDown = useCallback(() => {
+    if (onVoteById) onVoteById(question.id, "down");
+    else onVote?.("down");
+  }, [onVoteById, onVote, question.id]);
 
   // Animated styles
   const animatedCardStyle = useAnimatedStyle(() => ({
@@ -617,14 +636,14 @@ function QuestionFeedItemComponent({
 
         {/* Stats Row - Engagement Metrics */}
         <View style={styles.statsRow}>
-          {/* Vote buttons (if onVote provided) */}
-          {onVote && (
+          {/* Vote buttons (if vote handler provided) */}
+          {(onVoteById || onVote) && (
             <View style={styles.voteContainer}>
               <VoteButton
                 type="up"
                 count={question.upvotes || 0}
                 isActive={question.userHasVoted === "up"}
-                onPress={() => onVote("up")}
+                onPress={handleVoteUp}
                 colors={colors}
                 accessibilityLabel={`Upvote. ${question.upvotes || 0} upvotes`}
               />
@@ -632,7 +651,7 @@ function QuestionFeedItemComponent({
                 type="down"
                 count={question.downvotes || 0}
                 isActive={question.userHasVoted === "down"}
-                onPress={() => onVote("down")}
+                onPress={handleVoteDown}
                 colors={colors}
                 accessibilityLabel={`Downvote. ${question.downvotes || 0} downvotes`}
               />
@@ -691,7 +710,69 @@ function QuestionFeedItemComponent({
   );
 }
 
-export const QuestionFeedItem = memo(QuestionFeedItemComponent);
+/**
+ * Custom comparator to avoid unnecessary re-renders when list state changes
+ * but the question payload is unchanged. This keeps VirtualizedList fast.
+ */
+const areEqualQuestionFeedItem = (
+  prev: Readonly<QuestionFeedItemProps>,
+  next: Readonly<QuestionFeedItemProps>
+) => {
+  const prevQ = prev.question;
+  const nextQ = next.question;
+
+  if (prevQ.id !== nextQ.id) return false;
+  if (prev.variant !== next.variant) return false;
+  if (prev.index !== next.index) return false;
+  if (prev.showRewardGlow !== next.showRewardGlow) return false;
+  if (prev.onPressById !== next.onPressById) return false;
+  if (prev.onVoteById !== next.onVoteById) return false;
+
+  const fields: Array<keyof typeof prevQ> = [
+    "text",
+    "updatedAt",
+    "totalAnswers",
+    "upvotes",
+    "downvotes",
+    "rewardAmount",
+    "isInstantReward",
+    "category",
+    "viewCount",
+    "userHasVoted",
+    "hasAcceptedAnswer",
+    "hasExpertAnswer",
+    "followersCount",
+    "isHot",
+    "isTrending",
+    "timeRemaining",
+  ];
+
+  for (const field of fields) {
+    if (prevQ?.[field] !== nextQ?.[field]) return false;
+  }
+
+  const prevAuthor = prevQ.author;
+  const nextAuthor = nextQ.author;
+
+  if (!!prevAuthor !== !!nextAuthor) return false;
+  if (prevAuthor && nextAuthor) {
+    if (
+      prevAuthor.id !== nextAuthor.id ||
+      prevAuthor.name !== nextAuthor.name ||
+      prevAuthor.badge !== nextAuthor.badge ||
+      prevAuthor.reputation !== nextAuthor.reputation
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+export const QuestionFeedItem = memo(
+  QuestionFeedItemComponent,
+  areEqualQuestionFeedItem
+);
 
 const styles = StyleSheet.create({
   container: {

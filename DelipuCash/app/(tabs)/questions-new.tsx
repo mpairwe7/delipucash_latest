@@ -2,18 +2,29 @@
  * Questions Screen - Industry-Standard Q&A Feed
  *
  * Performance optimizations applied:
- * - Server-side pagination (tab/page/limit passed to backend)
+ * - Infinite scroll via useInfiniteQuery (server-side pagination)
  * - Deferred non-essential data fetching (ads, leaderboard load after feed)
  * - Consolidated ad hook (single request instead of 3)
  * - Extracted memoized FeedHeader to prevent FlatList header thrashing
- * - Stable renderItem callbacks (no inline closures defeating React.memo)
+ * - Stable renderItem callbacks via onPressById/onVoteById (no inline closures)
  * - Capped FadeIn animation to first render batch only
  * - Zustand-persisted selectedTab across navigations
- * - Removed duplicate prefetch hooks (useInstantRewardQuestions, useRewardQuestions)
+ * - placeholderData: keepPreviousData prevents flash on tab switch
+ * - Ad impression deduplication via Set
+ * - FAB auto-hides on scroll down, reappears on scroll up
+ * - Scroll position preserved per tab
+ * - Prefetch adjacent tabs after initial load
  * - Pull-to-refresh only refetches feed + stats (ads use cache TTL)
  */
 
-import React, { useCallback, useMemo, useState, useRef, memo } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+  memo,
+} from "react";
 import {
   View,
   Text,
@@ -25,6 +36,9 @@ import {
   ListRenderItemInfo,
   ViewToken,
   ViewabilityConfig,
+  ActivityIndicator,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -88,15 +102,14 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
+import { useUnreadCount } from "@/services/hooks";
 import {
-  useUnreadCount,
-} from "@/services/hooks";
-import {
-  useQuestionsFeed,
+  useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
   useUserQuestionsStats,
   useVoteQuestion,
   useCreateQuestion,
+  usePrefetchQuestions,
   FeedTabId,
 } from "@/services/questionHooks";
 import {
@@ -172,7 +185,11 @@ interface FeedHeaderProps {
   userStats: ReturnType<typeof useUserQuestionsStats>["data"];
   colors: ReturnType<typeof useStatusBar>["colors"];
   selectedTab: FeedTabId;
-  feedStats: { totalQuestions: number; unansweredCount: number; rewardsCount: number };
+  feedStats: {
+    totalQuestions: number;
+    unansweredCount: number;
+    rewardsCount: number;
+  };
   leaderboard: ReturnType<typeof useQuestionsLeaderboard>["data"];
   bannerAds: Ad[] | undefined;
   feedAds: Ad[] | undefined;
@@ -214,7 +231,10 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
     <View>
       {/* Gamification Row */}
       {!isLoading ? (
-        <Animated.View entering={FadeIn.duration(300)} style={styles.gamificationRow}>
+        <Animated.View
+          entering={FadeIn.duration(300)}
+          style={styles.gamificationRow}
+        >
           <StreakCounter
             streak={userStats?.currentStreak || 7}
             isActiveToday={true}
@@ -247,7 +267,9 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           subtitle="Total responses"
         />
         <StatCard
-          icon={<TrendingUp size={18} color={colors.success} strokeWidth={1.5} />}
+          icon={
+            <TrendingUp size={18} color={colors.success} strokeWidth={1.5} />
+          }
           title="Earned"
           value={formatCurrency(userStats?.totalEarnings || 0)}
           subtitle="Lifetime rewards"
@@ -272,7 +294,12 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         accessibilityLabel="Start answering questions to earn rewards"
         accessibilityRole="button"
       >
-        <View style={[styles.earnCtaIcon, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
+        <View
+          style={[
+            styles.earnCtaIcon,
+            { backgroundColor: withAlpha(colors.primary, 0.15) },
+          ]}
+        >
           <Gift size={28} color={colors.primary} strokeWidth={1.5} />
         </View>
         <View style={styles.earnCtaContent}>
@@ -283,13 +310,25 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
             Complete quizzes to earn points and cash rewards
           </Text>
           <View style={styles.earnCtaStats}>
-            <View style={[styles.earnCtaStat, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+            <View
+              style={[
+                styles.earnCtaStat,
+                { backgroundColor: withAlpha(colors.warning, 0.15) },
+              ]}
+            >
               <Star size={12} color={colors.warning} strokeWidth={2} />
-              <Text style={[styles.earnCtaStatText, { color: colors.warning }]}>
+              <Text
+                style={[styles.earnCtaStatText, { color: colors.warning }]}
+              >
                 10 pts/question
               </Text>
             </View>
-            <View style={[styles.earnCtaStat, { backgroundColor: withAlpha(colors.error, 0.15) }]}>
+            <View
+              style={[
+                styles.earnCtaStat,
+                { backgroundColor: withAlpha(colors.error, 0.15) },
+              ]}
+            >
               <Flame size={12} color={colors.error} strokeWidth={2} />
               <Text style={[styles.earnCtaStatText, { color: colors.error }]}>
                 Streak bonus
@@ -299,7 +338,9 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         </View>
         <View style={[styles.startButton, { backgroundColor: colors.primary }]}>
           <Play size={16} color={colors.primaryText} strokeWidth={2} />
-          <Text style={[styles.startButtonText, { color: colors.primaryText }]}>Start</Text>
+          <Text style={[styles.startButtonText, { color: colors.primaryText }]}>
+            Start
+          </Text>
         </View>
       </Pressable>
 
@@ -310,14 +351,24 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         accessibilityLabel="Browse instant reward questions for quick payouts"
         accessibilityRole="button"
       >
-        <View style={[styles.instantRewardIcon, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+        <View
+          style={[
+            styles.instantRewardIcon,
+            { backgroundColor: withAlpha(colors.warning, 0.15) },
+          ]}
+        >
           <Sparkles size={24} color={colors.warning} strokeWidth={1.5} />
         </View>
         <View style={styles.instantRewardContent}>
           <Text style={[styles.instantRewardTitle, { color: colors.text }]}>
             Answer Instant Reward Questions!
           </Text>
-          <Text style={[styles.instantRewardSubtitle, { color: colors.textMuted }]}>
+          <Text
+            style={[
+              styles.instantRewardSubtitle,
+              { color: colors.textMuted },
+            ]}
+          >
             Earn instant payouts for quality answers
           </Text>
         </View>
@@ -342,26 +393,50 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         accessibilityLabel="Ask a question and get answers from the community"
         accessibilityRole="button"
       >
-        <View style={[styles.askQuestionsIcon, { backgroundColor: withAlpha(colors.info, 0.15) }]}>
+        <View
+          style={[
+            styles.askQuestionsIcon,
+            { backgroundColor: withAlpha(colors.info, 0.15) },
+          ]}
+        >
           <HelpCircle size={24} color={colors.info} strokeWidth={1.5} />
         </View>
         <View style={styles.askQuestionsContent}>
           <Text style={[styles.askQuestionsTitle, { color: colors.text }]}>
             Ask the Community
           </Text>
-          <Text style={[styles.askQuestionsSubtitle, { color: colors.textMuted }]}>
+          <Text
+            style={[styles.askQuestionsSubtitle, { color: colors.textMuted }]}
+          >
             Get answers from experts and community members
           </Text>
           <View style={styles.askQuestionsStats}>
-            <View style={[styles.askQuestionsStat, { backgroundColor: withAlpha(colors.info, 0.15) }]}>
+            <View
+              style={[
+                styles.askQuestionsStat,
+                { backgroundColor: withAlpha(colors.info, 0.15) },
+              ]}
+            >
               <MessageCircle size={12} color={colors.info} strokeWidth={2} />
-              <Text style={[styles.askQuestionsStatText, { color: colors.info }]}>
+              <Text
+                style={[styles.askQuestionsStatText, { color: colors.info }]}
+              >
                 Quick responses
               </Text>
             </View>
-            <View style={[styles.askQuestionsStat, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
+            <View
+              style={[
+                styles.askQuestionsStat,
+                { backgroundColor: withAlpha(colors.success, 0.15) },
+              ]}
+            >
               <TrendingUp size={12} color={colors.success} strokeWidth={2} />
-              <Text style={[styles.askQuestionsStatText, { color: colors.success }]}>
+              <Text
+                style={[
+                  styles.askQuestionsStatText,
+                  { color: colors.success },
+                ]}
+              >
                 Build reputation
               </Text>
             </View>
@@ -410,9 +485,15 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       {/* Feed Tabs */}
       {!isLoading ? (
         <FeedTabs
-          tabs={FEED_TABS.map(tab =>
-            tab.id === 'unanswered'
-              ? { ...tab, badge: feedStats.unansweredCount > 0 ? `${feedStats.unansweredCount}` : 'HOT' }
+          tabs={FEED_TABS.map((tab) =>
+            tab.id === "unanswered"
+              ? {
+                  ...tab,
+                  badge:
+                    feedStats.unansweredCount > 0
+                      ? `${feedStats.unansweredCount}`
+                      : "HOT",
+                }
               : tab
           )}
           selectedTab={selectedTab}
@@ -428,13 +509,17 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       {/* Search Feedback */}
       {isSearching && (
         <View style={styles.searchFeedback}>
-          <Text style={[styles.searchFeedbackText, { color: colors.textMuted }]}>
+          <Text
+            style={[styles.searchFeedbackText, { color: colors.textMuted }]}
+          >
             {hasNoResults
               ? `No questions found for "${searchQuery}"`
               : `Found ${searchResultsCount} question${searchResultsCount !== 1 ? "s" : ""}`}
           </Text>
           <Pressable onPress={onClearSearch}>
-            <Text style={[styles.clearSearchText, { color: colors.primary }]}>Clear</Text>
+            <Text style={[styles.clearSearchText, { color: colors.primary }]}>
+              Clear
+            </Text>
           </Pressable>
         </View>
       )}
@@ -453,6 +538,15 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Refs
   const flatListRef = useRef<FlatList>(null);
+  const scrollOffsets = useRef<Record<FeedTabId, number>>({
+    "for-you": 0,
+    latest: 0,
+    unanswered: 0,
+    rewards: 0,
+    "my-activity": 0,
+  });
+  const impressedAdIds = useRef(new Set<string>());
+  const lastScrollY = useRef(0);
 
   // Persisted tab from Zustand (survives navigations)
   const selectedTab = useQuestionUIStore(selectSelectedTab);
@@ -467,18 +561,23 @@ export default function QuestionsScreen(): React.ReactElement {
   // FAB animation
   const fabScale = useSharedValue(1);
   const fabRotation = useSharedValue(0);
+  const fabTranslateY = useSharedValue(0);
 
   // ========== DATA FETCHING ==========
-  // Essential: feed + user stats load immediately
+  // Essential: infinite feed + user stats load immediately
   const {
-    data: feedData,
+    data: infiniteData,
     isLoading: isFeedLoading,
     refetch: refetchFeed,
     isError: hasFeedError,
     error: feedError,
-  } = useQuestionsFeed({ tab: selectedTab });
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuestionsFeed(selectedTab);
 
-  const { data: userStats, refetch: refetchUserStats } = useUserQuestionsStats();
+  const { data: userStats, refetch: refetchUserStats } =
+    useUserQuestionsStats();
 
   // Deferred: leaderboard loads after feed is ready
   const { data: leaderboard } = useQuestionsLeaderboard(3);
@@ -497,26 +596,41 @@ export default function QuestionsScreen(): React.ReactElement {
   const bannerAds = screenAds?.bannerAds;
   const featuredAds = screenAds?.featuredAds;
 
-  const recordAdClick = useRecordAdClick();
-  const recordAdImpression = useRecordAdImpression();
+  // Extract stable .mutate references to avoid unstable deps
+  const recordAdClickMutate = useRecordAdClick().mutate;
+  const recordAdImpressionMutate = useRecordAdImpression().mutate;
 
-  // Mutations
-  const voteMutation = useVoteQuestion();
+  // Mutations — extract .mutate for stable useCallback deps
+  const voteMutate = useVoteQuestion().mutate;
   const createMutation = useCreateQuestion();
 
   // User permissions
-  const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
+  const isAdmin =
+    user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
   const isAuthenticated = !!user;
   const isLoading = isFeedLoading || userLoading;
 
-  // Extract questions from feed data
-  const allQuestions = useMemo(() => feedData?.questions || [], [feedData]);
+  // Flatten infinite pages into a single array
+  const allQuestions = useMemo(
+    () => infiniteData?.pages.flatMap((p) => p.questions) ?? [],
+    [infiniteData]
+  );
 
-  const feedStats = useMemo(() => feedData?.stats || {
-    totalQuestions: 0,
-    unansweredCount: 0,
-    rewardsCount: 0,
-  }, [feedData]);
+  const feedStats = useMemo(
+    () =>
+      infiniteData?.pages[0]?.stats ?? {
+        totalQuestions: 0,
+        unansweredCount: 0,
+        rewardsCount: 0,
+      },
+    [infiniteData]
+  );
+
+  // Prefetch adjacent tabs after initial load
+  const prefetch = usePrefetchQuestions();
+  useEffect(() => {
+    if (!isFeedLoading) prefetch();
+  }, [isFeedLoading, prefetch]);
 
   // Search
   const {
@@ -560,7 +674,8 @@ export default function QuestionsScreen(): React.ReactElement {
       const hasAds = Array.isArray(feedAds) && feedAds.length > 0;
 
       if (shouldInsertAd && hasAds) {
-        const adIndex = Math.floor(index / AD_INSERTION_INTERVAL) % feedAds.length;
+        const adIndex =
+          Math.floor(index / AD_INSERTION_INTERVAL) % feedAds.length;
         const ad = feedAds[adIndex];
         if (ad) {
           items.push({
@@ -584,54 +699,106 @@ export default function QuestionsScreen(): React.ReactElement {
     setRefreshing(false);
   }, [refetchFeed, refetchUserStats]);
 
-  const handleTabChange = useCallback((tabId: string) => {
-    setSelectedTab(tabId as FeedTabId);
-    triggerHaptic("light");
-    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-  }, [setSelectedTab]);
+  const handleTabChange = useCallback(
+    (tabId: string) => {
+      setSelectedTab(tabId as FeedTabId);
+      triggerHaptic("light");
+      impressedAdIds.current.clear();
+      // Restore scroll position for the new tab
+      setTimeout(() => {
+        flatListRef.current?.scrollToOffset({
+          offset: scrollOffsets.current[tabId as FeedTabId] || 0,
+          animated: false,
+        });
+      }, 100);
+    },
+    [setSelectedTab]
+  );
+
+  // Infinite scroll — load next page when end is reached
+  const handleEndReached = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // Scroll handler — FAB auto-hide + per-tab scroll position tracking
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const currentY = e.nativeEvent.contentOffset.y;
+      const dy = currentY - lastScrollY.current;
+
+      // FAB auto-hide: hide on scroll down, show on scroll up
+      if (dy > 10 && currentY > 100) {
+        fabTranslateY.value = withTiming(120, { duration: 200 });
+      } else if (dy < -10) {
+        fabTranslateY.value = withTiming(0, { duration: 200 });
+      }
+
+      lastScrollY.current = currentY;
+      scrollOffsets.current[selectedTab] = currentY;
+    },
+    [fabTranslateY, selectedTab]
+  );
 
   // Stable handlers that accept IDs — avoids inline closures in renderItem
-  const handleQuestionPressById = useCallback((questionId: string, isInstantReward?: boolean) => {
-    if (!isAuthenticated) {
-      router.push("/(auth)/login" as Href);
-      return;
-    }
-    triggerHaptic("light");
-    if (isInstantReward) {
-      router.push(`/instant-reward-answer/${questionId}` as Href);
-    } else {
-      router.push({ pathname: "/question-detail", params: { id: questionId } } as Href);
-    }
-  }, [isAuthenticated]);
+  const handleQuestionPressById = useCallback(
+    (questionId: string, isInstantReward?: boolean) => {
+      if (!isAuthenticated) {
+        router.push("/(auth)/login" as Href);
+        return;
+      }
+      triggerHaptic("light");
+      if (isInstantReward) {
+        router.push(`/instant-reward-answer/${questionId}` as Href);
+      } else {
+        router.push({
+          pathname: "/question-detail",
+          params: { id: questionId },
+        } as Href);
+      }
+    },
+    [isAuthenticated]
+  );
 
-  const handleVoteById = useCallback((questionId: string, type: "up" | "down") => {
-    triggerHaptic("light");
-    voteMutation.mutate({ questionId, type });
-  }, [voteMutation]);
+  const handleVoteById = useCallback(
+    (questionId: string, type: "up" | "down") => {
+      triggerHaptic("light");
+      voteMutate({ questionId, type });
+    },
+    [voteMutate]
+  );
 
-  const handleSearchSubmit = useCallback((query: string) => {
-    submitSearch(query);
-    setSearchOverlayVisible(false);
-    if (query.trim()) triggerHaptic("light");
-  }, [submitSearch]);
+  const handleSearchSubmit = useCallback(
+    (query: string) => {
+      submitSearch(query);
+      setSearchOverlayVisible(false);
+      if (query.trim()) triggerHaptic("light");
+    },
+    [submitSearch]
+  );
 
-  const handleAdClick = useCallback((ad: Ad) => {
-    recordAdClick.mutate({
-      adId: ad.id,
-      placement: "question",
-      deviceInfo: { platform: "ios", version: "1.0" },
-    });
-  }, [recordAdClick]);
+  const handleAdClick = useCallback(
+    (ad: Ad) => {
+      recordAdClickMutate({
+        adId: ad.id,
+        placement: "question",
+        deviceInfo: { platform: "ios", version: "1.0" },
+      });
+    },
+    [recordAdClickMutate]
+  );
 
-  const handleAdImpression = useCallback((ad: Ad, duration: number = 1000) => {
-    recordAdImpression.mutate({
-      adId: ad.id,
-      placement: "question",
-      duration,
-      wasVisible: true,
-      viewportPercentage: 100,
-    });
-  }, [recordAdImpression]);
+  const handleAdImpression = useCallback(
+    (ad: Ad, duration: number = 1000) => {
+      recordAdImpressionMutate({
+        adId: ad.id,
+        placement: "question",
+        duration,
+        wasVisible: true,
+        viewportPercentage: 100,
+      });
+    },
+    [recordAdImpressionMutate]
+  );
 
   const handleFABPress = useCallback(() => {
     triggerHaptic("medium");
@@ -651,30 +818,40 @@ export default function QuestionsScreen(): React.ReactElement {
     setShowQuizSession(true);
   }, [isAuthenticated]);
 
-  const handleQuestionSubmit = useCallback(async (data: QuestionFormData) => {
-    try {
-      await createMutation.mutateAsync({
-        text: data.title,
-        category: data.category,
-        rewardAmount: data.rewardAmount,
-        isInstantReward: data.isRewardQuestion,
-      });
-      setShowCreateWizard(false);
-      triggerHaptic("success");
-    } catch (error) {
-      console.error("Failed to create question:", error);
-      triggerHaptic("error");
-    }
-  }, [createMutation]);
+  const handleQuestionSubmit = useCallback(
+    async (data: QuestionFormData) => {
+      try {
+        await createMutation.mutateAsync({
+          text: data.title,
+          category: data.category,
+          rewardAmount: data.rewardAmount,
+          isInstantReward: data.isRewardQuestion,
+        });
+        setShowCreateWizard(false);
+        triggerHaptic("success");
+      } catch (error) {
+        console.error("Failed to create question:", error);
+        triggerHaptic("error");
+      }
+    },
+    [createMutation]
+  );
 
-  const handleClearSearch = useCallback(() => setSearchQuery(""), [setSearchQuery]);
-  const handleOpenCreateWizard = useCallback(() => setShowCreateWizard(true), []);
+  const handleClearSearch = useCallback(
+    () => setSearchQuery(""),
+    [setSearchQuery]
+  );
+  const handleOpenCreateWizard = useCallback(
+    () => setShowCreateWizard(true),
+    []
+  );
 
-  // FAB animation styles
+  // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
       { scale: fabScale.value },
       { rotate: `${fabRotation.value}deg` },
+      { translateY: fabTranslateY.value },
     ],
   }));
 
@@ -682,13 +859,22 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleAdImpressionRef = useRef(handleAdImpression);
   handleAdImpressionRef.current = handleAdImpression;
 
+  // Ad impression deduplication — each ad fires at most once per tab session
   const viewabilityConfigCallbackPairs = useRef([
     {
       viewabilityConfig: VIEWABILITY_CONFIG,
-      onViewableItemsChanged: ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      onViewableItemsChanged: ({
+        viewableItems,
+      }: {
+        viewableItems: ViewToken[];
+      }) => {
         viewableItems.forEach((item) => {
           if (item.item?.type === "ad" && item.item.data) {
-            handleAdImpressionRef.current(item.item.data as Ad);
+            const ad = item.item.data as Ad;
+            if (!impressedAdIds.current.has(ad.id)) {
+              impressedAdIds.current.add(ad.id);
+              handleAdImpressionRef.current(ad);
+            }
           }
         });
       },
@@ -696,68 +882,89 @@ export default function QuestionsScreen(): React.ReactElement {
   ]);
 
   // ========== RENDER FUNCTIONS ==========
-  // Stable header — passes scalar props to memoized FeedHeader
-  const renderHeader = useCallback(() => (
-    <FeedHeader
-      isLoading={isLoading}
-      userStats={userStats}
-      colors={colors}
-      selectedTab={selectedTab}
-      feedStats={feedStats}
-      leaderboard={leaderboard}
-      bannerAds={bannerAds}
-      feedAds={feedAds}
-      featuredAds={featuredAds}
-      isSearching={isSearching}
-      searchQuery={searchQuery}
-      searchResultsCount={searchResults.length}
-      hasNoResults={hasNoResults}
-      onTabChange={handleTabChange}
-      onQuizStart={handleQuizStart}
-      onAdClick={handleAdClick}
-      onAdImpression={handleAdImpression}
-      onClearSearch={handleClearSearch}
-      onOpenCreateWizard={handleOpenCreateWizard}
-    />
-  ), [
-    isLoading, userStats, colors, selectedTab, feedStats, leaderboard,
-    bannerAds, feedAds, featuredAds, isSearching, searchQuery, searchResults.length,
-    hasNoResults, handleTabChange, handleQuizStart, handleAdClick, handleAdImpression,
-    handleClearSearch, handleOpenCreateWizard,
-  ]);
+  // Header as element (not function) — avoids extra wrapper View from FlatList
+  const headerElement = useMemo(
+    () => (
+      <FeedHeader
+        isLoading={isLoading}
+        userStats={userStats}
+        colors={colors}
+        selectedTab={selectedTab}
+        feedStats={feedStats}
+        leaderboard={leaderboard}
+        bannerAds={bannerAds}
+        feedAds={feedAds}
+        featuredAds={featuredAds}
+        isSearching={isSearching}
+        searchQuery={searchQuery}
+        searchResultsCount={searchResults.length}
+        hasNoResults={hasNoResults}
+        onTabChange={handleTabChange}
+        onQuizStart={handleQuizStart}
+        onAdClick={handleAdClick}
+        onAdImpression={handleAdImpression}
+        onClearSearch={handleClearSearch}
+        onOpenCreateWizard={handleOpenCreateWizard}
+      />
+    ),
+    [
+      isLoading,
+      userStats,
+      colors,
+      selectedTab,
+      feedStats,
+      leaderboard,
+      bannerAds,
+      feedAds,
+      featuredAds,
+      isSearching,
+      searchQuery,
+      searchResults.length,
+      hasNoResults,
+      handleTabChange,
+      handleQuizStart,
+      handleAdClick,
+      handleAdImpression,
+      handleClearSearch,
+      handleOpenCreateWizard,
+    ]
+  );
 
   // Stable renderItem — uses ID-based handlers, no inline closures
-  const renderItem = useCallback(({ item, index }: ListRenderItemInfo<FeedItem>) => {
-    if (item.type === "question" && item.data) {
-      const question = item.data as FeedQuestion;
-      return (
-        <QuestionFeedItem
-          question={question}
-          onPress={() => handleQuestionPressById(question.id, question.isInstantReward)}
-          onVote={(type) => handleVoteById(question.id, type)}
-          variant={index === 0 ? "featured" : "default"}
-          index={index < MAX_ANIMATED_INDEX ? index : 0}
-          showRewardGlow={question.isInstantReward}
-          testID={`question-${question.id}`}
-        />
-      );
-    }
+  const renderItem = useCallback(
+    ({ item, index }: ListRenderItemInfo<FeedItem>) => {
+      if (item.type === "question" && item.data) {
+        const question = item.data as FeedQuestion;
+        return (
+          <QuestionFeedItem
+            question={question}
+            onPressById={handleQuestionPressById}
+            onVoteById={handleVoteById}
+            variant={index === 0 ? "featured" : "default"}
+            index={index < MAX_ANIMATED_INDEX ? index : 0}
+            showRewardGlow={question.isInstantReward}
+            testID={`question-${question.id}`}
+          />
+        );
+      }
 
-    if (item.type === "ad" && item.data) {
-      const ad = item.data as Ad;
-      return (
-        <InFeedAd
-          ad={ad}
-          index={index}
-          onAdClick={handleAdClick}
-          onAdLoad={() => handleAdImpression(ad)}
-          style={styles.inFeedAd}
-        />
-      );
-    }
+      if (item.type === "ad" && item.data) {
+        const ad = item.data as Ad;
+        return (
+          <InFeedAd
+            ad={ad}
+            index={index}
+            onAdClick={handleAdClick}
+            onAdLoad={() => handleAdImpression(ad)}
+            style={styles.inFeedAd}
+          />
+        );
+      }
 
-    return null;
-  }, [handleQuestionPressById, handleVoteById, handleAdClick, handleAdImpression]);
+      return null;
+    },
+    [handleQuestionPressById, handleVoteById, handleAdClick, handleAdImpression]
+  );
 
   const renderEmptyState = useCallback(() => {
     if (isLoading) {
@@ -772,7 +979,8 @@ export default function QuestionsScreen(): React.ReactElement {
             Something went wrong
           </Text>
           <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-            {feedError?.message || "Unable to load questions. Please try again."}
+            {feedError?.message ||
+              "Unable to load questions. Please try again."}
           </Text>
           <PrimaryButton
             title="Try Again"
@@ -799,9 +1007,28 @@ export default function QuestionsScreen(): React.ReactElement {
         />
       </View>
     );
-  }, [isLoading, colors, hasFeedError, feedError, refetchFeed, handleOpenCreateWizard]);
+  }, [
+    isLoading,
+    colors,
+    hasFeedError,
+    feedError,
+    refetchFeed,
+    handleOpenCreateWizard,
+  ]);
+
+  const renderFooter = useCallback(() => {
+    if (isFetchingNextPage) {
+      return (
+        <View style={styles.footerLoader}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      );
+    }
+    return null;
+  }, [isFetchingNextPage, colors.primary]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.id, []);
+  const getItemType = useCallback((item: FeedItem) => item.type, []);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -819,7 +1046,9 @@ export default function QuestionsScreen(): React.ReactElement {
         ]}
       >
         <View style={styles.headerLeft}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Questions</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Questions
+          </Text>
           <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
             Ask, answer, earn
           </Text>
@@ -828,7 +1057,10 @@ export default function QuestionsScreen(): React.ReactElement {
         <View style={styles.headerRight}>
           <Pressable
             onPress={() => setSearchOverlayVisible(true)}
-            style={[styles.headerButton, { backgroundColor: withAlpha(colors.primary, 0.1) }]}
+            style={[
+              styles.headerButton,
+              { backgroundColor: withAlpha(colors.primary, 0.1) },
+            ]}
             accessibilityLabel="Search questions"
             accessibilityRole="button"
           >
@@ -848,8 +1080,9 @@ export default function QuestionsScreen(): React.ReactElement {
           data={feedItems}
           renderItem={renderItem}
           keyExtractor={keyExtractor}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={headerElement}
           ListEmptyComponent={renderEmptyState}
+          ListFooterComponent={renderFooter}
           contentContainerStyle={[
             styles.listContent,
             { paddingBottom: insets.bottom + 80 },
@@ -863,19 +1096,28 @@ export default function QuestionsScreen(): React.ReactElement {
               colors={[colors.primary]}
             />
           }
+          // Infinite scroll
+          onEndReached={handleEndReached}
+          onEndReachedThreshold={0.5}
+          // Scroll tracking — FAB auto-hide + per-tab position
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
           // Performance optimizations
           removeClippedSubviews={true}
-          maxToRenderPerBatch={5}
-          windowSize={3}
+          maxToRenderPerBatch={8}
+          windowSize={5}
           initialNumToRender={4}
           updateCellsBatchingPeriod={100}
-          viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
+          viewabilityConfigCallbackPairs={
+            viewabilityConfigCallbackPairs.current
+          }
+          getItemType={getItemType}
           accessibilityRole="list"
           accessibilityLabel="Questions feed"
         />
       </ErrorBoundary>
 
-      {/* Floating Action Button */}
+      {/* Floating Action Button — auto-hides on scroll */}
       <Animated.View
         style={[
           styles.fab,
@@ -1214,5 +1456,11 @@ const styles = StyleSheet.create({
     height: "100%",
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // Footer loader for infinite scroll
+  footerLoader: {
+    paddingVertical: SPACING.lg,
+    alignItems: "center",
   },
 });

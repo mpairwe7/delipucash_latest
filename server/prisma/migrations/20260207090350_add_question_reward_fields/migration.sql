@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Question" ADD COLUMN     "category" TEXT NOT NULL DEFAULT 'General',
+ADD COLUMN     "isInstantReward" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "rewardAmount" DOUBLE PRECISION NOT NULL DEFAULT 0,
+ADD COLUMN     "viewCount" INTEGER NOT NULL DEFAULT 0;

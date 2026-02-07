@@ -707,27 +707,6 @@ export function useDeleteSurvey(): UseMutationResult<{ deleted: boolean }, Error
 // ===========================================
 
 /**
- * Hook to fetch questions
- */
-export function useQuestions(params?: { category?: string; page?: number; limit?: number }): UseQueryResult<{
-  questions: Question[];
-  pagination: { page: number; limit: number; total: number; totalPages: number };
-}, Error> {
-  return useQuery({
-    queryKey: [...queryKeys.questions, params],
-    queryFn: async () => {
-      const response = await api.questions.getAll(params);
-      if (!response.success) throw new Error("Failed to fetch questions");
-      return {
-        questions: response.data,
-        pagination: response.pagination,
-      };
-    },
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
-/**
  * Hook to fetch recent questions (sorted by createdAt desc)
  */
 export function useRecentQuestions(limit: number = 5): UseQueryResult<Question[], Error> {
@@ -737,21 +716,6 @@ export function useRecentQuestions(limit: number = 5): UseQueryResult<Question[]
       const response = await api.questions.getAll({ limit });
       if (!response.success) throw new Error("Failed to fetch recent questions");
       return response.data.slice(0, limit);
-    },
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
-/**
- * Hook to fetch instant-reward questions
- */
-export function useInstantRewardQuestions(limit: number = 5): UseQueryResult<Question[], Error> {
-  return useQuery({
-    queryKey: [...queryKeys.instantQuestions, limit],
-    queryFn: async () => {
-      const response = await api.questions.getAll({ limit: 50 });
-      if (!response.success) throw new Error("Failed to fetch instant questions");
-      return response.data.filter((q) => q.isInstantReward).slice(0, limit);
     },
     staleTime: 1000 * 60 * 2,
   });
@@ -787,103 +751,6 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
       queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.questions });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
-    },
-  });
-}
-
-/**
- * Hook to fetch popular questions
- */
-export function usePopularQuestions(limit: number = 10): UseQueryResult<Question[], Error> {
-  return useQuery({
-    queryKey: ["questions", "popular", limit],
-    queryFn: async () => {
-      const response = await api.questions.getAll({ limit: 50 });
-      if (!response.success) throw new Error("Failed to fetch popular questions");
-      // Sort by total answers (most engaged)
-      return response.data
-        .sort((a, b) => (b.totalAnswers || 0) - (a.totalAnswers || 0))
-        .slice(0, limit);
-    },
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
-/**
- * Hook to fetch trending questions
- */
-export function useTrendingQuestions(limit: number = 10): UseQueryResult<Question[], Error> {
-  return useQuery({
-    queryKey: ["questions", "trending", limit],
-    queryFn: async () => {
-      const response = await api.questions.getAll({ limit: 50 });
-      if (!response.success) throw new Error("Failed to fetch trending questions");
-      // Trending = recent + popular (weighted by recency)
-      const now = Date.now();
-      return response.data
-        .map((q) => {
-          const ageInHours = (now - new Date(q.createdAt).getTime()) / (1000 * 60 * 60);
-          const recencyScore = Math.max(0, 100 - ageInHours);
-          const engagementScore = (q.totalAnswers || 0) * 10;
-          return { ...q, trendScore: recencyScore + engagementScore };
-        })
-        .sort((a, b) => b.trendScore - a.trendScore)
-        .slice(0, limit);
-    },
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
-/**
- * Hook to search questions
- */
-export function useSearchQuestions(query: string): UseQueryResult<Question[], Error> {
-  return useQuery({
-    queryKey: ["questions", "search", query],
-    queryFn: async () => {
-      const response = await api.questions.getAll({ limit: 100 });
-      if (!response.success) throw new Error("Search failed");
-      const lowerQuery = query.toLowerCase();
-      return response.data.filter((q) =>
-        q.text.toLowerCase().includes(lowerQuery)
-      );
-    },
-    enabled: query.length > 0,
-    staleTime: 1000 * 60 * 2,
-  });
-}
-
-/**
- * Hook to create a new question
- */
-export function useCreateQuestion(): UseMutationResult<
-  Question,
-  Error,
-  { text: string; category?: string; rewardAmount?: number; isInstantReward?: boolean }
-> {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data) => {
-      // Using direct fetch since api.questions.create might not exist in base api
-      const response = await api.questions.getAll({ limit: 1 });
-      // Simulate creation - in real app this would be a POST
-      const newQuestion: Question = {
-        id: `question_${Date.now()}`,
-        text: data.text,
-        userId: null,
-        category: data.category,
-        rewardAmount: data.rewardAmount || 0,
-        isInstantReward: data.isInstantReward || false,
-        totalAnswers: 0,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      return newQuestion;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.questions });
-      queryClient.invalidateQueries({ queryKey: queryKeys.recentQuestions });
     },
   });
 }

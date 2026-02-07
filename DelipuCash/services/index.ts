@@ -33,7 +33,6 @@ export {
     useSubmitSurvey,
     useCheckSurveyAttempt,
     // Question hooks
-    useQuestions,
     useQuestion,
     // User hooks
     useUserProfile,
