@@ -932,7 +932,9 @@ export function useRewardQuestions(): UseQueryResult<RewardQuestion[], Error> {
     queryFn: async () => {
       const response = await api.rewards.getQuestions();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      // Backend wraps array in { rewardQuestions: [...] }
+      const payload = response.data as any;
+      return payload?.rewardQuestions ?? payload ?? [];
     },
     staleTime: 1000 * 60 * 2,
   });
@@ -946,7 +948,10 @@ export function useRewardQuestion(questionId: string): UseQueryResult<RewardQues
     queryKey: queryKeys.rewardQuestion(questionId),
     queryFn: async () => {
       const response = await api.rewards.getQuestionById(questionId);
-      return response.data;
+      if (!response.success) throw new Error(response.error);
+      // Backend wraps in { rewardQuestion: {...} }
+      const payload = response.data as any;
+      return payload?.rewardQuestion ?? payload ?? null;
     },
     enabled: Boolean(questionId),
     staleTime: 1000 * 60,
@@ -969,6 +974,7 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestion(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
     },
   });
 }

@@ -73,9 +73,9 @@ const QUESTION_ROUTES = {
   search: "/api/questions/search",
   byUser: (userId: string) => `/api/questions/user/${userId}`,
     vote: (id: string) => `/api/questions/${id}/vote`,
-  rewardQuestions: "/api/rewards/questions",
-  rewardQuestion: (id: string) => `/api/rewards/questions/${id}`,
-  submitRewardAnswer: (id: string) => `/api/rewards/questions/${id}/answer`,
+  rewardQuestions: "/api/reward-questions/all",
+  rewardQuestion: (id: string) => `/api/reward-questions/${id}`,
+  submitRewardAnswer: (id: string) => `/api/reward-questions/${id}/answer`,
 } as const;
 
 // Helper to fetch JSON with versioning headers
@@ -370,12 +370,12 @@ export const questionApi = {
   async submitRewardAnswer(
     questionId: string,
       answer: string,
-      paymentProvider?: string,
-      phoneNumber?: string
+      phoneNumber?: string,
+      userEmail?: string
   ): Promise<ApiResponse<RewardAnswerResult>> {
       return fetchJson<RewardAnswerResult>(QUESTION_ROUTES.submitRewardAnswer(questionId), {
           method: "POST",
-        body: JSON.stringify({ answer, paymentProvider, phoneNumber }),
+        body: JSON.stringify({ selectedAnswer: answer, phoneNumber, userEmail, rewardQuestionId: questionId }),
     });
   },
 };

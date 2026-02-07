@@ -375,11 +375,11 @@ function QuestionFeedItemComponent({
       `Question: ${question.text}`,
       question.category && `Category: ${question.category}`,
       question.author?.name && `Asked by ${question.author.name}`,
-      question.author?.reputation && `with ${question.author.reputation} reputation`,
+      (question.author?.reputation != null && question.author.reputation > 0) && `with ${question.author.reputation} reputation`,
       `${question.totalAnswers || 0} answers`,
       question.hasAcceptedAnswer && "Has accepted answer",
       question.hasExpertAnswer && "Has expert answer",
-      question.isInstantReward && question.rewardAmount && `Reward: ${question.rewardAmount} points`,
+      question.isInstantReward && !!question.rewardAmount && `Reward: ${question.rewardAmount} points`,
       timeRemaining && `Time remaining: ${timeRemaining.accessible}`,
       `Posted ${timeAgo.accessible}`,
     ].filter(Boolean);
@@ -560,7 +560,7 @@ function QuestionFeedItemComponent({
         </Text>
 
         {/* Reward Amount Display */}
-        {question.isInstantReward && question.rewardAmount && variant !== "compact" && (
+        {question.isInstantReward && !!question.rewardAmount && variant !== "compact" && (
           <View 
             style={[
               styles.rewardRow,
@@ -611,7 +611,7 @@ function QuestionFeedItemComponent({
                   </View>
                 )}
               </View>
-              {question.author.reputation && (
+              {question.author.reputation != null && question.author.reputation > 0 && (
                 <Text style={[styles.authorRep, { color: colors.textMuted }]}>
                   {formatReputation(question.author.reputation)} reputation
                 </Text>

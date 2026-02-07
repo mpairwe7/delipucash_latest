@@ -1,44 +1,68 @@
+/**
+ * Question Answer Screen — "Answer & Earn"
+ *
+ * Properly wired with:
+ * - TanStack Query v5 via useQuestionDetail + useSubmitQuestionResponse (optimistic updates)
+ * - Zustand for draft text / submission guard (ephemeral UI state)
+ * - Unified query keys so feed ↔ detail caches stay in sync
+ * - Auth check before submission
+ * - Reward earned feedback after successful submit
+ * - Keyboard avoiding for better mobile UX
+ * - Accessible, memoized sub-components
+ */
+
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDate } from "@/services/api";
-import { useQuestion, useSubmitResponse } from "@/services/hooks";
+import {
+  useQuestionDetail,
+  useSubmitQuestionResponse,
+} from "@/services/questionHooks";
 import {
   useQuestionAnswerStore,
   ANSWER_MAX_LENGTH,
   ANSWER_MIN_LENGTH,
-  selectRemainingChars,
+  selectIsValidLength,
   selectWasSubmitted,
 } from "@/store";
 import {
-    BORDER_WIDTH,
-    COMPONENT_SIZE,
-    ICON_SIZE,
-    RADIUS,
-    SPACING,
-    TYPOGRAPHY,
-    useTheme,
-    withAlpha,
+  BORDER_WIDTH,
+  COMPONENT_SIZE,
+  ICON_SIZE,
+  RADIUS,
+  SPACING,
+  TYPOGRAPHY,
+  ThemeColors,
+  useTheme,
+  withAlpha,
 } from "@/utils/theme";
-import { router, useLocalSearchParams } from "expo-router";
+import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-    ArrowLeft,
-    MessageSquare,
-    Send,
-    Sparkles,
+  ArrowLeft,
+  Award,
+  CheckCircle,
+  MessageSquare,
+  Send,
+  Sparkles,
+  AlertCircle,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import useUser from "@/utils/useUser";
 
 // ─── Memoized sub-components ─────────────────────────────────────────────────
 
@@ -49,10 +73,15 @@ interface ResponseItemProps {
     createdAt: string;
     responseText: string;
   };
-  colors: Record<string, string>;
+  colors: ThemeColors;
+  isOptimistic?: boolean;
 }
 
-const ResponseItem = memo(function ResponseItem({ item, colors }: ResponseItemProps) {
+const ResponseItem = memo(function ResponseItem({
+  item,
+  colors,
+  isOptimistic,
+}: ResponseItemProps) {
   const authorName = useMemo(
     () =>
       item.user?.firstName
@@ -62,12 +91,115 @@ const ResponseItem = memo(function ResponseItem({ item, colors }: ResponseItemPr
   );
 
   return (
-    <View style={[styles.responseCard, { borderColor: colors.border }]}>
+    <View
+      style={[
+        styles.responseCard,
+        { borderColor: colors.border },
+        isOptimistic && { opacity: 0.7, borderStyle: "dashed" as any },
+      ]}
+    >
       <View style={styles.responseHeader}>
-        <Text style={[styles.responseAuthor, { color: colors.text }]}>{authorName}</Text>
-        <Text style={[styles.responseDate, { color: colors.textMuted }]}>{formatDate(item.createdAt)}</Text>
+        <View style={styles.responseAuthorRow}>
+          <Text style={[styles.responseAuthor, { color: colors.text }]}>
+            {authorName}
+          </Text>
+          {isOptimistic && (
+            <Text style={[styles.pendingBadge, { color: colors.textMuted }]}>
+              Sending…
+            </Text>
+          )}
+        </View>
+        <Text style={[styles.responseDate, { color: colors.textMuted }]}>
+          {formatDate(item.createdAt)}
+        </Text>
       </View>
-      <Text style={[styles.responseText, { color: colors.text }]}>{item.responseText}</Text>
+      <Text style={[styles.responseText, { color: colors.text }]}>
+        {item.responseText}
+      </Text>
+    </View>
+  );
+});
+
+// ─── Reward Earned Banner ────────────────────────────────────────────────────
+
+interface RewardBannerProps {
+  amount: number;
+  colors: ThemeColors;
+}
+
+const RewardBanner = memo(function RewardBanner({
+  amount,
+  colors,
+}: RewardBannerProps) {
+  return (
+    <View
+      style={[
+        styles.rewardBanner,
+        { backgroundColor: withAlpha(colors.success || "#22c55e", 0.12) },
+      ]}
+    >
+      <CheckCircle
+        size={ICON_SIZE.md}
+        color={colors.success || "#22c55e"}
+        strokeWidth={1.5}
+      />
+      <View style={styles.rewardBannerContent}>
+        <Text
+          style={[
+            styles.rewardBannerTitle,
+            { color: colors.success || "#22c55e" },
+          ]}
+        >
+          Answer submitted!
+        </Text>
+        {amount > 0 && (
+          <Text
+            style={[
+              styles.rewardBannerAmount,
+              { color: colors.success || "#22c55e" },
+            ]}
+          >
+            You earned {formatCurrency(amount)}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+});
+
+// ─── Character Count Indicator ───────────────────────────────────────────────
+
+interface CharCountProps {
+  current: number;
+  max: number;
+  min: number;
+  colors: ThemeColors;
+}
+
+const CharCountIndicator = memo(function CharCountIndicator({
+  current,
+  max,
+  min,
+  colors,
+}: CharCountProps) {
+  const remaining = max - current;
+  const isNearLimit = remaining < 50;
+  const isTooShort = current > 0 && current < min;
+
+  const color = isTooShort
+    ? colors.error
+    : isNearLimit
+    ? colors.warning
+    : colors.textMuted;
+
+  return (
+    <View style={styles.charCountRow}>
+      {isTooShort && (
+        <Text style={[styles.charHint, { color: colors.error }]}>
+          {min - current} more needed
+        </Text>
+      )}
+      <Text style={[styles.charCount, { color }]}>{remaining} left</Text>
     </View>
   );
 });
@@ -79,26 +211,52 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const questionId = id || "";
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+  const { data: user, loading: userLoading } = useUser();
+  const isAuthenticated = !!user;
+
+  // ── Local state for reward feedback ──
+  const [rewardEarned, setRewardEarned] = useState<number | null>(null);
 
   // ── Zustand selectors (granular — avoid full-store re-renders) ──
-  const draftText = useQuestionAnswerStore((s) => s.drafts[questionId]?.text ?? "");
-  const remainingChars = useQuestionAnswerStore(selectRemainingChars(questionId));
+  const draftText = useQuestionAnswerStore(
+    (s) => s.drafts[questionId]?.text ?? ""
+  );
+  const isValidLength = useQuestionAnswerStore(selectIsValidLength(questionId));
   const wasSubmitted = useQuestionAnswerStore(selectWasSubmitted(questionId));
   const updateDraft = useQuestionAnswerStore((s) => s.updateDraft);
   const markSubmitted = useQuestionAnswerStore((s) => s.markSubmitted);
   const setActiveQuestion = useQuestionAnswerStore((s) => s.setActiveQuestion);
 
-  // ── Server state ──
-  const { data: question, isLoading, error, refetch } = useQuestion(questionId);
-  const submitResponse = useSubmitResponse();
+  // ── Server state (unified query keys — syncs with feed cache) ──
+  const {
+    data: question,
+    isLoading,
+    error,
+    isFetching,
+  } = useQuestionDetail(questionId);
+
+  // Uses optimistic mutation from questionHooks — updates detail + feed caches
+  const submitResponse = useSubmitQuestionResponse();
 
   // ── Derived (memoized) ──
-  const responses = useMemo(() => question?.responses || [], [question?.responses]);
+  const responses = useMemo(
+    () => question?.responses || [],
+    [question?.responses]
+  );
+  const responseCount = responses.length;
 
   // ── Effects ──
   useEffect(() => {
     if (questionId) setActiveQuestion(questionId);
   }, [questionId, setActiveQuestion]);
+
+  // Redirect unauthenticated users
+  useEffect(() => {
+    if (!userLoading && !isAuthenticated) {
+      router.replace("/(auth)/login" as Href);
+    }
+  }, [userLoading, isAuthenticated]);
 
   // ── Callbacks (stable refs) ──
   const handleBack = useCallback((): void => {
@@ -107,7 +265,10 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
   const handleDiscussion = useCallback((): void => {
     if (!question) return;
-    router.push({ pathname: "/question-detail", params: { id: question.id } });
+    router.push({
+      pathname: "/question-detail",
+      params: { id: question.id },
+    } as Href);
   }, [question]);
 
   const handleTextChange = useCallback(
@@ -119,6 +280,12 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
   const handleSubmit = useCallback((): void => {
     if (!question || wasSubmitted) return;
+
+    if (!isAuthenticated) {
+      router.push("/(auth)/login" as Href);
+      return;
+    }
+
     const trimmed = draftText.trim();
     if (trimmed.length < ANSWER_MIN_LENGTH) {
       Alert.alert(
@@ -128,37 +295,101 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       return;
     }
 
+    Keyboard.dismiss();
+
     submitResponse.mutate(
       { questionId: question.id, responseText: trimmed },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           markSubmitted(question.id);
-          refetch();
-          Alert.alert("Answer submitted", "Thanks for contributing!", [
-            { text: "OK", onPress: handleBack },
+
+          // Show reward earned feedback
+          const earned = data?.rewardEarned || 0;
+          if (earned > 0) {
+            setRewardEarned(earned);
+          }
+
+          // Scroll to top to see result
+          scrollRef.current?.scrollTo({ y: 0, animated: true });
+
+          const message =
+            earned > 0
+              ? `You earned ${formatCurrency(earned)}! Your answer helps the community.`
+              : "Thanks for contributing your knowledge!";
+
+          Alert.alert("Answer submitted!", message, [
+            { text: "Answer another", onPress: handleBack },
+            {
+              text: "View discussion",
+              onPress: () =>
+                router.push({
+                  pathname: "/question-detail",
+                  params: { id: question.id },
+                } as Href),
+            },
           ]);
         },
-        onError: () => {
-          Alert.alert("Error", "Could not submit your answer. Please try again.");
+        onError: (err) => {
+          const message =
+            err?.message === "You have already responded to this question"
+              ? "You've already answered this question."
+              : "Could not submit your answer. Please try again.";
+          Alert.alert("Error", message);
         },
       }
     );
-  }, [question, wasSubmitted, draftText, submitResponse, markSubmitted, refetch, handleBack, questionId]);
+  }, [
+    question,
+    wasSubmitted,
+    isAuthenticated,
+    draftText,
+    submitResponse,
+    markSubmitted,
+    handleBack,
+  ]);
 
   // ── Render item for FlatList (stable ref) ──
   const renderResponse = useCallback(
-    ({ item }: { item: any }) => <ResponseItem item={item} colors={colors} />,
+    ({ item }: { item: any }) => (
+      <ResponseItem
+        item={item}
+        colors={colors}
+        isOptimistic={item.id?.startsWith("optimistic_")}
+      />
+    ),
     [colors]
   );
   const keyExtractor = useCallback((item: any) => item.id, []);
 
+  // ── Auth loading / redirect ──
+  if (userLoading) {
+    return (
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
+        <StatusBar style={statusBarStyle} />
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
   // ── Loading state ──
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
         <StatusBar style={statusBarStyle} />
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading question…</Text>
+        <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+          Loading question…
+        </Text>
       </View>
     );
   }
@@ -166,18 +397,36 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   // ── Error state ──
   if (error || !question) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.loadingContainer,
+          { backgroundColor: colors.background },
+        ]}
+      >
         <StatusBar style={statusBarStyle} />
-        <Text style={[styles.errorText, { color: colors.error }]}>Question not found</Text>
+        <AlertCircle
+          size={48}
+          color={colors.error}
+          strokeWidth={1.5}
+          style={{ marginBottom: SPACING.md }}
+        />
+        <Text style={[styles.errorText, { color: colors.error }]}>
+          {error?.message || "Question not found"}
+        </Text>
         <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
       </View>
     );
   }
 
   const isDisabled = submitResponse.isPending || wasSubmitted;
+  const canSubmit = isValidLength && !isDisabled;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.background }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
+    >
       <StatusBar style={statusBarStyle} />
 
       {/* ── Header ────────────────────────────────────────────────────── */}
@@ -197,60 +446,146 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           accessibilityRole="button"
           accessibilityLabel="Go back"
         >
-          <ArrowLeft size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
+          <ArrowLeft
+            size={ICON_SIZE.md}
+            color={colors.text}
+            strokeWidth={1.5}
+          />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Answer question</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]} numberOfLines={1}>
-            Earn {formatCurrency(question.rewardAmount || 0)}
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Answer & Earn
           </Text>
+          <View style={styles.headerRewardRow}>
+            <Award
+              size={ICON_SIZE.sm}
+              color={colors.primary}
+              strokeWidth={1.5}
+            />
+            <Text
+              style={[styles.headerSubtitle, { color: colors.primary }]}
+              numberOfLines={1}
+            >
+              {formatCurrency(question.rewardAmount || 0)} reward
+            </Text>
+          </View>
         </View>
+        {isFetching && !isLoading && (
+          <ActivityIndicator size="small" color={colors.primary} />
+        )}
       </View>
 
       {/* ── Content ───────────────────────────────────────────────────── */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING.xl }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          padding: SPACING.lg,
+          paddingBottom: insets.bottom + SPACING.xl + 80,
+        }}
       >
+        {/* Reward banner (shown after successful submission) */}
+        {wasSubmitted && rewardEarned !== null && (
+          <RewardBanner amount={rewardEarned} colors={colors} />
+        )}
+
         {/* Hero card */}
-        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.hero,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.heroHeader}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-              <Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: withAlpha(colors.primary, 0.12) },
+              ]}
+            >
+              <Sparkles
+                size={ICON_SIZE.sm}
+                color={colors.primary}
+                strokeWidth={1.5}
+              />
               <Text style={[styles.badgeText, { color: colors.primary }]}>
-                {question.isInstantReward ? "Instant" : "Standard"}
+                {question.isInstantReward ? "Instant Reward" : "Standard"}
               </Text>
             </View>
             <Text style={[styles.heroMeta, { color: colors.textMuted }]}>
               Posted {formatDate(question.createdAt)}
             </Text>
           </View>
-          <Text style={[styles.questionText, { color: colors.text }]}>{question.text}</Text>
+          <Text style={[styles.questionText, { color: colors.text }]}>
+            {question.text}
+          </Text>
           <View style={styles.heroStats}>
-            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Reward</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>
+            <View
+              style={[styles.statCard, { backgroundColor: colors.secondary }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                Reward
+              </Text>
+              <Text style={[styles.statValue, { color: colors.primary }]}>
                 {formatCurrency(question.rewardAmount || 0)}
               </Text>
             </View>
-            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>Responses</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>{responses.length}</Text>
+            <View
+              style={[styles.statCard, { backgroundColor: colors.secondary }]}
+            >
+              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                Responses
+              </Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {responseCount}
+              </Text>
             </View>
           </View>
         </View>
 
         {/* Answer input card */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
+            wasSubmitted && styles.cardDisabled,
+          ]}
+        >
           <View style={styles.inputHeader}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Your answer</Text>
-            <Text style={[styles.charCount, { color: colors.textMuted }]}>{remainingChars} left</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>
+              Your answer
+            </Text>
+            <CharCountIndicator
+              current={draftText.length}
+              max={ANSWER_MAX_LENGTH}
+              min={ANSWER_MIN_LENGTH}
+              colors={colors}
+            />
           </View>
-          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
+          <View
+            style={[
+              styles.inputWrapper,
+              {
+                borderColor: wasSubmitted
+                  ? colors.border
+                  : draftText.length > 0 && draftText.trim().length < ANSWER_MIN_LENGTH
+                  ? colors.error
+                  : draftText.length > 0
+                  ? colors.primary
+                  : colors.border,
+                backgroundColor: colors.secondary,
+              },
+            ]}
+          >
             <TextInput
               style={[styles.input, { color: colors.text }]}
-              placeholder="Share a thoughtful, helpful answer…"
+              placeholder={
+                wasSubmitted
+                  ? "Your answer has been submitted"
+                  : "Share a thoughtful, helpful answer…"
+              }
               placeholderTextColor={colors.textMuted}
               multiline
               value={draftText}
@@ -258,19 +593,37 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               maxLength={ANSWER_MAX_LENGTH}
               textAlignVertical="top"
               editable={!isDisabled}
+              returnKeyType="default"
+              blurOnSubmit={false}
+              accessibilityLabel="Answer text input"
+              accessibilityHint={`Minimum ${ANSWER_MIN_LENGTH} characters required`}
             />
           </View>
           <PrimaryButton
             title={
               submitResponse.isPending
-                ? "Submitting"
+                ? "Submitting…"
                 : wasSubmitted
-                ? "Submitted"
+                ? "Submitted ✓"
                 : "Submit answer"
             }
             onPress={handleSubmit}
-            disabled={isDisabled}
-            leftIcon={<Send size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={1.5} />}
+            disabled={!canSubmit}
+            leftIcon={
+              wasSubmitted ? (
+                <CheckCircle
+                  size={ICON_SIZE.sm}
+                  color={colors.primaryText}
+                  strokeWidth={1.5}
+                />
+              ) : (
+                <Send
+                  size={ICON_SIZE.sm}
+                  color={colors.primaryText}
+                  strokeWidth={1.5}
+                />
+              )
+            }
             style={{ marginTop: SPACING.md }}
           />
           <TouchableOpacity
@@ -279,21 +632,43 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             accessibilityRole="button"
             accessibilityLabel="Open discussion"
           >
-            <MessageSquare size={ICON_SIZE.sm} color={colors.text} strokeWidth={1.5} />
-            <Text style={[styles.discussionText, { color: colors.text }]}>View discussion</Text>
+            <MessageSquare
+              size={ICON_SIZE.sm}
+              color={colors.text}
+              strokeWidth={1.5}
+            />
+            <Text style={[styles.discussionText, { color: colors.text }]}>
+              View full discussion ({responseCount})
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Previous responses */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.responsesHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Responses</Text>
-            <Text style={[styles.sectionMeta, { color: colors.textMuted }]}>{responses.length} total</Text>
-          </View>
-          {responses.length === 0 && (
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-              No responses yet. Be the first.
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Responses
             </Text>
+            <Text style={[styles.sectionMeta, { color: colors.textMuted }]}>
+              {responseCount} total
+            </Text>
+          </View>
+          {responseCount === 0 && (
+            <View style={styles.emptyResponseState}>
+              <MessageSquare
+                size={ICON_SIZE.lg}
+                color={colors.textMuted}
+                strokeWidth={1}
+              />
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+                No responses yet. Be the first to answer!
+              </Text>
+            </View>
           )}
           <FlatList
             data={responses}
@@ -309,20 +684,40 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       <TouchableOpacity
         style={[
           styles.fab,
-          { backgroundColor: colors.primary, bottom: insets.bottom + SPACING.lg },
+          {
+            backgroundColor: canSubmit ? colors.primary : withAlpha(colors.primary, 0.4),
+            bottom: insets.bottom + SPACING.lg,
+          },
         ]}
         onPress={handleSubmit}
-        disabled={isDisabled}
+        disabled={!canSubmit}
         accessibilityRole="button"
-        accessibilityLabel="Submit answer"
+        accessibilityLabel={
+          wasSubmitted
+            ? "Answer already submitted"
+            : canSubmit
+            ? "Submit answer"
+            : `Answer needs at least ${ANSWER_MIN_LENGTH} characters`
+        }
+        activeOpacity={canSubmit ? 0.7 : 1}
       >
         {submitResponse.isPending ? (
           <ActivityIndicator size="small" color={colors.primaryText} />
+        ) : wasSubmitted ? (
+          <CheckCircle
+            size={ICON_SIZE.md}
+            color={colors.primaryText}
+            strokeWidth={1.5}
+          />
         ) : (
-          <Send size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={1.5} />
+          <Send
+            size={ICON_SIZE.md}
+            color={colors.primaryText}
+            strokeWidth={1.5}
+          />
         )}
       </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -344,6 +739,8 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.md,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.md,
+    textAlign: "center",
+    paddingHorizontal: SPACING.xl,
   },
   header: {
     flexDirection: "row",
@@ -368,12 +765,37 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
   },
+  headerRewardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
   headerSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   scroll: {
     flex: 1,
+  },
+  rewardBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    padding: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    marginBottom: SPACING.lg,
+  },
+  rewardBannerContent: {
+    flex: 1,
+    gap: SPACING.xxs,
+  },
+  rewardBannerTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.md,
+  },
+  rewardBannerAmount: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   hero: {
     borderRadius: RADIUS.lg,
@@ -432,6 +854,9 @@ const styles = StyleSheet.create({
     borderWidth: BORDER_WIDTH.thin,
     marginBottom: SPACING.lg,
   },
+  cardDisabled: {
+    opacity: 0.6,
+  },
   inputHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -441,6 +866,15 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.md,
+  },
+  charCountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  charHint: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   charCount: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -485,9 +919,15 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
+  emptyResponseState: {
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.lg,
+  },
   emptyText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: "center",
   },
   responseCard: {
     borderRadius: RADIUS.md,
@@ -500,9 +940,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
+  responseAuthorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
   responseAuthor: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  pendingBadge: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontStyle: "italic",
   },
   responseDate: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,

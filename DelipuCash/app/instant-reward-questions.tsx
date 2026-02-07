@@ -20,7 +20,7 @@ import {
 } from "@/utils/theme";
 import useUser from "@/utils/useUser";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, CheckCircle2, Circle, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -135,9 +135,15 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     setShowUploadModal(true);
   }, []);
 
+  const isAuthenticated = !!userProfile;
+
   const handleOpenQuestion = useCallback((id: string) => {
+    if (!isAuthenticated) {
+      router.push("/(auth)/login" as Href);
+      return;
+    }
     router.push(`/instant-reward-answer/${id}`);
-  }, []);
+  }, [isAuthenticated]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}> 

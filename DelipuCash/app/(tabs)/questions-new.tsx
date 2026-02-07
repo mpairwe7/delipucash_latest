@@ -195,6 +195,7 @@ interface FeedHeaderProps {
   onTabChange: (tabId: string) => void;
   onQuizStart: () => void;
   onInstantRewardPress: () => void;
+  onAnswerEarnPress: () => void;
   onAdClick: (ad: Ad) => void;
   onAdImpression: (ad: Ad) => void;
   onClearSearch: () => void;
@@ -218,6 +219,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
   onTabChange,
   onQuizStart,
   onInstantRewardPress,
+  onAnswerEarnPress,
   onAdClick,
   onAdImpression,
   onClearSearch,
@@ -283,12 +285,12 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         />
       )}
 
-      {/* Answer & Earn CTA — uses real stats */}
+      {/* Answer & Earn CTA — navigates to answer screen */}
       <AnswerEarnCTA
         colors={colors}
         pointsPerQuestion={10}
         streakActive={(userStats?.currentStreak ?? 0) > 0}
-        onPress={onQuizStart}
+        onPress={onAnswerEarnPress}
       />
 
       {/* Answer Instant Reward Questions Card */}
@@ -619,10 +621,8 @@ export default function QuestionsScreen(): React.ReactElement {
       if (isInstantReward) {
         router.push(`/instant-reward-answer/${questionId}` as Href);
       } else {
-        router.push({
-          pathname: "/question-detail",
-          params: { id: questionId },
-        } as Href);
+        // Navigate to answer & earn screen for regular questions
+        router.push(`/question-answer/${questionId}` as Href);
       }
     },
     [isAuthenticated]
@@ -719,6 +719,25 @@ export default function QuestionsScreen(): React.ReactElement {
     []
   );
 
+  // Navigate to reward-question flow (quiz session) for "Answer & Earn"
+  const handleAnswerEarnPress = useCallback(() => {
+    if (!isAuthenticated) {
+      router.push("/(auth)/login" as Href);
+      return;
+    }
+    triggerHaptic("light");
+
+    // Find first reward question for direct entry, otherwise listing
+    const firstReward = allQuestions.find((q) => q.isInstantReward);
+
+    if (firstReward) {
+      router.push(`/reward-question/${firstReward.id}` as Href);
+    } else {
+      // Fallback to the reward questions listing screen
+      router.push("/instant-reward-questions" as Href);
+    }
+  }, [isAuthenticated, allQuestions]);
+
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -775,6 +794,7 @@ export default function QuestionsScreen(): React.ReactElement {
         onTabChange={handleTabChange}
         onQuizStart={handleQuizStart}
         onInstantRewardPress={handleInstantRewardPress}
+        onAnswerEarnPress={handleAnswerEarnPress}
         onAdClick={handleAdClick}
         onAdImpression={handleAdImpression}
         onClearSearch={handleClearSearch}
@@ -798,6 +818,7 @@ export default function QuestionsScreen(): React.ReactElement {
       handleTabChange,
       handleQuizStart,
       handleInstantRewardPress,
+      handleAnswerEarnPress,
       handleAdClick,
       handleAdImpression,
       handleClearSearch,
@@ -903,7 +924,6 @@ export default function QuestionsScreen(): React.ReactElement {
   }, [isFetchingNextPage, colors.primary]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.id, []);
-  const getItemType = useCallback((item: FeedItem) => item.type, []);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -986,7 +1006,6 @@ export default function QuestionsScreen(): React.ReactElement {
           viewabilityConfigCallbackPairs={
             viewabilityConfigCallbackPairs.current
           }
-          getItemType={getItemType}
           accessibilityRole="list"
           accessibilityLabel="Questions feed"
         />

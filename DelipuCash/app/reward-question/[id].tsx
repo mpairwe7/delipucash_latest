@@ -1,42 +1,180 @@
-import { PrimaryButton } from "@/components";
+/**
+ * Reward Question Answer Screen — Full Quiz Session
+ *
+ * Features:
+ * - Zustand InstantRewardStore integration (session state machine, attempt tracking)
+ * - TanStack Query for server state (question data, answer submission)
+ * - Single-attempt enforcement via persistent attempt history
+ * - Auto-transition to next unanswered question with animated feedback
+ * - Live countdown timer for expiring questions
+ * - Memoized sub-components (OptionItem, WinnerRow) for performance
+ * - Auth guard with redirect to login
+ * - Session summary + redemption modals
+ * - Haptic feedback & accessibility
+ */
+
+import { PrimaryButton, StatCard } from "@/components";
+import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { formatCurrency } from "@/services/api";
-import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile } from "@/services/hooks";
+import {
+  useRewardQuestion,
+  useRewardQuestions,
+  useSubmitRewardAnswer,
+  useUserProfile,
+} from "@/services/hooks";
+import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
-    BORDER_WIDTH,
-    COMPONENT_SIZE,
-    ICON_SIZE,
-    RADIUS,
-    SPACING,
-    TYPOGRAPHY,
-    useTheme,
-    withAlpha,
+  BORDER_WIDTH,
+  COMPONENT_SIZE,
+  ICON_SIZE,
+  RADIUS,
+  SPACING,
+  TYPOGRAPHY,
+  ThemeColors,
+  useTheme,
+  withAlpha,
 } from "@/utils/theme";
-import { router, useLocalSearchParams } from "expo-router";
+import { normalizeText, triggerHaptic } from "@/utils/quiz-utils";
+import { LinearGradient } from "expo-linear-gradient";
+import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-    ArrowLeft,
-    Award,
-    CheckCircle2,
-    Clock3,
-    Info,
-    ShieldCheck,
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  Lock,
+  PartyPopper,
+  RefreshCcw,
+  ShieldCheck,
+  Sparkles,
+  Users,
+  Zap,
 } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-/**
- * Reward question answer screen
- */
+// ─── Pure utility (stable — outside component) ──────────────────────────────
+
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
+};
+
+// ─── Memoized sub-components ─────────────────────────────────────────────────
+
+interface OptionItemProps {
+  optionKey: string;
+  label: string;
+  isSelected: boolean;
+  isCorrect: boolean;
+  wasSelectedPreviously: boolean;
+  isDisabled: boolean;
+  onPress: (key: string) => void;
+  colors: ThemeColors;
+}
+
+const OptionItem = memo(function OptionItem({
+  optionKey,
+  label,
+  isSelected,
+  isCorrect,
+  wasSelectedPreviously,
+  isDisabled,
+  onPress,
+  colors,
+}: OptionItemProps) {
+  const handlePress = useCallback(() => onPress(optionKey), [optionKey, onPress]);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.option,
+        {
+          borderColor: isSelected ? colors.primary : colors.border,
+          backgroundColor: isSelected
+            ? withAlpha(colors.primary, 0.08)
+            : isDisabled
+              ? withAlpha(colors.secondary, 0.5)
+              : colors.secondary,
+          opacity: isDisabled && !wasSelectedPreviously ? 0.6 : 1,
+        },
+      ]}
+      onPress={handlePress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isSelected, disabled: isDisabled }}
+    >
+      <View style={styles.optionLeft}>
+        <View
+          style={[
+            styles.radio,
+            {
+              borderColor: isSelected ? colors.primary : colors.border,
+              backgroundColor: isSelected ? colors.primary : "transparent",
+            },
+          ]}
+        />
+        <Text
+          style={[
+            styles.optionLabel,
+            { color: isDisabled && !wasSelectedPreviously ? colors.textMuted : colors.text },
+          ]}
+        >
+          {`${optionKey.toUpperCase()}. ${label}`}
+        </Text>
+      </View>
+      {isCorrect && <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+      {wasSelectedPreviously && !isCorrect && (
+        <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
+      )}
+    </TouchableOpacity>
+  );
+});
+
+interface WinnerRowProps {
+  winner: {
+    id: string;
+    position: number;
+    userEmail: string;
+    paymentStatus: string;
+    amountAwarded: number;
+  };
+  colors: ThemeColors;
+}
+
+const WinnerRow = memo(function WinnerRow({ winner, colors }: WinnerRowProps) {
+  return (
+    <View style={[styles.winnerRow, { borderColor: colors.border }]}>
+      <View style={styles.winnerLeft}>
+        <Text style={[styles.winnerPosition, { color: colors.primary }]}>{winner.position}.</Text>
+        <View style={styles.winnerInfo}>
+          <Text style={[styles.winnerEmail, { color: colors.text }]} numberOfLines={1}>
+            {winner.userEmail}
+          </Text>
+          <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>{winner.paymentStatus}</Text>
+        </View>
+      </View>
+      <Text style={[styles.winnerAmount, { color: colors.success }]}>{formatCurrency(winner.amountAwarded)}</Text>
+    </View>
+  );
+});
+
+// ─── Main Screen Component ───────────────────────────────────────────────────
+
 export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, statusBarStyle } = useTheme();
@@ -44,84 +182,408 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
+  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showRedemptionModal, setShowRedemptionModal] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  const { data: question, isLoading, error } = useRewardQuestion(id || "");
-  const { data: user } = useUserProfile();
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const questionId = id || "";
+
+  // ── TanStack Query — server state ──
+  const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
+  const { data: allQuestions } = useRewardQuestions();
+  const { data: user, isLoading: isUserLoading } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
+  // ── Zustand selectors (granular — avoids full-store re-render) ──
+  const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
+  const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
+  const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
+  const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
+  const confirmReward = useInstantRewardStore((s) => s.confirmReward);
+  const walletBalance = useInstantRewardStore((s) => s.walletBalance);
+  const sessionState = useInstantRewardStore((s) => s.sessionState);
+  const sessionSummary = useInstantRewardStore((s) => s.sessionSummary);
+  const startSession = useInstantRewardStore((s) => s.startSession);
+  const endSession = useInstantRewardStore((s) => s.endSession);
+  const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
+  const updateSessionSummary = useInstantRewardStore((s) => s.updateSessionSummary);
+  const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
+  const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
+  const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
+  const canRedeem = useInstantRewardStore((s) => s.canRedeem);
+
+  // ── Auth guard — redirect unauthenticated users ──
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.replace("/(auth)/login" as Href);
+    }
+  }, [isUserLoading, user]);
+
+  // ── Initialize attempt history for the user ──
+  useEffect(() => {
+    if (user?.email) {
+      initializeAttemptHistory(user.email);
+    }
+  }, [user?.email, initializeAttemptHistory]);
+
+  // ── Initialize session if not already started ──
+  useEffect(() => {
+    if (allQuestions && allQuestions.length > 0 && sessionState === "IDLE") {
+      const questionIds = allQuestions.map((q) => q.id);
+      startSession(questionIds);
+    }
+  }, [allQuestions, sessionState, startSession]);
+
+  // ── Unanswered questions for auto-transition ──
+  const unansweredQuestions = useMemo(() => {
+    if (!allQuestions) return [];
+    return allQuestions.filter(
+      (q) => !hasAttemptedQuestion(q.id) && q.id !== questionId && !q.isCompleted
+    );
+  }, [allQuestions, questionId, hasAttemptedQuestion]);
+
+  // ── Check if user has already attempted this question ──
+  const previousAttempt = useMemo(() => {
+    if (!questionId) return null;
+    return getAttemptedQuestion(questionId);
+  }, [questionId, getAttemptedQuestion]);
+
+  const hasAlreadyAttempted = useMemo(() => {
+    return hasAttemptedQuestion(questionId);
+  }, [questionId, hasAttemptedQuestion]);
+
+  // ── Live countdown timer ──
+  useEffect(() => {
+    if (!question?.expiryTime) {
+      setTimeLeft(0);
+      return;
+    }
+
+    const expiry = new Date(question.expiryTime).getTime();
+    const update = (): void => {
+      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+      setTimeLeft(diff);
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [question?.expiryTime]);
+
+  // ── Derived state ──
   const options = useMemo(() => {
     if (!question?.options) return [] as { key: string; label: string }[];
     return Object.entries(question.options).map(([key, label]) => ({ key, label: String(label) }));
-  }, [question]);
+  }, [question?.options]);
 
-  const handleBack = (): void => {
+  const spotsLeft = useMemo(() => {
+    if (!question) return 0;
+    return Math.max(question.maxWinners - question.winnersCount, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question?.maxWinners, question?.winnersCount]);
+
+  const isExpired = useMemo(() => {
+    if (!question?.expiryTime) return false;
+    return new Date(question.expiryTime).getTime() <= Date.now() || timeLeft <= 0;
+  }, [question?.expiryTime, timeLeft]);
+
+  const isClosed = useMemo(
+    () =>
+      Boolean(
+        isExpired ||
+          question?.isCompleted ||
+          spotsLeft <= 0 ||
+          result?.isCorrect ||
+          result?.isExpired ||
+          result?.isCompleted ||
+          hasAlreadyAttempted
+      ),
+    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted]
+  );
+
+  // ── Handlers ──
+  const handleBack = useCallback((): void => {
     router.back();
-  };
+  }, []);
 
-  const handleSubmit = (): void => {
+  // Auto-transition to next question or show session summary
+  const handleTransitionToNext = useCallback(() => {
+    const nextQuestion = unansweredQuestions[0];
+
+    if (nextQuestion) {
+      setIsTransitioning(true);
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: -50,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        goToNextQuestion();
+        router.replace(`/reward-question/${nextQuestion.id}` as Href);
+      });
+    } else {
+      // No more questions — show session summary
+      triggerHaptic("success");
+      endSession();
+      setShowSessionSummary(true);
+    }
+  }, [unansweredQuestions, fadeAnim, slideAnim, goToNextQuestion, endSession]);
+
+  const handleSelectOption = useCallback(
+    (optionKey: string) => {
+      if (isClosed || hasAlreadyAttempted) return;
+      triggerHaptic("selection");
+      setSelectedOption(optionKey);
+    },
+    [isClosed, hasAlreadyAttempted]
+  );
+
+  const handleSubmit = useCallback((): void => {
     const answer = selectedOption || "";
 
     if (!question) return;
+
+    // Auth validation
+    if (!user?.email) {
+      Alert.alert("Authentication Required", "Please log in to submit answers and earn rewards.", [
+        { text: "Login", onPress: () => router.push("/(auth)/login" as Href) },
+      ]);
+      return;
+    }
+
+    // Phone number validation for payout
+    if (!user?.phone) {
+      Alert.alert(
+        "Phone Number Required",
+        "Please update your profile with a phone number to receive reward payouts.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    // Prevent re-attempts
+    if (hasAlreadyAttempted) {
+      Alert.alert(
+        "Already Attempted",
+        "You have already attempted this question. Each question can only be attempted once."
+      );
+      return;
+    }
+
     if (!answer) {
       Alert.alert("Choose an answer", "Select the option you think is correct.");
       return;
     }
 
+    triggerHaptic("medium");
+
     submitAnswer.mutate(
       {
         questionId: question.id,
         answer,
-        phoneNumber: user?.phone,
-        userEmail: user?.email,
+        phoneNumber: user.phone,
+        userEmail: user.email,
       },
       {
         onSuccess: (payload) => {
           setResult(payload);
-          if (payload.isCorrect) {
-            // Check if this is a reward winner with instant payout
-            if (payload.isWinner && payload.paymentStatus) {
-              const position = payload.position || 0;
-              const paymentStatus = payload.paymentStatus;
 
+          const rewardAmount = payload.isCorrect ? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT : 0;
+
+          // Mark question as attempted (persisted — single attempt enforcement)
+          markQuestionAttempted({
+            questionId: question.id,
+            isCorrect: payload.isCorrect,
+            selectedAnswer: answer,
+            rewardEarned: rewardAmount,
+            isWinner: payload.isWinner || false,
+            position: payload.position || null,
+            paymentStatus: payload.paymentStatus || null,
+          });
+
+          // Update session statistics
+          updateSessionSummary(payload.isCorrect, rewardAmount);
+
+          if (payload.isCorrect) {
+            triggerHaptic("success");
+
+            // Credit wallet
+            confirmReward(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT);
+
+            // Build payment status message for winners
+            if (payload.isWinner) {
+              const paymentStatus = payload.paymentStatus || "PENDING";
               let paymentMessage = "";
               if (paymentStatus === "SUCCESSFUL") {
-                paymentMessage = `\n\n💰 Your reward of ${formatCurrency(question.rewardAmount || 0)} has been sent to your mobile money account!`;
+                paymentMessage = `\n\n💰 Your reward has been credited!`;
               } else if (paymentStatus === "PENDING") {
-                paymentMessage = `\n\n⏳ Your reward of ${formatCurrency(question.rewardAmount || 0)} is being processed and will be sent shortly.`;
-              } else if (paymentStatus === "FAILED") {
-                paymentMessage = `\n\n⚠️ There was an issue processing your reward. Please contact support.`;
+                paymentMessage = `\n\n⏳ Your reward is being processed.`;
               }
 
               Alert.alert(
-                "🎉 Congratulations!",
-                `You're winner #${position}! ${payload.message || "Reward unlocked."}${paymentMessage}`
+                "🎉 Correct!",
+                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!${paymentMessage}`,
+                [
+                  {
+                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                    onPress: () => setTimeout(() => handleTransitionToNext(), 300),
+                  },
+                ]
               );
             } else {
-              Alert.alert("Correct!", payload.message || "Reward unlocked.");
+              Alert.alert(
+                "Correct! 🎯",
+                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!`,
+                [
+                  {
+                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                    onPress: () => setTimeout(() => handleTransitionToNext(), 300),
+                  },
+                ]
+              );
             }
           } else if (payload.isExpired || payload.isCompleted) {
-            Alert.alert("Unavailable", payload.message || "Rewards are no longer available.");
+            triggerHaptic("warning");
+            Alert.alert("Unavailable", payload.message || "Rewards are no longer available.", [
+              {
+                text: unansweredQuestions.length > 0 ? "Try Another" : "View Summary",
+                onPress: () => setTimeout(() => handleTransitionToNext(), 300),
+              },
+            ]);
           } else {
-            Alert.alert("Try again", payload.message || "That was not correct.");
+            triggerHaptic("error");
+            Alert.alert("Incorrect 😢", `${payload.message || "That was not correct."}`, [
+              {
+                text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
+                onPress: () => setTimeout(() => handleTransitionToNext(), 300),
+              },
+            ]);
           }
         },
-        onError: () => {
-          Alert.alert("Error", "Unable to submit your answer. Please try again.");
+        onError: (err) => {
+          triggerHaptic("error");
+          const errorMessage = err?.message || "Unable to submit your answer. Please try again.";
+
+          if (errorMessage.includes("already attempted")) {
+            Alert.alert(
+              "Already Attempted",
+              "You have already attempted this question. Each question can only be attempted once.",
+              [{ text: "OK", onPress: () => router.back() }]
+            );
+          } else if (errorMessage.includes("expired")) {
+            Alert.alert("Question Expired", "This question has expired and is no longer available.", [
+              { text: "OK", onPress: () => handleTransitionToNext() },
+            ]);
+          } else if (errorMessage.includes("completed")) {
+            Alert.alert("Question Completed", "All winners have been found for this question.", [
+              { text: "Try Another", onPress: () => handleTransitionToNext() },
+            ]);
+          } else {
+            Alert.alert("Error", errorMessage);
+          }
         },
       }
     );
-  };
+  }, [
+    question,
+    selectedOption,
+    user,
+    hasAlreadyAttempted,
+    submitAnswer,
+    markQuestionAttempted,
+    confirmReward,
+    updateSessionSummary,
+    unansweredQuestions,
+    handleTransitionToNext,
+  ]);
 
+  // ── Redemption handler ──
+  const handleRedeem = useCallback(
+    async (
+      amount: number,
+      type: "CASH" | "AIRTIME",
+      provider: "MTN" | "AIRTEL",
+      phoneNumber: string
+    ): Promise<{ success: boolean; message?: string }> => {
+      initiateRedemption({
+        points: amount,
+        cashValue: amount,
+        type,
+        provider,
+        phoneNumber,
+      });
+
+      // TODO: Call actual redemption API
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      const transactionRef = `TXN-${Date.now()}`;
+      completeRedemption(transactionRef, true);
+      return {
+        success: true,
+        message: `${formatCurrency(amount)} has been sent to your ${provider} number!`,
+      };
+    },
+    [initiateRedemption, completeRedemption]
+  );
+
+  // ── Stable modal callbacks ──
+  const handleRefresh = useCallback(() => refetch(), [refetch]);
+
+  const handleRedeemCash = useCallback(() => {
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleRedeemAirtime = useCallback(() => {
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    setShowSessionSummary(false);
+    router.push("/instant-reward-questions" as Href);
+  }, []);
+
+  const handleCloseSession = useCallback(() => {
+    setShowSessionSummary(false);
+    router.back();
+  }, []);
+
+  const handleCloseRedemption = useCallback(() => {
+    setShowRedemptionModal(false);
+    cancelRedemption();
+  }, [cancelRedemption]);
+
+  const handleFooterPress = useMemo(
+    () => (result || hasAlreadyAttempted ? handleTransitionToNext : handleSubmit),
+    [result, hasAlreadyAttempted, handleTransitionToNext, handleSubmit]
+  );
+
+  // ── Loading state ──
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading reward question...</Text>
+        <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+          Loading reward question...
+        </Text>
       </View>
     );
   }
 
+  // ── Error state ──
   if (error || !question) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -132,12 +594,11 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     );
   }
 
-  const isDisabled = Boolean(result?.isCorrect || result?.isExpired || result?.isCompleted);
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
 
+      {/* ── Header ── */}
       <View
         style={[
           styles.header,
@@ -149,125 +610,265 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         ]}
       >
         <TouchableOpacity
-          style={[styles.backButton, { backgroundColor: colors.secondary }]}
+          style={[styles.iconButton, { backgroundColor: colors.secondary }]}
           onPress={handleBack}
           accessibilityRole="button"
+          accessibilityLabel="Go back"
         >
           <ArrowLeft size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
         </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Reward question</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>Answer to unlock instant rewards</Text>
+
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Reward Question</Text>
+          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+            Answer correctly to earn instant rewards
+          </Text>
         </View>
+
+        <TouchableOpacity
+          style={[styles.iconButton, { backgroundColor: colors.secondary }]}
+          onPress={handleRefresh}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh"
+        >
+          {isFetching ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <RefreshCcw size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
+          )}
+        </TouchableOpacity>
       </View>
 
+      {/* ── Content ── */}
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING['2xl'] }}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          padding: SPACING.lg,
+          paddingBottom: insets.bottom + SPACING["2xl"],
+        }}
       >
+        {/* Hero — reward amount & live status */}
+        <LinearGradient
+          colors={[withAlpha(colors.primary, 0.14), withAlpha(colors.warning, 0.08)]}
+          style={[styles.hero, { borderColor: colors.border }]}
+        >
+          <View style={styles.heroTop}>
+            <View style={[styles.badge, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
+              <Zap size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
+              <Text style={[styles.badgeText, { color: colors.success }]}>Live</Text>
+            </View>
+            {!!question.expiryTime && (
+              <View
+                style={[styles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}
+              >
+                <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
+                <Text style={[styles.timerText, { color: colors.warning }]}>
+                  {isExpired ? "Expired" : formatTime(timeLeft)}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          <Text style={[styles.heroTitle, { color: colors.text }]}>
+            {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}
+          </Text>
+          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>
+            Earn {REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points per correct answer • One attempt
+            only
+          </Text>
+
+          <View style={styles.heroStats}>
+            <StatCard
+              icon={<Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
+              title="Spots left"
+              value={spotsLeft}
+              subtitle="Remaining winners"
+            />
+            <StatCard
+              icon={<ShieldCheck size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+              title="Status"
+              value={isClosed ? "Closed" : "Active"}
+              subtitle={question.isCompleted ? "Completed" : "Live"}
+            />
+          </View>
+        </LinearGradient>
+
+        {/* Already Attempted Banner */}
+        {hasAlreadyAttempted && previousAttempt && (
+          <View
+            style={[
+              styles.attemptedBanner,
+              {
+                backgroundColor: withAlpha(
+                  previousAttempt.isCorrect ? colors.success : colors.warning,
+                  0.12
+                ),
+                borderColor: withAlpha(
+                  previousAttempt.isCorrect ? colors.success : colors.warning,
+                  0.5
+                ),
+              },
+            ]}
+          >
+            <Lock
+              size={ICON_SIZE.sm}
+              color={previousAttempt.isCorrect ? colors.success : colors.warning}
+              strokeWidth={1.5}
+            />
+            <View style={styles.attemptedBannerContent}>
+              <Text
+                style={[
+                  styles.attemptedBannerTitle,
+                  {
+                    color: previousAttempt.isCorrect ? colors.success : colors.warning,
+                  },
+                ]}
+              >
+                {previousAttempt.isCorrect ? "You answered correctly! 🎉" : "Already attempted"}
+              </Text>
+              <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
+                {previousAttempt.isCorrect
+                  ? `You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)`
+                  : "Each question can only be attempted once."}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Question Card */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.cardHeader}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
-              <Award size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-              <Text style={[styles.badgeText, { color: colors.success }]}>Instant reward</Text>
+            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+              <Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
+              <Text style={[styles.badgeText, { color: colors.primary }]}>Instant reward</Text>
             </View>
-            {question.expiryTime && (
-              <View style={[styles.badge, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
-                <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
-                <Text style={[styles.badgeText, { color: colors.warning }]}>Expires {new Date(question.expiryTime).toLocaleString()}</Text>
-              </View>
+            {!!question.createdAt && (
+              <Text style={[styles.cardMeta, { color: colors.textMuted }]}>
+                Added {new Date(question.createdAt).toLocaleDateString()}
+              </Text>
             )}
           </View>
 
           <Text style={[styles.questionText, { color: colors.text }]}>{question.text}</Text>
 
-          <View style={[styles.metaRow, { borderColor: colors.border }]}>
-            <View style={styles.metaItem}>
-              <ShieldCheck size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
-              <Text style={[styles.metaLabel, { color: colors.textMuted }]}>Payout</Text>
-              <Text style={[styles.metaValue, { color: colors.success }]}>{formatCurrency(question.rewardAmount)}</Text>
-            </View>
-            <View style={styles.metaItem}>
-              <Info size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
-              <Text style={[styles.metaLabel, { color: colors.textMuted }]}>Spots left</Text>
-              <Text style={[styles.metaValue, { color: colors.text }]}>{Math.max(question.maxWinners - question.winnersCount, 0)}</Text>
-            </View>
-          </View>
-
+          {/* Options */}
           <View style={styles.optionsList}>
             {options.map((option) => {
-              const isSelected = selectedOption === option.key;
-              const isCorrect = Boolean(result?.isCorrect && result && option.key.toLowerCase() === question.correctAnswer.trim().toLowerCase());
+              const isSelected =
+                selectedOption === option.key ||
+                previousAttempt?.selectedAnswer === option.key;
+              const isCorrectOption = Boolean(
+                (result?.isCorrect || previousAttempt?.isCorrect) &&
+                  normalizeText(question.correctAnswer) === normalizeText(option.key)
+              );
+              const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
+              const isOptionDisabled = isClosed || hasAlreadyAttempted;
 
               return (
-                <TouchableOpacity
+                <OptionItem
                   key={option.key}
-                  style={[
-                    styles.option,
-                    {
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      backgroundColor: isSelected ? withAlpha(colors.primary, 0.08) : colors.secondary,
-                    },
-                  ]}
-                  onPress={() => setSelectedOption(option.key)}
-                  disabled={isDisabled}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected }}
-                >
-                  <View style={styles.optionLeft}>
-                    <View
-                      style={[
-                        styles.radio,
-                        {
-                          borderColor: isSelected ? colors.primary : colors.border,
-                          backgroundColor: isSelected ? colors.primary : "transparent",
-                        },
-                      ]}
-                    />
-                    <Text style={[styles.optionLabel, { color: colors.text }]}>{`${option.key.toUpperCase()}. ${option.label}`}</Text>
-                  </View>
-                  {result && isCorrect && (
-                    <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-                  )}
-                </TouchableOpacity>
+                  optionKey={option.key}
+                  label={option.label}
+                  isSelected={isSelected}
+                  isCorrect={isCorrectOption}
+                  wasSelectedPreviously={wasSelectedPreviously}
+                  isDisabled={isOptionDisabled}
+                  onPress={handleSelectOption}
+                  colors={colors}
+                />
               );
             })}
           </View>
 
-          {result && (
+          {/* Feedback Card */}
+          {(result || previousAttempt) && (
             <View
               style={[
                 styles.feedback,
                 {
-                  backgroundColor: withAlpha(result.isCorrect ? colors.success : colors.error, 0.12),
-                  borderColor: withAlpha(result.isCorrect ? colors.success : colors.error, 0.4),
+                  backgroundColor: withAlpha(
+                    result?.isCorrect || previousAttempt?.isCorrect
+                      ? colors.success
+                      : colors.error,
+                    0.12
+                  ),
+                  borderColor: withAlpha(
+                    result?.isCorrect || previousAttempt?.isCorrect
+                      ? colors.success
+                      : colors.error,
+                    0.5
+                  ),
                 },
               ]}
             >
               <View style={styles.feedbackRow}>
-                <CheckCircle2 size={ICON_SIZE.sm} color={result.isCorrect ? colors.success : colors.error} strokeWidth={1.5} />
+                <CheckCircle2
+                  size={ICON_SIZE.sm}
+                  color={
+                    result?.isCorrect || previousAttempt?.isCorrect
+                      ? colors.success
+                      : colors.error
+                  }
+                  strokeWidth={1.5}
+                />
                 <Text
                   style={[
                     styles.feedbackTitle,
-                    { color: result.isCorrect ? colors.success : colors.error },
+                    {
+                      color:
+                        result?.isCorrect || previousAttempt?.isCorrect
+                          ? colors.success
+                          : colors.error,
+                    },
                   ]}
                 >
-                  {result.isCorrect ? "Correct answer" : result.isExpired || result.isCompleted ? "Unavailable" : "Incorrect answer"}
+                  {result?.isCorrect || previousAttempt?.isCorrect
+                    ? "Correct answer"
+                    : result?.isExpired || result?.isCompleted
+                      ? "Unavailable"
+                      : "Incorrect answer"}
                 </Text>
               </View>
-              <Text style={[styles.feedbackText, { color: colors.text }]}> {result.message || "Submission processed."}</Text>
-              <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>Remaining spots: {result.remainingSpots}</Text>
-              {result.rewardEarned > 0 && (
+              <Text style={[styles.feedbackText, { color: colors.text }]}>
+                {result?.isCorrect || previousAttempt?.isCorrect
+                  ? `You answered correctly and earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!`
+                  : "This question has already been attempted. Each question can only be answered once."}
+              </Text>
+              {result?.remainingSpots !== undefined && (
+                <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>
+                  Remaining spots: {result.remainingSpots}
+                </Text>
+              )}
+              {(result?.isCorrect || previousAttempt?.isCorrect) && (
                 <Text style={[styles.feedbackReward, { color: colors.success }]}>
-                  You earned {formatCurrency(result.rewardEarned)}
+                  +{formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (
+                  {REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)
                 </Text>
               )}
             </View>
           )}
         </View>
+
+        {/* Winners Card */}
+        {Boolean(question.winners && question.winners.length) && (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.cardHeader}>
+              <View style={[styles.badge, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
+                <PartyPopper size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
+                <Text style={[styles.badgeText, { color: colors.info }]}>Winners</Text>
+              </View>
+              <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
+            </View>
+
+            {(question.winners || []).map((winner) => (
+              <WinnerRow key={winner.id} winner={winner} colors={colors} />
+            ))}
+          </View>
+        )}
       </ScrollView>
 
+      {/* ── Footer ── */}
       <View
         style={[
           styles.footer,
@@ -278,16 +879,66 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           },
         ]}
       >
+        {/* Progress indicator for remaining questions */}
+        {unansweredQuestions.length > 0 && !hasAlreadyAttempted && !result && (
+          <View style={styles.progressIndicator}>
+            <Text style={[styles.progressText, { color: colors.textMuted }]}>
+              {unansweredQuestions.length} more question
+              {unansweredQuestions.length > 1 ? "s" : ""} available
+            </Text>
+            <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
+          </View>
+        )}
+
         <PrimaryButton
-          title={result?.isCorrect ? "Done" : "Submit answer"}
-          onPress={result?.isCorrect ? handleBack : handleSubmit}
-          loading={submitAnswer.isPending}
-          disabled={isDisabled}
+          title={
+            hasAlreadyAttempted
+              ? unansweredQuestions.length > 0
+                ? "Next Question"
+                : "View Summary"
+              : result
+                ? unansweredQuestions.length > 0
+                  ? "Next Question"
+                  : "View Summary"
+                : isClosed
+                  ? "Closed"
+                  : "Submit Answer"
+          }
+          onPress={handleFooterPress}
+          loading={submitAnswer.isPending || isTransitioning}
+          disabled={isClosed && !hasAlreadyAttempted && !result}
+          variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
         />
       </View>
+
+      {/* Session Summary Modal */}
+      <RewardSessionSummary
+        visible={showSessionSummary}
+        totalQuestions={sessionSummary.totalQuestions}
+        correctAnswers={sessionSummary.correctAnswers}
+        incorrectAnswers={sessionSummary.incorrectAnswers}
+        totalEarned={sessionSummary.totalEarned}
+        sessionEarnings={sessionSummary.totalEarned}
+        totalBalance={walletBalance}
+        canRedeemRewards={canRedeem()}
+        onRedeemCash={handleRedeemCash}
+        onRedeemAirtime={handleRedeemAirtime}
+        onContinue={handleContinue}
+        onClose={handleCloseSession}
+      />
+
+      {/* Redemption Modal */}
+      <RedemptionModal
+        visible={showRedemptionModal}
+        availableAmount={walletBalance}
+        onClose={handleCloseRedemption}
+        onRedeem={handleRedeem}
+      />
     </View>
   );
 }
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -314,16 +965,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingBottom: SPACING.md,
   },
-  backButton: {
+  iconButton: {
     width: COMPONENT_SIZE.touchTarget,
     height: COMPONENT_SIZE.touchTarget,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: RADIUS.full,
-    marginRight: SPACING.md,
   },
-  headerContent: {
+  headerCenter: {
     flex: 1,
+    alignItems: "center",
+    gap: SPACING.xs,
   },
   headerTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -332,21 +984,54 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    marginTop: SPACING.xs,
   },
   scroll: {
     flex: 1,
   },
-  card: {
+  hero: {
     borderRadius: RADIUS.lg,
     padding: SPACING.lg,
     borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  heroTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize["2xl"],
+  },
+  heroSubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  heroStats: {
+    flexDirection: "row",
     gap: SPACING.md,
   },
-  cardHeader: {
+  attemptedBanner: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
+    alignItems: "center",
+    gap: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.md,
+  },
+  attemptedBannerContent: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  attemptedBannerTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  attemptedBannerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   badge: {
     flexDirection: "row",
@@ -360,33 +1045,38 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
+  timerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  timerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  card: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.md,
+    marginTop: SPACING.md,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  cardMeta: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
   questionText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
     lineHeight: TYPOGRAPHY.fontSize.lg * 1.4,
-  },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    borderRadius: RADIUS.md,
-    borderWidth: BORDER_WIDTH.thin,
-    padding: SPACING.md,
-    gap: SPACING.md,
-  },
-  metaItem: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-  },
-  metaLabel: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  metaValue: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.md,
-    marginLeft: SPACING.xs,
   },
   optionsList: {
     gap: SPACING.sm,
@@ -430,11 +1120,12 @@ const styles = StyleSheet.create({
   },
   feedbackTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   feedbackText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    lineHeight: TYPOGRAPHY.fontSize.base * 1.4,
   },
   feedbackMeta: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -442,11 +1133,53 @@ const styles = StyleSheet.create({
   },
   feedbackReward: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  winnerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: BORDER_WIDTH.hairline,
+  },
+  winnerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    flex: 1,
+  },
+  winnerPosition: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  winnerInfo: {
+    flex: 1,
+  },
+  winnerEmail: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  winnerStatus: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  winnerAmount: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   footer: {
-    paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.sm,
     borderTopWidth: BORDER_WIDTH.thin,
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  progressIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  progressText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

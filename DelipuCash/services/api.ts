@@ -34,7 +34,7 @@ const getCurrentUserId = (): string | null =>
 // ===========================================
 
 // Ensure the API URL always ends with /api
-const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app/api" || "192.168.100.48:3000";
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
 
 // Validate that API URL is configured
 if (!rawApiUrl) {
@@ -244,9 +244,11 @@ export const API_ROUTES = {
   // Rewards
   rewards: {
     list: "/api/rewards",
-    questions: "/api/rewards/questions",
-    question: (id: string) => `/api/rewards/questions/${id}`,
-    submitAnswer: (id: string) => `/api/rewards/questions/${id}/answer`,
+    questions: "/api/reward-questions/all",
+    instantQuestions: "/api/reward-questions/instant",
+    question: (id: string) => `/api/reward-questions/${id}`,
+    submitAnswer: (id: string) => `/api/reward-questions/${id}/answer`,
+    createQuestion: "/api/reward-questions/create",
     claim: (id: string) => `/api/rewards/${id}/claim`,
     daily: "/api/rewards/daily",
   },
@@ -913,10 +915,10 @@ export const rewardsApi = {
   /**
    * Submit answer to reward question
    */
-  async submitAnswer(questionId: string, answer: string, paymentProvider?: string, phoneNumber?: string): Promise<ApiResponse<RewardAnswerResult>> {
+  async submitAnswer(questionId: string, answer: string, phoneNumber?: string, userEmail?: string): Promise<ApiResponse<RewardAnswerResult>> {
     return fetchJson<RewardAnswerResult>(API_ROUTES.rewards.submitAnswer(questionId), {
       method: 'POST',
-      body: JSON.stringify({ answer, paymentProvider, phoneNumber }),
+      body: JSON.stringify({ selectedAnswer: answer, phoneNumber, userEmail, rewardQuestionId: questionId }),
     });
   },
 
@@ -949,7 +951,7 @@ export const rewardsApi = {
     paymentProvider?: string;
     phoneNumber?: string;
   }): Promise<ApiResponse<RewardQuestion>> {
-    return fetchJson<RewardQuestion>('/api/rewards/questions', {
+    return fetchJson<RewardQuestion>(API_ROUTES.rewards.createQuestion, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -970,7 +972,7 @@ export const rewardsApi = {
     timeLimit?: number;
     pointValue?: number;
   }[], userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
-    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/rewards/questions/bulk', {
+    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/reward-questions/bulk', {
       method: 'POST',
       body: JSON.stringify({ questions, userId }),
     });
@@ -991,7 +993,7 @@ export const rewardsApi = {
     timeLimit?: number;
     pointValue?: number;
   }[], userId: string): Promise<ApiResponse<{ created: number; failed: number; questions: RewardQuestion[] }>> {
-    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/rewards/questions/bulk', {
+    return fetchJson<{ created: number; failed: number; questions: RewardQuestion[] }>('/api/reward-questions/bulk', {
       method: 'POST',
       body: JSON.stringify({ questions, userId }),
     });

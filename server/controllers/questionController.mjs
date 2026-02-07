@@ -266,15 +266,16 @@ export const getQuestionById = asyncHandler(async (req, res) => {
 
 // Create a Response for a Question
 export const createResponse = asyncHandler(async (req, res) => {
-  // Log the incoming request body and params
-  console.log('Request Body:', req.body);
-  console.log('Request Params:', req.params);
-
-  // Extract questionId from the URL parameters
   const { questionId } = req.params;
-
-  // Extract responseText and userId from the request body
   let { responseText, userId } = req.body;
+
+  // Validate required fields
+  if (!responseText || !responseText.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Response text is required',
+    });
+  }
 
   // Fallback to any existing user for mock/demo flows
   if (!userId) {
@@ -282,15 +283,49 @@ export const createResponse = asyncHandler(async (req, res) => {
     userId = fallbackUser?.id;
   }
 
+  if (!userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID is required',
+    });
+  }
+
   try {
-    // Log the data being used to create the response
-    console.log('Creating response with:', { questionId, responseText, userId });
+    // Check if the question exists and get reward info
+    const question = await prisma.question.findUnique({
+      where: { id: questionId },
+      select: {
+        id: true,
+        rewardAmount: true,
+        isInstantReward: true,
+        userId: true,
+      },
+    });
+
+    if (!question) {
+      return res.status(404).json({
+        success: false,
+        message: 'Question not found',
+      });
+    }
+
+    // Check for duplicate response by this user on this question
+    const existingResponse = await prisma.response.findFirst({
+      where: { questionId, userId },
+    });
+
+    if (existingResponse) {
+      return res.status(409).json({
+        success: false,
+        message: 'You have already responded to this question',
+      });
+    }
 
     // Create the response in the database
     const response = await prisma.response.create({
       data: {
-        questionId, // Use questionId from the URL
-        responseText,
+        questionId,
+        responseText: responseText.trim(),
         userId,
       },
       include: {
@@ -300,10 +335,31 @@ export const createResponse = asyncHandler(async (req, res) => {
       },
     });
 
-    // Log the successfully created response
-    console.log('Response created successfully:', response);
+    // Calculate reward earned (distribute reward for answering)
+    let rewardEarned = 0;
+    const rewardAmount = question.rewardAmount ?? 0;
 
-    // Send a success response to the client
+    if (rewardAmount > 0 && question.userId !== userId) {
+      rewardEarned = rewardAmount;
+      // Credit reward to user's points balance
+      try {
+        await prisma.appUser.update({
+          where: { id: userId },
+          data: { points: { increment: rewardEarned } },
+        });
+      } catch (pointsError) {
+        // Log but don't fail the response creation
+        console.error('Failed to credit reward points:', pointsError);
+      }
+    }
+
+    console.log('Response created successfully:', {
+      responseId: response.id,
+      questionId,
+      userId,
+      rewardEarned,
+    });
+
     res.status(201).json({
       success: true,
       message: 'Response created successfully',
@@ -312,13 +368,15 @@ export const createResponse = asyncHandler(async (req, res) => {
         createdAt: response.createdAt.toISOString(),
         updatedAt: response.updatedAt.toISOString(),
       },
+      rewardEarned,
     });
   } catch (error) {
-    // Log any errors that occur during the process
     console.error('Error creating response:', error);
-
-    // Send an error response to the client
-    res.status(500).json({ message: 'Failed to create response', error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create response',
+      error: error.message,
+    });
   }
 });
 

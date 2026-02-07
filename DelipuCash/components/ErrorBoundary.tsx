@@ -70,11 +70,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       const { fallback, screenName } = this.props;
       const { error, errorCount } = this.state;
 
-      if (typeof fallback === 'function' && error) {
-        return fallback(error, this.handleRetry);
-      }
-
-      if (fallback) {
+      if (typeof fallback === 'function') {
+        if (error) {
+          return fallback(error, this.handleRetry);
+        }
+        // fallback is a render function but error is null — fall through to default UI
+      } else if (fallback) {
         return fallback;
       }
 

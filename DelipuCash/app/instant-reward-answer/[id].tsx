@@ -19,7 +19,7 @@ import {
 } from "@/utils/quiz-utils";
 import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
-import { router, useLocalSearchParams } from "expo-router";
+import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   AlertCircle,
@@ -170,7 +170,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions } = useRewardQuestions();
-  const { data: user } = useUserProfile();
+  const { data: user, isLoading: isUserLoading } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   // ── Zustand selectors (granular — avoids full-store re-render) ──
@@ -190,6 +190,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
   const canRedeem = useInstantRewardStore((s) => s.canRedeem);
+
+  // Redirect unauthenticated users to login
+  useEffect(() => {
+    if (!isUserLoading && !user) {
+      router.replace("/(auth)/login" as Href);
+    }
+  }, [isUserLoading, user]);
 
   // Initialize attempt history for the user
   useEffect(() => {
@@ -323,6 +330,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       Alert.alert(
         "Authentication Required",
         "Please log in to submit answers and earn rewards.",
+        [{ text: "Login", onPress: () => router.push("/(auth)/login" as Href) }]
+      );
+      return;
+    }
+
+    // Validate phone number is available for reward payout
+    if (!user?.phone) {
+      Alert.alert(
+        "Phone Number Required",
+        "Please update your profile with a phone number to receive reward payouts.",
         [{ text: "OK" }]
       );
       return;
@@ -613,7 +630,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               <Zap size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
               <Text style={[styles.badgeText, { color: colors.success }]}>Live</Text>
             </View>
-            {question.expiryTime && (
+            {!!question.expiryTime && (
               <View style={[styles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}> 
                 <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
                 <Text style={[styles.timerText, { color: colors.warning }]}>
@@ -675,7 +692,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               <Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
               <Text style={[styles.badgeText, { color: colors.primary }]}>Instant reward</Text>
             </View>
-            {question.createdAt && (
+            {!!question.createdAt && (
               <Text style={[styles.cardMeta, { color: colors.textMuted }]}>
                 Added {new Date(question.createdAt).toLocaleDateString()}
               </Text>
