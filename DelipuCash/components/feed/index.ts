@@ -45,6 +45,13 @@ export {
   type QuestionFormData,
 } from "./CreateQuestionWizard";
 
+// CTA card components (extracted for FeedHeader performance)
+export {
+  AnswerEarnCTA,
+  InstantRewardCTA,
+  AskCommunityCTA,
+} from "./CTACards";
+
 // Skeleton loaders
 export {
   QuestionFeedSkeleton,

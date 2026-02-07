@@ -181,47 +181,34 @@ export const questionQueryKeys = {
 // ===========================================
 
 /**
- * Simple deterministic hash from string → number.
- * Used to generate stable pseudo-random values from question IDs
- * so metrics don't change on every refetch.
- */
-function hashCode(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-/**
  * Transform backend question to FeedQuestion format.
- * Uses deterministic hash-based values instead of Math.random()
- * so metrics remain stable across refetches.
+ * Uses real vote counts from the server (QuestionVote table).
+ * Engagement flags are derived from real data — no synthetic values.
  */
 function transformToFeedQuestion(
-  question: Question & { user?: Partial<AppUser> },
-  index?: number
+  question: Question & { user?: Partial<AppUser>; upvotes?: number; downvotes?: number },
+  _index?: number
 ): FeedQuestion {
-  const hash = hashCode(question.id || `q-${index}`);
-
   // Generate author from user data or fallback
   const author: QuestionAuthor = question.user
     ? {
         id: question.user.id || question.userId || 'anonymous',
         name: `${question.user.firstName || 'Anonymous'} ${question.user.lastName || 'User'}`.trim(),
         avatar: question.user.avatar || undefined,
-        reputation: question.user.points || (hash % 5000) + 100,
+        reputation: question.user.points || 0,
         badge: question.user.points && question.user.points > 1000 ? 'top-contributor' : undefined,
       }
     : {
         id: question.userId || 'anonymous',
         name: 'Anonymous User',
-        reputation: (hash % 5000) + 100,
+        reputation: 0,
         badge: undefined,
       };
 
-  // Calculate engagement metrics
+  // Use real data from server
   const totalAnswers = question.totalAnswers || 0;
+  const upvotes = question.upvotes || 0;
+  const downvotes = question.downvotes || 0;
   const daysSinceCreation = Math.floor(
     (Date.now() - new Date(question.createdAt).getTime()) / (1000 * 60 * 60 * 24)
   );
@@ -229,11 +216,11 @@ function transformToFeedQuestion(
   return {
     ...question,
     author,
-    upvotes: totalAnswers * 2 + (hash % 20),
-    downvotes: (hash >> 4) % 5,
-    followersCount: (hash % 80) + 5,
-    isHot: daysSinceCreation <= 1 && totalAnswers > 5,
-    isTrending: daysSinceCreation <= 3 && totalAnswers > 10,
+    upvotes,
+    downvotes,
+    followersCount: upvotes + totalAnswers,
+    isHot: daysSinceCreation <= 1 && totalAnswers > 3,
+    isTrending: daysSinceCreation <= 3 && (upvotes > 5 || totalAnswers > 5),
     hasExpertAnswer: totalAnswers > 3,
     hasAcceptedAnswer: totalAnswers > 0,
     userHasVoted: null,
@@ -665,16 +652,23 @@ export function useSubmitQuestionResponse(): UseMutationResult<
 export function useQuestionsLeaderboard(
   limit: number = 10
 ): UseQueryResult<LeaderboardResult, Error> {
+  const userId = getCurrentUserId();
+
   return useQuery({
     queryKey: [...questionQueryKeys.leaderboard, limit],
     queryFn: async () => {
-      const response = await fetchJson<LeaderboardResult>(
-        `/api/questions/leaderboard?limit=${limit}`
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (userId) params.set('userId', userId);
+
+      const response = await fetchJson<{ data: LeaderboardResult }>(
+        `/api/questions/leaderboard?${params}`
       );
       if (!response.success) {
         throw new Error(response.error || 'Failed to load leaderboard');
       }
-      return response.data;
+      // Server wraps in { success, data: { users, currentUserRank, totalUsers } }
+      const payload = (response.data as any)?.data ?? response.data;
+      return payload as LeaderboardResult;
     },
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 30,
@@ -687,20 +681,36 @@ export function useQuestionsLeaderboard(
  * Shorter staleTime — stats update more frequently.
  */
 export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Error> {
+  const userId = getCurrentUserId();
+
   return useQuery({
     queryKey: questionQueryKeys.userStats,
     queryFn: async () => {
-      const response = await fetchJson<UserQuestionsStats>(
-        '/api/users/stats/questions'
+      if (!userId) {
+        // Return default stats for unauthenticated users
+        return {
+          totalAnswered: 0,
+          totalEarnings: 0,
+          currentStreak: 0,
+          questionsAnsweredToday: 0,
+          dailyTarget: 10,
+          weeklyProgress: [0, 0, 0, 0, 0, 0, 0],
+        };
+      }
+      const response = await fetchJson<{ data: UserQuestionsStats }>(
+        `/api/questions/user-stats?userId=${userId}`
       );
       if (!response.success) {
         throw new Error(response.error || 'Failed to load stats');
       }
-      return response.data;
+      // Server wraps in { success, data: { ... } }
+      const payload = (response.data as any)?.data ?? response.data;
+      return payload as UserQuestionsStats;
     },
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
     retry: 2,
+    enabled: true, // Always enabled — returns defaults for unauthenticated
   });
 }
 

@@ -17,7 +17,7 @@ const QUESTION_BASE_SELECT = {
   userId: true,
   createdAt: true,
   updatedAt: true,
-  _count: { select: { responses: true } },
+  _count: { select: { responses: true, votes: true } },
   user: {
     select: {
       id: true,
@@ -53,6 +53,9 @@ function formatQuestion(q) {
     createdAt: q.createdAt,
     updatedAt: q.updatedAt,
     totalAnswers: q._count?.responses ?? 0,
+    totalVotes: q._count?.votes ?? 0,
+    upvotes: q._upvotes ?? 0,
+    downvotes: q._downvotes ?? 0,
     user: q.user
       ? {
           id: q.user.id,
@@ -139,26 +142,67 @@ export const createQuestion = asyncHandler(async (req, res) => {
 
 
 
-// Get All Questions (with pagination)
+// Get All Questions (with pagination, vote counts, and feed stats)
 export const getQuestions = asyncHandler(async (req, res) => {
   try {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
+    const tab = req.query.tab || 'for-you';
+
+    // Build where clause based on tab
+    let whereClause = {};
+    if (tab === 'unanswered') {
+      whereClause = { responses: { none: {} } };
+    } else if (tab === 'rewards') {
+      whereClause = { isInstantReward: true, rewardAmount: { gt: 0 } };
+    }
+
+    // Build order based on tab
+    let orderBy = [{ createdAt: 'desc' }];
+    if (tab === 'latest') {
+      orderBy = [{ createdAt: 'desc' }];
+    }
 
     const queryOptions = buildOptimizedQuery('Question', {
       select: QUESTION_EXTENDED_SELECT,
-      orderBy: [{ createdAt: 'desc' }],
+      where: whereClause,
+      orderBy,
       skip,
       take: limit,
     });
 
-    const [questions, total] = await Promise.all([
+    const [questions, total, unansweredCount, rewardsCount] = await Promise.all([
       resilientQuestionFindMany(queryOptions),
-      prisma.question.count(),
+      prisma.question.count({ where: whereClause }),
+      prisma.question.count({ where: { responses: { none: {} } } }),
+      prisma.question.count({ where: { isInstantReward: true, rewardAmount: { gt: 0 } } }),
     ]);
 
-    const formattedQuestions = questions.map(formatQuestion);
+    // Batch fetch vote counts for all questions in one query
+    const questionIds = questions.map(q => q.id);
+    const voteCounts = questionIds.length > 0
+      ? await prisma.questionVote.groupBy({
+          by: ['questionId', 'type'],
+          where: { questionId: { in: questionIds } },
+          _count: { id: true },
+        })
+      : [];
+
+    // Build vote count maps
+    const upvoteMap = new Map();
+    const downvoteMap = new Map();
+    for (const vc of voteCounts) {
+      if (vc.type === 'up') upvoteMap.set(vc.questionId, vc._count.id);
+      else if (vc.type === 'down') downvoteMap.set(vc.questionId, vc._count.id);
+    }
+
+    const formattedQuestions = questions.map(q => {
+      const formatted = formatQuestion(q);
+      formatted.upvotes = upvoteMap.get(q.id) || 0;
+      formatted.downvotes = downvoteMap.get(q.id) || 0;
+      return formatted;
+    });
 
     res.json({
       success: true,
@@ -168,6 +212,12 @@ export const getQuestions = asyncHandler(async (req, res) => {
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+        hasMore: page * limit < total,
+      },
+      stats: {
+        totalQuestions: total,
+        unansweredCount,
+        rewardsCount,
       },
     });
   } catch (error) {
@@ -537,6 +587,206 @@ export const AddRewardQuestion = asyncHandler(async (req, res) => {
   });
 
   res.status(201).json({ message: 'Question created successfully', question });
+});
+
+// ============================================================================
+// Questions Leaderboard — top earners/answerers
+// ============================================================================
+
+/**
+ * GET /api/questions/leaderboard?limit=10
+ * Returns top users ranked by total answers + points.
+ * Public endpoint — no auth required.
+ */
+export const getLeaderboard = asyncHandler(async (req, res) => {
+  const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+  const userId = req.query.userId || null;
+
+  try {
+    // Get top users by points (points represent earnings/activity)
+    const topUsers = await prisma.appUser.findMany({
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        avatar: true,
+        points: true,
+        _count: {
+          select: {
+            Response: true,
+            attempts: true,
+          },
+        },
+      },
+      orderBy: { points: 'desc' },
+      take: limit,
+    });
+
+    const users = topUsers.map((u, index) => ({
+      id: u.id,
+      name: `${u.firstName} ${u.lastName}`.trim(),
+      avatar: u.avatar,
+      points: u.points,
+      rank: index + 1,
+      answersCount: (u._count?.Response || 0) + (u._count?.attempts || 0),
+    }));
+
+    // Get current user rank if userId provided
+    let currentUserRank = 0;
+    if (userId) {
+      const currentUser = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { points: true },
+      });
+      if (currentUser) {
+        currentUserRank = await prisma.appUser.count({
+          where: { points: { gt: currentUser.points } },
+        }) + 1;
+      }
+    }
+
+    const totalUsers = await prisma.appUser.count();
+
+    res.json({
+      success: true,
+      data: {
+        users,
+        currentUserRank,
+        totalUsers,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching leaderboard:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch leaderboard', error: error.message });
+  }
+});
+
+// ============================================================================
+// User Question Stats — real stats from database
+// ============================================================================
+
+/**
+ * GET /api/questions/user-stats?userId=xxx
+ * Returns real user stats: answers, earnings, streak, daily progress.
+ * Falls back gracefully when tables are empty.
+ */
+export const getUserQuestionStats = asyncHandler(async (req, res) => {
+  const userId = req.query.userId;
+
+  if (!userId) {
+    return res.status(400).json({ success: false, message: 'userId is required' });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { points: true, email: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Calculate real stats in parallel
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [
+      totalResponses,
+      totalAttempts,
+      todayResponses,
+      todayAttempts,
+      rewardSum,
+      // Get responses from last 7 days for weekly progress
+      weeklyResponses,
+    ] = await Promise.all([
+      // Total responses submitted
+      prisma.response.count({ where: { userId } }),
+      // Total quiz attempts
+      prisma.questionAttempt.count({ where: { userEmail: user.email } }),
+      // Today's responses
+      prisma.response.count({
+        where: { userId, createdAt: { gte: today } },
+      }),
+      // Today's quiz attempts
+      prisma.questionAttempt.count({
+        where: { userEmail: user.email, attemptedAt: { gte: today } },
+      }),
+      // Total reward earnings
+      prisma.reward.aggregate({
+        where: { userEmail: user.email },
+        _sum: { points: true },
+      }),
+      // Weekly progress (last 7 days grouped by day)
+      prisma.response.groupBy({
+        by: ['createdAt'],
+        where: {
+          userId,
+          createdAt: {
+            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+        _count: { id: true },
+      }),
+    ]);
+
+    // Build weekly progress array (last 7 days)
+    const weeklyProgress = Array.from({ length: 7 }, (_, i) => {
+      const dayDate = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
+      const dayStart = new Date(dayDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayDate);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      return weeklyResponses
+        .filter(r => {
+          const d = new Date(r.createdAt);
+          return d >= dayStart && d <= dayEnd;
+        })
+        .reduce((sum, r) => sum + r._count.id, 0);
+    });
+
+    // Calculate streak: count consecutive days with activity going backwards
+    let currentStreak = 0;
+    const questionsAnsweredToday = todayResponses + todayAttempts;
+    if (questionsAnsweredToday > 0) currentStreak = 1;
+
+    // Check previous days for streak
+    for (let i = 1; i <= 30; i++) {
+      const dayStart = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setHours(23, 59, 59, 999);
+
+      const dayActivity = await prisma.response.count({
+        where: { userId, createdAt: { gte: dayStart, lte: dayEnd } },
+      });
+
+      if (dayActivity > 0) {
+        currentStreak++;
+      } else {
+        break;
+      }
+    }
+
+    const totalAnswered = totalResponses + totalAttempts;
+    const totalEarnings = (rewardSum._sum?.points || 0) + (user.points || 0);
+
+    res.json({
+      success: true,
+      data: {
+        totalAnswered,
+        totalEarnings,
+        currentStreak,
+        questionsAnsweredToday,
+        dailyTarget: 10,
+        weeklyProgress,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching user question stats:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats', error: error.message });
+  }
 });
 
 

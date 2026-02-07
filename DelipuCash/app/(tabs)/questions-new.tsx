@@ -54,18 +54,12 @@ import Animated, {
 import {
   Plus,
   Search,
-  Sparkles,
   Clock3,
   Award,
   TrendingUp,
   User,
-  Gift,
-  Play,
-  Flame,
-  Star,
-  MessageCircle,
+  Sparkles,
   HelpCircle,
-  Zap,
 } from "lucide-react-native";
 
 // Components
@@ -92,6 +86,9 @@ import {
   DailyProgress,
   LeaderboardSnippet,
   RewardProgress,
+  AnswerEarnCTA,
+  InstantRewardCTA,
+  AskCommunityCTA,
 } from "@/components/feed";
 
 // Ads
@@ -197,6 +194,7 @@ interface FeedHeaderProps {
   hasNoResults: boolean;
   onTabChange: (tabId: string) => void;
   onQuizStart: () => void;
+  onInstantRewardPress: () => void;
   onAdClick: (ad: Ad) => void;
   onAdImpression: (ad: Ad) => void;
   onClearSearch: () => void;
@@ -219,6 +217,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
   hasNoResults,
   onTabChange,
   onQuizStart,
+  onInstantRewardPress,
   onAdClick,
   onAdImpression,
   onClearSearch,
@@ -233,19 +232,19 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           style={styles.gamificationRow}
         >
           <StreakCounter
-            streak={userStats?.currentStreak || 7}
-            isActiveToday={true}
+            streak={userStats?.currentStreak || 0}
+            isActiveToday={(userStats?.questionsAnsweredToday ?? 0) > 0}
             size="compact"
             onPress={() => console.log("Streak details")}
           />
           <PointsDisplay
-            points={userStats?.totalEarnings || 1250}
+            points={userStats?.totalEarnings || 0}
             size="compact"
             onPress={() => router.push("/(tabs)/withdraw" as Href)}
           />
           <DailyProgress
-            current={userStats?.questionsAnsweredToday || 6}
-            target={10}
+            current={userStats?.questionsAnsweredToday || 0}
+            target={userStats?.dailyTarget || 10}
             label="Questions"
             size={50}
             onPress={() => console.log("Daily goal details")}
@@ -284,93 +283,19 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         />
       )}
 
-      {/* Answer & Earn CTA */}
-      <Pressable
-        style={[styles.earnCta, { backgroundColor: colors.card }]}
+      {/* Answer & Earn CTA — uses real stats */}
+      <AnswerEarnCTA
+        colors={colors}
+        pointsPerQuestion={10}
+        streakActive={(userStats?.currentStreak ?? 0) > 0}
         onPress={onQuizStart}
-        accessibilityLabel="Start answering questions to earn rewards"
-        accessibilityRole="button"
-      >
-        <View
-          style={[
-            styles.earnCtaIcon,
-            { backgroundColor: withAlpha(colors.primary, 0.15) },
-          ]}
-        >
-          <Gift size={28} color={colors.primary} strokeWidth={1.5} />
-        </View>
-        <View style={styles.earnCtaContent}>
-          <Text style={[styles.earnCtaTitle, { color: colors.text }]}>
-            Answer Questions & Earn!
-          </Text>
-          <Text style={[styles.earnCtaSubtitle, { color: colors.textMuted }]}>
-            Complete quizzes to earn points and cash rewards
-          </Text>
-          <View style={styles.earnCtaStats}>
-            <View
-              style={[
-                styles.earnCtaStat,
-                { backgroundColor: withAlpha(colors.warning, 0.15) },
-              ]}
-            >
-              <Star size={12} color={colors.warning} strokeWidth={2} />
-              <Text
-                style={[styles.earnCtaStatText, { color: colors.warning }]}
-              >
-                10 pts/question
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.earnCtaStat,
-                { backgroundColor: withAlpha(colors.error, 0.15) },
-              ]}
-            >
-              <Flame size={12} color={colors.error} strokeWidth={2} />
-              <Text style={[styles.earnCtaStatText, { color: colors.error }]}>
-                Streak bonus
-              </Text>
-            </View>
-          </View>
-        </View>
-        <View style={[styles.startButton, { backgroundColor: colors.primary }]}>
-          <Play size={16} color={colors.primaryText} strokeWidth={2} />
-          <Text style={[styles.startButtonText, { color: colors.primaryText }]}>
-            Start
-          </Text>
-        </View>
-      </Pressable>
+      />
 
       {/* Answer Instant Reward Questions Card */}
-      <Pressable
-        style={[styles.instantRewardCard, { backgroundColor: colors.card }]}
-        onPress={() => router.push("/instant-reward-questions" as Href)}
-        accessibilityLabel="Browse instant reward questions for quick payouts"
-        accessibilityRole="button"
-      >
-        <View
-          style={[
-            styles.instantRewardIcon,
-            { backgroundColor: withAlpha(colors.warning, 0.15) },
-          ]}
-        >
-          <Sparkles size={24} color={colors.warning} strokeWidth={1.5} />
-        </View>
-        <View style={styles.instantRewardContent}>
-          <Text style={[styles.instantRewardTitle, { color: colors.text }]}>
-            Answer Instant Reward Questions!
-          </Text>
-          <Text
-            style={[
-              styles.instantRewardSubtitle,
-              { color: colors.textMuted },
-            ]}
-          >
-            Earn instant payouts for quality answers
-          </Text>
-        </View>
-        <Zap size={20} color={colors.warning} strokeWidth={2} />
-      </Pressable>
+      <InstantRewardCTA
+        colors={colors}
+        onPress={onInstantRewardPress}
+      />
 
       {/* In-Feed Native Ad */}
       {feedAds && feedAds.length > 0 && (
@@ -384,67 +309,14 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       )}
 
       {/* Ask Questions CTA */}
-      <Pressable
-        style={[styles.askQuestionsCta, { backgroundColor: colors.card }]}
+      <AskCommunityCTA
+        colors={colors}
         onPress={onOpenCreateWizard}
-        accessibilityLabel="Ask a question and get answers from the community"
-        accessibilityRole="button"
-      >
-        <View
-          style={[
-            styles.askQuestionsIcon,
-            { backgroundColor: withAlpha(colors.info, 0.15) },
-          ]}
-        >
-          <HelpCircle size={24} color={colors.info} strokeWidth={1.5} />
-        </View>
-        <View style={styles.askQuestionsContent}>
-          <Text style={[styles.askQuestionsTitle, { color: colors.text }]}>
-            Ask the Community
-          </Text>
-          <Text
-            style={[styles.askQuestionsSubtitle, { color: colors.textMuted }]}
-          >
-            Get answers from experts and community members
-          </Text>
-          <View style={styles.askQuestionsStats}>
-            <View
-              style={[
-                styles.askQuestionsStat,
-                { backgroundColor: withAlpha(colors.info, 0.15) },
-              ]}
-            >
-              <MessageCircle size={12} color={colors.info} strokeWidth={2} />
-              <Text
-                style={[styles.askQuestionsStatText, { color: colors.info }]}
-              >
-                Quick responses
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.askQuestionsStat,
-                { backgroundColor: withAlpha(colors.success, 0.15) },
-              ]}
-            >
-              <TrendingUp size={12} color={colors.success} strokeWidth={2} />
-              <Text
-                style={[
-                  styles.askQuestionsStatText,
-                  { color: colors.success },
-                ]}
-              >
-                Build reputation
-              </Text>
-            </View>
-          </View>
-        </View>
-        <Plus size={20} color={colors.info} strokeWidth={2} />
-      </Pressable>
+      />
 
-      {/* Reward Progress */}
+      {/* Reward Progress — wired to real stats */}
       <RewardProgress
-        currentPoints={userStats?.totalEarnings || 1250}
+        currentPoints={userStats?.totalEarnings || 0}
         nextTier={{ points: 2500, cashValue: 25000, label: "25,000 UGX" }}
         canRedeem={(userStats?.totalEarnings || 0) >= 500}
         onRedeem={() => router.push("/(tabs)/withdraw" as Href)}
@@ -842,6 +714,10 @@ export default function QuestionsScreen(): React.ReactElement {
     () => setShowCreateWizard(true),
     []
   );
+  const handleInstantRewardPress = useCallback(
+    () => router.push("/instant-reward-questions" as Href),
+    []
+  );
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({
@@ -898,6 +774,7 @@ export default function QuestionsScreen(): React.ReactElement {
         hasNoResults={hasNoResults}
         onTabChange={handleTabChange}
         onQuizStart={handleQuizStart}
+        onInstantRewardPress={handleInstantRewardPress}
         onAdClick={handleAdClick}
         onAdImpression={handleAdImpression}
         onClearSearch={handleClearSearch}
@@ -920,6 +797,7 @@ export default function QuestionsScreen(): React.ReactElement {
       hasNoResults,
       handleTabChange,
       handleQuizStart,
+      handleInstantRewardPress,
       handleAdClick,
       handleAdImpression,
       handleClearSearch,
@@ -1239,62 +1117,7 @@ const styles = StyleSheet.create({
   },
 
   // Earn CTA
-  earnCta: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  earnCtaIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: RADIUS.lg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  earnCtaContent: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  earnCtaTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.lg,
-  },
-  earnCtaSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  earnCtaStats: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
-  earnCtaStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-  },
-  earnCtaStatText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-  startButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  startButtonText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
+  // Earn CTA (styles moved to CTACards.tsx)
 
   // Feed Tabs
   feedTabs: {
@@ -1360,80 +1183,7 @@ const styles = StyleSheet.create({
     marginVertical: SPACING.lg,
   },
 
-  // Instant Reward Questions Card
-  instantRewardCard: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  instantRewardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.lg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  instantRewardContent: {
-    flex: 1,
-    gap: 2,
-  },
-  instantRewardTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  instantRewardSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-
-  // Ask Questions CTA
-  askQuestionsCta: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  askQuestionsIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.lg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  askQuestionsContent: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  askQuestionsTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  askQuestionsSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  askQuestionsStats: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
-  askQuestionsStat: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-  },
-  askQuestionsStatText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-  },
+  // Instant Reward / Ask CTA styles moved to CTACards.tsx
 
   // FAB
   fab: {
