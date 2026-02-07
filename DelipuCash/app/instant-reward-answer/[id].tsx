@@ -35,7 +35,7 @@ import {
     Users,
     Zap,
 } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -47,6 +47,109 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+// ─── Pure utility (stable — outside component) ──────────────────────────────
+
+const formatTime = (seconds: number): string => {
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
+};
+
+// ─── Memoized sub-components ─────────────────────────────────────────────────
+
+interface OptionItemProps {
+  optionKey: string;
+  label: string;
+  isSelected: boolean;
+  isCorrect: boolean;
+  wasSelectedPreviously: boolean;
+  isDisabled: boolean;
+  onPress: (key: string) => void;
+  colors: Record<string, string>;
+}
+
+const OptionItem = memo(function OptionItem({
+  optionKey,
+  label,
+  isSelected,
+  isCorrect,
+  wasSelectedPreviously,
+  isDisabled,
+  onPress,
+  colors,
+}: OptionItemProps) {
+  const handlePress = useCallback(() => onPress(optionKey), [optionKey, onPress]);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.option,
+        {
+          borderColor: isSelected ? colors.primary : colors.border,
+          backgroundColor: isSelected
+            ? withAlpha(colors.primary, 0.08)
+            : isDisabled
+              ? withAlpha(colors.secondary, 0.5)
+              : colors.secondary,
+          opacity: isDisabled && !wasSelectedPreviously ? 0.6 : 1,
+        },
+      ]}
+      onPress={handlePress}
+      disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isSelected, disabled: isDisabled }}
+    >
+      <View style={styles.optionLeft}>
+        <View
+          style={[
+            styles.radio,
+            {
+              borderColor: isSelected ? colors.primary : colors.border,
+              backgroundColor: isSelected ? colors.primary : "transparent",
+            },
+          ]}
+        />
+        <Text
+          style={[
+            styles.optionLabel,
+            { color: isDisabled && !wasSelectedPreviously ? colors.textMuted : colors.text },
+          ]}
+        >
+          {`${optionKey.toUpperCase()}. ${label}`}
+        </Text>
+      </View>
+      {isCorrect && <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+      {wasSelectedPreviously && !isCorrect && (
+        <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
+      )}
+    </TouchableOpacity>
+  );
+});
+
+interface WinnerRowProps {
+  winner: { id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number };
+  colors: Record<string, string>;
+}
+
+const WinnerRow = memo(function WinnerRow({ winner, colors }: WinnerRowProps) {
+  return (
+    <View style={[styles.winnerRow, { borderColor: colors.border }]}>
+      <View style={styles.winnerLeft}>
+        <Text style={[styles.winnerPosition, { color: colors.primary }]}>{winner.position}.</Text>
+        <View style={styles.winnerInfo}>
+          <Text style={[styles.winnerEmail, { color: colors.text }]} numberOfLines={1}>
+            {winner.userEmail}
+          </Text>
+          <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>{winner.paymentStatus}</Text>
+        </View>
+      </View>
+      <Text style={[styles.winnerAmount, { color: colors.success }]}>{formatCurrency(winner.amountAwarded)}</Text>
+    </View>
+  );
+});
+
+// ─── Main Screen Component ───────────────────────────────────────────────────
 
 export default function InstantRewardAnswerScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -66,31 +169,27 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
-  const { data: allQuestions } = useRewardQuestions(); // Get all questions for session flow
+  const { data: allQuestions } = useRewardQuestions();
   const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
-  // Instant Reward Store - Session & Attempt Tracking
-  const {
-    initializeAttemptHistory,
-    hasAttemptedQuestion,
-    getAttemptedQuestion,
-    markQuestionAttempted,
-    confirmReward,
-    walletBalance,
-    // Session management
-    sessionState,
-    sessionSummary,
-    startSession,
-    endSession,
-    goToNextQuestion,
-    updateSessionSummary,
-    // Redemption
-    initiateRedemption,
-    completeRedemption,
-    cancelRedemption,
-    canRedeem,
-  } = useInstantRewardStore();
+  // ── Zustand selectors (granular — avoids full-store re-render) ──
+  const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
+  const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
+  const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
+  const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
+  const confirmReward = useInstantRewardStore((s) => s.confirmReward);
+  const walletBalance = useInstantRewardStore((s) => s.walletBalance);
+  const sessionState = useInstantRewardStore((s) => s.sessionState);
+  const sessionSummary = useInstantRewardStore((s) => s.sessionSummary);
+  const startSession = useInstantRewardStore((s) => s.startSession);
+  const endSession = useInstantRewardStore((s) => s.endSession);
+  const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
+  const updateSessionSummary = useInstantRewardStore((s) => s.updateSessionSummary);
+  const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
+  const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
+  const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
+  const canRedeem = useInstantRewardStore((s) => s.canRedeem);
 
   // Initialize attempt history for the user
   useEffect(() => {
@@ -147,26 +246,30 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const options = useMemo(() => {
     if (!question?.options) return [] as { key: string; label: string }[];
     return Object.entries(question.options).map(([key, label]) => ({ key, label: String(label) }));
-  }, [question]);
+  }, [question?.options]);
 
   const spotsLeft = useMemo(() => {
     if (!question) return 0;
     return Math.max(question.maxWinners - question.winnersCount, 0);
-  }, [question]);
+  }, [question?.maxWinners, question?.winnersCount]);
 
   const isExpired = useMemo(() => {
     if (!question?.expiryTime) return false;
     return new Date(question.expiryTime).getTime() <= Date.now() || timeLeft <= 0;
   }, [question?.expiryTime, timeLeft]);
 
-  const isClosed = Boolean(
-    isExpired ||
-      question?.isCompleted ||
-      spotsLeft <= 0 ||
-      result?.isCorrect ||
-      result?.isExpired ||
-    result?.isCompleted ||
-    hasAlreadyAttempted // Prevent re-attempts
+  const isClosed = useMemo(
+    () =>
+      Boolean(
+        isExpired ||
+          question?.isCompleted ||
+          spotsLeft <= 0 ||
+          result?.isCorrect ||
+          result?.isExpired ||
+          result?.isCompleted ||
+          hasAlreadyAttempted
+      ),
+    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted]
   );
 
   const handleBack = useCallback((): void => {
@@ -385,7 +488,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
   ): Promise<{ success: boolean; message?: string }> => {
-    // Create redemption request object
     initiateRedemption({
       points: amount,
       cashValue: amount,
@@ -395,7 +497,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     });
 
     // TODO: Call actual redemption API
-    // For now, simulate success
     await new Promise(resolve => setTimeout(resolve, 2000));
 
     const transactionRef = `TXN-${Date.now()}`;
@@ -403,11 +504,38 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     return { success: true, message: `${formatCurrency(amount)} has been sent to your ${provider} number!` };
   }, [initiateRedemption, completeRedemption]);
 
-  const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
-  };
+  // ── Stable modal callbacks (avoid inline arrow fns in JSX) ──
+  const handleRefresh = useCallback(() => refetch(), [refetch]);
+
+  const handleRedeemCash = useCallback(() => {
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleRedeemAirtime = useCallback(() => {
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleContinue = useCallback(() => {
+    setShowSessionSummary(false);
+    router.push('/instant-reward-questions');
+  }, []);
+
+  const handleCloseSession = useCallback(() => {
+    setShowSessionSummary(false);
+    router.back();
+  }, []);
+
+  const handleCloseRedemption = useCallback(() => {
+    setShowRedemptionModal(false);
+    cancelRedemption();
+  }, [cancelRedemption]);
+
+  const handleFooterPress = useMemo(
+    () => (result || hasAlreadyAttempted ? handleTransitionToNext : handleSubmit),
+    [result, hasAlreadyAttempted, handleTransitionToNext, handleSubmit]
+  );
 
   if (isLoading) {
     return (
@@ -459,7 +587,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
         <TouchableOpacity
           style={[styles.iconButton, { backgroundColor: colors.secondary }]}
-          onPress={() => refetch()}
+          onPress={handleRefresh}
           accessibilityRole="button"
           accessibilityLabel="Refresh"
         >
@@ -559,54 +687,26 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           <View style={styles.optionsList}>
             {options.map((option) => {
               const isSelected = selectedOption === option.key ||
-                (previousAttempt?.selectedAnswer === option.key); // Show previous selection
-              const isCorrect = Boolean(
+                (previousAttempt?.selectedAnswer === option.key);
+              const isCorrectOption = Boolean(
                 (result?.isCorrect || previousAttempt?.isCorrect) &&
                 normalizeText(question.correctAnswer) === normalizeText(option.key)
               );
               const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
-              const isDisabled = isClosed || hasAlreadyAttempted;
+              const isOptionDisabled = isClosed || hasAlreadyAttempted;
 
               return (
-                <TouchableOpacity
+                <OptionItem
                   key={option.key}
-                  style={[
-                    styles.option,
-                    {
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      backgroundColor: isSelected
-                        ? withAlpha(colors.primary, 0.08)
-                        : isDisabled
-                          ? withAlpha(colors.secondary, 0.5)
-                          : colors.secondary,
-                      opacity: isDisabled && !wasSelectedPreviously ? 0.6 : 1,
-                    },
-                  ]}
-                  onPress={() => handleSelectOption(option.key)}
-                  disabled={isDisabled}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isSelected, disabled: isDisabled }}
-                  accessibilityHint={hasAlreadyAttempted ? "You have already attempted this question" : undefined}
-                >
-                  <View style={styles.optionLeft}>
-                    <View
-                      style={[
-                        styles.radio,
-                        {
-                          borderColor: isSelected ? colors.primary : colors.border,
-                          backgroundColor: isSelected ? colors.primary : "transparent",
-                        },
-                      ]}
-                    />
-                    <Text style={[styles.optionLabel, { color: isDisabled && !wasSelectedPreviously ? colors.textMuted : colors.text }]}>
-                      {`${option.key.toUpperCase()}. ${option.label}`}
-                    </Text>
-                  </View>
-                  {isCorrect && <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-                  {wasSelectedPreviously && !isCorrect && (
-                    <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
-                  )}
-                </TouchableOpacity>
+                  optionKey={option.key}
+                  label={option.label}
+                  isSelected={isSelected}
+                  isCorrect={isCorrectOption}
+                  wasSelectedPreviously={wasSelectedPreviously}
+                  isDisabled={isOptionDisabled}
+                  onPress={handleSelectOption}
+                  colors={colors}
+                />
               );
             })}
           </View>
@@ -664,18 +764,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             </View>
 
             {(question.winners || []).map((winner) => (
-              <View key={winner.id} style={[styles.winnerRow, { borderColor: colors.border }]}> 
-                <View style={styles.winnerLeft}>
-                  <Text style={[styles.winnerPosition, { color: colors.primary }]}>{winner.position}.</Text>
-                  <View style={styles.winnerInfo}>
-                    <Text style={[styles.winnerEmail, { color: colors.text }]} numberOfLines={1}>
-                      {winner.userEmail}
-                    </Text>
-                    <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>{winner.paymentStatus}</Text>
-                  </View>
-                </View>
-                <Text style={[styles.winnerAmount, { color: colors.success }]}>{formatCurrency(winner.amountAwarded)}</Text>
-              </View>
+              <WinnerRow key={winner.id} winner={winner} colors={colors} />
             ))}
           </View>
         )}
@@ -704,18 +793,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         <PrimaryButton
           title={
             hasAlreadyAttempted
-              ? (unansweredQuestions.length > 0 ? "Next Question" : (previousAttempt?.isCorrect ? "View Summary" : "View Summary"))
+              ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
               : result
                 ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
                 : isClosed
                   ? "Closed"
                   : "Submit Answer"
           }
-          onPress={
-            (result || hasAlreadyAttempted)
-              ? () => handleTransitionToNext()
-              : handleSubmit
-          }
+          onPress={handleFooterPress}
           loading={submitAnswer.isPending || isTransitioning}
           disabled={isClosed && !hasAlreadyAttempted && !result}
           variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
@@ -732,32 +817,17 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         sessionEarnings={sessionSummary.totalEarned}
         totalBalance={walletBalance}
         canRedeemRewards={canRedeem()}
-        onRedeemCash={() => {
-          setShowSessionSummary(false);
-          setShowRedemptionModal(true);
-        }}
-        onRedeemAirtime={() => {
-          setShowSessionSummary(false);
-          setShowRedemptionModal(true);
-        }}
-        onContinue={() => {
-          setShowSessionSummary(false);
-          router.push('/instant-reward-questions');
-        }}
-        onClose={() => {
-          setShowSessionSummary(false);
-          router.back();
-        }}
+        onRedeemCash={handleRedeemCash}
+        onRedeemAirtime={handleRedeemAirtime}
+        onContinue={handleContinue}
+        onClose={handleCloseSession}
       />
 
       {/* Redemption Modal */}
       <RedemptionModal
         visible={showRedemptionModal}
         availableAmount={walletBalance}
-        onClose={() => {
-          setShowRedemptionModal(false);
-          cancelRedemption();
-        }}
+        onClose={handleCloseRedemption}
         onRedeem={handleRedeem}
       />
     </View>

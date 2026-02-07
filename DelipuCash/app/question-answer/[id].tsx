@@ -2,6 +2,13 @@ import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDate } from "@/services/api";
 import { useQuestion, useSubmitResponse } from "@/services/hooks";
 import {
+  useQuestionAnswerStore,
+  ANSWER_MAX_LENGTH,
+  ANSWER_MIN_LENGTH,
+  selectRemainingChars,
+  selectWasSubmitted,
+} from "@/store";
+import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
     ICON_SIZE,
@@ -19,7 +26,7 @@ import {
     Send,
     Sparkles,
 } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -33,34 +40,91 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// ─── Memoized sub-components ─────────────────────────────────────────────────
+
+interface ResponseItemProps {
+  item: {
+    id: string;
+    user?: { firstName?: string; lastName?: string } | null;
+    createdAt: string;
+    responseText: string;
+  };
+  colors: Record<string, string>;
+}
+
+const ResponseItem = memo(function ResponseItem({ item, colors }: ResponseItemProps) {
+  const authorName = useMemo(
+    () =>
+      item.user?.firstName
+        ? `${item.user.firstName} ${item.user.lastName ?? ""}`.trim()
+        : "Anonymous",
+    [item.user?.firstName, item.user?.lastName]
+  );
+
+  return (
+    <View style={[styles.responseCard, { borderColor: colors.border }]}>
+      <View style={styles.responseHeader}>
+        <Text style={[styles.responseAuthor, { color: colors.text }]}>{authorName}</Text>
+        <Text style={[styles.responseDate, { color: colors.textMuted }]}>{formatDate(item.createdAt)}</Text>
+      </View>
+      <Text style={[styles.responseText, { color: colors.text }]}>{item.responseText}</Text>
+    </View>
+  );
+});
+
+// ─── Main Screen Component ───────────────────────────────────────────────────
+
 export default function QuestionAnswerScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const questionId = id || "";
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
 
-  const [answer, setAnswer] = useState("");
-  const [submitted, setSubmitted] = useState(false);
+  // ── Zustand selectors (granular — avoid full-store re-renders) ──
+  const draftText = useQuestionAnswerStore((s) => s.drafts[questionId]?.text ?? "");
+  const remainingChars = useQuestionAnswerStore(selectRemainingChars(questionId));
+  const wasSubmitted = useQuestionAnswerStore(selectWasSubmitted(questionId));
+  const updateDraft = useQuestionAnswerStore((s) => s.updateDraft);
+  const markSubmitted = useQuestionAnswerStore((s) => s.markSubmitted);
+  const setActiveQuestion = useQuestionAnswerStore((s) => s.setActiveQuestion);
 
-  const { data: question, isLoading, error, refetch } = useQuestion(id || "");
+  // ── Server state ──
+  const { data: question, isLoading, error, refetch } = useQuestion(questionId);
   const submitResponse = useSubmitResponse();
 
+  // ── Derived (memoized) ──
   const responses = useMemo(() => question?.responses || [], [question?.responses]);
-  const remainingChars = Math.max(0, 500 - answer.length);
 
-  const handleBack = (): void => {
+  // ── Effects ──
+  useEffect(() => {
+    if (questionId) setActiveQuestion(questionId);
+  }, [questionId, setActiveQuestion]);
+
+  // ── Callbacks (stable refs) ──
+  const handleBack = useCallback((): void => {
     router.back();
-  };
+  }, []);
 
-  const handleDiscussion = (): void => {
+  const handleDiscussion = useCallback((): void => {
     if (!question) return;
     router.push({ pathname: "/question-detail", params: { id: question.id } });
-  };
+  }, [question]);
 
-  const handleSubmit = (): void => {
-    if (!question) return;
-    const trimmed = answer.trim();
-    if (trimmed.length < 10) {
-      Alert.alert("Answer too short", "Please share a more detailed answer (at least 10 characters).");
+  const handleTextChange = useCallback(
+    (text: string) => {
+      updateDraft(questionId, text);
+    },
+    [questionId, updateDraft]
+  );
+
+  const handleSubmit = useCallback((): void => {
+    if (!question || wasSubmitted) return;
+    const trimmed = draftText.trim();
+    if (trimmed.length < ANSWER_MIN_LENGTH) {
+      Alert.alert(
+        "Answer too short",
+        `Please share a more detailed answer (at least ${ANSWER_MIN_LENGTH} characters).`
+      );
       return;
     }
 
@@ -68,8 +132,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       { questionId: question.id, responseText: trimmed },
       {
         onSuccess: () => {
-          setSubmitted(true);
-          setAnswer("");
+          markSubmitted(question.id);
           refetch();
           Alert.alert("Answer submitted", "Thanks for contributing!", [
             { text: "OK", onPress: handleBack },
@@ -80,11 +143,19 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         },
       }
     );
-  };
+  }, [question, wasSubmitted, draftText, submitResponse, markSubmitted, refetch, handleBack, questionId]);
 
+  // ── Render item for FlatList (stable ref) ──
+  const renderResponse = useCallback(
+    ({ item }: { item: any }) => <ResponseItem item={item} colors={colors} />,
+    [colors]
+  );
+  const keyExtractor = useCallback((item: any) => item.id, []);
+
+  // ── Loading state ──
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}> 
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <ActivityIndicator size="large" color={colors.primary} />
         <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading question…</Text>
@@ -92,9 +163,10 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     );
   }
 
+  // ── Error state ──
   if (error || !question) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}> 
+      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <Text style={[styles.errorText, { color: colors.error }]}>Question not found</Text>
         <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
@@ -102,10 +174,13 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     );
   }
 
+  const isDisabled = submitResponse.isPending || wasSubmitted;
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}> 
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
 
+      {/* ── Header ────────────────────────────────────────────────────── */}
       <View
         style={[
           styles.header,
@@ -132,56 +207,69 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         </View>
       </View>
 
+      {/* ── Content ───────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING.xl }}
       >
-        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+        {/* Hero card */}
+        <View style={[styles.hero, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.heroHeader}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}> 
+            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
               <Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
               <Text style={[styles.badgeText, { color: colors.primary }]}>
                 {question.isInstantReward ? "Instant" : "Standard"}
               </Text>
             </View>
-            <Text style={[styles.heroMeta, { color: colors.textMuted }]}>Posted {formatDate(question.createdAt)}</Text>
+            <Text style={[styles.heroMeta, { color: colors.textMuted }]}>
+              Posted {formatDate(question.createdAt)}
+            </Text>
           </View>
           <Text style={[styles.questionText, { color: colors.text }]}>{question.text}</Text>
           <View style={styles.heroStats}>
-            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}> 
+            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>Reward</Text>
-              <Text style={[styles.statValue, { color: colors.text }]}>{formatCurrency(question.rewardAmount || 0)}</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {formatCurrency(question.rewardAmount || 0)}
+              </Text>
             </View>
-            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}> 
+            <View style={[styles.statCard, { backgroundColor: colors.secondary }]}>
               <Text style={[styles.statLabel, { color: colors.textMuted }]}>Responses</Text>
               <Text style={[styles.statValue, { color: colors.text }]}>{responses.length}</Text>
             </View>
           </View>
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+        {/* Answer input card */}
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.inputHeader}>
             <Text style={[styles.inputLabel, { color: colors.text }]}>Your answer</Text>
             <Text style={[styles.charCount, { color: colors.textMuted }]}>{remainingChars} left</Text>
           </View>
-          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.secondary }]}> 
+          <View style={[styles.inputWrapper, { borderColor: colors.border, backgroundColor: colors.secondary }]}>
             <TextInput
               style={[styles.input, { color: colors.text }]}
               placeholder="Share a thoughtful, helpful answer…"
               placeholderTextColor={colors.textMuted}
               multiline
-              value={answer}
-              onChangeText={setAnswer}
-              maxLength={500}
+              value={draftText}
+              onChangeText={handleTextChange}
+              maxLength={ANSWER_MAX_LENGTH}
               textAlignVertical="top"
-              editable={!submitResponse.isPending && !submitted}
+              editable={!isDisabled}
             />
           </View>
           <PrimaryButton
-            title={submitResponse.isPending ? "Submitting" : submitted ? "Submitted" : "Submit answer"}
+            title={
+              submitResponse.isPending
+                ? "Submitting"
+                : wasSubmitted
+                ? "Submitted"
+                : "Submit answer"
+            }
             onPress={handleSubmit}
-            disabled={submitResponse.isPending || submitted}
+            disabled={isDisabled}
             leftIcon={<Send size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={1.5} />}
             style={{ marginTop: SPACING.md }}
           />
@@ -196,41 +284,35 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           </TouchableOpacity>
         </View>
 
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+        {/* Previous responses */}
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.responsesHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Responses</Text>
             <Text style={[styles.sectionMeta, { color: colors.textMuted }]}>{responses.length} total</Text>
           </View>
           {responses.length === 0 && (
-            <Text style={[styles.emptyText, { color: colors.textMuted }]}>No responses yet. Be the first.</Text>
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              No responses yet. Be the first.
+            </Text>
           )}
           <FlatList
             data={responses}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             scrollEnabled={false}
             contentContainerStyle={{ gap: SPACING.md }}
-            renderItem={({ item }) => (
-              <View style={[styles.responseCard, { borderColor: colors.border }]}> 
-                <View style={styles.responseHeader}>
-                  <Text style={[styles.responseAuthor, { color: colors.text }]}>
-                    {item.user?.firstName ? `${item.user.firstName} ${item.user.lastName ?? ""}`.trim() : "Anonymous"}
-                  </Text>
-                  <Text style={[styles.responseDate, { color: colors.textMuted }]}>{formatDate(item.createdAt)}</Text>
-                </View>
-                <Text style={[styles.responseText, { color: colors.text }]}>{item.responseText}</Text>
-              </View>
-            )}
+            renderItem={renderResponse}
           />
         </View>
       </ScrollView>
 
+      {/* ── FAB ───────────────────────────────────────────────────────── */}
       <TouchableOpacity
         style={[
           styles.fab,
           { backgroundColor: colors.primary, bottom: insets.bottom + SPACING.lg },
         ]}
         onPress={handleSubmit}
-        disabled={submitResponse.isPending || submitted}
+        disabled={isDisabled}
         accessibilityRole="button"
         accessibilityLabel="Submit answer"
       >

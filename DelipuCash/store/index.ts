@@ -259,6 +259,21 @@ export {
 } from './QuestionUIStore';
 
 // ============================================================================
+// Question Answer Store - Answer draft & submission state
+// ============================================================================
+export {
+  useQuestionAnswerStore,
+  ANSWER_MAX_LENGTH,
+  ANSWER_MIN_LENGTH,
+  selectActiveQuestionId,
+  selectDraftText,
+  selectRemainingChars,
+  selectIsValidLength,
+  selectWasSubmitted,
+} from './QuestionAnswerStore';
+export type {} from './QuestionAnswerStore';
+
+// ============================================================================
 // Video Feed Store (NEW 2025 - TikTok/Reels/Shorts Style)
 // Advanced video feed orchestration with visibility-based playback
 // ============================================================================

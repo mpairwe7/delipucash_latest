@@ -1,7 +1,86 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+
+// ============================================================================
+// Resilient Question Select — gracefully handles missing schema fields
+// ============================================================================
+
+/**
+ * Base select fields that exist in the original schema.
+ * Extended fields (category, rewardAmount, isInstantReward, viewCount)
+ * are merged in so that both old and new deployments work.
+ */
+const QUESTION_BASE_SELECT = {
+  id: true,
+  text: true,
+  userId: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { responses: true } },
+  user: {
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      avatar: true,
+      points: true,
+    },
+  },
+};
+
+const QUESTION_EXTENDED_SELECT = {
+  ...QUESTION_BASE_SELECT,
+  category: true,
+  rewardAmount: true,
+  isInstantReward: true,
+  viewCount: true,
+};
+
+/**
+ * Format a raw Prisma question row into a consistent API shape.
+ * Falls back safely when optional fields are absent.
+ */
+function formatQuestion(q) {
+  return {
+    id: q.id,
+    text: q.text,
+    userId: q.userId,
+    category: q.category ?? 'General',
+    rewardAmount: q.rewardAmount ?? 0,
+    isInstantReward: q.isInstantReward ?? false,
+    viewCount: q.viewCount ?? 0,
+    createdAt: q.createdAt,
+    updatedAt: q.updatedAt,
+    totalAnswers: q._count?.responses ?? 0,
+    user: q.user
+      ? {
+          id: q.user.id,
+          firstName: q.user.firstName,
+          lastName: q.user.lastName,
+          avatar: q.user.avatar,
+          points: q.user.points,
+        }
+      : null,
+  };
+}
+
+/**
+ * Attempt query with extended fields, automatically retry with base fields
+ * if extended columns don't exist yet (handles migration lag on deploy).
+ */
+async function resilientQuestionFindMany(queryOptions) {
+  try {
+    return await prisma.question.findMany(queryOptions);
+  } catch (err) {
+    if (err?.message?.includes('Unknown field')) {
+      // Fallback: remove extended fields and retry
+      const fallback = { ...queryOptions, select: QUESTION_BASE_SELECT };
+      return await prisma.question.findMany(fallback);
+    }
+    throw err;
+  }
+}
 
 // Create a Question
 export const createQuestion = asyncHandler(async (req, res) => {
@@ -67,54 +146,19 @@ export const getQuestions = asyncHandler(async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
+    const queryOptions = buildOptimizedQuery('Question', {
+      select: QUESTION_EXTENDED_SELECT,
+      orderBy: [{ createdAt: 'desc' }],
+      skip,
+      take: limit,
+    });
+
     const [questions, total] = await Promise.all([
-      prisma.question.findMany(
-        buildOptimizedQuery('Question', {
-          select: {
-            id: true,
-            text: true,
-            userId: true,
-            category: true,
-            rewardAmount: true,
-            isInstantReward: true,
-            viewCount: true,
-            createdAt: true,
-            updatedAt: true,
-            _count: { select: { responses: true } },
-            user: {
-              select: {
-                id: true,
-                firstName: true,
-                lastName: true,
-                avatar: true,
-                points: true,
-              },
-            },
-          },
-          orderBy: [{ createdAt: 'desc' }],
-          skip,
-          take: limit,
-        }),
-      ),
+      resilientQuestionFindMany(queryOptions),
       prisma.question.count(),
     ]);
 
-    const formattedQuestions = questions.map((q) => ({
-      ...q,
-      totalAnswers: q._count?.responses || 0,
-      rewardAmount: q.rewardAmount ?? 0,
-      isInstantReward: q.isInstantReward ?? false,
-      category: q.category || 'General',
-      viewCount: q.viewCount ?? 0,
-      _count: undefined,
-      user: q.user
-        ? {
-            ...q.user,
-            avatar: q.user.avatar,
-            points: q.user.points,
-          }
-        : null,
-    }));
+    const formattedQuestions = questions.map(formatQuestion);
 
     res.json({
       success: true,
@@ -136,32 +180,36 @@ export const getQuestions = asyncHandler(async (req, res) => {
 export const getQuestionById = asyncHandler(async (req, res) => {
   const { questionId } = req.params;
 
-  const question = await prisma.question.findUnique({
-    where: {
-      id: questionId,
-    },
-    include: {
-      responses: true,
-      user: {
-        select: { id: true, firstName: true, lastName: true, avatar: true, points: true },
+  let question;
+  try {
+    question = await prisma.question.findUnique({
+      where: { id: questionId },
+      include: {
+        responses: {
+          include: {
+            user: {
+              select: { id: true, firstName: true, lastName: true, avatar: true, points: true },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        user: {
+          select: { id: true, firstName: true, lastName: true, avatar: true, points: true },
+        },
       },
-    },
-    // Prisma Accelerate: Short cache for individual questions
-  });
-
-  if (!question) {
-    res.status(404);
-    throw new Error('Question not found');
+    });
+  } catch (err) {
+    console.error('Error fetching question by ID:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch question', error: err.message });
   }
 
-  const formatted = {
-    ...question,
-    totalAnswers: question.responses?.length || 0,
-    rewardAmount: question.rewardAmount ?? 0,
-    isInstantReward: question.isInstantReward ?? false,
-    category: question.category || 'General',
-    viewCount: question.viewCount ?? 0,
-  };
+  if (!question) {
+    return res.status(404).json({ success: false, message: 'Question not found' });
+  }
+
+  const formatted = formatQuestion(question);
+  // Include full responses in detail endpoint
+  formatted.responses = question.responses || [];
 
   res.json({ success: true, data: formatted });
 });

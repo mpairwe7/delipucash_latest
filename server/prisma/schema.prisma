@@ -34,6 +34,7 @@ model AppUser {
   notifications            Notification[]
   payments                 Payment[]
   questions                Question[]
+  questionVotes            QuestionVote[]
   attempts                 QuestionAttempt[]
   Response                 Response[]
   responseDislikes         ResponseDislike[]
@@ -311,18 +312,34 @@ model InstantRewardWinner {
 }
 
 model Question {
-  id        String            @id @default(uuid()) @db.Uuid
-  text      String
-  userId    String?           @db.Uuid
-  category  String            @default("General")
-  rewardAmount Float           @default(0)
-  isInstantReward Boolean      @default(false)
-  viewCount Int                @default(0)
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
-  user      AppUser?          @relation(fields: [userId], references: [id])
-  attempts  QuestionAttempt[]
-  responses Response[]
+  id              String            @id @default(uuid()) @db.Uuid
+  text            String
+  userId          String?           @db.Uuid
+  category        String            @default("General")
+  rewardAmount    Float             @default(0)
+  isInstantReward Boolean           @default(false)
+  viewCount       Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  user            AppUser?          @relation(fields: [userId], references: [id])
+  attempts        QuestionAttempt[]
+  responses       Response[]
+  votes           QuestionVote[]
+}
+
+model QuestionVote {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  questionId String   @db.Uuid
+  type       String   // 'up' or 'down'
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       AppUser  @relation(fields: [userId], references: [id])
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
 }
 
 model Response {
