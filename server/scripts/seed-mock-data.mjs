@@ -252,6 +252,8 @@ const seedSurveys = async () => {
       userId: realUserId,
       startDate: survey.startDate,
       endDate: survey.endDate,
+      rewardAmount: survey.rewardAmount || 2000,
+      maxResponses: survey.maxResponses || null,
       questions: formattedQuestions,
     };
 

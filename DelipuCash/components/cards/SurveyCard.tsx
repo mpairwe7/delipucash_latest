@@ -30,7 +30,6 @@ import Animated, {
 import {
   Clock,
   Users,
-  DollarSign,
   FileText,
   ChevronRight,
   TrendingUp,
@@ -47,6 +46,7 @@ import {
   SHADOWS,
   withAlpha,
 } from '@/utils/theme';
+import { formatCurrency } from '@/services';
 import { Survey } from '@/types';
 
 export interface SurveyCardProps {
@@ -187,7 +187,7 @@ function SurveyCardComponent({
         ]}
         accessibilityRole="button"
         accessibilityLabel={`Survey: ${survey.title}`}
-        accessibilityHint={`${statusConfig.text}, ${getTimeRemaining()}, ${survey.rewardAmount?.toFixed(2) || '0.00'} dollar reward`}
+        accessibilityHint={`${statusConfig.text}, ${getTimeRemaining()}, ${formatCurrency(survey.rewardAmount || 0)} reward`}
         testID={testID}
       >
         {/* Header: Status & Reward */}
@@ -210,9 +210,8 @@ function SurveyCardComponent({
               { backgroundColor: withAlpha(colors.success, 0.12) },
             ]}
           >
-            <DollarSign size={14} color={colors.success} strokeWidth={2} />
             <Text style={[styles.rewardText, { color: colors.success }]}>
-              {survey.rewardAmount?.toFixed(2) || '0.00'}
+              {formatCurrency(survey.rewardAmount || 0)}
             </Text>
           </View>
         </View>

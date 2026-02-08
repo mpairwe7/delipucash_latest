@@ -4,7 +4,7 @@ import { ObjectId } from 'mongodb';
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
-  const { surveyTitle, surveyDescription, questions, userId, startDate, endDate } = req.body;
+  const { surveyTitle, surveyDescription, questions, userId, startDate, endDate, rewardAmount, maxResponses } = req.body;
 
   // Log the incoming request
   console.log('Incoming request: POST /surveys/create');
@@ -12,6 +12,7 @@ export const createSurvey = asyncHandler(async (req, res) => {
   console.log('Survey Description:', surveyDescription);
   console.log('Questions:', JSON.stringify(questions, null, 2));
   console.log('User ID:', userId);
+  console.log('Reward Amount:', rewardAmount);
 
   // Check if the user exists
   const userExists = await prisma.appUser.findUnique({
@@ -30,6 +31,8 @@ export const createSurvey = asyncHandler(async (req, res) => {
         title: surveyTitle,
         description: surveyDescription,
         userId,
+        rewardAmount: rewardAmount || 2000,
+        maxResponses: maxResponses || null,
         startDate: new Date(startDate), // Ensure startDate is a Date object
         endDate: new Date(endDate), // Ensure endDate is a Date object
       },
@@ -80,7 +83,7 @@ export const createSurvey = asyncHandler(async (req, res) => {
 
 
 export const uploadSurvey = asyncHandler(async (req, res) => {
-  const { title, description, questions, userId ,startDate, endDate} = req.body;
+  const { title, description, questions, userId, startDate, endDate, rewardAmount, maxResponses } = req.body;
 
   // Log the incoming request
   console.log('Incoming request: POST /api/surveys/upload');
@@ -116,6 +119,8 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
         title,
         description,
         userId: userIdObjectId,
+        rewardAmount: rewardAmount || 2000,
+        maxResponses: maxResponses || null,
         startDate: new Date(startDate), // Ensure startDate is a Date object
         endDate: new Date(endDate), // Ensure endDate is a Date object
       },
@@ -197,20 +202,24 @@ export const getSurveyById = asyncHandler(async (req, res) => {
 // Update a Survey
 export const updateSurvey = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
-  const { title, description, startDate, endDate, questions } = req.body;
+  const { title, description, startDate, endDate, questions, rewardAmount, maxResponses } = req.body;
 
   console.log('Updating survey:', surveyId);
 
   try {
+    // Build update data dynamically to only update provided fields
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (startDate !== undefined) updateData.startDate = new Date(startDate);
+    if (endDate !== undefined) updateData.endDate = new Date(endDate);
+    if (rewardAmount !== undefined) updateData.rewardAmount = rewardAmount;
+    if (maxResponses !== undefined) updateData.maxResponses = maxResponses;
+
     // Update the survey
     const updatedSurvey = await prisma.survey.update({
       where: { id: surveyId },
-      data: {
-        title,
-        description,
-        startDate: new Date(startDate), // Ensure startDate is a Date object
-        endDate: new Date(endDate), // Ensure endDate is a Date object
-      },
+      data: updateData,
     });
 
     // Update or create questions

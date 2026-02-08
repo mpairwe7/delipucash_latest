@@ -139,6 +139,8 @@ model Survey {
   title          String
   description    String?
   userId         String           @db.Uuid
+  rewardAmount   Float            @default(2000)
+  maxResponses   Int?
   startDate      DateTime
   endDate        DateTime
   createdAt      DateTime         @default(now())
