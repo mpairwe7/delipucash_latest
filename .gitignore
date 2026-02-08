@@ -1,0 +1,11 @@
+# Expo
+.expo/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+
+# Environment files
+.env*.local

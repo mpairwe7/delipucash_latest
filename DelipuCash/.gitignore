@@ -43,3 +43,6 @@ app-example
 /android
 *.apk
 .env/
+.expo/
+node_modules/
+*.log
