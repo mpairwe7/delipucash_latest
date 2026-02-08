@@ -264,9 +264,9 @@ export const fetchAds = async (filters?: AdFilters): Promise<AdsListResponse> =>
     
     const response = await api.get(url);
     return response.data;
-  } catch (error: any) {
-    console.error('Error fetching ads:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch ads');
+  } catch {
+    // Non-critical — return empty response on failure
+    return { success: false, data: { ads: [], featuredAd: null, bannerAd: null, all: [] }, pagination: { total: 0, limit: 0, offset: 0, hasMore: false } } as any;
   }
 };
 
@@ -296,11 +296,8 @@ export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
     }
     
     return [];
-  } catch (error: any) {
-    if (__DEV__) {
-      console.warn('[AdAPI] Featured ads unavailable:', error?.message || error);
-    }
-    // Return empty array instead of throwing — ads are non-critical UI
+  } catch {
+    // Ads are non-critical UI — silently return empty on failure
     return [];
   }
 };
@@ -329,10 +326,7 @@ export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
     }
     
     return [];
-  } catch (error: any) {
-    if (__DEV__) {
-      console.warn('[AdAPI] Banner ads unavailable:', error?.message || error);
-    }
+  } catch {
     return [];
   }
 };
@@ -359,10 +353,7 @@ export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
     }
     
     return [];
-  } catch (error: any) {
-    if (__DEV__) {
-      console.warn('[AdAPI] Video ads unavailable:', error?.message || error);
-    }
+  } catch {
     return [];
   }
 };
@@ -382,9 +373,8 @@ export const fetchAdById = async (adId: string): Promise<Ad | null> => {
     }
     
     return null;
-  } catch (error: any) {
-    console.error('Error fetching ad:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch ad');
+  } catch {
+    return null;
   }
 };
 
@@ -412,10 +402,7 @@ export const fetchAdsForPlacement = async (
     }
     
     return [];
-  } catch (error: any) {
-    if (__DEV__) {
-      console.warn(`[AdAPI] Ads for placement "${placement}" unavailable:`, error?.message || error);
-    }
+  } catch {
     return [];
   }
 };
@@ -437,9 +424,8 @@ export const fetchRandomAd = async (type?: AdType): Promise<Ad | null> => {
     }
     
     return null;
-  } catch (error: any) {
-    console.error('Error fetching random ad:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch random ad');
+  } catch {
+    return null;
   }
 };
 

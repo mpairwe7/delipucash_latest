@@ -229,6 +229,7 @@ export function useScreenAds(
     enabled,
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
+    retry: false, // Ad fetches return [] on failure; no need to retry
   });
 }
 
