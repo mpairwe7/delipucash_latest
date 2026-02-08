@@ -141,6 +141,41 @@ import QuizSessionScreen from "@/app/quiz-session";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // ============================================================================
+// PERFORMANCE: Memoized wrapper to avoid inline closure in renderItem
+// ============================================================================
+
+interface MemoizedInFeedAdProps {
+  ad: Ad;
+  index: number;
+  onAdClick: (ad: Ad) => void;
+  onAdImpression: (ad: Ad, duration?: number) => void;
+  style?: any;
+}
+
+const MemoizedInFeedAd = memo<MemoizedInFeedAdProps>(
+  function MemoizedInFeedAd({ ad, index, onAdClick, onAdImpression, style }) {
+    const handleLoad = useCallback(() => onAdImpression(ad), [ad, onAdImpression]);
+    return (
+      <InFeedAd
+        ad={ad}
+        index={index}
+        onAdClick={onAdClick}
+        onAdLoad={handleLoad}
+        style={style}
+      />
+    );
+  }
+);
+
+// Estimated item height for getItemLayout (improves scroll perf)
+const ESTIMATED_ITEM_HEIGHT = 160;
+const getItemLayout = (_data: any, index: number) => ({
+  length: ESTIMATED_ITEM_HEIGHT,
+  offset: ESTIMATED_ITEM_HEIGHT * index,
+  index,
+});
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -853,11 +888,11 @@ export default function QuestionsScreen(): React.ReactElement {
       if (item.type === "ad" && item.data) {
         const ad = item.data as Ad;
         return (
-          <InFeedAd
+          <MemoizedInFeedAd
             ad={ad}
             index={index}
             onAdClick={handleAdClick}
-            onAdLoad={() => handleAdImpression(ad)}
+            onAdImpression={handleAdImpression}
             style={styles.inFeedAd}
           />
         );
@@ -1005,10 +1040,11 @@ export default function QuestionsScreen(): React.ReactElement {
           scrollEventThrottle={100}
           // Performance optimizations
           removeClippedSubviews={true}
-          maxToRenderPerBatch={6}
+          maxToRenderPerBatch={4}
           windowSize={5}
-          initialNumToRender={4}
-          updateCellsBatchingPeriod={150}
+          initialNumToRender={3}
+          updateCellsBatchingPeriod={200}
+          getItemLayout={getItemLayout}
           viewabilityConfigCallbackPairs={
             viewabilityConfigCallbackPairs.current
           }

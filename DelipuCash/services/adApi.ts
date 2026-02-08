@@ -272,6 +272,8 @@ export const fetchAds = async (filters?: AdFilters): Promise<AdsListResponse> =>
 
 /**
  * Fetch featured ads
+ * Returns empty array on failure instead of throwing to prevent
+ * cascading errors in consolidated hooks like useScreenAds.
  */
 export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
   try {
@@ -282,19 +284,30 @@ export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
     if (response.data.success && response.data.data) {
       // Return featuredAd if available, otherwise return all featured type ads
       const featuredAds = response.data.data.featuredAd ? [response.data.data.featuredAd] : 
-                         response.data.data.all.filter((ad: Ad) => ad.type === 'featured');
+                         Array.isArray(response.data.data.all)
+                           ? response.data.data.all.filter((ad: Ad) => ad.type === 'featured')
+                           : [];
       return featuredAds;
+    }
+
+    // Direct array response (some endpoints return ads directly)
+    if (Array.isArray(response.data)) {
+      return response.data;
     }
     
     return [];
   } catch (error: any) {
-    console.error('Error fetching featured ads:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch featured ads');
+    if (__DEV__) {
+      console.warn('[AdAPI] Featured ads unavailable:', error?.message || error);
+    }
+    // Return empty array instead of throwing — ads are non-critical UI
+    return [];
   }
 };
 
 /**
  * Fetch banner ads
+ * Returns empty array on failure — ads are non-critical UI.
  */
 export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
   try {
@@ -305,19 +318,28 @@ export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
     if (response.data.success && response.data.data) {
       // Return bannerAd if available, otherwise return all banner type ads
       const bannerAds = response.data.data.bannerAd ? [response.data.data.bannerAd] : 
-                       response.data.data.all.filter((ad: Ad) => ad.type === 'banner');
+                       Array.isArray(response.data.data.all)
+                         ? response.data.data.all.filter((ad: Ad) => ad.type === 'banner')
+                         : [];
       return bannerAds;
+    }
+
+    if (Array.isArray(response.data)) {
+      return response.data;
     }
     
     return [];
   } catch (error: any) {
-    console.error('Error fetching banner ads:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch banner ads');
+    if (__DEV__) {
+      console.warn('[AdAPI] Banner ads unavailable:', error?.message || error);
+    }
+    return [];
   }
 };
 
 /**
  * Fetch video ads
+ * Returns empty array on failure — ads are non-critical UI.
  */
 export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
   try {
@@ -326,15 +348,22 @@ export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
     
     // Return video ads from the response
     if (response.data.success && response.data.data) {
-      // Return all video type ads
-      const videoAds = response.data.data.all.filter((ad: Ad) => ad.type === 'video');
+      const videoAds = Array.isArray(response.data.data.all)
+        ? response.data.data.all.filter((ad: Ad) => ad.type === 'video')
+        : [];
       return videoAds;
+    }
+
+    if (Array.isArray(response.data)) {
+      return response.data;
     }
     
     return [];
   } catch (error: any) {
-    console.error('Error fetching video ads:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch video ads');
+    if (__DEV__) {
+      console.warn('[AdAPI] Video ads unavailable:', error?.message || error);
+    }
+    return [];
   }
 };
 
@@ -361,6 +390,7 @@ export const fetchAdById = async (adId: string): Promise<Ad | null> => {
 
 /**
  * Fetch ads for a specific placement
+ * Returns empty array on failure — ads are non-critical UI.
  */
 export const fetchAdsForPlacement = async (
   placement: AdPlacement, 
@@ -374,14 +404,19 @@ export const fetchAdsForPlacement = async (
     
     // Return ads from the response
     if (response.data.success && response.data.data) {
-      // Return all ads for the placement
-      return response.data.data.all || [];
+      return Array.isArray(response.data.data.all) ? response.data.data.all : [];
+    }
+
+    if (Array.isArray(response.data)) {
+      return response.data;
     }
     
     return [];
   } catch (error: any) {
-    console.error('Error fetching ads for placement:', error);
-    throw new Error(error.response?.data?.message || 'Failed to fetch ads for placement');
+    if (__DEV__) {
+      console.warn(`[AdAPI] Ads for placement "${placement}" unavailable:`, error?.message || error);
+    }
+    return [];
   }
 };
 
