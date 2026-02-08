@@ -96,6 +96,7 @@ bun install
 
 # Start Expo development server
 npx expo start
+eas build --platform android --profile production --local
 ```
 
 ### Default Admin Credentials

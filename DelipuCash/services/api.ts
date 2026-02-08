@@ -561,6 +561,13 @@ export const surveysApi = {
   },
 
   /**
+   * Get completed surveys
+   */
+  async getCompleted(): Promise<ApiResponse<Survey[]>> {
+    return fetchJson<Survey[]>(API_ROUTES.surveys.byStatus('completed'));
+  },
+
+  /**
    * Get survey by ID
    */
   async getById(surveyId: string): Promise<ApiResponse<Survey | null>> {

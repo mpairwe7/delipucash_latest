@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Survey" ADD COLUMN     "maxResponses" INTEGER,
+ADD COLUMN     "rewardAmount" DOUBLE PRECISION NOT NULL DEFAULT 2000;

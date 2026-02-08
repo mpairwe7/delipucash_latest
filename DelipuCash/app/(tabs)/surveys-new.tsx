@@ -23,7 +23,7 @@ import {
   SurveyCardSkeleton,
   type CreationMode,
 } from "@/components/survey";
-import { useRunningSurveys, useUnreadCount, useUpcomingSurveys } from "@/services/hooks";
+import { useRunningSurveys, useUnreadCount, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
 import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
 import {
   useAdsForPlacement,
@@ -97,7 +97,7 @@ const MemoizedItemSeparator = memo(function ItemSeparator() {
 // TYPES
 // ============================================================================
 
-type TabKey = 'my-surveys' | 'discover' | 'running' | 'upcoming';
+type TabKey = 'my-surveys' | 'discover' | 'running' | 'upcoming' | 'completed';
 
 interface Tab {
   key: TabKey;
@@ -165,6 +165,7 @@ export default function SurveysScreen(): React.ReactElement {
   // Data queries - use runningSurveys filtered by user as mySurveys
   const { data: runningSurveys = [], isLoading: loadingRunning, refetch: refetchRunning } = useRunningSurveys();
   const { data: upcomingSurveys = [], isLoading: loadingUpcoming, refetch: refetchUpcoming } = useUpcomingSurveys();
+  const { data: completedSurveys = [], isLoading: loadingCompleted, refetch: refetchCompleted } = useCompletedSurveys();
   const { data: unreadCount } = useUnreadCount();
   
   // Filter for user's surveys
@@ -191,10 +192,10 @@ export default function SurveysScreen(): React.ReactElement {
 
   // Combine all surveys for search
   const allSurveys = useMemo(() => {
-    const combined = [...(mySurveys || []), ...(runningSurveys || []), ...(upcomingSurveys || [])];
+    const combined = [...(mySurveys || []), ...(runningSurveys || []), ...(upcomingSurveys || []), ...(completedSurveys || [])];
     // Remove duplicates
     return Array.from(new Map(combined.map((s) => [s.id, s])).values());
-  }, [mySurveys, runningSurveys, upcomingSurveys]);
+  }, [mySurveys, runningSurveys, upcomingSurveys, completedSurveys]);
 
   // Search hook
   const {
@@ -255,7 +256,13 @@ export default function SurveysScreen(): React.ReactElement {
       icon: <Clock size={16} />,
       count: upcomingSurveys.length,
     },
-  ], [mySurveys.length, runningSurveys.length, upcomingSurveys.length]);
+    {
+      key: 'completed',
+      label: 'Completed',
+      icon: <CheckCircle size={16} />,
+      count: completedSurveys.length,
+    },
+  ], [mySurveys.length, runningSurveys.length, upcomingSurveys.length, completedSurveys.length]);
 
   // Current loading state
   const isLoading = useMemo(() => {
@@ -263,9 +270,10 @@ export default function SurveysScreen(): React.ReactElement {
       case 'my-surveys': return loadingMy;
       case 'running': return loadingRunning;
       case 'upcoming': return loadingUpcoming;
+      case 'completed': return loadingCompleted;
       default: return false;
     }
-  }, [activeTab, loadingMy, loadingRunning, loadingUpcoming]);
+  }, [activeTab, loadingMy, loadingRunning, loadingUpcoming, loadingCompleted]);
 
   // Current surveys based on tab
   const currentSurveys = useMemo(() => {
@@ -280,6 +288,9 @@ export default function SurveysScreen(): React.ReactElement {
         break;
       case 'upcoming':
         surveys = upcomingSurveys;
+        break;
+      case 'completed':
+        surveys = completedSurveys;
         break;
       case 'discover':
         // Discover shows featured/popular surveys from all
@@ -398,13 +409,14 @@ export default function SurveysScreen(): React.ReactElement {
     await Promise.all([
       refetchRunning(),
       refetchUpcoming(),
+      refetchCompleted(),
       refetchSubscription(),
       refetchSurveyAds(),
       refetchBannerAds(),
       refetchFeaturedAds(),
     ]);
     setRefreshing(false);
-  }, [refetchRunning, refetchUpcoming, refetchSubscription, refetchSurveyAds, refetchBannerAds, refetchFeaturedAds]);
+  }, [refetchRunning, refetchUpcoming, refetchCompleted, refetchSubscription, refetchSurveyAds, refetchBannerAds, refetchFeaturedAds]);
 
   // Ad handlers
   const handleAdClick = useCallback((ad: Ad) => {
@@ -576,11 +588,14 @@ export default function SurveysScreen(): React.ReactElement {
               {activeTab === 'my-surveys' ? 'No surveys yet' :
                activeTab === 'running' ? 'No active surveys' :
                activeTab === 'upcoming' ? 'No upcoming surveys' :
+               activeTab === 'completed' ? 'No completed surveys' :
                'No surveys to discover'}
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
               {activeTab === 'my-surveys'
                 ? 'Create your first survey to start collecting insights'
+                : activeTab === 'completed'
+                ? 'Surveys you have completed will appear here'
                 : 'Check back later for new surveys'
               }
             </Text>
@@ -789,6 +804,7 @@ export default function SurveysScreen(): React.ReactElement {
           {activeTab === 'my-surveys' ? 'Your Surveys' :
            activeTab === 'discover' ? 'Featured Surveys' :
            activeTab === 'running' ? 'Active Surveys' :
+           activeTab === 'completed' ? 'Completed Surveys' :
            'Scheduled Surveys'}
         </Text>
         <Text style={[styles.sectionCount, { color: colors.textMuted }]}>

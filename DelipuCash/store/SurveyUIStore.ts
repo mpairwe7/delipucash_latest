@@ -23,7 +23,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // TYPES
 // ============================================================================
 
-export type SurveyLandingTab = 'my-surveys' | 'discover' | 'running' | 'upcoming';
+export type SurveyLandingTab = 'my-surveys' | 'discover' | 'running' | 'upcoming' | 'completed';
 export type MySurveyFilter = 'all' | 'drafts' | 'active' | 'closed';
 export type SortOption = 'newest' | 'oldest' | 'responses' | 'completion' | 'reward';
 export type CreationMode = 'blank' | 'template' | 'import' | 'conversational' | 'ai-assisted';

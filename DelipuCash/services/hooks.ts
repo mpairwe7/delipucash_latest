@@ -34,6 +34,7 @@ export const queryKeys = {
   surveys: ["surveys"] as const,
   runningSurveys: ["surveys", "running"] as const,
   upcomingSurveys: ["surveys", "upcoming"] as const,
+  completedSurveys: ["surveys", "completed"] as const,
   survey: (id: string) => ["surveys", id] as const,
   questions: ["questions"] as const,
   recentQuestions: ["questions", "recent"] as const,
@@ -552,6 +553,21 @@ export function useUpcomingSurveys(): UseQueryResult<Survey[], Error> {
     queryKey: queryKeys.upcomingSurveys,
     queryFn: async () => {
       const response = await api.surveys.getUpcoming();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+/**
+ * Hook to fetch completed surveys
+ */
+export function useCompletedSurveys(): UseQueryResult<Survey[], Error> {
+  return useQuery({
+    queryKey: queryKeys.completedSurveys,
+    queryFn: async () => {
+      const response = await api.surveys.getCompleted();
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
