@@ -108,6 +108,7 @@ function formatCurrency(amount: number, compact = false): string {
     return new Intl.NumberFormat('en-UG', {
       style: 'currency',
       currency: 'UGX',
+      currencyDisplay: 'code',
       notation: 'compact',
       maximumFractionDigits: 1,
     }).format(amount);
@@ -115,6 +116,7 @@ function formatCurrency(amount: number, compact = false): string {
   return new Intl.NumberFormat('en-UG', {
     style: 'currency',
     currency: 'UGX',
+    currencyDisplay: 'code',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);

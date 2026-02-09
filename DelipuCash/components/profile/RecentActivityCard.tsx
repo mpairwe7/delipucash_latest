@@ -127,7 +127,7 @@ function formatRelativeTime(date: Date | string): string {
  */
 function formatAmount(amount: number): string {
   const prefix = amount >= 0 ? '+' : '';
-  return `${prefix}$${Math.abs(amount).toLocaleString()}`;
+  return `${prefix}UGX ${Math.abs(amount).toLocaleString()}`;
 }
 
 function ActivityItemRow({

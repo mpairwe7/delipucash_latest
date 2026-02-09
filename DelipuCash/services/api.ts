@@ -1054,6 +1054,7 @@ export const formatCurrency = (amount: number, currency: string = 'UGX'): string
   return new Intl.NumberFormat('en-UG', {
     style: 'currency',
     currency,
+    currencyDisplay: 'code',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
