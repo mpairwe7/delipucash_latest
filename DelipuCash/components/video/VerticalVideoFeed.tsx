@@ -116,6 +116,10 @@ export interface VerticalVideoFeedProps {
   onBookmark?: (video: Video) => void;
   /** Callback when user expands to full player */
   onExpandPlayer?: (video: Video) => void;
+  /** 2026: Callback when ad CTA is pressed (sponsored videos) */
+  onAdCtaPress?: (video: Video) => void;
+  /** 2026: Callback for ad feedback / "Why this ad?" */
+  onAdFeedback?: (video: Video) => void;
   /** Initial video index to scroll to */
   initialIndex?: number;
   /** Header component to render above feed */
@@ -141,6 +145,8 @@ function VerticalVideoFeedComponent({
   onShare,
   onBookmark,
   onExpandPlayer,
+  onAdCtaPress,
+  onAdFeedback,
   initialIndex = 0,
   ListHeaderComponent,
   testID,
@@ -362,6 +368,8 @@ function VerticalVideoFeedComponent({
         onBookmark={handleBookmark}
         onExpand={handleExpandPlayer}
         onVideoEnd={onVideoEnd}
+        onAdCtaPress={onAdCtaPress}
+        onAdFeedback={onAdFeedback}
         screenReaderEnabled={screenReaderEnabled}
         testID={`video-feed-item-${index}`}
       />
@@ -379,6 +387,8 @@ function VerticalVideoFeedComponent({
       handleBookmark,
       handleExpandPlayer,
       onVideoEnd,
+      onAdCtaPress,
+      onAdFeedback,
       screenReaderEnabled,
     ]
   );

@@ -40,6 +40,7 @@ import {
   ImageBackground,
   ActivityIndicator,
   Dimensions,
+  Linking,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -76,6 +77,8 @@ import {
   Shield,
   Clock,
   Sparkles,
+  ExternalLink,
+  Info,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
@@ -133,6 +136,10 @@ export interface VideoFeedItemProps {
   onVideoEnd?: (video: Video) => void;
   /** Screen reader enabled */
   screenReaderEnabled?: boolean;
+  /** 2026: Ad CTA click handler (for sponsored videos) */
+  onAdCtaPress?: (video: Video) => void;
+  /** 2026: Ad feedback handler ("Why this ad?") */
+  onAdFeedback?: (video: Video) => void;
   /** Test ID */
   testID?: string;
 }
@@ -307,6 +314,8 @@ function VideoFeedItemComponent({
   onExpand,
   onVideoEnd,
   screenReaderEnabled = false,
+  onAdCtaPress,
+  onAdFeedback,
   testID,
 }: VideoFeedItemProps): React.ReactElement {
   const { colors } = useTheme();
@@ -546,6 +555,23 @@ function VideoFeedItemComponent({
   // ============================================================================
   // HANDLERS
   // ============================================================================
+
+  // 2026: Ad CTA press handler — opens ad URL or delegates to parent
+  const handleAdCtaPress = useCallback(() => {
+    if (!video.isSponsored) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onAdCtaPress) {
+      onAdCtaPress(video);
+    } else if (video.ctaUrl) {
+      Linking.openURL(video.ctaUrl).catch(() => {});
+    }
+  }, [video, onAdCtaPress]);
+
+  // 2026: "Why this ad?" feedback handler
+  const handleAdFeedback = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    onAdFeedback?.(video);
+  }, [video, onAdFeedback]);
 
   const handlePlayPause = useCallback(() => {
     if (!player || !isMountedRef.current) return;
@@ -830,6 +856,13 @@ function VideoFeedItemComponent({
             </View>
           </Pressable>
 
+          {/* 2026: Persistent top-corner Ad watermark for sponsored content (FTC/IAB compliant) */}
+          {video.isSponsored && (
+            <View style={styles.adWatermark}>
+              <Text style={styles.adWatermarkText}>Ad</Text>
+            </View>
+          )}
+
           {/* Side Action Bar - 2026: Creator economy + engagement metrics */}
           <View style={styles.sideActions}>
             {/* Like - 2026: Enhanced animation feedback */}
@@ -973,9 +1006,36 @@ function VideoFeedItemComponent({
 
             {/* 2026: Content safety label (if sponsored) */}
             {video.isSponsored && (
-              <View style={styles.sponsoredBadge}>
-                <Shield size={10} color="#FFA726" strokeWidth={2.5} />
-                <Text style={styles.sponsoredText}>Sponsored • {video.sponsorName || 'Ad'}</Text>
+              <View style={styles.adOverlaySection}>
+                <View style={styles.sponsoredBadge}>
+                  <Shield size={10} color="#FFA726" strokeWidth={2.5} />
+                  <Text style={styles.sponsoredText}>Sponsored • {video.sponsorName || 'Ad'}</Text>
+                </View>
+
+                {/* 2026: CTA Button — Primary ad call-to-action */}
+                {video.ctaUrl && (
+                  <Pressable
+                    style={styles.ctaButton}
+                    onPress={handleAdCtaPress}
+                    accessibilityRole="link"
+                    accessibilityLabel={video.ctaText || 'Learn More'}
+                    accessibilityHint="Opens advertiser website"
+                  >
+                    <Text style={styles.ctaButtonText}>{video.ctaText || 'Learn More'}</Text>
+                    <ExternalLink size={12} color="#FFFFFF" strokeWidth={2.5} />
+                  </Pressable>
+                )}
+
+                {/* 2026: "Why this ad?" — FTC/GDPR transparency affordance */}
+                <Pressable
+                  style={styles.whyThisAd}
+                  onPress={handleAdFeedback}
+                  accessibilityRole="button"
+                  accessibilityLabel="Why am I seeing this ad? Report or provide feedback"
+                >
+                  <Info size={10} color={withAlpha('#FFFFFF', 0.5)} strokeWidth={2} />
+                  <Text style={styles.whyThisAdText}>Why this ad?</Text>
+                </Pressable>
               </View>
             )}
 
@@ -1245,6 +1305,61 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#FFA726',
     letterSpacing: 0.3,
+  },
+  // 2026: Ad overlay section (badge + CTA + why this ad)
+  adOverlaySection: {
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  // 2026: Persistent top-corner Ad watermark (FTC/IAB compliant)
+  adWatermark: {
+    position: 'absolute',
+    top: SPACING.lg,
+    left: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+    backgroundColor: withAlpha('#000000', 0.6),
+    zIndex: 15,
+  },
+  adWatermarkText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: 11,
+    color: '#FFFFFF',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  // 2026: CTA Button — Primary ad call-to-action
+  ctaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    backgroundColor: '#FFFFFF',
+    minHeight: 36,
+  },
+  ctaButtonText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    color: '#000000',
+    letterSpacing: 0.2,
+  },
+  // 2026: "Why this ad?" — FTC/GDPR transparency affordance
+  whyThisAd: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 3,
+    paddingVertical: 2,
+  },
+  whyThisAdText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: 10,
+    color: withAlpha('#FFFFFF', 0.5),
+    textDecorationLine: 'underline',
   },
   videoTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,

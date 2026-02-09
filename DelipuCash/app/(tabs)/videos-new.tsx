@@ -38,6 +38,7 @@ import {
   AppStateStatus,
   AccessibilityInfo,
   Platform,
+  Linking,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -102,7 +103,7 @@ import {
 import { LiveStreamScreen } from '@/components/livestream';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
 import { SearchOverlay } from '@/components/cards';
-import { InterstitialAd } from '@/components/ads';
+import { InterstitialAd, AdFeedbackModal } from '@/components/ads';
 import { Video, Ad } from '@/types';
 import {
   useVideoFeedStore,
@@ -117,6 +118,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from '@/services/adHooksRefactored';
+import { useAdFrequency } from '@/services/adFrequencyManager';
 
 // ============================================================================
 // CONSTANTS & 2026 CONFIGURATION
@@ -380,9 +382,12 @@ export default function VideosScreen(): React.ReactElement {
   const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
   const { mutate: recordAdClick } = useRecordAdClick();
   const { mutate: recordAdImpression } = useRecordAdImpression();
+  const adFrequency = useAdFrequency();
 
   // Interstitial ad state - 2026: Session-capped ad frequency
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
+  const [showAdFeedback, setShowAdFeedback] = useState(false);
+  const [feedbackAd, setFeedbackAd] = useState<Ad | null>(null);
   const [videosWatchedCount, setVideosWatchedCount] = useState(0);
 
   // ============================================================================
@@ -653,19 +658,83 @@ export default function VideosScreen(): React.ReactElement {
     setVideosWatchedCount(0); // Reset counter after ad shown
   }, []);
 
+  // 2026: In-feed sponsored CTA handler - opens ad URL + records click
+  const handleAdCtaPress = useCallback((video: Video) => {
+    if (!video.isSponsored) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Extract original ad ID from prefixed video ID
+    const originalAdId = video.id.replace('ad-', '');
+    recordAdClick({ adId: originalAdId, placement: 'video' });
+
+    // Open CTA URL if available
+    if (video.ctaUrl) {
+      Linking.openURL(video.ctaUrl).catch(() => {
+        // Silently handle invalid URLs
+      });
+    }
+  }, [recordAdClick]);
+
+  // 2026: "Why this ad?" / Ad Feedback handler - opens AdFeedbackModal
+  const handleAdFeedback = useCallback((video: Video) => {
+    if (!video.isSponsored) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Reconstruct minimal Ad object for the feedback modal
+    const originalAdId = video.id.replace('ad-', '');
+    const adForFeedback: Ad = {
+      id: originalAdId,
+      title: video.title,
+      description: video.description || '',
+      headline: video.title,
+      targetUrl: video.ctaUrl || '',
+      thumbnailUrl: video.thumbnail,
+      imageUrl: video.thumbnail,
+      type: 'video',
+      status: 'active',
+      placement: 'video',
+      views: video.views || 0,
+      clicks: 0,
+      createdAt: video.createdAt,
+      user: { firstName: video.sponsorName || 'Advertiser' } as any,
+    } as Ad;
+
+    setFeedbackAd(adForFeedback);
+    setShowAdFeedback(true);
+  }, []);
+
+  // 2026: In-feed sponsored video impression tracking
+  const handleInFeedAdImpression = useCallback((video: Video) => {
+    if (!video.isSponsored) return;
+    const originalAdId = video.id.replace('ad-', '');
+    recordAdImpression({
+      adId: originalAdId,
+      placement: 'video',
+      duration: 0,
+      wasVisible: true,
+      viewportPercentage: 100,
+    });
+  }, [recordAdImpression]);
+
   const handleVideoEnd = useCallback((video: Video) => {
-    // 2026: Session-aware ad timing with cap enforcement
+    // 2026: Session-aware ad timing with cap enforcement + AdFrequencyManager
     const newCount = videosWatchedCount + 1;
     setVideosWatchedCount(newCount);
+
+    // Gate interstitial behind both local session cap AND AdFrequencyManager cooldowns/fatigue
+    const frequencyAllowed = adFrequency.canShowAd('interstitial');
 
     if (
       newCount >= AD_INSERTION_CONFIG.interstitialAfter && 
       videoAds && videoAds.length > 0 &&
-      sessionAdCount < AD_INSERTION_CONFIG.maxAdsPerSession
+      sessionAdCount < AD_INSERTION_CONFIG.maxAdsPerSession &&
+      frequencyAllowed
     ) {
       setShowInterstitialAd(true);
+      // Record impression in AdFrequencyManager for cooldown tracking
+      adFrequency.recordImpression(videoAds[0].id, 'interstitial', true);
     }
-  }, [videosWatchedCount, videoAds, sessionAdCount]);
+  }, [videosWatchedCount, videoAds, sessionAdCount, adFrequency]);
 
   const handleTabChange = useCallback((tab: FeedTab) => {
     // 2026: Rigid haptic for tab switch - distinct from soft interactions
@@ -905,6 +974,8 @@ export default function VideosScreen(): React.ReactElement {
         onBookmark={handleBookmark}
         onExpandPlayer={handleExpandPlayer}
         onVideoEnd={handleVideoEnd}
+        onAdCtaPress={handleAdCtaPress}
+        onAdFeedback={handleAdFeedback}
         testID="video-feed"
       />
       </VideoErrorBoundary>
@@ -991,6 +1062,21 @@ export default function VideosScreen(): React.ReactElement {
             }}
             skipAfterSeconds={5}
             showCloseButton={true}
+          />
+        )}
+
+        {/* Ad Feedback Modal - 2026: GDPR-compliant "Why this ad?" transparency */}
+        {feedbackAd && (
+          <AdFeedbackModal
+            visible={showAdFeedback}
+            ad={feedbackAd}
+            onClose={() => {
+              setShowAdFeedback(false);
+              setFeedbackAd(null);
+            }}
+            showWhyThisAd={true}
+            allowHideAdvertiser={true}
+            testID="ad-feedback-modal"
           />
         )}
       </View>
