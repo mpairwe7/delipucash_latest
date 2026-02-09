@@ -55,6 +55,7 @@ import Animated, {
   FadeOut,
   SlideInDown,
   SlideOutDown,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -326,8 +327,8 @@ export function EditProfileModal({
       testID={testID}
     >
       <Animated.View
-        entering={FadeIn.duration(200)}
-        exiting={FadeOut.duration(200)}
+        entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+        exiting={FadeOut.duration(200).reduceMotion(ReduceMotion.System)}
         style={[styles.overlay, { backgroundColor: withAlpha('#000', 0.5) }]}
       >
         <KeyboardAvoidingView
@@ -335,8 +336,8 @@ export function EditProfileModal({
           style={styles.keyboardView}
         >
           <Animated.View
-            entering={SlideInDown.springify().damping(15)}
-            exiting={SlideOutDown.springify()}
+            entering={SlideInDown.springify().damping(15).reduceMotion(ReduceMotion.System)}
+            exiting={SlideOutDown.springify().reduceMotion(ReduceMotion.System)}
             style={[
               styles.container,
               {
@@ -411,7 +412,7 @@ export function EditProfileModal({
                         <Animated.Image
                           source={{ uri: formData.avatarUri }}
                           style={styles.avatarImage}
-                          entering={FadeIn.duration(200)}
+                          entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
                         />
                       ) : (
                         <LinearGradient
@@ -427,7 +428,7 @@ export function EditProfileModal({
                   </LinearGradient>
 
                   {/* Camera overlay */}
-                  <View style={[styles.cameraOverlay, { backgroundColor: colors.primary }]}>
+                  <View style={[styles.cameraOverlay, { backgroundColor: colors.primary, borderColor: colors.card }]}>
                     <Camera size={16} color="#FFF" strokeWidth={2} />
                   </View>
                 </TouchableOpacity>
@@ -683,7 +684,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 3,
-    borderColor: '#FFF',
   },
   avatarHint: {
     marginTop: SPACING.sm,

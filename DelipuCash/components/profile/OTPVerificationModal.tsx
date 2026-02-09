@@ -47,6 +47,7 @@ import {
 import { Shield, KeyRound, X, RefreshCw } from 'lucide-react-native';
 import Animated, {
   FadeInUp,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withRepeat,
@@ -300,7 +301,7 @@ export function OTPVerificationModal({
         />
 
         <Animated.View
-          entering={FadeInUp.duration(300).springify()}
+          entering={FadeInUp.duration(300).springify().reduceMotion(ReduceMotion.System)}
           style={[styles.content, { backgroundColor: colors.card }]}
           accessible
           accessibilityRole="alert"
@@ -405,10 +406,11 @@ export function OTPVerificationModal({
           {/* Action Buttons */}
           <View style={styles.actions}>
             <TouchableOpacity
-              style={[styles.secondaryButton, { borderColor: colors.border }]}
+              style={[styles.secondaryButton, { borderColor: withAlpha(colors.border, 0.6) }]}
               onPress={handleClose}
               accessibilityRole="button"
               accessibilityLabel="Cancel"
+              accessibilityHint="Close verification modal"
             >
               <AccessibleText variant="button" color="textMuted">
                 Cancel
@@ -552,6 +554,9 @@ const styles = StyleSheet.create({
     marginTop: SPACING.lg,
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   resendContent: {
     flexDirection: 'row',

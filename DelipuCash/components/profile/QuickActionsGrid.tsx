@@ -40,6 +40,7 @@ import { Href, router } from 'expo-router';
 import { LucideIcon, Lock } from 'lucide-react-native';
 import Animated, {
   FadeInDown,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -199,13 +200,13 @@ function QuickActionCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(animationDelay).duration(400).springify()}
+      entering={FadeInDown.delay(animationDelay).duration(400).springify().reduceMotion(ReduceMotion.System)}
       style={[styles.cardWrapper, { width: cardWidth }]}
     >
       <AnimatedPressable
         style={[
           styles.card,
-          { backgroundColor: colors.card, borderColor: colors.border },
+          { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) },
           item.disabled && styles.cardDisabled,
           animatedStyle,
         ]}
@@ -245,7 +246,7 @@ function QuickActionCard({
 
           {/* Badge */}
           {!isLocked && item.badge !== undefined && item.badge > 0 && (
-            <View style={styles.badge}>
+            <View style={[styles.badge, { borderColor: colors.card }]}>
               <Text style={styles.badgeText}>
                 {item.badge > 99 ? '99+' : item.badge}
               </Text>
@@ -368,7 +369,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 4,
     borderWidth: 2,
-    borderColor: '#FFF',
+    borderColor: 'transparent',
   },
   badgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
