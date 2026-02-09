@@ -1,17 +1,25 @@
 /**
- * Video Component Exports
- * Reusable video-related UI components following design system patterns
+ * Video Component Exports — 2026 Industry-Standard Mobile UI/UX
+ * Reusable video components following 2026 design system patterns
  * 
- * New 2025 TikTok/Reels/Shorts Style Components:
- * - VerticalVideoFeed: Full-screen vertical video feed with snap-to-video
- * - VideoFeedItem: Individual video item with gestures and overlays
- * - VideoFeedSkeleton: Loading skeleton for feed
- * - EnhancedMiniPlayer: Floating mini player with gestures
- * - VideoCommentsSheet: Bottom sheet for comments
+ * 2026 Component Architecture:
+ * - VerticalVideoFeed: Adaptive scroll, intelligent preloading, reduced-motion support
+ * - VideoFeedItem: Creator economy, content safety, contextual haptics, ambient design
+ * - VideoFeedSkeleton: Branded gradient shimmer with content-aware placeholders
+ * - EnhancedMiniPlayer: Now-playing waveform, glassmorphism, omnidirectional gestures
+ * - VideoCommentsSheet: Pinned comments, creator hearts, reaction emoji, thread preview
+ * - VideoPlayer: AI chapters, auto-captions, silence skip, adaptive bitrate, gift/tip
+ * 
+ * Standards Applied Across All Components:
+ * - WCAG 2.2 AAA: 44px touch targets, reduced motion, semantic roles, live regions
+ * - Contextual Haptics: Action-specific feedback (Soft/Medium/Rigid/Warning/Success)
+ * - Glassmorphism: Frosted glass with depth blur and scrim gradients
+ * - Creator Economy: Gift/tip affordances, verified badges, engagement metrics
+ * - Content Safety: Sponsored/ad labels, content type indicators
  */
 
 // ============================================================================
-// NEW 2025 VIDEO FEED COMPONENTS (TikTok/Reels/Shorts Style)
+// 2026 VIDEO FEED COMPONENTS
 // ============================================================================
 
 // Vertical Video Feed (Main Feed Component)

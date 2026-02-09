@@ -1,24 +1,18 @@
 /**
- * Videos Screen - 2026 Industry-Standard Mobile UI/UX
- * Next-generation vertical video feed following latest platform conventions
+ * Videos Screen - 2025 TikTok/Instagram Reels/YouTube Shorts Style
+ * Modern vertical video feed with industry-standard UX patterns
  * 
- * 2026 Standards Applied:
- * ─────────────────────────────────────────────────────────
- * 1.  Ambient/Spatial Design - Glassmorphism header, dynamic blur overlays
- * 2.  AI-Personalization Indicators - "Curated for you" signals, engagement scores
- * 3.  Advanced Haptic Language - Contextual haptic patterns per interaction type
- * 4.  WCAG 2.2 AAA Accessibility - Reduced motion, auto-caption indicators, semantic roles
- * 5.  Adaptive UI Density - Dynamic spacing based on device/content type  
- * 6.  Data Saver Mode - Network-aware quality toggle with persistent preference
- * 7.  Creator Economy Features - Tip/gift affordances, collaboration labels
- * 8.  Content Safety Labels - Age ratings, sensitivity shields
- * 9.  Smart Search - AI-enhanced with voice search affordance
- * 10. Picture-in-Picture Mini Player - Drag-anywhere, ambient color extraction
- * 11. Social Presence - Watch-together indicators, live viewer counts
- * 12. Engagement Streak Badges - Watch streak tracking
- * 13. Share Enhancements - Clip creation, QR sharing, story sharing
- * 14. Performance - Predictive preloading, skeleton → shimmer → content transitions
- * 15. Reduced Motion - respects system accessibility settings
+ * Features:
+ * - Full-screen vertical video feed with snap-to-video
+ * - Single video plays at a time (visibility-based auto-play)
+ * - Double-tap to like with heart animation burst
+ * - Long-press for context menu / expand
+ * - Swipe gestures for navigation
+ * - Bottom sheet comments
+ * - Mini player when navigating away
+ * - Grid mode toggle for discovery
+ * - For You / Following / Trending tabs
+ * - Accessibility support (WCAG 2.1 AA)
  * 
  * Architecture:
  * - VideoFeedStore: Client-side UI state (Zustand)
@@ -31,26 +25,12 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Pressable,
   Share,
   Dimensions,
   AppState,
   AppStateStatus,
-  AccessibilityInfo,
-  Platform,
 } from 'react-native';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  interpolate,
-  Extrapolation,
-  FadeIn,
-  FadeOut,
-} from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
 import { router, Href, useFocusEffect } from 'expo-router';
 import {
   Wifi,
@@ -61,13 +41,6 @@ import {
   Search,
   Bell,
   X,
-  Mic,
-  Sparkles,
-  Zap,
-  WifiOff,
-  TrendingUp,
-  Users,
-  Eye,
 } from 'lucide-react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
@@ -79,7 +52,6 @@ import {
   ICON_SIZE,
   Z_INDEX,
   SYSTEM_BARS,
-  RADIUS,
 } from '@/utils/theme';
 import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
 import {
@@ -119,153 +91,14 @@ import {
 } from '@/services/adHooksRefactored';
 
 // ============================================================================
-// CONSTANTS & 2026 CONFIGURATION
+// CONSTANTS
 // ============================================================================
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Screen dimensions (available for responsive layout calculations)
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _screenDimensions = Dimensions.get('window');
 
 type FeedTab = 'for-you' | 'following' | 'trending';
-
-// 2026 Standard: Engagement-driven ad insertion with session caps
-const AD_INSERTION_CONFIG = {
-  interval: 5,          // Show ad every 5 organic videos (IAB 2026 standard)
-  interstitialAfter: 5, // Full-screen ad after every 5 completed videos
-  maxAdsPerSession: 8,  // Cap ads per session for user retention
-};
-
-// ============================================================================
-// SUB-COMPONENTS - 2026 Design Patterns
-// ============================================================================
-
-/** 2026 Standard: Glassmorphism pill tab with animated indicator */
-const AnimatedTabPill = React.memo(({ 
-  tab, 
-  isActive, 
-  onPress, 
-  label,
-  icon,
-}: { 
-  tab: FeedTab; 
-  isActive: boolean; 
-  onPress: () => void;
-  label: string;
-  icon?: React.ReactNode;
-}) => {
-  const scale = useSharedValue(1);
-  const bgOpacity = useSharedValue(isActive ? 1 : 0);
-
-  useEffect(() => {
-    bgOpacity.value = withSpring(isActive ? 1 : 0, { damping: 20, stiffness: 300 });
-  }, [isActive, bgOpacity]);
-
-  const pillStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    backgroundColor: `rgba(255, 255, 255, ${interpolate(bgOpacity.value, [0, 1], [0, 0.15])})`,
-  }));
-
-  const textStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(bgOpacity.value, [0, 1], [0.6, 1]),
-  }));
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    opacity: bgOpacity.value,
-    transform: [{ scaleX: bgOpacity.value }],
-  }));
-
-  return (
-    <Pressable
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        scale.value = withSpring(0.95, { damping: 15 }, () => {
-          scale.value = withSpring(1);
-        });
-        onPress();
-      }}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: isActive }}
-      accessibilityLabel={`${label} tab`}
-    >
-      <Animated.View style={[styles.tabPill, pillStyle]}>
-        {icon && <View style={styles.tabPillIcon}>{icon}</View>}
-        <Animated.Text style={[styles.tabPillText, textStyle, isActive && styles.tabPillTextActive]}>
-          {label}
-        </Animated.Text>
-        <Animated.View style={[styles.tabPillIndicator, indicatorStyle]} />
-      </Animated.View>
-    </Pressable>
-  );
-});
-
-AnimatedTabPill.displayName = 'AnimatedTabPill';
-
-/** 2026 Standard: Network quality badge for data saver awareness */
-const NetworkBadge = React.memo(({ isDataSaver, onToggle }: { isDataSaver: boolean; onToggle: () => void }) => (
-  <Pressable
-    onPress={() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onToggle();
-    }}
-    style={[styles.networkBadge, isDataSaver && styles.networkBadgeActive]}
-    accessibilityRole="switch"
-    accessibilityState={{ checked: isDataSaver }}
-    accessibilityLabel={isDataSaver ? 'Data saver on. Tap to disable' : 'Data saver off. Tap to enable'}
-  >
-    {isDataSaver ? (
-      <WifiOff size={12} color="#FFA726" strokeWidth={2.5} />
-    ) : (
-      <Zap size={12} color="#4CAF50" strokeWidth={2.5} />
-    )}
-  </Pressable>
-));
-
-NetworkBadge.displayName = 'NetworkBadge';
-
-/** 2026 Standard: Live viewer count pulse indicator */
-const LiveViewerCount = React.memo(({ count }: { count: number }) => {
-  const pulse = useSharedValue(1);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      pulse.value = withSpring(1.15, { damping: 10 }, () => {
-        pulse.value = withSpring(1, { damping: 15 });
-      });
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [pulse]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pulse.value }],
-  }));
-
-  if (count <= 0) return null;
-
-  return (
-    <Animated.View style={[styles.liveViewerBadge, pulseStyle]}>
-      <View style={styles.liveViewerDot} />
-      <Eye size={10} color="#FFFFFF" strokeWidth={2.5} />
-      <Text style={styles.liveViewerText}>{count > 999 ? `${(count / 1000).toFixed(1)}K` : count}</Text>
-    </Animated.View>
-  );
-});
-
-LiveViewerCount.displayName = 'LiveViewerCount';
-
-/** 2026 Standard: AI-curated feed indicator chip */
-const AICuratedChip = React.memo(({ visible }: { visible: boolean }) => {
-  if (!visible) return null;
-  return (
-    <Animated.View 
-      entering={FadeIn.duration(400)} 
-      exiting={FadeOut.duration(200)}
-      style={styles.aiChip}
-    >
-      <Sparkles size={10} color="#AB47BC" strokeWidth={2.5} />
-      <Text style={styles.aiChipText}>AI Curated</Text>
-    </Animated.View>
-  );
-});
-
-AICuratedChip.displayName = 'AICuratedChip';
 
 // ============================================================================
 // MAIN COMPONENT
@@ -322,7 +155,7 @@ export default function VideosScreen(): React.ReactElement {
   } = useVideoFeedStore();
 
   // ============================================================================
-  // LOCAL STATE - 2026 Enhanced
+  // LOCAL STATE
   // ============================================================================
 
   const [activeTab, setActiveTab] = useState<FeedTab>('for-you');
@@ -331,30 +164,6 @@ export default function VideosScreen(): React.ReactElement {
   const [fabExpanded, setFabExpanded] = useState(false);
   const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
-
-  // 2026 Standards: New state
-  const [isDataSaverMode, setIsDataSaverMode] = useState(false);
-  const [reducedMotionEnabled, setReducedMotionEnabled] = useState(false);
-  const [liveViewerCount] = useState(0); // Will be populated from real-time subscription
-  const [sessionAdCount, setSessionAdCount] = useState(0);
-
-  // ============================================================================
-  // 2026 ACCESSIBILITY - Reduced Motion Detection (WCAG 2.2 AAA)
-  // ============================================================================
-
-  useEffect(() => {
-    const checkReducedMotion = async () => {
-      const enabled = await AccessibilityInfo.isReduceMotionEnabled();
-      setReducedMotionEnabled(enabled);
-    };
-    checkReducedMotion();
-
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      setReducedMotionEnabled
-    );
-    return () => subscription.remove();
-  }, []);
 
   // ============================================================================
   // DATA HOOKS - Using infinite query for proper pagination/infinite scroll
@@ -381,9 +190,10 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: recordAdClick } = useRecordAdClick();
   const { mutate: recordAdImpression } = useRecordAdImpression();
 
-  // Interstitial ad state - 2026: Session-capped ad frequency
+  // Interstitial ad state - shown after every N videos watched (TikTok/YouTube pattern)
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
   const [videosWatchedCount, setVideosWatchedCount] = useState(0);
+  const VIDEOS_BEFORE_INTERSTITIAL = 5; // Industry standard: show ad every 5-7 videos
 
   // ============================================================================
   // LIFECYCLE MANAGEMENT - Industry Standard: TikTok/YouTube/Instagram pattern
@@ -399,9 +209,13 @@ export default function VideosScreen(): React.ReactElement {
       const isActive = nextAppState === 'active';
 
       if (wasActive && !isActive) {
+        // App going to background - pause all video playback
         setAppActive(false);
+        console.log('[VideoScreen] App backgrounded - pausing playback');
       } else if (!wasActive && isActive) {
+        // App coming to foreground - resume playback if screen is focused
         setAppActive(true);
+        console.log('[VideoScreen] App foregrounded - resuming playback');
       }
 
       appStateRef.current = nextAppState;
@@ -417,8 +231,15 @@ export default function VideosScreen(): React.ReactElement {
   // Track screen focus (navigation between tabs/screens)
   useFocusEffect(
     useCallback(() => {
+      // Screen gained focus - mark as focused and resume playback
       setScreenFocused(true);
-      return () => setScreenFocused(false);
+      console.log('[VideoScreen] Screen focused - resuming playback');
+
+      return () => {
+        // Screen lost focus - pause all video playback
+        setScreenFocused(false);
+        console.log('[VideoScreen] Screen unfocused - pausing playback');
+      };
     }, [setScreenFocused])
   );
 
@@ -426,6 +247,7 @@ export default function VideosScreen(): React.ReactElement {
   useEffect(() => {
     if (liveStreamVisible) {
       pauseAllPlayback();
+      console.log('[VideoScreen] LiveStream opened - pausing feed playback');
     }
   }, [liveStreamVisible, pauseAllPlayback]);
 
@@ -472,7 +294,8 @@ export default function VideosScreen(): React.ReactElement {
       .slice(0, 5);
   }, [searchQuery, allVideos, recentSearches]);
 
-  // 2026 Standard: Session-capped ad insertion with engagement awareness
+  // Convert ads to video-like format for in-feed display (TikTok/Reels pattern)
+  // Industry standard: Insert sponsored content every 4-6 organic videos
   const videosWithAds = useMemo(() => {
     let baseVideos: Video[] = [];
 
@@ -493,23 +316,18 @@ export default function VideosScreen(): React.ReactElement {
         baseVideos = allVideos;
     }
 
-    // 2026 Standard: Session-aware ad insertion with max cap
-    if (!videoAds || videoAds.length === 0 || sessionAdCount >= AD_INSERTION_CONFIG.maxAdsPerSession) {
-      return baseVideos;
-    }
+    // Insert sponsored video ads into feed (Industry Standard: every 5 videos)
+    if (!videoAds || videoAds.length === 0) return baseVideos;
 
+    const AD_INSERTION_INTERVAL = 5; // TikTok/YouTube standard
     const result: Video[] = [];
     let adIndex = 0;
 
     baseVideos.forEach((video, index) => {
       result.push(video);
 
-      // Insert ad after every N videos, respecting session cap
-      if (
-        (index + 1) % AD_INSERTION_CONFIG.interval === 0 && 
-        adIndex < videoAds.length &&
-        sessionAdCount + adIndex < AD_INSERTION_CONFIG.maxAdsPerSession
-      ) {
+      // Insert ad after every N videos
+      if ((index + 1) % AD_INSERTION_INTERVAL === 0 && adIndex < videoAds.length) {
         const ad = videoAds[adIndex];
         // Convert ad to video-like format for feed display
         // Map Ad properties to Video interface for seamless feed integration
@@ -555,13 +373,10 @@ export default function VideosScreen(): React.ReactElement {
   // ============================================================================
 
   const handleRefresh = useCallback(async () => {
-    // 2026: Contextual haptic - soft for refresh initiation
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
-    // 2026: Success haptic on refresh completion
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   }, [refetch, setRefreshing]);
 
   const handleEndReached = useCallback(() => {
@@ -578,16 +393,12 @@ export default function VideosScreen(): React.ReactElement {
     
     if (isCurrentlyLiked) {
       unlikeVideo(video.id);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
       likeVideo(video.id);
-      // 2026: Distinct success haptic for positive actions
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   }, [likedVideoIds, toggleLike, likeVideo, unlikeVideo]);
 
   const handleComment = useCallback((video: Video) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     openComments(video.id);
   }, [openComments]);
 
@@ -618,12 +429,9 @@ export default function VideosScreen(): React.ReactElement {
   const handleBookmark = useCallback((video: Video) => {
     toggleBookmark(video.id);
     bookmarkVideo(video.id);
-    // 2026: Rigid haptic for save/bookmark - distinct tactile confirmation
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
   }, [toggleBookmark, bookmarkVideo]);
 
   const handleExpandPlayer = useCallback((video: Video) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     openFullPlayer(video.id);
   }, [openFullPlayer]);
 
@@ -644,8 +452,6 @@ export default function VideosScreen(): React.ReactElement {
       wasVisible: true,
       viewportPercentage: 100,
     });
-    // 2026: Track session ad count for cap enforcement
-    setSessionAdCount(prev => prev + 1);
   }, [recordAdImpression]);
 
   const handleInterstitialClose = useCallback(() => {
@@ -654,22 +460,20 @@ export default function VideosScreen(): React.ReactElement {
   }, []);
 
   const handleVideoEnd = useCallback((video: Video) => {
-    // 2026: Session-aware ad timing with cap enforcement
+    // Track video completion for ad timing (TikTok/YouTube pattern)
     const newCount = videosWatchedCount + 1;
     setVideosWatchedCount(newCount);
 
-    if (
-      newCount >= AD_INSERTION_CONFIG.interstitialAfter && 
-      videoAds && videoAds.length > 0 &&
-      sessionAdCount < AD_INSERTION_CONFIG.maxAdsPerSession
-    ) {
+    // Show interstitial ad after every N videos (Industry Standard)
+    if (newCount >= VIDEOS_BEFORE_INTERSTITIAL && videoAds && videoAds.length > 0) {
       setShowInterstitialAd(true);
     }
-  }, [videosWatchedCount, videoAds, sessionAdCount]);
+
+    console.log('Video ended:', video.title, `(${newCount}/${VIDEOS_BEFORE_INTERSTITIAL} until ad)`);
+  }, [videosWatchedCount, videoAds]);
 
   const handleTabChange = useCallback((tab: FeedTab) => {
-    // 2026: Rigid haptic for tab switch - distinct from soft interactions
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setActiveTab(tab);
   }, []);
 
@@ -685,7 +489,9 @@ export default function VideosScreen(): React.ReactElement {
 
   const closeLiveStream = useCallback(() => {
     setLiveStreamVisible(false);
+    // Resume video feed playback when closing livestream
     resumePlayback();
+    console.log('[VideoScreen] LiveStream closed - resuming feed playback');
   }, [resumePlayback]);
 
   // Search handlers
@@ -702,12 +508,6 @@ export default function VideosScreen(): React.ReactElement {
     setSearchQuery('');
     setShowSearchResults(false);
   }, [setSearchQuery]);
-
-  // 2026: Data saver toggle with warning haptic
-  const toggleDataSaver = useCallback(() => {
-    setIsDataSaverMode(prev => !prev);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, []);
 
   // ============================================================================
   // FAB ACTIONS
@@ -753,82 +553,62 @@ export default function VideosScreen(): React.ReactElement {
         {/* StatusBar configured via useSystemBars hook for intelligent management */}
         <StatusBar style={statusBarStyle} translucent animated />
 
-        {/* ──────────────────────────────────────────────────────────── */}
-        {/* 2026 HEADER: Glassmorphism + adaptive density              */}
-        {/* ──────────────────────────────────────────────────────────── */}
+        {/* Floating Header with system bars integration */}
       <View
         style={[
           styles.header,
             systemBarsHeaderStyle,
           {
-            paddingTop: insets.top + SPACING.xs,
+            paddingTop: insets.top + SPACING.sm,
           },
         ]}
         pointerEvents="box-none"
-          accessibilityRole="toolbar"
-          accessibilityLabel="Video feed controls"
       >
-          {/* Glassmorphism blur background */}
-          <BlurView
-            intensity={40}
-            tint="dark"
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.headerScrim} />
-
-          {/* Search Bar Row - 2026: Voice search affordance + data saver */}
+          {/* Search Bar Row */}
           <View style={styles.searchRow}>
-            <Pressable
-              style={[styles.searchContainer, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+            <TouchableOpacity
+              style={[styles.searchContainer, { backgroundColor: withAlpha('#000000', 0.5) }]}
               onPress={() => setSearchOverlayVisible(true)}
-              accessibilityRole="search"
-              accessibilityLabel="Search videos"
-              accessibilityHint="Opens search overlay with voice and text search"
+              activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Open search"
             >
-              <Search size={ICON_SIZE.sm} color={withAlpha('#FFFFFF', 0.7)} strokeWidth={2} />
+              <Search size={ICON_SIZE.md} color="#FFFFFF" strokeWidth={1.5} />
               <Text
-                style={[styles.searchPlaceholder, { color: searchQuery ? '#FFFFFF' : withAlpha('#FFFFFF', 0.5) }]}
+                style={[styles.searchPlaceholder, { color: searchQuery ? '#FFFFFF' : withAlpha('#FFFFFF', 0.6) }]}
                 numberOfLines={1}
               >
-                {searchQuery || 'Search videos, creators...'}
+                {searchQuery || 'Search videos...'}
               </Text>
-              {searchQuery.length > 0 ? (
-                <Pressable onPress={clearSearch} accessibilityLabel="Clear search" hitSlop={8}>
-                  <X size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
-                </Pressable>
-              ) : (
-                /* 2026: Voice search affordance */
-                <View style={styles.voiceSearchBtn}>
-                  <Mic size={14} color={withAlpha('#FFFFFF', 0.6)} strokeWidth={2} />
-                </View>
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={clearSearch} accessibilityLabel="Clear search">
+                  <X size={ICON_SIZE.md} color="#FFFFFF" strokeWidth={2} />
+                </TouchableOpacity>
               )}
-            </Pressable>
+            </TouchableOpacity>
 
-            {/* Right: Action Cluster */}
+            {/* Right: Actions */}
             <View style={styles.headerRight}>
-              {/* 2026: Data Saver Badge */}
-              <NetworkBadge isDataSaver={isDataSaverMode} onToggle={toggleDataSaver} />
-
-              <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+              <TouchableOpacity
+                style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
                 onPress={toggleViewMode}
                 accessibilityRole="button"
                 accessibilityLabel={feedMode === 'vertical' ? 'Switch to grid view' : 'Switch to vertical feed'}
               >
                 {feedMode === 'vertical' ? (
-                  <LayoutGrid size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                  <LayoutGrid size={ICON_SIZE.md} color="#FFFFFF" />
                 ) : (
-                  <Play size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                  <Play size={ICON_SIZE.md} color="#FFFFFF" />
                 )}
-              </Pressable>
+              </TouchableOpacity>
 
-              <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+              <TouchableOpacity
+                style={[styles.headerButton, { backgroundColor: withAlpha('#000000', 0.5) }]}
                 onPress={() => router.push('/notifications' as Href)}
                 accessibilityRole="button"
                 accessibilityLabel={`Notifications, ${unreadCount || 0} unread`}
               >
-                <Bell size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                <Bell size={ICON_SIZE.md} color="#FFFFFF" />
                 {(unreadCount ?? 0) > 0 && (
                   <View style={styles.notificationBadge}>
                     <Text style={styles.notificationCount}>
@@ -836,42 +616,36 @@ export default function VideosScreen(): React.ReactElement {
                     </Text>
                   </View>
                 )}
-              </Pressable>
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Tab Row - 2026: Animated pill tabs with icons + AI curation chip */}
-          <View style={styles.tabRow}>
-            <View style={styles.tabContainer}>
-              <AnimatedTabPill
-                tab="following"
-                isActive={activeTab === 'following'}
-                onPress={() => handleTabChange('following')}
-                label="Following"
-                icon={<Users size={12} color="#FFFFFF" strokeWidth={2} />}
-              />
-              <AnimatedTabPill
-                tab="for-you"
-                isActive={activeTab === 'for-you'}
-                onPress={() => handleTabChange('for-you')}
-                label="For You"
-                icon={<Sparkles size={12} color="#FFFFFF" strokeWidth={2} />}
-              />
-              <AnimatedTabPill
-                tab="trending"
-                isActive={activeTab === 'trending'}
-                onPress={() => handleTabChange('trending')}
-                label="Trending"
-                icon={<TrendingUp size={12} color="#FFFFFF" strokeWidth={2} />}
-              />
-            </View>
-
-            {/* 2026: AI Curated indicator + Live viewer count */}
-            <View style={styles.tabMeta}>
-              <AICuratedChip visible={activeTab === 'for-you'} />
-              <LiveViewerCount count={liveViewerCount} />
-            </View>
-          </View>
+          {/* Center: Tab Chips */}
+          <View style={styles.tabContainer}>
+            {(['following', 'for-you', 'trending'] as FeedTab[]).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={[
+                  styles.tabChip,
+                  activeTab === tab && styles.tabChipActive,
+                ]}
+                onPress={() => handleTabChange(tab)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === tab }}
+                accessibilityLabel={`${tab.replace('-', ' ')} tab`}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    activeTab === tab && styles.tabTextActive,
+                  ]}
+                >
+                  {tab === 'for-you' ? 'For You' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                </Text>
+                {activeTab === tab && <View style={styles.tabIndicator} />}
+              </TouchableOpacity>
+            ))}
+        </View>
       </View>
 
         {/* Search Overlay */}
@@ -885,9 +659,9 @@ export default function VideosScreen(): React.ReactElement {
           onRemoveFromHistory={removeFromHistory}
           onClearHistory={clearHistory}
           suggestions={searchSuggestions}
-          placeholder="Search videos, creators, hashtags..."
+          placeholder="Search videos..."
           searchContext="Videos"
-          trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial', 'AI tools']}
+          trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial']}
         />
 
       {/* Main Video Feed - wrapped in error boundary for crash isolation */}
@@ -978,7 +752,7 @@ export default function VideosScreen(): React.ReactElement {
         />
       )}
 
-        {/* Interstitial Ad - 2026: Session-capped */}
+        {/* Interstitial Ad - Industry Standard: Full-screen ad between content */}
         {videoAds && videoAds.length > 0 && (
           <InterstitialAd
             ad={videoAds[0]}
@@ -1009,8 +783,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-
-  // ── HEADER (Glassmorphism) ──
   header: {
     position: 'absolute',
     top: 0,
@@ -1020,188 +792,82 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.sm,
     zIndex: Z_INDEX.sticky,
-    gap: SPACING.xs,
-    overflow: 'hidden',
+    gap: SPACING.sm,
   },
-  headerScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha('#000000', 0.35),
-  },
-
-  // ── SEARCH ROW ──
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
-    zIndex: 1,
   },
   searchContainer: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: SPACING.md,
-    height: 38,
-    borderRadius: RADIUS.full,
+    height: 40,
+    borderRadius: 20,
     gap: SPACING.sm,
-    borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.08),
   },
   searchPlaceholder: {
     flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
-  voiceSearchBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: withAlpha('#FFFFFF', 0.1),
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.06),
   },
   headerRight: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-
-  // ── TABS (Animated Pills with Icons) ──
-  tabRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    zIndex: 1,
+    gap: SPACING.sm,
   },
   tabContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  tabPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: SPACING.xs + 2,
-    paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.full,
-    gap: SPACING.xs,
-    borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.08),
-  },
-  tabPillIcon: {
-    opacity: 0.8,
-  },
-  tabPillText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    color: withAlpha('#FFFFFF', 0.6),
-    letterSpacing: 0.3,
-  },
-  tabPillTextActive: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    color: '#FFFFFF',
-  },
-  tabPillIndicator: {
-    position: 'absolute',
-    bottom: -1,
-    left: '30%',
-    right: '30%',
-    height: 2,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 1,
-  },
-
-  // ── TAB META (AI chip, live viewers) ──
-  tabMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-  },
-  aiChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: withAlpha('#AB47BC', 0.2),
-    borderWidth: 1,
-    borderColor: withAlpha('#AB47BC', 0.3),
-  },
-  aiChipText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: 9,
-    color: '#CE93D8',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-
-  // ── NETWORK BADGE ──
-  networkBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: withAlpha('#FFFFFF', 0.08),
     justifyContent: 'center',
+    gap: SPACING.md,
+  },
+  tabChip: {
+    paddingVertical: SPACING.xs,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.06),
   },
-  networkBadgeActive: {
-    backgroundColor: withAlpha('#FFA726', 0.15),
-    borderColor: withAlpha('#FFA726', 0.3),
+  tabChipActive: {
+    // Active styling handled by text and indicator
   },
-
-  // ── LIVE VIEWER COUNT ──
-  liveViewerBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 3,
-    borderRadius: RADIUS.full,
-    backgroundColor: withAlpha('#EF4444', 0.2),
-    borderWidth: 1,
-    borderColor: withAlpha('#EF4444', 0.3),
+  tabText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: withAlpha('#FFFFFF', 0.6),
   },
-  liveViewerDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#EF4444',
-  },
-  liveViewerText: {
+  tabTextActive: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 9,
     color: '#FFFFFF',
   },
-
-  // ── NOTIFICATIONS ──
+  tabIndicator: {
+    width: 24,
+    height: 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 1.5,
+    marginTop: 4,
+  },
   notificationBadge: {
     position: 'absolute',
-    top: -3,
-    right: -3,
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
+    top: -2,
+    right: -2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#FF2D55',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 3,
-    borderWidth: 1.5,
-    borderColor: '#000000',
+    paddingHorizontal: 4,
   },
   notificationCount: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 9,
+    fontSize: 10,
     color: '#FFFFFF',
   },
 });

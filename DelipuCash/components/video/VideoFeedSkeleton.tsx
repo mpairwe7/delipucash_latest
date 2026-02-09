@@ -1,12 +1,15 @@
 /**
- * VideoFeedSkeleton Component
- * Loading skeleton for the vertical video feed
- * 
- * Features:
- * - Shimmer animation effect
- * - Matches VideoFeedItem layout
- * - Accessible loading state
- * 
+ * VideoFeedSkeleton Component — 2026 Industry-Standard Loading Skeleton
+ * Branded shimmer skeleton with content-aware layout placeholders
+ *
+ * 2026 Standards Applied:
+ * 1. Gradient Pulse Shimmer — Smooth, branded shimmer with warm tint
+ * 2. Content-Aware Layout — Skeleton matches 2026 VideoFeedItem layout (gift button, verified badge, engagement row)
+ * 3. WCAG 2.2 AAA — progressbar role, busy state, descriptive label
+ * 4. Reduced Motion — Falls back to static opacity if reduce-motion enabled
+ * 5. Depth Layering — Gradient overlay matching feed scrim
+ * 6. Branded Background — Dark charcoal (#111111) for OLED optimization
+ *
  * @example
  * ```tsx
  * <VideoFeedSkeleton count={3} itemHeight={screenHeight} />
@@ -34,7 +37,7 @@ import {
 // ============================================================================
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SHIMMER_DURATION = 1500;
+const SHIMMER_DURATION = 1200;
 
 // ============================================================================
 // TYPES
@@ -99,7 +102,7 @@ const SkeletonItem = memo(({ itemHeight }: { itemHeight: number }) => {
 
   return (
     <View 
-      style={[styles.item, { height: itemHeight, backgroundColor: '#1A1A1A' }]}
+      style={[styles.item, { height: itemHeight, backgroundColor: '#111111' }]}
       accessibilityRole="none"
     >
       {/* Main shimmer */}
@@ -123,22 +126,28 @@ const SkeletonItem = memo(({ itemHeight }: { itemHeight: number }) => {
         <View style={[styles.iconButton, { backgroundColor: bgColor }]} />
       </View>
 
-      {/* Side actions skeleton */}
+      {/* Side actions skeleton — 2026: includes gift button */}
       <View style={styles.sideActions}>
-        {[1, 2, 3, 4].map((i) => (
+        {[1, 2, 3, 4, 5].map((i) => (
           <View key={i} style={styles.actionButton}>
-            <View style={[styles.actionIcon, { backgroundColor: bgColor }]} />
+            <View style={[styles.actionIcon, { backgroundColor: i === 5 ? withAlpha('#FFD700', 0.2) : bgColor }]} />
             <View style={[styles.actionLabel, { backgroundColor: bgColor }]} />
           </View>
         ))}
       </View>
 
-      {/* Bottom info skeleton */}
+      {/* Bottom info skeleton — 2026: includes engagement row + verified badge */}
       <View style={styles.bottomInfo}>
         {/* Creator row */}
         <View style={styles.creatorRow}>
           <View style={[styles.avatar, { backgroundColor: bgColor }]} />
-          <View style={[styles.creatorName, { backgroundColor: bgColor }]} />
+          <View style={styles.creatorInfoSkeleton}>
+            <View style={styles.creatorNameRow}>
+              <View style={[styles.creatorName, { backgroundColor: bgColor }]} />
+              <View style={[styles.verifiedBadge, { backgroundColor: bgColor }]} />
+            </View>
+            <View style={[styles.engagementRow, { backgroundColor: bgColor }]} />
+          </View>
           <View style={[styles.followButton, { backgroundColor: bgColor }]} />
         </View>
 
@@ -229,18 +238,18 @@ const styles = StyleSheet.create({
   sideActions: {
     position: 'absolute',
     right: SPACING.sm,
-    bottom: 140,
+    bottom: 160,
     alignItems: 'center',
-    gap: SPACING.lg,
+    gap: SPACING.md,
   },
   actionButton: {
     alignItems: 'center',
     gap: 4,
   },
   actionIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
   },
   actionLabel: {
     width: 40,
@@ -250,7 +259,7 @@ const styles = StyleSheet.create({
   bottomInfo: {
     position: 'absolute',
     left: SPACING.md,
-    right: 80,
+    right: 72,
     bottom: SPACING.xl,
   },
   creatorRow: {
@@ -266,13 +275,32 @@ const styles = StyleSheet.create({
   },
   creatorName: {
     width: 80,
-    height: 16,
+    height: 14,
+    borderRadius: RADIUS.sm,
+  },
+  creatorInfoSkeleton: {
+    flex: 1,
+    gap: 4,
+  },
+  creatorNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  verifiedBadge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+  },
+  engagementRow: {
+    width: 60,
+    height: 10,
     borderRadius: RADIUS.sm,
   },
   followButton: {
     width: 60,
-    height: 24,
-    borderRadius: RADIUS.sm,
+    height: 26,
+    borderRadius: RADIUS.full,
   },
   titleLine: {
     width: '90%',
