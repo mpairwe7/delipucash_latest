@@ -2,13 +2,15 @@ import { PrimaryButton, StatCard } from "@/components";
 import {
   QuestionDetailHeader,
   QuestionHeroCard,
-  QuestionDetailLoading,
   QuestionDetailError,
   ResponseCard,
   transformResponses,
 } from "@/components/question";
+import { QuestionDetailSkeleton } from "@/components/question/QuestionSkeletons";
 import { useQuestionDetail, useSubmitQuestionResponse } from "@/services/questionHooks";
 import { useLikeResponse, useDislikeResponse } from "@/services/hooks";
+import { triggerHaptic } from "@/utils/quiz-utils";
+import { useToast } from "@/components/ui/Toast";
 import {
   BORDER_WIDTH,
   COMPONENT_SIZE,
@@ -20,10 +22,13 @@ import {
 } from "@/utils/theme";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { MessageSquare, Send } from "lucide-react-native";
+import { MessageSquare, RefreshCw, Send } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
@@ -36,6 +41,7 @@ export default function QuestionCommentsScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
 
   const [text, setText] = useState("");
   // Track optimistic like/dislike state locally until server confirms
@@ -62,22 +68,31 @@ export default function QuestionCommentsScreen(): React.ReactElement {
   }, [question]);
 
   const handleBack = useCallback((): void => {
+    triggerHaptic('light');
     router.back();
   }, []);
 
   const handleSubmit = useCallback((): void => {
     if (!text.trim() || !question) return;
+    triggerHaptic('medium');
     submitResponse.mutate(
       { questionId: question.id, responseText: text.trim() },
       {
         onSuccess: () => {
           setText("");
+          triggerHaptic('success');
+          showToast({ message: 'Response submitted!', type: 'success' });
+        },
+        onError: () => {
+          triggerHaptic('error');
+          showToast({ message: 'Failed to send. Please try again.', type: 'error' });
         },
       }
     );
-  }, [text, question, submitResponse]);
+  }, [text, question, submitResponse, showToast]);
 
   const toggleLike = useCallback((responseId: string) => {
+    triggerHaptic('light');
     setLiked((prev) => ({ ...prev, [responseId]: !prev[responseId] }));
     setDisliked((prev) => {
       const next = { ...prev };
@@ -91,6 +106,7 @@ export default function QuestionCommentsScreen(): React.ReactElement {
   }, [question, likeResponse]);
 
   const toggleDislike = useCallback((responseId: string) => {
+    triggerHaptic('light');
     setDisliked((prev) => ({ ...prev, [responseId]: !prev[responseId] }));
     setLiked((prev) => {
       const next = { ...prev };
@@ -118,11 +134,21 @@ export default function QuestionCommentsScreen(): React.ReactElement {
   const keyExtractor = useCallback((item: ReturnType<typeof transformResponses>[number]) => item.id, []);
 
   if (isLoading) {
-    return <QuestionDetailLoading />;
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={statusBarStyle} />
+        <QuestionDetailSkeleton />
+      </View>
+    );
   }
 
   if (error || !question) {
-    return <QuestionDetailError message="Question not found" />;
+    return (
+      <QuestionDetailError
+        message="Question not found"
+        onRetry={() => { triggerHaptic('light'); refetch(); }}
+      />
+    );
   }
 
   return (
@@ -158,6 +184,7 @@ export default function QuestionCommentsScreen(): React.ReactElement {
         }
         ListEmptyComponent={
           <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <MessageSquare size={ICON_SIZE['3xl']} color={colors.textMuted} strokeWidth={1} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>No responses yet</Text>
             <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
               Be the first to share a thoughtful answer.
@@ -167,18 +194,24 @@ export default function QuestionCommentsScreen(): React.ReactElement {
         refreshControl={
           <RefreshControl
             refreshing={isFetching && !isLoading}
-            onRefresh={refetch}
+            onRefresh={() => { triggerHaptic('light'); refetch(); }}
             tintColor={colors.primary}
             colors={[colors.primary]}
           />
         }
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         // Performance optimizations
         removeClippedSubviews={true}
         maxToRenderPerBatch={8}
         windowSize={5}
         initialNumToRender={6}
       />
+
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top + COMPONENT_SIZE.touchTarget}
+      >
 
       <View
         style={[
@@ -209,6 +242,7 @@ export default function QuestionCommentsScreen(): React.ReactElement {
           style={{ marginTop: SPACING.sm }}
         />
       </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }

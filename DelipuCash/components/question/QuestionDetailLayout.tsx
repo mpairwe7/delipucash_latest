@@ -27,9 +27,8 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -39,6 +38,7 @@ import {
   Award,
   CheckCircle2,
   MessageSquare,
+  RefreshCw,
   Send,
   Sparkles,
   ThumbsDown,
@@ -58,6 +58,8 @@ import {
 import { formatCurrency, formatDate } from '@/services/api';
 import { PrimaryButton } from '@/components';
 import { type Response } from '@/types';
+import { triggerHaptic } from '@/utils/quiz-utils';
+import { QuestionDetailSkeleton } from '@/components/question/QuestionSkeletons';
 
 // ===========================================
 // Sub-Components
@@ -138,12 +140,13 @@ export const ResponseCard = memo<ResponseCardProps>(
         {(onLike || onDislike) && (
           <View style={layoutStyles.responseActions}>
             {onLike && (
-              <TouchableOpacity
+              <Pressable
                 style={layoutStyles.actionButton}
-                onPress={() => onLike(response.id)}
+                onPress={() => { triggerHaptic('light'); onLike(response.id); }}
                 accessibilityRole="button"
                 accessibilityLabel={`Like. ${likeCount} likes`}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityState={{ selected: isLiked }}
+                hitSlop={8}
               >
                 <ThumbsUp
                   size={ICON_SIZE.md}
@@ -158,15 +161,16 @@ export const ResponseCard = memo<ResponseCardProps>(
                 >
                   {likeCount}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
             {onDislike && (
-              <TouchableOpacity
+              <Pressable
                 style={layoutStyles.actionButton}
-                onPress={() => onDislike(response.id)}
+                onPress={() => { triggerHaptic('light'); onDislike(response.id); }}
                 accessibilityRole="button"
                 accessibilityLabel={`Dislike. ${dislikeCount} dislikes`}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityState={{ selected: isDisliked }}
+                hitSlop={8}
               >
                 <ThumbsDown
                   size={ICON_SIZE.md}
@@ -181,7 +185,7 @@ export const ResponseCard = memo<ResponseCardProps>(
                 >
                   {dislikeCount}
                 </Text>
-              </TouchableOpacity>
+              </Pressable>
             )}
           </View>
         )}
@@ -290,14 +294,16 @@ export function QuestionDetailHeader({
         },
       ]}
     >
-      <TouchableOpacity
+      <Pressable
         style={[layoutStyles.iconButton, { backgroundColor: colors.secondary }]}
-        onPress={onBack}
+        onPress={() => { triggerHaptic('light'); onBack(); }}
         accessibilityRole="button"
         accessibilityLabel="Go back"
+        accessibilityHint="Returns to the previous screen"
+        hitSlop={8}
       >
         <ArrowLeft size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
-      </TouchableOpacity>
+      </Pressable>
       <View style={layoutStyles.headerCenter}>
         <Text style={[layoutStyles.headerTitle, { color: colors.text }]}>{title}</Text>
         {subtitle && (
@@ -380,33 +386,43 @@ export function QuestionHeroCard({
 }
 
 /**
- * Loading state for question detail screens
+ * Loading state for question detail screens — shimmer skeleton
  */
 export function QuestionDetailLoading() {
   const { colors, statusBarStyle } = useTheme();
   return (
     <View style={[layoutStyles.centeredContainer, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
-      <ActivityIndicator size="large" color={colors.primary} />
-      <Text style={[layoutStyles.loadingText, { color: colors.textMuted }]}>Loading…</Text>
+      <QuestionDetailSkeleton />
     </View>
   );
 }
 
 /**
- * Error state for question detail screens
+ * Error state for question detail screens with optional retry
  */
 export function QuestionDetailError({
   message = 'Question not found',
+  onRetry,
 }: {
   message?: string;
+  onRetry?: () => void;
 }) {
   const { colors, statusBarStyle } = useTheme();
   return (
     <View style={[layoutStyles.centeredContainer, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
       <Text style={[layoutStyles.errorText, { color: colors.error }]}>{message}</Text>
-      <PrimaryButton title="Go back" onPress={() => router.back()} variant="secondary" />
+      <View style={layoutStyles.errorActions}>
+        {onRetry && (
+          <PrimaryButton
+            title="Retry"
+            onPress={onRetry}
+            leftIcon={<RefreshCw size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={2} />}
+          />
+        )}
+        <PrimaryButton title="Go back" onPress={() => { triggerHaptic('light'); router.back(); }} variant="secondary" />
+      </View>
     </View>
   );
 }
@@ -540,6 +556,12 @@ const layoutStyles = StyleSheet.create({
     marginBottom: SPACING.md,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.md,
+    textAlign: 'center',
+  },
+  errorActions: {
+    flexDirection: 'row',
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
   },
 
   // Header

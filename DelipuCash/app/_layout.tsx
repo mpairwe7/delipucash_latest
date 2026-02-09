@@ -9,6 +9,7 @@ import 'react-native-reanimated';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
+import { ToastProvider } from '@/components/ui/Toast';
 import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 
@@ -159,6 +160,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <NotificationProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <ToastProvider>
             <Stack>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -179,6 +181,7 @@ export default function RootLayout() {
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
+            </ToastProvider>
           </ThemeProvider>
         </NotificationProvider>
       </QueryClientProvider>

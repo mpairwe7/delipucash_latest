@@ -1,19 +1,19 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { FormInput } from "./FormInput";
 import { PrimaryButton } from "./PrimaryButton";
+import { useToast } from "./ui/Toast";
 import {
   BORDER_WIDTH,
   COMPONENT_SIZE,
@@ -23,6 +23,7 @@ import {
   TYPOGRAPHY,
   useTheme,
 } from "@/utils/theme";
+import { triggerHaptic } from "@/utils/quiz-utils";
 import { useCreateRewardQuestion } from "@/services/hooks";
 import useUser from "@/utils/useUser";
 
@@ -38,6 +39,8 @@ export function UploadRewardQuestionModal({
   const { colors } = useTheme();
   const { data: user } = useUser();
   const createQuestion = useCreateRewardQuestion();
+  const { showToast } = useToast();
+  const submitDebounceRef = useRef(false);
 
   const [formData, setFormData] = useState({
     text: "",
@@ -127,10 +130,15 @@ export function UploadRewardQuestionModal({
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) return;
+    if (!validateForm()) {
+      triggerHaptic('warning');
+      return;
+    }
+    if (submitDebounceRef.current) return;
 
     if (!user) {
-      Alert.alert("Error", "User not found");
+      triggerHaptic('error');
+      showToast({ message: 'User not found. Please log in again.', type: 'error' });
       return;
     }
 
@@ -139,6 +147,9 @@ export function UploadRewardQuestionModal({
       .map(opt => opt.trim());
 
     const expiryTime = new Date(Date.now() + parseInt(formData.expiryHours) * 60 * 60 * 1000).toISOString();
+
+    triggerHaptic('medium');
+    submitDebounceRef.current = true;
 
     try {
       await createQuestion.mutateAsync({
@@ -154,11 +165,21 @@ export function UploadRewardQuestionModal({
         phoneNumber: formData.phoneNumber.trim(),
       });
 
-      Alert.alert("Success", "Reward question created successfully!", [
-        { text: "OK", onPress: handleClose }
-      ]);
+      submitDebounceRef.current = false;
+      triggerHaptic('success');
+      showToast({
+        message: 'Reward question created successfully!',
+        type: 'success',
+        action: 'Done',
+        onAction: handleClose,
+      });
     } catch (error) {
-      Alert.alert("Error", error instanceof Error ? error.message : "Failed to create question");
+      submitDebounceRef.current = false;
+      triggerHaptic('error');
+      showToast({
+        message: error instanceof Error ? error.message : 'Failed to create question',
+        type: 'error',
+      });
     }
   };
 
@@ -195,15 +216,16 @@ export function UploadRewardQuestionModal({
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <Text style={[styles.title, { color: colors.text }]}>Upload Instant Reward Question</Text>
-            <TouchableOpacity
+            <Pressable
               style={[styles.closeButton, { backgroundColor: colors.secondary }]}
-              onPress={handleClose}
+              onPress={() => { triggerHaptic('light'); handleClose(); }}
               accessibilityRole="button"
               accessibilityLabel="Close modal"
               accessibilityHint="Closes the upload reward question form"
+              hitSlop={8}
             >
               <X size={ICON_SIZE.lg} color={colors.text} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
 
           <ScrollView

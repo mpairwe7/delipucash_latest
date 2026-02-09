@@ -14,6 +14,8 @@
  */
 
 import { PrimaryButton, StatCard } from "@/components";
+import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons";
+import { useToast } from "@/components/ui/Toast";
 import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { formatCurrency } from "@/services/api";
 import {
@@ -55,13 +57,12 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
   Animated,
+  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -100,7 +101,7 @@ const OptionItem = memo(function OptionItem({
   const handlePress = useCallback(() => onPress(optionKey), [optionKey, onPress]);
 
   return (
-    <TouchableOpacity
+    <Pressable
       style={[
         styles.option,
         {
@@ -141,7 +142,7 @@ const OptionItem = memo(function OptionItem({
       {wasSelectedPreviously && !isCorrect && (
         <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -186,6 +187,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const { showToast } = useToast();
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -324,6 +327,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Handlers ──
   const handleBack = useCallback((): void => {
+    triggerHaptic('light');
     router.back();
   }, []);
 
@@ -372,33 +376,39 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
     // Auth validation
     if (!user?.email) {
-      Alert.alert("Authentication Required", "Please log in to submit answers and earn rewards.", [
-        { text: "Login", onPress: () => router.push("/(auth)/login" as Href) },
-      ]);
+      triggerHaptic('warning');
+      showToast({
+        message: 'Please log in to submit answers and earn rewards.',
+        type: 'warning',
+        action: 'Login',
+        onAction: () => router.push("/(auth)/login" as Href),
+      });
       return;
     }
 
     // Phone number validation for payout
     if (!user?.phone) {
-      Alert.alert(
-        "Phone Number Required",
-        "Please update your profile with a phone number to receive reward payouts.",
-        [{ text: "OK" }]
-      );
+      triggerHaptic('warning');
+      showToast({
+        message: 'Please update your profile with a phone number to receive reward payouts.',
+        type: 'warning',
+      });
       return;
     }
 
     // Prevent re-attempts
     if (hasAlreadyAttempted) {
-      Alert.alert(
-        "Already Attempted",
-        "You have already attempted this question. Each question can only be attempted once."
-      );
+      triggerHaptic('warning');
+      showToast({
+        message: 'You have already attempted this question. Each question can only be attempted once.',
+        type: 'warning',
+      });
       return;
     }
 
     if (!answer) {
-      Alert.alert("Choose an answer", "Select the option you think is correct.");
+      triggerHaptic('warning');
+      showToast({ message: 'Select the option you think is correct.', type: 'warning' });
       return;
     }
 
@@ -442,49 +452,41 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               const paymentStatus = payload.paymentStatus || "PENDING";
               let paymentMessage = "";
               if (paymentStatus === "SUCCESSFUL") {
-                paymentMessage = `\n\n💰 Your reward has been credited!`;
+                paymentMessage = " Your reward has been credited!";
               } else if (paymentStatus === "PENDING") {
-                paymentMessage = `\n\n⏳ Your reward is being processed.`;
+                paymentMessage = " Your reward is being processed.";
               }
 
-              Alert.alert(
-                "🎉 Correct!",
-                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!${paymentMessage}`,
-                [
-                  {
-                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
-                    onPress: () => setTimeout(() => handleTransitionToNext(), 300),
-                  },
-                ]
-              );
+              showToast({
+                message: `Correct! +${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!${paymentMessage}`,
+                type: 'success',
+                action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
+                onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+              });
             } else {
-              Alert.alert(
-                "Correct! 🎯",
-                `+${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!`,
-                [
-                  {
-                    text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
-                    onPress: () => setTimeout(() => handleTransitionToNext(), 300),
-                  },
-                ]
-              );
+              showToast({
+                message: `Correct! +${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!`,
+                type: 'success',
+                action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
+                onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+              });
             }
           } else if (payload.isExpired || payload.isCompleted) {
             triggerHaptic("warning");
-            Alert.alert("Unavailable", payload.message || "Rewards are no longer available.", [
-              {
-                text: unansweredQuestions.length > 0 ? "Try Another" : "View Summary",
-                onPress: () => setTimeout(() => handleTransitionToNext(), 300),
-              },
-            ]);
+            showToast({
+              message: payload.message || 'Rewards are no longer available.',
+              type: 'warning',
+              action: unansweredQuestions.length > 0 ? 'Try Another' : 'View Summary',
+              onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+            });
           } else {
             triggerHaptic("error");
-            Alert.alert("Incorrect 😢", `${payload.message || "That was not correct."}`, [
-              {
-                text: unansweredQuestions.length > 0 ? "Next Question" : "View Summary",
-                onPress: () => setTimeout(() => handleTransitionToNext(), 300),
-              },
-            ]);
+            showToast({
+              message: payload.message || 'That was not correct.',
+              type: 'error',
+              action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
+              onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+            });
           }
         },
         onError: (err) => {
@@ -492,21 +494,28 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           const errorMessage = err?.message || "Unable to submit your answer. Please try again.";
 
           if (errorMessage.includes("already attempted")) {
-            Alert.alert(
-              "Already Attempted",
-              "You have already attempted this question. Each question can only be attempted once.",
-              [{ text: "OK", onPress: () => router.back() }]
-            );
+            showToast({
+              message: 'You have already attempted this question.',
+              type: 'warning',
+              action: 'Go Back',
+              onAction: () => router.back(),
+            });
           } else if (errorMessage.includes("expired")) {
-            Alert.alert("Question Expired", "This question has expired and is no longer available.", [
-              { text: "OK", onPress: () => handleTransitionToNext() },
-            ]);
+            showToast({
+              message: 'This question has expired and is no longer available.',
+              type: 'info',
+              action: 'Next',
+              onAction: () => handleTransitionToNext(),
+            });
           } else if (errorMessage.includes("completed")) {
-            Alert.alert("Question Completed", "All winners have been found for this question.", [
-              { text: "Try Another", onPress: () => handleTransitionToNext() },
-            ]);
+            showToast({
+              message: 'All winners have been found for this question.',
+              type: 'info',
+              action: 'Try Another',
+              onAction: () => handleTransitionToNext(),
+            });
           } else {
-            Alert.alert("Error", errorMessage);
+            showToast({ message: errorMessage, type: 'error' });
           }
         },
       }
@@ -522,6 +531,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     updateSessionSummary,
     unansweredQuestions,
     handleTransitionToNext,
+    showToast,
   ]);
 
   // ── Redemption handler ──
@@ -554,7 +564,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   );
 
   // ── Stable modal callbacks ──
-  const handleRefresh = useCallback(() => refetch(), [refetch]);
+  const handleRefresh = useCallback(async () => {
+    triggerHaptic('light');
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   const handleRedeemCash = useCallback(() => {
     setShowSessionSummary(false);
@@ -591,10 +606,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>
-          Loading reward question...
-        </Text>
+        <RewardQuestionSkeleton />
       </View>
     );
   }
@@ -604,8 +616,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
+        <AlertCircle size={ICON_SIZE['5xl']} color={colors.error} strokeWidth={1.5} style={{ marginBottom: SPACING.md }} />
         <Text style={[styles.errorText, { color: colors.error }]}>Reward question not found</Text>
-        <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
+        <View style={styles.errorActions}>
+          <PrimaryButton title="Retry" onPress={() => { triggerHaptic('light'); refetch(); }} />
+          <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
+        </View>
       </View>
     );
   }
@@ -625,14 +641,16 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           },
         ]}
       >
-        <TouchableOpacity
+        <Pressable
           style={[styles.iconButton, { backgroundColor: colors.secondary }]}
           onPress={handleBack}
           accessibilityRole="button"
           accessibilityLabel="Go back"
+          accessibilityHint="Returns to previous screen"
+          hitSlop={8}
         >
           <ArrowLeft size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
+        </Pressable>
 
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Reward Question</Text>
@@ -641,18 +659,16 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           </Text>
         </View>
 
-        <TouchableOpacity
+        <Pressable
           style={[styles.iconButton, { backgroundColor: colors.secondary }]}
           onPress={handleRefresh}
           accessibilityRole="button"
           accessibilityLabel="Refresh"
+          accessibilityHint="Reload question data"
+          hitSlop={8}
         >
-          {isFetching ? (
-            <ActivityIndicator size="small" color={colors.primary} />
-          ) : (
-            <RefreshCcw size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
-          )}
-        </TouchableOpacity>
+          <RefreshCcw size={ICON_SIZE.md} color={isFetching ? colors.primary : colors.text} strokeWidth={1.5} />
+        </Pressable>
       </View>
 
       {/* ── Content ── */}
@@ -663,6 +679,14 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           padding: SPACING.lg,
           paddingBottom: insets.bottom + SPACING["2xl"],
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* Hero — reward amount & live status */}
         <LinearGradient
@@ -966,14 +990,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: SPACING.lg,
   },
-  loadingText: {
-    marginTop: SPACING.md,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-  },
   errorText: {
     marginBottom: SPACING.md,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.md,
+  },
+  errorActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
   },
   header: {
     flexDirection: "row",

@@ -9,6 +9,8 @@ import {
 } from "@/components";
 import { useCreateRewardQuestion } from "@/services/hooks";
 import { UserRole } from "@/types";
+import { triggerHaptic } from "@/utils/quiz-utils";
+import { useToast } from "@/components/ui/Toast";
 import {
   BORDER_WIDTH,
   COMPONENT_SIZE,
@@ -29,16 +31,16 @@ import {
   Coins,
   Sparkles,
 } from "lucide-react-native";
-import React, { useState } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -48,6 +50,8 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const { data: user, loading: userLoading } = useUser();
   const createQuestion = useCreateRewardQuestion();
+  const { showToast } = useToast();
+  const submitDebounceRef = useRef(false);
 
   const [questionText, setQuestionText] = useState("");
   const [option1, setOption1] = useState("");
@@ -73,9 +77,15 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   }
 
   const handleUpload = async () => {
+    // Debounce protection
+    if (submitDebounceRef.current) return;
+    submitDebounceRef.current = true;
+    setTimeout(() => { submitDebounceRef.current = false; }, 1000);
+
     // Validate required fields
     if (!questionText.trim()) {
-      Alert.alert("Error", "Question text is required");
+      triggerHaptic('warning');
+      showToast({ message: 'Question text is required', type: 'warning' });
       return;
     }
 
@@ -84,12 +94,14 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       .map(opt => opt.trim());
 
     if (options.length < 2) {
-      Alert.alert("Error", "At least 2 options are required");
+      triggerHaptic('warning');
+      showToast({ message: 'At least 2 options are required', type: 'warning' });
       return;
     }
 
     if (!correctAnswer.trim()) {
-      Alert.alert("Error", "Correct answer is required");
+      triggerHaptic('warning');
+      showToast({ message: 'Correct answer is required', type: 'warning' });
       return;
     }
 
@@ -98,13 +110,15 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       opt => opt.toLowerCase() === correctAnswer.trim().toLowerCase()
     );
     if (!matchingOption) {
-      Alert.alert("Error", "Correct answer must match one of the options");
+      triggerHaptic('warning');
+      showToast({ message: 'Correct answer must match one of the options', type: 'warning' });
       return;
     }
 
     const parsedReward = parseFloat(rewardAmount);
     if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward <= 0) {
-      Alert.alert("Error", "Valid reward amount is required");
+      triggerHaptic('warning');
+      showToast({ message: 'Valid reward amount is required', type: 'warning' });
       return;
     }
 
@@ -112,12 +126,14 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     const parsedExpiryHours = parseInt(expiryHours) || 24;
 
     if (!phoneNumber.trim()) {
-      Alert.alert("Error", "Phone number is required for payouts");
+      triggerHaptic('warning');
+      showToast({ message: 'Phone number is required for payouts', type: 'warning' });
       return;
     }
 
     if (!user) {
-      Alert.alert("Error", "User not found. Please log in again.");
+      triggerHaptic('error');
+      showToast({ message: 'User not found. Please log in again.', type: 'error' });
       return;
     }
 
@@ -137,11 +153,20 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         phoneNumber: phoneNumber.trim(),
       });
 
-      Alert.alert("Success", "Instant reward question uploaded successfully!", [
-        { text: "OK", onPress: () => router.back() }
-      ]);
+      triggerHaptic('success');
+      showToast({
+        message: 'Instant reward question uploaded successfully!',
+        type: 'success',
+        duration: 4000,
+        action: 'Go Back',
+        onAction: () => router.back(),
+      });
     } catch (error) {
-      Alert.alert("Error", error instanceof Error ? error.message : "Failed to upload question");
+      triggerHaptic('error');
+      showToast({
+        message: error instanceof Error ? error.message : 'Failed to upload question',
+        type: 'error',
+      });
     }
   };
 
@@ -166,14 +191,16 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           keyboardShouldPersistTaps="handled"
         >
         <View style={styles.header}>
-          <TouchableOpacity
+          <Pressable
             style={[styles.iconButton, { backgroundColor: colors.secondary }]}
-            onPress={() => router.back()}
+            onPress={() => { triggerHaptic('light'); router.back(); }}
             accessibilityRole="button"
             accessibilityLabel="Go back"
+            accessibilityHint="Returns to the previous screen"
+            hitSlop={8}
           >
             <ArrowLeft size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
-          </TouchableOpacity>
+          </Pressable>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Create Instant Reward</Text>
           <View style={{ width: COMPONENT_SIZE.touchTarget }} />
         </View>
@@ -318,7 +345,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
             <Text style={[styles.label, { color: colors.text }]}>Payment Provider</Text>
             <View style={styles.paymentProviderRow}>
               {["MTN", "Airtel", "Bank"].map((provider) => (
-                <TouchableOpacity
+                <Pressable
                   key={provider}
                   style={[
                     styles.paymentProviderOption,
@@ -327,7 +354,10 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
                       backgroundColor: paymentProvider === provider ? withAlpha(colors.primary, 0.1) : colors.card,
                     }
                   ]}
-                  onPress={() => setPaymentProvider(provider)}
+                  onPress={() => { triggerHaptic('selection'); setPaymentProvider(provider); }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: paymentProvider === provider }}
+                  accessibilityLabel={`${provider} payment provider`}
                 >
                   <Text style={[
                     styles.paymentProviderText,
@@ -335,7 +365,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
                   ]}>
                     {provider}
                   </Text>
-                </TouchableOpacity>
+                </Pressable>
               ))}
             </View>
           </View>

@@ -12,6 +12,10 @@ import {
     useTheme
 } from "@/utils/theme";
 import { useFormValidation, validators } from "@/utils/validation";
+import { triggerHaptic } from "@/utils/quiz-utils";
+import { useReducedMotion } from "@/utils/accessibility";
+import { useToast } from "@/components/ui/Toast";
+import { AnswerQuestionSkeleton } from "@/components/question/QuestionSkeletons";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -19,21 +23,32 @@ import {
     Award,
     CheckCircle2,
     MessageSquare,
+    RefreshCw,
     Send,
     ThumbsUp,
 } from "lucide-react-native";
-import React, { memo, useState } from "react";
+import React, { memo, useCallback, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
+    FlatList,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    RefreshControl,
     StyleSheet,
     Text,
     TextInput,
-    TouchableOpacity,
     View,
 } from "react-native";
+import Animated, {
+    FadeIn,
+    FadeInDown,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface Answer {
   id: string;
@@ -79,42 +94,68 @@ interface FormState {
   handleBlur: (name: string) => void;
 }
 
-const AnswerCard = memo<AnswerCardProps>(({ answer, colors }) => (
-  <View style={[styles.answerCard, { backgroundColor: colors.card }]}>
-    <View style={styles.answerHeader}>
-      <View style={[styles.answerAvatar, { backgroundColor: colors.primary }]}>
-        <Text style={styles.answerAvatarText}>{answer.user.avatar}</Text>
-      </View>
-      <View style={styles.answerUserInfo}>
-        <Text style={[styles.answerUserName, { color: colors.text }]}>
-          {answer.user.name}
-        </Text>
-        <Text style={[styles.answerDate, { color: colors.textMuted }]}>
-          {formatDate(answer.createdAt)}
-        </Text>
-      </View>
-      {answer.isAccepted && (
-        <View style={[styles.acceptedBadge, { backgroundColor: `${colors.success}20` }]}>
-          <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-          <Text style={[styles.acceptedText, { color: colors.success }]}>
-            Accepted
+const AnswerCard = memo<AnswerCardProps & { index: number; reduceMotion: boolean }>(({ answer, colors, index, reduceMotion }) => {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const handleLikePress = useCallback(() => {
+    triggerHaptic('light');
+    if (!reduceMotion) {
+      scale.value = withSpring(1.05, { damping: 10 }, () => {
+        scale.value = withSpring(1);
+      });
+    }
+  }, [reduceMotion]);
+
+  return (
+    <Animated.View
+      entering={reduceMotion ? undefined : FadeInDown.delay(index * 60).springify().damping(14)}
+      style={[styles.answerCard, { backgroundColor: colors.card }]}
+    >
+      <View style={styles.answerHeader}>
+        <View style={[styles.answerAvatar, { backgroundColor: colors.primary }]}>
+          <Text style={styles.answerAvatarText}>{answer.user.avatar}</Text>
+        </View>
+        <View style={styles.answerUserInfo}>
+          <Text style={[styles.answerUserName, { color: colors.text }]}>
+            {answer.user.name}
+          </Text>
+          <Text style={[styles.answerDate, { color: colors.textMuted }]}>
+            {formatDate(answer.createdAt)}
           </Text>
         </View>
-      )}
-    </View>
-    <Text style={[styles.answerText, { color: colors.text }]}>
-      {answer.responseText}
-    </Text>
-    <View style={styles.answerFooter}>
-      <TouchableOpacity style={styles.likeButton} accessibilityRole="button">
-        <ThumbsUp size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
-        <Text style={[styles.likeCount, { color: colors.textMuted }]}>
-          {answer.likesCount || 0}
-        </Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-));
+        {answer.isAccepted && (
+          <View style={[styles.acceptedBadge, { backgroundColor: `${colors.success}20` }]}>
+            <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
+            <Text style={[styles.acceptedText, { color: colors.success }]}>
+              Accepted
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text style={[styles.answerText, { color: colors.text }]}>
+        {answer.responseText}
+      </Text>
+      <View style={styles.answerFooter}>
+        <AnimatedPressable
+          style={[styles.likeButton, animatedStyle]}
+          onPress={handleLikePress}
+          accessibilityRole="button"
+          accessibilityLabel={`Like answer, ${answer.likesCount || 0} likes`}
+          accessibilityHint="Double tap to like this answer"
+          hitSlop={8}
+        >
+          <ThumbsUp size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
+          <Text style={[styles.likeCount, { color: colors.textMuted }]}>
+            {answer.likesCount || 0}
+          </Text>
+        </AnimatedPressable>
+      </View>
+    </Animated.View>
+  );
+});
 
 AnswerCard.displayName = "AnswerCard";
 
@@ -131,10 +172,20 @@ export default function AnswerQuestionScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
   const [submitted, setSubmitted] = useState<boolean>(false);
+  const reduceMotion = useReducedMotion();
+  const { showToast } = useToast();
 
   // Fetch question data using the API hook
-  const { data: questionData, isLoading: questionLoading, error: questionError } = useQuestion(id || "1");
+  const { data: questionData, isLoading: questionLoading, error: questionError, refetch } = useQuestion(id || "1");
   const submitResponse = useSubmitResponse();
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    triggerHaptic('light');
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
 
   const validationSchema = {
     answer: [
@@ -189,22 +240,33 @@ export default function AnswerQuestionScreen(): React.ReactElement {
     );
 
     if (!isValid || !question) {
+      triggerHaptic('warning');
       return;
     }
 
+    triggerHaptic('medium');
     submitResponse.mutate(
       { questionId: question.id, responseText: form.values.answer },
       {
         onSuccess: () => {
           setSubmitted(true);
-          Alert.alert(
-            "Success!",
-            `Your answer has been submitted. You earned ${formatCurrency(question.rewardAmount)}!`,
-            [{ text: "OK", onPress: () => router.back() }]
-          );
+          triggerHaptic('success');
+          showToast({
+            message: `Answer submitted! You earned ${formatCurrency(question.rewardAmount)}!`,
+            type: 'success',
+            duration: 4000,
+            action: 'Go Back',
+            onAction: () => router.back(),
+          });
         },
         onError: () => {
-          Alert.alert("Error", "Failed to submit answer. Please try again.");
+          triggerHaptic('error');
+          showToast({
+            message: 'Failed to submit answer. Please try again.',
+            type: 'error',
+            action: 'Retry',
+            onAction: handleSubmit,
+          });
         },
       }
     );
@@ -219,40 +281,58 @@ export default function AnswerQuestionScreen(): React.ReactElement {
     router.push({ pathname: "/question-detail", params: { id: question.id } });
   };
 
-  // Loading state
+  // Loading state — skeleton shimmer
   if (questionLoading) {
     return (
-      <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading question...</Text>
+        <AnswerQuestionSkeleton />
       </View>
     );
   }
 
-  // Error state
+  // Error state with retry
   if (questionError || !question) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <Text style={[styles.errorText, { color: colors.error }]}>Failed to load question</Text>
-        <TouchableOpacity
-          style={[styles.backButtonError, { backgroundColor: colors.primary }]}
-          onPress={handleBack}
-          accessibilityRole="button"
-        >
-          <Text style={[styles.backButtonErrorText, { color: colors.primaryText }]}>Go Back</Text>
-        </TouchableOpacity>
+        <View style={styles.errorActions}>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => { triggerHaptic('light'); refetch(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading question"
+          >
+            <RefreshCw size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={2} />
+            <Text style={[styles.backButtonErrorText, { color: colors.primaryText }]}>Retry</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.backButtonError, { borderColor: colors.border }]}
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <Text style={[styles.backButtonErrorText, { color: colors.text }]}>Go Back</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
+
+  const renderAnswerItem = ({ item, index }: { item: Answer; index: number }) => (
+    <AnswerCard answer={item} colors={colors} index={index} reduceMotion={reduceMotion} />
+  );
+
+  const answersKeyExtractor = (item: Answer) => item.id;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} />
 
       {/* Header */}
-      <View
+      <Animated.View
+        entering={reduceMotion ? undefined : FadeIn.duration(200)}
         style={[
           styles.header,
           {
@@ -262,15 +342,16 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           },
         ]}
       >
-        <TouchableOpacity
+        <Pressable
           style={[styles.backButton, { backgroundColor: colors.secondary }]}
-          onPress={handleBack}
+          onPress={() => { triggerHaptic('light'); handleBack(); }}
           accessibilityRole="button"
           accessibilityLabel="Go back"
           accessibilityHint="Returns to the previous screen"
+          hitSlop={8}
         >
           <ArrowLeft size={ICON_SIZE.lg} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
+        </Pressable>
 
         <View style={styles.headerContent}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
@@ -280,16 +361,35 @@ export default function AnswerQuestionScreen(): React.ReactElement {
             Earn {formatCurrency(question.rewardAmount)}
           </Text>
         </View>
-      </View>
+      </Animated.View>
 
-      <ScrollView
+      <KeyboardAvoidingView
         style={styles.scrollView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={insets.top + COMPONENT_SIZE.touchTarget}
+      >
+      <FlatList
+        data={question.answers}
+        renderItem={renderAnswerItem}
+        keyExtractor={answersKeyExtractor}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: insets.bottom + COMPONENT_SIZE.input.large + COMPONENT_SIZE.touchTarget },
         ]}
         showsVerticalScrollIndicator={false}
-      >
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        ListHeaderComponent={
+          <>
         {/* Question Card */}
         <View style={[styles.questionCard, { backgroundColor: colors.card }]}>
           <View style={styles.questionHeader}>
@@ -376,18 +476,27 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           </View>
         </View>
 
-        {/* Previous Answers */}
+        {/* Previous Answers Header */}
         {question.answers.length > 0 && (
           <View style={styles.answersSection}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>
               Previous Answers ({question.answers.length})
             </Text>
-            {question.answers.map((answer) => (
-              <AnswerCard key={answer.id} answer={answer} colors={colors} />
-            ))}
           </View>
         )}
-      </ScrollView>
+        </>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <MessageSquare size={ICON_SIZE['4xl']} color={colors.textMuted} strokeWidth={1} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No answers yet</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+              Be the first to answer this question!
+            </Text>
+          </View>
+        }
+      />
+      </KeyboardAvoidingView>
 
       {/* Submit Button */}
       <View
@@ -400,19 +509,23 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           },
         ]}
       >
-        <TouchableOpacity
+        <Pressable
           style={[
             styles.submitButton,
             { backgroundColor: submitted ? colors.success : colors.primary },
+            (submitResponse.isPending || submitted) && styles.submitButtonDisabled,
           ]}
           onPress={handleSubmit}
           disabled={submitResponse.isPending || submitted}
           accessibilityRole="button"
           accessibilityLabel="Submit answer"
           accessibilityHint="Submits your answer to this question"
+          accessibilityState={{ disabled: submitResponse.isPending || submitted }}
         >
           {submitResponse.isPending ? (
-            <ActivityIndicator size="small" color={colors.primaryText} />
+            <Animated.View entering={FadeIn.duration(200)}>
+              <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>Submitting…</Text>
+            </Animated.View>
           ) : (
             <>
               <Send size={ICON_SIZE.lg} color={colors.primaryText} strokeWidth={1.5} />
@@ -421,17 +534,17 @@ export default function AnswerQuestionScreen(): React.ReactElement {
               </Text>
             </>
           )}
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity
+        <Pressable
           style={[styles.viewDiscussionButton, { borderColor: colors.primary }]}
-          onPress={handleOpenDiscussion}
+          onPress={() => { triggerHaptic('light'); handleOpenDiscussion(); }}
           accessibilityRole="button"
           accessibilityLabel="Open discussion"
           accessibilityHint="Opens the full discussion thread for this question"
         >
           <Text style={[styles.viewDiscussionText, { color: colors.primary }]}>View discussion</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </View>
   );
@@ -699,14 +812,49 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.lg,
     marginBottom: SPACING.base,
+    textAlign: "center",
+  },
+  errorActions: {
+    flexDirection: "row",
+    gap: SPACING.md,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
   },
   backButtonError: {
     paddingHorizontal: SPACING.xl,
     paddingVertical: SPACING.md,
     borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
   },
   backButtonErrorText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  emptyState: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: SPACING['3xl'],
+    gap: SPACING.md,
+  },
+  emptyTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    marginTop: SPACING.sm,
+  },
+  emptySubtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.body,
+    textAlign: "center",
+  },
+});
   },
 });

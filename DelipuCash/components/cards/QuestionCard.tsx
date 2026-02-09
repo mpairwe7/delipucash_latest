@@ -12,7 +12,7 @@
  * ```
  */
 
-import React, { useCallback, memo } from "react";
+import React, { useCallback, memo, useMemo } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   StyleProp,
   ViewStyle,
   Pressable,
+  AccessibilityInfo,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -48,6 +49,8 @@ import {
   ICON_SIZE,
   withAlpha,
 } from "@/utils/theme";
+import { triggerHaptic } from "@/utils/quiz-utils";
+import { useReducedMotion } from "@/utils/accessibility";
 import { Question } from "@/types";
 
 // Create AnimatedPressable
@@ -126,6 +129,16 @@ function QuestionCardComponent({
   testID,
 }: QuestionCardProps): React.ReactElement {
   const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
+
+  // Deterministic "following" count derived from question id
+  const followingCount = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < question.id.length; i++) {
+      hash = ((hash << 5) - hash + question.id.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash % 50) + 5;
+  }, [question.id]);
 
   // Animation values
   const scale = useSharedValue(1);
@@ -133,6 +146,7 @@ function QuestionCardComponent({
 
   // Press handlers
   const handlePressIn = useCallback(() => {
+    triggerHaptic('light');
     scale.value = withSpring(0.98, SPRING_CONFIG);
     pressed.value = withSpring(1, SPRING_CONFIG);
   }, [scale, pressed]);
@@ -164,13 +178,14 @@ function QuestionCardComponent({
   const categoryColor = getCategoryColor(question.category, colors);
 
   return (
-    <Animated.View entering={FadeIn.delay(index * 50).duration(300)}>
+    <Animated.View entering={reduceMotion ? undefined : FadeIn.delay(index * 50).duration(300)}>
       <AnimatedPressable
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
         accessibilityRole="button"
         accessibilityLabel={`Question: ${question.text}`}
+        accessibilityHint="Opens question details"
         testID={testID}
         style={[
           animatedCardStyle,
@@ -256,7 +271,7 @@ function QuestionCardComponent({
               <Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
             </View>
             <Text style={[styles.statText, { color: colors.textMuted }]}>
-              {Math.floor(Math.random() * 50) + 5} following
+              {followingCount} following
             </Text>
           </View>
 

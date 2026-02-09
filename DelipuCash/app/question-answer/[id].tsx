@@ -13,6 +13,8 @@
  */
 
 import { PrimaryButton } from "@/components";
+import { AnswerQuestionSkeleton } from "@/components/question/QuestionSkeletons";
+import { useToast } from "@/components/ui/Toast";
 import { formatDate } from "@/services/api";
 import {
   useQuestionDetail,
@@ -36,6 +38,7 @@ import {
   useTheme,
   withAlpha,
 } from "@/utils/theme";
+import { triggerHaptic } from "@/utils/quiz-utils";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -47,20 +50,20 @@ import {
   AlertCircle,
   Users,
   Clock,
+  RefreshCw,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -210,8 +213,11 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
+  const submitDebounceRef = useRef(false);
   const { data: user, loading: userLoading } = useUser();
   const isAuthenticated = !!user;
+  const { showToast } = useToast();
+  const [refreshing, setRefreshing] = useState(false);
 
   // ── Zustand selectors (granular — avoid full-store re-renders) ──
   const draftText = useQuestionAnswerStore(
@@ -229,6 +235,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     isLoading,
     error,
     isFetching,
+    refetch,
   } = useQuestionDetail(questionId);
 
   // Uses optimistic mutation from questionHooks — updates detail + feed caches
@@ -255,11 +262,13 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
   // ── Callbacks (stable refs) ──
   const handleBack = useCallback((): void => {
+    triggerHaptic('light');
     router.back();
   }, []);
 
   const handleDiscussion = useCallback((): void => {
     if (!question) return;
+    triggerHaptic('medium');
     router.push({
       pathname: "/question-detail",
       params: { id: question.id },
@@ -275,6 +284,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
   const handleSubmit = useCallback((): void => {
     if (!question || wasSubmitted) return;
+    if (submitDebounceRef.current) return;
 
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
@@ -283,42 +293,48 @@ export default function QuestionAnswerScreen(): React.ReactElement {
 
     const trimmed = draftText.trim();
     if (trimmed.length < ANSWER_MIN_LENGTH) {
-      Alert.alert(
-        "Answer too short",
-        `Please share a more detailed answer (at least ${ANSWER_MIN_LENGTH} characters).`
-      );
+      triggerHaptic('warning');
+      showToast({
+        message: `Please share a more detailed answer (at least ${ANSWER_MIN_LENGTH} characters).`,
+        type: 'warning',
+      });
       return;
     }
 
+    triggerHaptic('medium');
     Keyboard.dismiss();
+    submitDebounceRef.current = true;
 
     submitResponse.mutate(
       { questionId: question.id, responseText: trimmed },
       {
         onSuccess: () => {
           markSubmitted(question.id);
+          submitDebounceRef.current = false;
 
           // Scroll to top to see result
           scrollRef.current?.scrollTo({ y: 0, animated: true });
 
-          Alert.alert("Answer submitted!", "Thanks for contributing your knowledge!", [
-            { text: "Back to questions", onPress: handleBack },
-            {
-              text: "View discussion",
-              onPress: () =>
-                router.push({
-                  pathname: "/question-detail",
-                  params: { id: question.id },
-                } as Href),
-            },
-          ]);
+          triggerHaptic('success');
+          showToast({
+            message: 'Answer submitted! Thanks for contributing your knowledge.',
+            type: 'success',
+            action: 'View discussion',
+            onAction: () =>
+              router.push({
+                pathname: "/question-detail",
+                params: { id: question.id },
+              } as Href),
+          });
         },
         onError: (err) => {
+          submitDebounceRef.current = false;
           const message =
             err?.message === "You have already responded to this question"
               ? "You've already answered this question."
               : "Could not submit your answer. Please try again.";
-          Alert.alert("Error", message);
+          triggerHaptic('error');
+          showToast({ message, type: 'error' });
         },
       }
     );
@@ -329,7 +345,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     draftText,
     submitResponse,
     markSubmitted,
-    handleBack,
+    showToast,
   ]);
 
   // ── Render item for FlatList (stable ref) ──
@@ -345,6 +361,13 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   );
   const keyExtractor = useCallback((item: any) => item.id, []);
 
+  const onRefresh = useCallback(async () => {
+    triggerHaptic('light');
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  }, [refetch]);
+
   // ── Auth loading / redirect ──
   if (userLoading) {
     return (
@@ -355,7 +378,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         ]}
       >
         <StatusBar style={statusBarStyle} />
-        <ActivityIndicator size="large" color={colors.primary} />
+        <AnswerQuestionSkeleton />
       </View>
     );
   }
@@ -370,10 +393,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         ]}
       >
         <StatusBar style={statusBarStyle} />
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textMuted }]}>
-          Loading question…
-        </Text>
+        <AnswerQuestionSkeleton />
       </View>
     );
   }
@@ -397,7 +417,19 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         <Text style={[styles.errorText, { color: colors.error }]}>
           {error?.message || "Question not found"}
         </Text>
-        <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
+        <View style={styles.errorActions}>
+          <Pressable
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={() => { triggerHaptic('light'); refetch(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading question"
+            hitSlop={8}
+          >
+            <RefreshCw size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={1.5} />
+            <Text style={[styles.retryText, { color: colors.primaryText }]}>Retry</Text>
+          </Pressable>
+          <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
+        </View>
       </View>
     );
   }
@@ -424,18 +456,20 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           },
         ]}
       >
-        <TouchableOpacity
+        <Pressable
           style={[styles.iconButton, { backgroundColor: colors.secondary }]}
           onPress={handleBack}
           accessibilityRole="button"
           accessibilityLabel="Go back"
+          accessibilityHint="Returns to previous screen"
+          hitSlop={8}
         >
           <ArrowLeft
             size={ICON_SIZE.md}
             color={colors.text}
             strokeWidth={1.5}
           />
-        </TouchableOpacity>
+        </Pressable>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
             Comment
@@ -455,7 +489,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           </View>
         </View>
         {isFetching && !isLoading && (
-          <ActivityIndicator size="small" color={colors.primary} />
+          <RefreshCw size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
         )}
       </View>
 
@@ -469,6 +503,14 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           padding: SPACING.lg,
           paddingBottom: insets.bottom + SPACING.xl + 80,
         }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         {/* Submission confirmation banner */}
         {wasSubmitted && (
@@ -616,11 +658,13 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             }
             style={{ marginTop: SPACING.md }}
           />
-          <TouchableOpacity
+          <Pressable
             style={[styles.discussionButton, { borderColor: colors.border }]}
             onPress={handleDiscussion}
             accessibilityRole="button"
             accessibilityLabel="Open discussion"
+            accessibilityHint="View the full discussion thread"
+            hitSlop={4}
           >
             <MessageSquare
               size={ICON_SIZE.sm}
@@ -630,7 +674,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             <Text style={[styles.discussionText, { color: colors.text }]}>
               View full discussion ({responseCount})
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         {/* Previous responses */}
@@ -671,15 +715,17 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       </ScrollView>
 
       {/* ── FAB ───────────────────────────────────────────────────────── */}
-      <TouchableOpacity
-        style={[
+      <Pressable
+        style={({ pressed }) => [
           styles.fab,
           {
             backgroundColor: canSubmit ? colors.primary : withAlpha(colors.primary, 0.4),
             bottom: insets.bottom + SPACING.lg,
+            opacity: pressed && canSubmit ? 0.85 : 1,
+            transform: [{ scale: pressed && canSubmit ? 0.95 : 1 }],
           },
         ]}
-        onPress={handleSubmit}
+        onPress={() => { triggerHaptic('medium'); handleSubmit(); }}
         disabled={!canSubmit}
         accessibilityRole="button"
         accessibilityLabel={
@@ -689,10 +735,10 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             ? "Submit answer"
             : `Answer needs at least ${ANSWER_MIN_LENGTH} characters`
         }
-        activeOpacity={canSubmit ? 0.7 : 1}
+        accessibilityState={{ disabled: !canSubmit }}
       >
         {submitResponse.isPending ? (
-          <ActivityIndicator size="small" color={colors.primaryText} />
+          <Send size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={1.5} style={{ opacity: 0.5 }} />
         ) : wasSubmitted ? (
           <CheckCircle
             size={ICON_SIZE.md}
@@ -706,7 +752,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             strokeWidth={1.5}
           />
         )}
-      </TouchableOpacity>
+      </Pressable>
     </KeyboardAvoidingView>
   );
 }
@@ -721,16 +767,30 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: SPACING.lg,
   },
-  loadingText: {
-    marginTop: SPACING.md,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-  },
   errorText: {
     marginBottom: SPACING.md,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.md,
     textAlign: "center",
     paddingHorizontal: SPACING.xl,
+  },
+  errorActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+  },
+  retryText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   header: {
     flexDirection: "row",

@@ -8,6 +8,8 @@ import {
 import { formatCurrency } from "@/services";
 import { useRewardQuestions, useUserProfile } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { triggerHaptic } from "@/utils/quiz-utils";
+import { InstantRewardListSkeleton } from "@/components/question/QuestionSkeletons";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -25,12 +27,11 @@ import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, CheckCircle2, Circle, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-    ActivityIndicator,
+    Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
-    TouchableOpacity,
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -57,7 +58,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'unanswered' | 'completed'>('unanswered');
 
-  const { data: rewardQuestions, isLoading, refetch, isFetching } = useRewardQuestions();
+  const { data: rewardQuestions, isLoading, error: rewardError, refetch, isFetching } = useRewardQuestions();
 
   // Access instant reward store for attempt tracking
   const {
@@ -124,20 +125,24 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   }, [completedQuestions]);
 
   const handleRefresh = useCallback(async () => {
+    triggerHaptic('light');
     await refetch();
   }, [refetch]);
 
   const handleBack = useCallback(() => {
+    triggerHaptic('light');
     router.back();
   }, []);
 
   const handleUpload = useCallback(() => {
+    triggerHaptic('medium');
     setShowUploadModal(true);
   }, []);
 
   const isAuthenticated = !!userProfile;
 
   const handleOpenQuestion = useCallback((id: string) => {
+    triggerHaptic('medium');
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
@@ -149,37 +154,35 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     <View style={[styles.container, { backgroundColor: colors.background }]}> 
       <StatusBar style={statusBarStyle} />
       <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}> 
-        <TouchableOpacity
+        <Pressable
           style={[styles.iconButton, { backgroundColor: colors.secondary }]}
           onPress={handleBack}
           accessibilityRole="button"
           accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
+          hitSlop={8}
         >
           <ArrowLeft size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Instant Reward Questions</Text>
         <View style={styles.headerActions}>
-          <TouchableOpacity
+          <Pressable
             style={[styles.iconButton, { backgroundColor: colors.secondary }]}
             onPress={handleRefresh}
             accessibilityRole="button"
             accessibilityLabel="Refresh questions"
           >
-            {isFetching ? (
-              <ActivityIndicator size="small" color={colors.primary} />
-            ) : (
-              <RefreshCcw size={ICON_SIZE.base} color={colors.text} strokeWidth={1.5} />
-            )}
-          </TouchableOpacity>
+            <RefreshCcw size={ICON_SIZE.base} color={isFetching ? colors.primary : colors.text} strokeWidth={1.5} />
+          </Pressable>
           {isAdmin && (
-            <TouchableOpacity
+            <Pressable
               style={[styles.iconButton, { backgroundColor: colors.primary }]}
               onPress={handleUpload}
               accessibilityRole="button"
               accessibilityLabel="Upload question"
             >
               <Plus size={ICON_SIZE.base} color={colors.primaryText} strokeWidth={1.5} />
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       </View>
@@ -224,12 +227,12 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
         {/* Tab Switcher */}
         <View style={[styles.tabContainer, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-          <TouchableOpacity
+          <Pressable
             style={[
               styles.tab,
               activeTab === 'unanswered' && { backgroundColor: colors.card },
             ]}
-            onPress={() => setActiveTab('unanswered')}
+            onPress={() => { triggerHaptic('selection'); setActiveTab('unanswered'); }}
             accessibilityRole="tab"
             accessibilityState={{ selected: activeTab === 'unanswered' }}
           >
@@ -240,13 +243,13 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             ]}>
               Unanswered ({unansweredQuestions.length})
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             style={[
               styles.tab,
               activeTab === 'completed' && { backgroundColor: colors.card },
             ]}
-            onPress={() => setActiveTab('completed')}
+            onPress={() => { triggerHaptic('selection'); setActiveTab('completed'); }}
             accessibilityRole="tab"
             accessibilityState={{ selected: activeTab === 'completed' }}
           >
@@ -257,7 +260,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             ]}>
               Completed ({completedQuestions.length})
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
 
         <SectionHeader
@@ -273,9 +276,13 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         />
 
         {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={[styles.loadingText, { color: colors.textMuted }]}>Loading instant reward questions...</Text>
+          <InstantRewardListSkeleton count={4} />
+        ) : rewardError ? (
+          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Zap size={ICON_SIZE['2xl']} color={colors.error} strokeWidth={1.5} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>Failed to load questions</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Please check your connection and try again.</Text>
+            <PrimaryButton title="Retry" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
           </View>
         ) : activeTab === 'unanswered' ? (
           unansweredQuestions.length === 0 ? (
@@ -317,7 +324,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             ) : (
               <View style={styles.list}>
                 {completedQuestions.map((q) => (
-                  <TouchableOpacity
+                  <Pressable
                     key={q.id}
                     style={[
                       styles.completedCard,
@@ -359,7 +366,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
                     <Text style={[styles.completedCardText, { color: colors.text }]} numberOfLines={2}>
                       {q.text}
                     </Text>
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </View>
             )
