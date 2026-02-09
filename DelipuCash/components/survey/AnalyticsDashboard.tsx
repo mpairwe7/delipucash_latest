@@ -675,6 +675,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
     marginRight: SPACING.md,
   },
   headerActions: {
@@ -682,8 +683,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   actionBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -711,7 +712,7 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     ...SHADOWS.sm,
   },
@@ -816,6 +817,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
     marginBottom: SPACING.xxs,
   },
   sectionSubtitle: {
@@ -826,7 +828,7 @@ const styles = StyleSheet.create({
 
   // Question card
   questionCard: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
     overflow: 'hidden',
@@ -1024,7 +1026,7 @@ const styles = StyleSheet.create({
   exportModal: {
     width: '100%',
     maxWidth: 360,
-    borderRadius: RADIUS.xl,
+    borderRadius: RADIUS['2xl'],
     padding: SPACING.lg,
     ...SHADOWS.lg,
   },
@@ -1037,12 +1039,13 @@ const styles = StyleSheet.create({
   exportTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
   },
   exportOption: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
     gap: SPACING.md,

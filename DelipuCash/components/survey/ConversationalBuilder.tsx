@@ -868,6 +868,7 @@ const styles = StyleSheet.create({
   titleInput: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
     textAlign: 'center',
     width: '100%',
   },
@@ -939,14 +940,15 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   deleteBtn: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
   questionInput: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
     lineHeight: 32,
     minHeight: 80,
     textAlignVertical: 'top',
@@ -1015,6 +1017,7 @@ const styles = StyleSheet.create({
   typeButtonLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   typeButtonDesc: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1049,8 +1052,8 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   typeOptionIcon: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1092,8 +1095,8 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   removeOptionBtn: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1101,7 +1104,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
     borderRadius: RADIUS.md,
     borderWidth: 1,
     borderStyle: 'dashed',
@@ -1168,6 +1171,7 @@ const styles = StyleSheet.create({
   addQuestionText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
 });
 

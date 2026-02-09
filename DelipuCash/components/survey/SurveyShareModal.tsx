@@ -601,13 +601,14 @@ const styles = StyleSheet.create({
   // Survey info
   surveyInfo: {
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.lg,
   },
   surveyTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   surveyDescription: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -676,7 +677,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingLeft: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     overflow: 'hidden',
   },
@@ -707,13 +708,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     gap: SPACING.sm,
   },
   shareBtnIcon: {
-    width: 36,
-    height: 36,
+    width: 48,
+    height: 48,
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -732,7 +733,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     gap: SPACING.sm,
   },
@@ -758,6 +759,7 @@ const styles = StyleSheet.create({
   advancedToggleText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   advancedSettings: {
     marginTop: SPACING.sm,
@@ -827,7 +829,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
   },
   doneBtnText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,

@@ -587,7 +587,7 @@ const styles = StyleSheet.create({
   },
   optionLabel: {
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
     borderRadius: RADIUS.lg,
     ...SHADOWS.sm,
   },
@@ -634,6 +634,7 @@ const styles = StyleSheet.create({
   selectorTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
     textAlign: 'center',
   },
   selectorSubtitle: {
@@ -667,6 +668,7 @@ const styles = StyleSheet.create({
   selectorOptionLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   selectorOptionDesc: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -676,12 +678,13 @@ const styles = StyleSheet.create({
   selectorCancel: {
     marginTop: SPACING.lg,
     paddingVertical: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
   },
   selectorCancelText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
 });
 

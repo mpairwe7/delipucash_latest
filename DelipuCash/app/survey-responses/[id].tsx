@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
+import * as Haptics from 'expo-haptics';
 import * as Sharing from 'expo-sharing';
 import {
   ArrowLeft,
@@ -241,6 +242,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
   // Handle export
   const handleExport = useCallback(
     async (format: 'csv' | 'json' | 'pdf') => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       setIsExporting(true);
       
       try {
@@ -421,7 +423,10 @@ const SurveyResponsesScreen = (): React.ReactElement => {
         </View>
         <TouchableOpacity
           style={[styles.iconButton, { backgroundColor: colors.card }]}
-          onPress={() => setShowExportModal(true)}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowExportModal(true);
+          }}
           accessibilityRole="button"
           accessibilityLabel="Export responses"
           accessibilityHint="Opens export options for CSV, PDF, and JSON formats"
@@ -446,7 +451,10 @@ const SurveyResponsesScreen = (): React.ReactElement => {
               viewMode === mode && { borderBottomColor: colors.primary },
               deviceType !== 'phone' && { flex: 0, paddingHorizontal: SPACING.lg },
             ]}
-            onPress={() => setViewMode(mode)}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setViewMode(mode);
+            }}
             accessibilityRole="tab"
             accessibilityState={{ selected: viewMode === mode }}
             accessibilityLabel={`${mode.charAt(0).toUpperCase() + mode.slice(1)} view`}
@@ -600,7 +608,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
 
         {/* Response Trend */}
         <View 
-          style={[styles.chartCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.chartCard, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}
           accessibilityRole="image"
           accessibilityLabel={`Response trend chart showing ${responseData.length} days of data`}
         >
@@ -635,7 +643,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
               key={aggregate.questionId}
               style={[
                 styles.questionSummaryCard, 
-                { backgroundColor: colors.card, borderColor: colors.border },
+                { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) },
                 deviceType !== 'phone' && { width: `${100 / chartColumns - 2}%` },
               ]}
               accessible
@@ -770,7 +778,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
           const isExpanded = expandedQuestionId === aggregate.questionId;
           
           return (
-            <View style={[styles.questionDetailCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.questionDetailCard, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}>
               <TouchableOpacity
                 style={styles.questionDetailHeader}
                 onPress={() => setExpandedQuestion(isExpanded ? null : aggregate.questionId)}
@@ -885,7 +893,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
         </View>
 
         {/* Respondent Info */}
-        <View style={[styles.respondentInfo, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.respondentInfo, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}>
           <View style={[styles.respondentAvatar, { backgroundColor: withAlpha(colors.primary, 0.2) }]}>
             <User color={colors.primary} size={ICON_SIZE.xl} />
           </View>
@@ -911,7 +919,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
             return (
               <View
                 key={question.id}
-                style={[styles.responseCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                style={[styles.responseCard, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}
               >
                 <Text style={[styles.responseQuestion, { color: colors.textSecondary }]}>
                   Q{index + 1}. {question.text}
@@ -1266,6 +1274,7 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize['2xl'],
+    letterSpacing: -0.2,
   },
   errorMessage: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1294,7 +1303,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   backButton: {
-    padding: SPACING.xs,
+    padding: SPACING.md,
   },
   headerTitleSection: {
     flex: 1,
@@ -1302,6 +1311,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
   },
   headerMeta: {
     flexDirection: 'row',
@@ -1323,9 +1333,9 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   iconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.lg,
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1341,7 +1351,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
+    paddingVertical: SPACING.md,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
@@ -1362,9 +1372,9 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
-    height: 40,
-    borderRadius: RADIUS.lg,
+    paddingHorizontal: SPACING.md,
+    height: 48,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
     gap: SPACING.xs,
   },
@@ -1374,9 +1384,9 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
   },
   filterButton: {
-    width: 40,
-    height: 40,
-    borderRadius: RADIUS.lg,
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1422,15 +1432,16 @@ const styles = StyleSheet.create({
 
   // Chart Card
   chartCard: {
-    borderRadius: RADIUS.xl,
+    borderRadius: RADIUS['2xl'],
     borderWidth: BORDER_WIDTH.thin,
-    padding: SPACING.md,
+    padding: SPACING.base,
     marginBottom: SPACING.lg,
-    ...SHADOWS.sm,
+    ...SHADOWS.md,
   },
   chartCardTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
     marginBottom: SPACING.md,
   },
 
@@ -1438,6 +1449,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
     marginBottom: SPACING.md,
   },
 
@@ -1445,9 +1457,9 @@ const styles = StyleSheet.create({
   questionSummaryCard: {
     borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
-    padding: SPACING.md,
+    padding: SPACING.base,
     marginBottom: SPACING.md,
-    ...SHADOWS.sm,
+    ...SHADOWS.md,
   },
   questionSummaryHeader: {
     flexDirection: 'row',
@@ -1458,7 +1470,7 @@ const styles = StyleSheet.create({
   questionNumber: {
     width: 32,
     height: 32,
-    borderRadius: RADIUS.base,
+    borderRadius: RADIUS.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1470,6 +1482,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
     lineHeight: TYPOGRAPHY.fontSize.base * TYPOGRAPHY.lineHeight.normal,
   },
   questionTypeLabel: {
@@ -1538,8 +1551,8 @@ const styles = StyleSheet.create({
   textResponseItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: SPACING.sm,
-    borderRadius: RADIUS.base,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
     gap: SPACING.sm,
   },
   textResponseText: {
@@ -1566,6 +1579,7 @@ const styles = StyleSheet.create({
   numberStatValue: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
   },
 
   // Individual View
@@ -1581,7 +1595,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: BORDER_WIDTH.thin,
   },
   navArrow: {
-    padding: SPACING.sm,
+    padding: SPACING.md,
   },
   navCenter: {
     alignItems: 'center',
@@ -1590,6 +1604,7 @@ const styles = StyleSheet.create({
   navCurrent: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   navDate: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1600,9 +1615,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.md,
     margin: SPACING.md,
-    padding: SPACING.md,
+    padding: SPACING.base,
     borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
+    ...SHADOWS.sm,
   },
   respondentAvatar: {
     width: 48,
@@ -1617,6 +1633,7 @@ const styles = StyleSheet.create({
   respondentName: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+    letterSpacing: -0.2,
   },
   respondentEmail: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1631,10 +1648,11 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   responseCard: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
-    padding: SPACING.md,
+    padding: SPACING.base,
     gap: SPACING.sm,
+    ...SHADOWS.sm,
   },
   responseQuestion: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -1668,9 +1686,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   checkboxItem: {
-    paddingHorizontal: SPACING.sm,
+    paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.base,
+    borderRadius: RADIUS.lg,
   },
   checkboxItemText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -1714,6 +1732,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
   },
   modalSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1723,9 +1742,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.md,
-    padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
+    ...SHADOWS.sm,
   },
   exportOptionText: {
     flex: 1,
@@ -1734,6 +1754,7 @@ const styles = StyleSheet.create({
   exportOptionTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   exportOptionDesc: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,

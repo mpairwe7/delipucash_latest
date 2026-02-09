@@ -544,10 +544,16 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               borderColor: isSelected ? colors.primary : colors.border,
               backgroundColor: isSelected ? withAlpha(colors.primary, 0.12) : colors.card,
             },
+            isSelected && SHADOWS.sm,
           ]}
-          onPress={() => setAnswer(option.id)}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setAnswer(option.id);
+          }}
           accessibilityRole="radio"
           accessibilityState={{ checked: isSelected }}
+          accessibilityLabel={option.text}
+          accessibilityHint={isSelected ? 'Selected' : 'Double tap to select'}
         >
           <View
             style={[
@@ -565,6 +571,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     if (question.type === "checkbox") {
       const selected = Array.isArray(currentAnswer) && currentAnswer.includes(option.id);
       const toggle = (): void => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
         const current = Array.isArray(currentAnswer) ? currentAnswer : [];
         const next = selected ? current.filter((id) => id !== option.id) : [...current, option.id];
         setAnswer(next);
@@ -583,6 +590,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           onPress={toggle}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: selected }}
+          accessibilityLabel={option.text}
+          accessibilityHint={selected ? 'Checked. Double tap to uncheck' : 'Double tap to check'}
         >
           <View
             style={[
@@ -625,14 +634,18 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               return (
                 <TouchableOpacity
                   key={level}
-                  onPress={() => setAnswer(level)}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                    setAnswer(level);
+                  }}
                   accessibilityRole="button"
-                  accessibilityLabel={`Rate ${level}`}
+                  accessibilityLabel={`Rate ${level} of ${max} stars`}
+                  accessibilityHint={active ? 'Currently selected' : 'Double tap to rate'}
                   style={styles.ratingStar}
-                  activeOpacity={0.8}
+                  activeOpacity={0.7}
                 >
                   <Star
-                    size={28}
+                    size={32}
                     color={active ? colors.warning : colors.textMuted}
                     fill={active ? colors.warning : "transparent"}
                     strokeWidth={1.4}
@@ -979,8 +992,8 @@ const styles = StyleSheet.create({
     gap: SPACING.base,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS.full,
     borderWidth: BORDER_WIDTH.thin,
     alignItems: "center",
@@ -1007,6 +1020,7 @@ const styles = StyleSheet.create({
   surveyTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["4xl"],
+    letterSpacing: -0.3,
     marginBottom: SPACING.xs,
   },
   surveyDescription: {
@@ -1036,12 +1050,12 @@ const styles = StyleSheet.create({
     marginHorizontal: SPACING.base,
     marginTop: SPACING.lg,
     padding: SPACING.base,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.hairline,
     ...SHADOWS.sm,
   },
   progressTrack: {
-    height: 8,
+    height: 10,
     borderRadius: RADIUS.full,
     overflow: "hidden",
   },
@@ -1060,23 +1074,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.xs,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
     borderWidth: BORDER_WIDTH.thin,
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: "center",
   },
   stepNumber: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.md,
   },
   stepStatus: {
-    width: 18,
+    width: 20,
     height: 6,
     borderRadius: RADIUS.full,
   },
   questionCard: {
     marginHorizontal: SPACING.base,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.xl,
+    padding: SPACING.xl,
+    borderRadius: RADIUS['2xl'],
     borderWidth: BORDER_WIDTH.hairline,
     ...SHADOWS.md,
   },
@@ -1107,6 +1124,7 @@ const styles = StyleSheet.create({
   questionTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["3xl"],
+    letterSpacing: -0.2,
     lineHeight: TYPOGRAPHY.fontSize["3xl"] * TYPOGRAPHY.lineHeight.relaxed,
     marginBottom: SPACING.sm,
   },
@@ -1126,11 +1144,12 @@ const styles = StyleSheet.create({
   optionCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: SPACING.sm,
+    gap: SPACING.md,
     paddingHorizontal: SPACING.base,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.base,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
+    minHeight: 52,
   },
   optionText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1138,22 +1157,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   radioOuter: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: BORDER_WIDTH.base,
     alignItems: "center",
     justifyContent: "center",
   },
   radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
   },
   checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: RADIUS.sm,
+    width: 24,
+    height: 24,
+    borderRadius: RADIUS.md,
     borderWidth: BORDER_WIDTH.base,
     alignItems: "center",
     justifyContent: "center",
@@ -1165,16 +1184,20 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
   },
   ratingStar: {
-    padding: SPACING.xs,
+    padding: SPACING.sm,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   textFieldWrapper: {
     gap: SPACING.sm,
   },
   textInput: {
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: BORDER_WIDTH.thin,
     padding: SPACING.md,
-    minHeight: 120,
+    minHeight: 130,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.lg,
   },
@@ -1186,8 +1209,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: SPACING.sm,
     paddingHorizontal: SPACING.base,
-    paddingTop: SPACING.sm,
+    paddingTop: SPACING.md,
     borderTopWidth: BORDER_WIDTH.hairline,
+    ...SHADOWS.lg,
   },
   navButton: {
     flex: 1,
@@ -1200,8 +1224,8 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: "100%",
-    borderRadius: RADIUS.xl,
-    padding: SPACING.lg,
+    borderRadius: RADIUS['2xl'],
+    padding: SPACING.xl,
     borderWidth: BORDER_WIDTH.hairline,
     ...SHADOWS.lg,
   },
@@ -1225,6 +1249,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["2xl"],
+    letterSpacing: -0.2,
   },
   modalSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -1264,6 +1289,7 @@ const styles = StyleSheet.create({
   stateTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["2xl"],
+    letterSpacing: -0.2,
   },
   // Already attempted state styles
   alreadyAttemptedIcon: {

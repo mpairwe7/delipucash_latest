@@ -549,8 +549,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   closeButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -635,7 +635,7 @@ const styles = StyleSheet.create({
   templateCard: {
     width: '48%',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.md,
     ...SHADOWS.sm,
@@ -738,8 +738,8 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   previewCloseBtn: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -771,6 +771,7 @@ const styles = StyleSheet.create({
   previewTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
     textAlign: 'center',
     marginBottom: SPACING.xs,
   },
@@ -808,6 +809,7 @@ const styles = StyleSheet.create({
   previewStatValue: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize['2xl'],
+    letterSpacing: -0.2,
     marginTop: SPACING.xs,
   },
   previewStatLabel: {
@@ -826,7 +828,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
     gap: SPACING.md,
@@ -877,12 +879,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     gap: SPACING.sm,
   },
   actionButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
     color: '#FFF',
   },
   emptyContainer: {

@@ -45,6 +45,7 @@ import {
   SPACING,
   RADIUS,
   TYPOGRAPHY,
+  SHADOWS,
   useTheme,
   withAlpha,
 } from '@/utils/theme';
@@ -796,6 +797,7 @@ const styles = StyleSheet.create({
   stepTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: -0.2,
     marginBottom: SPACING.xs,
   },
   stepDescription: {
@@ -810,7 +812,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1.5,
     marginBottom: SPACING.sm,
     gap: SPACING.md,
@@ -828,6 +830,7 @@ const styles = StyleSheet.create({
   fileTypeLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
   },
   fileTypeDesc: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -875,12 +878,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     gap: SPACING.sm,
   },
   uploadBtnText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    letterSpacing: -0.2,
     color: '#FFF',
   },
 
@@ -915,7 +919,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
     gap: SPACING.sm,
@@ -962,8 +966,8 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   removeQuestionBtn: {
-    width: 32,
-    height: 32,
+    width: 48,
+    height: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },

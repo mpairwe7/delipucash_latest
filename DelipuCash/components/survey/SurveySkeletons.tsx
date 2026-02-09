@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
   },
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   cardGrid: {
     width: '48%',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.md,
   },
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
   metricCard: {
     flex: 1,
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     alignItems: 'center',
     marginHorizontal: SPACING.xs,
@@ -420,7 +420,7 @@ const styles = StyleSheet.create({
   templateCard: {
     flexDirection: 'row',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     marginBottom: SPACING.sm,
   },
