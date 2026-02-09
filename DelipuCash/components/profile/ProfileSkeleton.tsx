@@ -154,7 +154,7 @@ export function ProfileSkeleton(): React.ReactElement {
 
       <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         {[1, 2, 3].map((i) => (
-          <View key={i} style={[styles.settingRow, i < 3 && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
+          <View key={i} style={[styles.settingRow, i < 3 && { borderBottomWidth: 1, borderBottomColor: withAlpha(colors.border, 0.6) }]}>
             <SkeletonBox width={40} height={40} borderRadius={10} />
             <View style={styles.settingContent}>
               <SkeletonBox width="60%" height={16} />

@@ -385,7 +385,7 @@ export const TransactionsCard = memo(function TransactionsCard({
           )}
 
           {/* View All Link */}
-          <View style={[styles.viewAllContainer, { borderTopColor: colors.border }]}>
+          <View style={[styles.viewAllContainer, { borderTopColor: withAlpha(colors.border, 0.6) }]}>
             <AccessibleText variant="button" color="primary">
               View All Transactions
             </AccessibleText>
@@ -429,7 +429,7 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     padding: SPACING.md,
     overflow: 'hidden',
     position: 'relative',

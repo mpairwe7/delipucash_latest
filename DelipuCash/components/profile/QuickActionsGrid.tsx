@@ -51,6 +51,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   RADIUS,
+  SHADOWS,
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
@@ -335,22 +336,13 @@ const styles = StyleSheet.create({
   },
   card: {
     aspectRatio: 1.1,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     padding: SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+    ...SHADOWS.sm,
   },
   cardDisabled: {
     opacity: 0.5,
@@ -392,7 +384,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
     justifyContent: 'center',
     gap: SPACING.xs,

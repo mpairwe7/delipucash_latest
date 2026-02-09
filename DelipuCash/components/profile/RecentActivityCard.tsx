@@ -43,6 +43,7 @@ import {
   useTheme,
   SPACING,
   RADIUS,
+  SHADOWS,
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
@@ -262,7 +263,7 @@ export function RecentActivityCard({
               style={[
                 index < displayedActivities.length - 1 && {
                   borderBottomWidth: 1,
-                  borderBottomColor: colors.border,
+                  borderBottomColor: withAlpha(colors.border, 0.6),
                 },
               ]}
             >
@@ -291,6 +292,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     overflow: 'hidden',
+    ...SHADOWS.sm,
   },
   header: {
     flexDirection: 'row',

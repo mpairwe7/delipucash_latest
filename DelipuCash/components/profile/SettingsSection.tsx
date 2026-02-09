@@ -52,6 +52,7 @@ import {
   useTheme,
   SPACING,
   RADIUS,
+  SHADOWS,
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
@@ -164,7 +165,7 @@ function SettingItemRow({
     <AnimatedPressable
       style={[
         styles.itemRow,
-        !isLast && { borderBottomWidth: 1, borderBottomColor: colors.border },
+        !isLast && { borderBottomWidth: 1, borderBottomColor: withAlpha(colors.border, 0.6) },
         animatedStyle,
       ]}
       onPressIn={isInteractive ? handlePressIn : undefined}
@@ -399,6 +400,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     overflow: 'hidden',
+    ...SHADOWS.sm,
   },
   itemRow: {
     flexDirection: 'row',

@@ -51,6 +51,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   RADIUS,
+  SHADOWS,
   withAlpha,
   ICON_SIZE,
 } from '@/utils/theme';
@@ -333,7 +334,10 @@ export function ProfileUserCard({
         {/* Wallet Balance */}
         <TouchableOpacity
           style={[styles.statCard, { backgroundColor: withAlpha(colors.primary, 0.08) }]}
-          onPress={onWalletPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onWalletPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Wallet balance: ${formatCurrency(walletBalance)}`}
           accessibilityRole="button"
@@ -347,7 +351,10 @@ export function ProfileUserCard({
         {/* Total Earnings */}
         <TouchableOpacity
           style={[styles.statCard, { backgroundColor: withAlpha(colors.success, 0.08) }]}
-          onPress={onEarningsPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onEarningsPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Total earnings: ${formatCurrency(totalEarnings)}`}
           accessibilityRole="button"
@@ -361,7 +368,10 @@ export function ProfileUserCard({
         {/* Streak */}
         <TouchableOpacity
           style={[styles.statCard, { backgroundColor: withAlpha(colors.warning, 0.08) }]}
-          onPress={onStreakPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onStreakPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Current streak: ${streakDays} days`}
           accessibilityRole="button"
@@ -375,8 +385,11 @@ export function ProfileUserCard({
 
       {/* Bottom CTA - View Activity */}
       <TouchableOpacity
-        style={[styles.activityCta, { backgroundColor: withAlpha(colors.info, 0.08), borderTopColor: colors.border }]}
-        onPress={onEarningsPress}
+        style={[styles.activityCta, { backgroundColor: withAlpha(colors.info, 0.08), borderTopColor: withAlpha(colors.border, 0.6) }]}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onEarningsPress?.();
+        }}
         activeOpacity={0.7}
         accessibilityLabel="View all activity and earnings"
         accessibilityRole="button"
@@ -400,6 +413,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     overflow: 'hidden',
+    ...SHADOWS.md,
   },
 
   // Card Header
@@ -426,7 +440,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
     fontFamily: 'Roboto_700Bold',
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
   },
   cardSubtitle: {
     fontSize: TYPOGRAPHY.fontSize.xs,
@@ -434,8 +448,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   editButton: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: RADIUS.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -586,6 +600,7 @@ const styles = StyleSheet.create({
   ctaText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: 'Roboto_500Medium',
+    letterSpacing: -0.2,
   },
 });
 

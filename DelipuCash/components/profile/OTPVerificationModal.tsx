@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   countdownContainer: {
     paddingVertical: SPACING.sm,
     paddingHorizontal: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     marginBottom: SPACING.md,
   },
   inputContainer: {
@@ -521,7 +521,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 56,
     borderWidth: 1.5,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     paddingHorizontal: SPACING.md,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xl,
@@ -536,7 +536,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     flex: 1,
     height: 48,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -544,7 +544,7 @@ const styles = StyleSheet.create({
   primaryButton: {
     flex: 1,
     height: 48,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     alignItems: 'center',
     justifyContent: 'center',
   },

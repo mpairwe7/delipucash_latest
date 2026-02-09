@@ -337,7 +337,10 @@ export function ProfileHeader({
         {/* Wallet Balance */}
         <TouchableOpacity
           style={[styles.statItem, { backgroundColor: withAlpha(colors.primary, 0.08) }]}
-          onPress={onEarningsPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onEarningsPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Wallet balance: ${formatCurrency(walletBalance)}`}
           accessibilityRole="button"
@@ -358,7 +361,10 @@ export function ProfileHeader({
         {/* Total Earnings */}
         <TouchableOpacity
           style={[styles.statItem, { backgroundColor: withAlpha(colors.success, 0.08) }]}
-          onPress={onEarningsPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onEarningsPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Total earnings: ${formatCurrency(totalEarnings)}`}
           accessibilityRole="button"
@@ -377,7 +383,10 @@ export function ProfileHeader({
         {/* Streak with Progress Ring */}
         <TouchableOpacity
           style={[styles.statItem, styles.streakItem, { backgroundColor: withAlpha(colors.warning, 0.08) }]}
-          onPress={onStreakPress}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onStreakPress?.();
+          }}
           activeOpacity={0.7}
           accessibilityLabel={`Current streak: ${streakDays} days. Progress toward ${maxStreak}-day goal.`}
           accessibilityRole="button"
@@ -501,7 +510,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: SPACING.md,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     gap: SPACING.sm,
     minHeight: 64,
   },

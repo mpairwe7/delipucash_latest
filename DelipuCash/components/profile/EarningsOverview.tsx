@@ -249,7 +249,10 @@ export function EarningsOverview({
           {/* Total Rewards */}
           <TouchableOpacity
             style={styles.statItem}
-            onPress={onViewRewards}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onViewRewards?.();
+            }}
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel={`Total rewards: ${formatCurrency(totalRewards)}`}
@@ -428,7 +431,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     minHeight: 48,
   },
   historyButton: {
@@ -440,7 +443,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
     borderWidth: 1.5,
     borderColor: 'rgba(255, 255, 255, 0.4)',
     minHeight: 48,
