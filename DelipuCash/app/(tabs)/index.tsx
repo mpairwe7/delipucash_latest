@@ -592,7 +592,7 @@ export default function HomePage(): React.ReactElement {
           title="Weekly Earnings Goal"
           current={dashboardStats?.weeklyEarnings || 0}
           goal={200}
-          unit="$"
+          unit="UGX"
           icon={<TrendingUp size={20} color={colors.success} strokeWidth={1.5} />}
           progressColor={colors.success}
           style={styles.progressCard}

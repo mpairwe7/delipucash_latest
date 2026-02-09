@@ -94,14 +94,14 @@ export interface EarningsOverviewProps {
 }
 
 /**
- * Format currency with proper locale and animation-friendly output
+ * Format currency in Ugandan Shillings (UGX)
  */
-function formatCurrency(amount: number, showCents = true): string {
-  return new Intl.NumberFormat('en-US', {
+function formatCurrency(amount: number, _showCents = true): string {
+  return new Intl.NumberFormat('en-UG', {
     style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: showCents ? 2 : 0,
-    maximumFractionDigits: showCents ? 2 : 0,
+    currency: 'UGX',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(amount);
 }
 

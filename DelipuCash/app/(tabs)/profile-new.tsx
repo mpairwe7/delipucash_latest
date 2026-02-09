@@ -25,7 +25,7 @@
  * - Reanimated for smooth 60fps animations
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, memo } from 'react';
 import {
   View,
   StyleSheet,
@@ -130,6 +130,200 @@ interface SectionItem {
   type: SectionType;
   id: string;
 }
+
+// ============================================================================
+// ESTIMATED SECTION HEIGHTS (for getItemLayout)
+// These don't need to be exact — rough estimates prevent layout thrashing
+// and eliminate the VirtualizedList slow-update warning
+// ============================================================================
+const SECTION_HEIGHTS: Record<SectionType, number> = {
+  header: 340,
+  transactions: 420,
+  quickActions: 340,
+  achievements: 0,    // not currently rendered
+  recentActivity: 0,  // not currently rendered
+  settings: 500,
+  signOut: 120,
+};
+
+const SECTION_SEPARATOR = 0; // FlatList has no separator between sections
+
+/**
+ * Pre-compute cumulative offsets for getItemLayout.
+ * This is called once per render of the sections array (which is stable).
+ */
+function buildGetItemLayout(sections: SectionItem[]) {
+  // Pre-build cumulative offsets
+  const offsets: number[] = [];
+  let cumulative = 0;
+  for (const section of sections) {
+    offsets.push(cumulative);
+    cumulative += SECTION_HEIGHTS[section.type] + SECTION_SEPARATOR;
+  }
+  return (_data: ArrayLike<SectionItem> | null | undefined, index: number) => ({
+    length: SECTION_HEIGHTS[sections[index]?.type ?? 'header'],
+    offset: offsets[index] ?? 0,
+    index,
+  });
+}
+
+// ============================================================================
+// MEMOIZED SECTION RENDERERS
+// Extracted from renderItem to avoid re-creating heavy JSX trees.
+// Each is wrapped in React.memo so it only re-renders when its own props change.
+// ============================================================================
+
+interface HeaderSectionProps {
+  profile: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    telephone: string;
+    walletBalance: number;
+    totalEarnings: number;
+    totalRewards: number;
+    streakDays: number;
+    isVerified: boolean;
+    activeSessions: number;
+  };
+  onEditPress: () => void;
+}
+
+const HeaderSection = memo(function HeaderSection({ profile, onEditPress }: HeaderSectionProps) {
+  return (
+    <View style={styles.sectionContainer}>
+      <ProfileUserCard
+        firstName={profile.firstName}
+        lastName={profile.lastName}
+        email={profile.email}
+        phone={profile.telephone}
+        isVerified={profile.isVerified}
+        totalEarnings={profile.totalEarnings}
+        walletBalance={profile.walletBalance}
+        streakDays={profile.streakDays}
+        maxStreak={30}
+        onEditPress={onEditPress}
+        onAvatarPress={() => Alert.alert('Change Photo', 'Photo picker coming soon!')}
+        onEarningsPress={() => router.push('/(tabs)/transactions')}
+        onWalletPress={() => router.push('/(tabs)/withdraw' as Href)}
+        onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
+      />
+    </View>
+  );
+});
+
+interface TransactionsSectionProps {
+  profile: { totalEarnings: number; streakDays: number };
+  recentTransactions: RecentTransaction[];
+}
+
+const TransactionsSection = memo(function TransactionsSection({ profile, recentTransactions }: TransactionsSectionProps) {
+  return (
+    <View style={styles.sectionContainer}>
+      <TransactionsCard
+        totalEarned={profile.totalEarnings}
+        currentStreak={profile.streakDays}
+        maxStreak={30}
+        recentTransactions={recentTransactions}
+        onPress={() => router.push('/(tabs)/transactions')}
+        onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
+      />
+    </View>
+  );
+});
+
+interface QuickActionsSectionProps {
+  quickAccessItems: ProfileQuickAction[];
+  isAdmin: boolean;
+  hasSurveySubscription: boolean;
+  onSubscriptionRequired: () => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const QuickActionsSection = memo(function QuickActionsSection({
+  quickAccessItems,
+  isAdmin,
+  hasSurveySubscription,
+  onSubscriptionRequired,
+  colors,
+}: QuickActionsSectionProps) {
+  return (
+    <View style={styles.sectionContainer}>
+      <SectionHeader
+        title="Quick Access"
+        subtitle="Frequently used features"
+        icon={<Sparkles size={ICON_SIZE.base} color={colors.primary} />}
+      />
+      <QuickActionsGrid
+        items={quickAccessItems}
+        isAdmin={isAdmin}
+        hasSubscription={hasSurveySubscription}
+        onSubscriptionRequired={onSubscriptionRequired}
+      />
+    </View>
+  );
+});
+
+interface SettingsSectionBlockProps {
+  securitySettings: SettingItem[];
+  appearanceSettings: SettingItem[];
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const SettingsSectionBlock = memo(function SettingsSectionBlock({
+  securitySettings,
+  appearanceSettings,
+  colors,
+}: SettingsSectionBlockProps) {
+  return (
+    <View style={styles.sectionContainer}>
+      <SettingsSection
+        title="Security"
+        subtitle="Protect your account"
+        icon={<Shield size={ICON_SIZE.base} color={colors.success} />}
+        items={securitySettings}
+        animationDelay={0}
+      />
+      <SettingsSection
+        title="Appearance"
+        subtitle="Customize your experience"
+        icon={<Palette size={ICON_SIZE.base} color={colors.info} />}
+        items={appearanceSettings}
+        animationDelay={100}
+      />
+    </View>
+  );
+});
+
+interface SignOutSectionProps {
+  onSignOut: () => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const SignOutSection = memo(function SignOutSection({ onSignOut, colors }: SignOutSectionProps) {
+  return (
+    <View style={[styles.sectionContainer, styles.signOutSection]}>
+      <AnimatedCard
+        variant="outlined"
+        onPress={onSignOut}
+        hapticType="medium"
+        accessibilityLabel="Sign out of your account"
+        accessibilityHint="Tap to sign out"
+        style={{ borderColor: withAlpha(colors.error, 0.3) }}
+      >
+        <View style={styles.signOutContent}>
+          <View style={[styles.signOutIcon, { backgroundColor: withAlpha(colors.error, 0.1) }]}>
+            <LogOut size={ICON_SIZE.lg} color={colors.error} strokeWidth={2} />
+          </View>
+          <AccessibleText variant="body" medium customColor={colors.error}>
+            Sign Out
+          </AccessibleText>
+          <ChevronRight size={ICON_SIZE.base} color={colors.error} />
+        </View>
+      </AnimatedCard>
+    </View>
+  );
+});
 
 // ============================================================================
 // MAIN COMPONENT
@@ -526,105 +720,37 @@ export default function ProfileScreen(): React.ReactElement {
     { type: 'signOut', id: 'signOut' },
   ], []);
 
+  // Pre-compute getItemLayout for the stable sections array
+  const getItemLayout = useMemo(() => buildGetItemLayout(sections), [sections]);
+
+  // renderItem delegates to memoized section components so each section
+  // only re-renders when its own props change — fixes the "large list slow to update" warning
   const renderItem = useCallback(({ item }: ListRenderItemInfo<SectionItem>) => {
     switch (item.type) {
       case 'header':
-        return (
-          <View style={styles.sectionContainer}>
-            <ProfileUserCard
-              firstName={profile.firstName}
-              lastName={profile.lastName}
-              email={profile.email}
-              phone={profile.telephone}
-              isVerified={profile.isVerified}
-              totalEarnings={profile.totalEarnings}
-              walletBalance={profile.walletBalance}
-              streakDays={profile.streakDays}
-              maxStreak={30}
-              onEditPress={handleEditProfile}
-              onAvatarPress={() => Alert.alert('Change Photo', 'Photo picker coming soon!')}
-              onEarningsPress={() => router.push('/(tabs)/transactions')}
-              onWalletPress={() => router.push('/(tabs)/withdraw' as Href)}
-              onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
-            />
-          </View>
-        );
-
+        return <HeaderSection profile={profile} onEditPress={handleEditProfile} />;
       case 'transactions':
-        return (
-          <View style={styles.sectionContainer}>
-            <TransactionsCard
-              totalEarned={profile.totalEarnings}
-              currentStreak={profile.streakDays}
-              maxStreak={30}
-              recentTransactions={recentTransactions}
-              onPress={() => router.push('/(tabs)/transactions')}
-              onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
-            />
-          </View>
-        );
-
+        return <TransactionsSection profile={profile} recentTransactions={recentTransactions} />;
       case 'quickActions':
         return (
-          <View style={styles.sectionContainer}>
-            <SectionHeader
-              title="Quick Access"
-              subtitle="Frequently used features"
-              icon={<Sparkles size={ICON_SIZE.base} color={colors.primary} />}
-            />
-            <QuickActionsGrid
-              items={quickAccessItems}
-              isAdmin={isAdmin}
-              hasSubscription={hasSurveySubscription}
-              onSubscriptionRequired={handleSubscriptionRequired}
-            />
-          </View>
+          <QuickActionsSection
+            quickAccessItems={quickAccessItems}
+            isAdmin={isAdmin}
+            hasSurveySubscription={hasSurveySubscription}
+            onSubscriptionRequired={handleSubscriptionRequired}
+            colors={colors}
+          />
         );
-
       case 'settings':
         return (
-          <View style={styles.sectionContainer}>
-            <SettingsSection
-              title="Security"
-              subtitle="Protect your account"
-              icon={<Shield size={ICON_SIZE.base} color={colors.success} />}
-              items={securitySettings}
-              animationDelay={0}
-            />
-            <SettingsSection
-              title="Appearance"
-              subtitle="Customize your experience"
-              icon={<Palette size={ICON_SIZE.base} color={colors.info} />}
-              items={appearanceSettings}
-              animationDelay={100}
-            />
-          </View>
+          <SettingsSectionBlock
+            securitySettings={securitySettings}
+            appearanceSettings={appearanceSettings}
+            colors={colors}
+          />
         );
-
       case 'signOut':
-        return (
-          <View style={[styles.sectionContainer, styles.signOutSection]}>
-            <AnimatedCard
-              variant="outlined"
-              onPress={handleSignOut}
-              hapticType="medium"
-              accessibilityLabel="Sign out of your account"
-              accessibilityHint="Tap to sign out"
-              style={{ borderColor: withAlpha(colors.error, 0.3) }}
-            >
-              <View style={styles.signOutContent}>
-                <View style={[styles.signOutIcon, { backgroundColor: withAlpha(colors.error, 0.1) }]}>
-                  <LogOut size={ICON_SIZE.lg} color={colors.error} strokeWidth={2} />
-                </View>
-                <AccessibleText variant="body" medium customColor={colors.error}>
-                  Sign Out
-                </AccessibleText>
-                <ChevronRight size={ICON_SIZE.base} color={colors.error} />
-              </View>
-            </AnimatedCard>
-          </View>
-        );
-
+        return <SignOutSection onSignOut={handleSignOut} colors={colors} />;
       default:
         return null;
     }
@@ -709,6 +835,7 @@ export default function ProfileScreen(): React.ReactElement {
         data={sections}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
+        getItemLayout={getItemLayout}
         contentContainerStyle={[
           styles.listContent,
           {
@@ -726,11 +853,12 @@ export default function ProfileScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-        // Performance optimizations
+        // Performance optimizations — addresses VirtualizedList slow-update warning
         removeClippedSubviews={Platform.OS === 'android'}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        initialNumToRender={4}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={100}
+        windowSize={3}
+        initialNumToRender={3}
       />
 
       {/* 2FA Verification Modal */}

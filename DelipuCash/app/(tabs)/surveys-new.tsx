@@ -7,8 +7,16 @@
  * - FAB with creation flow options
  * - Skeleton loading states
  * - Integration with new survey components (Templates, Import, Share, etc.)
- * - Accessibility (WCAG 2.2 AA)
+ * - Accessibility (WCAG 2.2 AA): semantic roles, labels, reduced-motion support
  * - Responsive tablet layout
+ * 
+ * Ad Placement Strategy (IAB Native Advertising Playbook):
+ * - Ads interleaved after every 2 surveys for higher fill rate
+ * - Rotating formats (native → in-feed → featured) to prevent banner blindness
+ * - Clear "Sponsored" dividers before each ad (FTC/IAB transparency)
+ * - Dismissible ads to respect user autonomy
+ * - Viewability tracking (IAB MRC: 50% visible for 1s)
+ * - Frequency capping via AdFrequencyManager
  */
 
 import {
@@ -78,7 +86,9 @@ import {
   useWindowDimensions,
   View,
   AccessibilityInfo,
+  Pressable,
 } from "react-native";
+import { X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 
@@ -91,6 +101,48 @@ import * as Haptics from "expo-haptics";
  */
 const MemoizedItemSeparator = memo(function ItemSeparator() {
   return <View style={{ height: SPACING.md }} />;
+});
+
+/** Ad frequency: show an ad after every N surveys */
+const AD_INTERVAL = 2;
+
+/**
+ * Memoized ad divider with "Sponsored" label following IAB transparency guidelines.
+ * Visually separates ad content from organic survey content.
+ */
+const AdDivider = memo(function AdDivider({ colors }: { colors: any }) {
+  return (
+    <View
+      style={adDividerStyles.container}
+      accessible
+      accessibilityRole="none"
+      importantForAccessibility="no"
+    >
+      <View style={[adDividerStyles.line, { backgroundColor: withAlpha(colors.border, 0.5) }]} />
+      <Text style={[adDividerStyles.label, { color: colors.textMuted }]}>Sponsored</Text>
+      <View style={[adDividerStyles.line, { backgroundColor: withAlpha(colors.border, 0.5) }]} />
+    </View>
+  );
+});
+
+const adDividerStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xs,
+  },
+  line: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  label: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    paddingHorizontal: SPACING.sm,
+  },
 });
 
 // ============================================================================
@@ -107,11 +159,15 @@ interface Tab {
 }
 
 interface ListItem {
-  type: 'survey' | 'ad' | 'banner-ad' | 'featured-ad' | 'in-feed-ad' | 'header' | 'empty' | 'skeleton' | 'discover-section';
+  type: 'survey' | 'ad' | 'banner-ad' | 'featured-ad' | 'in-feed-ad' | 'header' | 'empty' | 'skeleton' | 'discover-section' | 'ad-divider';
   data?: Survey | Ad;
   title?: string;
   key: string;
-  adVariant?: 'native' | 'banner' | 'featured' | 'in-feed';
+  adVariant?: 'native' | 'banner' | 'featured' | 'in-feed' | 'compact';
+  /** Position index for staggered animation */
+  adIndex?: number;
+  /** Whether this ad is dismissible */
+  dismissible?: boolean;
 }
 
 // ============================================================================
@@ -177,16 +233,27 @@ export default function SurveysScreen(): React.ReactElement {
 
   // Ad hooks - TanStack Query for intelligent ad loading
   // Following industry best practices: ads are contextually placed and non-intrusive
-  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 4);
-  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(3);
-  const { data: featuredAds = [], refetch: refetchFeaturedAds } = useFeaturedAds(2);
+  // Fetch enough ads for every-2-surveys placement pattern
+  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 8);
+  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(4);
+  const { data: featuredAds = [], refetch: refetchFeaturedAds } = useFeaturedAds(3);
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
-  // Check reduced motion
+  // Track dismissed ads for non-intrusive UX
+  const [dismissedAdKeys, setDismissedAdKeys] = useState<Set<string>>(new Set());
+  const handleDismissAd = useCallback((key: string) => {
+    setDismissedAdKeys(prev => new Set(prev).add(key));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  // Reduced motion preference
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  // Check reduced motion preference (WCAG 2.3.3)
   useEffect(() => {
-    AccessibilityInfo.isReduceMotionEnabled().then(() => {});
-    const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', () => {});
+    AccessibilityInfo.isReduceMotionEnabled().then(setPrefersReducedMotion);
+    const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setPrefersReducedMotion);
     return () => listener.remove();
   }, []);
 
@@ -308,12 +375,16 @@ export default function SurveysScreen(): React.ReactElement {
     return surveys;
   }, [activeTab, mySurveys, runningSurveys, upcomingSurveys, isSearching, searchedSurveys]);
 
-  // Build FlatList data with ads and sections
+  // Build FlatList data with ads interleaved after every 2 surveys
+  // Following IAB Native Advertising Playbook & Google AdMob best practices:
+  // - Clear labeling ("Sponsored" divider before each ad)
+  // - Non-intrusive placement at natural content breaks
+  // - Rotating ad formats to prevent banner blindness
+  // - Dismissible ads to respect user choice
   const listData: ListItem[] = useMemo(() => {
     const items: ListItem[] = [];
 
     if (isLoading) {
-      // Show skeletons
       for (let i = 0; i < 3; i++) {
         items.push({ type: 'skeleton', key: `skeleton-${i}` });
       }
@@ -325,8 +396,28 @@ export default function SurveysScreen(): React.ReactElement {
       return items;
     }
 
-    // Insert surveys with occasional ads
-    // Industry Standard: Native ads blend with content, placed at natural break points
+    // Merge all available ads into a pool, rotating formats
+    // This follows the IAB recommendation to vary ad creative formats
+    const adPool: { ad: Ad; variant: ListItem['adVariant']; type: ListItem['type'] }[] = [];
+    
+    // Interleave different ad types for format diversity
+    const maxSlots = Math.floor(currentSurveys.length / AD_INTERVAL);
+    for (let i = 0; i < maxSlots; i++) {
+      const format = i % 3; // Rotate: native → in-feed → banner
+      if (format === 0 && surveyAds[i % surveyAds.length]) {
+        adPool.push({ ad: surveyAds[i % surveyAds.length], variant: 'native', type: 'ad' });
+      } else if (format === 1 && bannerAds[i % bannerAds.length]) {
+        adPool.push({ ad: bannerAds[i % bannerAds.length], variant: 'in-feed', type: 'in-feed-ad' });
+      } else if (format === 2 && featuredAds[i % featuredAds.length]) {
+        adPool.push({ ad: featuredAds[i % featuredAds.length], variant: 'featured', type: 'featured-ad' });
+      } else if (surveyAds[i % (surveyAds.length || 1)]) {
+        // Fallback to native ad if preferred format unavailable
+        adPool.push({ ad: surveyAds[i % surveyAds.length], variant: 'native', type: 'ad' });
+      }
+    }
+
+    let adIndex = 0;
+
     currentSurveys.forEach((survey, index) => {
       items.push({
         type: 'survey',
@@ -334,51 +425,51 @@ export default function SurveysScreen(): React.ReactElement {
         key: `survey-${survey.id}`,
       });
 
-      // Insert native ad every 4 surveys
-      if ((index + 1) % 4 === 0 && surveyAds[Math.floor((index + 1) / 4) - 1]) {
-        const ad = surveyAds[Math.floor((index + 1) / 4) - 1];
-        items.push({
-          type: 'ad',
-          data: ad,
-          key: `ad-${ad.id}`,
-          adVariant: 'native',
-        });
-      }
+      // Insert ad after every AD_INTERVAL (2) surveys
+      if ((index + 1) % AD_INTERVAL === 0 && adIndex < adPool.length) {
+        const adEntry = adPool[adIndex];
+        const adKey = `${adEntry.type}-${adEntry.ad.id}-${index}`;
 
-      // Insert in-feed ad every 8 surveys for variety
-      if ((index + 1) % 8 === 0 && bannerAds.length > 1) {
-        items.push({
-          type: 'in-feed-ad',
-          data: bannerAds[1],
-          key: `in-feed-ad-${index}`,
-          adVariant: 'in-feed',
-        });
+        // Skip dismissed ads
+        if (!dismissedAdKeys.has(adKey)) {
+          // Insert a "Sponsored" divider before the ad for transparency (FTC/IAB guidelines)
+          items.push({
+            type: 'ad-divider',
+            key: `ad-divider-${index}`,
+          });
+
+          items.push({
+            type: adEntry.type,
+            data: adEntry.ad,
+            key: adKey,
+            adVariant: adEntry.variant,
+            adIndex,
+            dismissible: true,
+          });
+        }
+
+        adIndex++;
       }
     });
 
-    // Featured Ad - Premium placement for high-value ads (Industry Standard)
-    if (featuredAds.length > 0 && currentSurveys.length >= 2) {
-      items.push({
-        type: 'featured-ad',
-        data: featuredAds[0],
-        key: `featured-ad-${featuredAds[0].id}`,
-        adVariant: 'featured',
-      });
-    }
-
-    // Insert banner ad at the end if available
-    // Industry Standard: Banner ads at natural content boundaries, minimal disruption
-    if (bannerAds.length > 0 && currentSurveys.length >= 3) {
-      items.push({
-        type: 'banner-ad',
-        data: bannerAds[0],
-        key: `banner-ad-${bannerAds[0].id}`,
-        adVariant: 'banner',
-      });
+    // Featured ad at end for premium visibility (if not already placed inline)
+    if (featuredAds.length > 0 && currentSurveys.length >= 3 && adIndex < 1) {
+      const featuredAd = featuredAds[0];
+      const featuredKey = `featured-end-${featuredAd.id}`;
+      if (!dismissedAdKeys.has(featuredKey)) {
+        items.push({ type: 'ad-divider', key: 'ad-divider-end' });
+        items.push({
+          type: 'featured-ad',
+          data: featuredAd,
+          key: featuredKey,
+          adVariant: 'featured',
+          dismissible: true,
+        });
+      }
     }
 
     return items;
-  }, [currentSurveys, isLoading, surveyAds, bannerAds, featuredAds]);
+  }, [currentSurveys, isLoading, surveyAds, bannerAds, featuredAds, dismissedAdKeys]);
 
   // Handle tab change with animation
   const handleTabChange = useCallback((key: TabKey, index: number) => {
@@ -512,13 +603,36 @@ export default function SurveysScreen(): React.ReactElement {
     router.push("/survey-payment" as Href);
   }, [isAuthenticated, openAuth]);
 
-  // Render list item
+  // Render list item — enhanced with WCAG 2.2 AA accessibility
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
+    // Shared ad dismiss button for dismissible ads
+    const renderDismissButton = (adKey: string) => {
+      if (!item.dismissible) return null;
+      return (
+        <Pressable
+          style={[styles.adDismissBtn, { backgroundColor: withAlpha(colors.text, 0.06) }]}
+          onPress={() => handleDismissAd(adKey)}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss this advertisement"
+          accessibilityHint="Removes this ad from your feed"
+          hitSlop={12}
+        >
+          <X size={14} color={colors.textMuted} />
+        </Pressable>
+      );
+    };
+
     switch (item.type) {
       case 'survey':
         const survey = item.data as Survey;
         return (
-          <View style={[styles.surveyCardWrapper, isTablet && styles.surveyCardWrapperTablet]}>
+          <View
+            style={[styles.surveyCardWrapper, isTablet && styles.surveyCardWrapperTablet]}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`Survey: ${survey.title}. ${survey.description || ''}`}
+            accessibilityHint="Double tap to open this survey"
+          >
             <SurveyCard
               survey={survey}
               onPress={() => handleSurveyPress(survey.id)}
@@ -529,52 +643,94 @@ export default function SurveysScreen(): React.ReactElement {
           </View>
         );
 
+      case 'ad-divider':
+        return <AdDivider colors={colors} />;
+
       case 'ad':
         const ad = item.data as Ad;
         return (
-          <BetweenContentAd
-            ad={ad}
-            onAdClick={() => handleAdClick(ad)}
-            onAdLoad={() => handleAdImpression(ad)}
-            variant="native"
-            style={styles.betweenContentAd}
-          />
+          <View
+            style={styles.adCardWrapper}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`Sponsored: ${ad.title || 'Advertisement'}. ${ad.description || ''}`}
+            accessibilityHint="Double tap to learn more about this advertisement"
+          >
+            {renderDismissButton(item.key)}
+            <BetweenContentAd
+              ad={ad}
+              onAdClick={() => handleAdClick(ad)}
+              onAdLoad={() => handleAdImpression(ad)}
+              variant="native"
+              style={styles.betweenContentAd}
+            />
+          </View>
         );
 
       case 'banner-ad':
         const bannerAd = item.data as Ad;
         return (
-          <AdPlacementWrapper
-            ad={bannerAd}
-            placement="banner-bottom"
-            onAdClick={() => handleAdClick(bannerAd)}
-            onAdLoad={() => handleAdImpression(bannerAd)}
-            style={styles.bannerAdPlacement}
-          />
+          <View
+            style={styles.adCardWrapper}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`Sponsored banner: ${bannerAd.title || 'Advertisement'}`}
+            accessibilityHint="Double tap to learn more"
+          >
+            {renderDismissButton(item.key)}
+            <AdPlacementWrapper
+              ad={bannerAd}
+              placement="banner-bottom"
+              onAdClick={() => handleAdClick(bannerAd)}
+              onAdLoad={() => handleAdImpression(bannerAd)}
+              trackViewability
+              style={styles.bannerAdPlacement}
+            />
+          </View>
         );
 
       case 'featured-ad':
         const featuredAd = item.data as Ad;
         return (
-          <AdPlacementWrapper
-            ad={featuredAd}
-            placement="between-content"
-            onAdClick={() => handleAdClick(featuredAd)}
-            onAdLoad={() => handleAdImpression(featuredAd)}
-            style={styles.featuredAdPlacement}
-          />
+          <View
+            style={styles.adCardWrapper}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`Featured sponsor: ${featuredAd.title || 'Premium advertisement'}`}
+            accessibilityHint="Double tap to learn more about this featured sponsor"
+          >
+            {renderDismissButton(item.key)}
+            <AdPlacementWrapper
+              ad={featuredAd}
+              placement="between-content"
+              onAdClick={() => handleAdClick(featuredAd)}
+              onAdLoad={() => handleAdImpression(featuredAd)}
+              trackViewability
+              style={styles.featuredAdPlacement}
+            />
+          </View>
         );
 
       case 'in-feed-ad':
         const inFeedAd = item.data as Ad;
         return (
-          <InFeedAd
-            ad={inFeedAd}
-            index={1}
-            onAdClick={() => handleAdClick(inFeedAd)}
-            onAdLoad={() => handleAdImpression(inFeedAd)}
-            style={styles.inFeedAd}
-          />
+          <View
+            style={styles.adCardWrapper}
+            accessible
+            accessibilityRole="button"
+            accessibilityLabel={`Sponsored content: ${inFeedAd.title || 'Advertisement'}`}
+            accessibilityHint="Double tap to learn more"
+          >
+            {renderDismissButton(item.key)}
+            <InFeedAd
+              ad={inFeedAd}
+              index={item.adIndex ?? 0}
+              onAdClick={() => handleAdClick(inFeedAd)}
+              onAdLoad={() => handleAdImpression(inFeedAd)}
+              trackViewability
+              style={styles.inFeedAd}
+            />
+          </View>
         );
 
       case 'skeleton':
@@ -582,7 +738,11 @@ export default function SurveysScreen(): React.ReactElement {
 
       case 'empty':
         return (
-          <View style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View
+            style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            accessible
+            accessibilityRole="summary"
+          >
             <FileText size={48} color={colors.textMuted} strokeWidth={1.5} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
               {activeTab === 'my-surveys' ? 'No surveys yet' :
@@ -618,7 +778,7 @@ export default function SurveysScreen(): React.ReactElement {
       default:
         return null;
     }
-  }, [auth, colors, activeTab, handleAdClick, handleAdImpression, handleCreationMode, handleSurveyPress, isTablet, cardViewStyle]);
+  }, [auth, colors, activeTab, handleAdClick, handleAdImpression, handleCreationMode, handleSurveyPress, handleDismissAd, isTablet, cardViewStyle]);
 
   // List header component
   const ListHeader = useMemo(() => (
@@ -1085,25 +1245,42 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
 
+  // Ad Card Wrapper — consistent container for all ad types
+  adCardWrapper: {
+    position: 'relative',
+  },
+  // Dismiss button — small, non-obtrusive, WCAG-compliant touch target (44×44)
+  adDismissBtn: {
+    position: 'absolute',
+    top: SPACING.xs,
+    right: SPACING.xs,
+    zIndex: 10,
+    width: 28,
+    height: 28,
+    borderRadius: RADIUS.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Ensure 44pt minimum touch target via hitSlop
+  },
   // Ad Containers - Industry Standard: Non-intrusive, clearly labeled, smooth transitions
   adContainer: {
-    marginVertical: SPACING.lg,
+    marginVertical: SPACING.md,
     marginHorizontal: -SPACING.xs,
   },
   betweenContentAd: {
-    marginVertical: SPACING.lg,
+    marginVertical: SPACING.sm,
     marginHorizontal: -SPACING.sm,
   },
   bannerAdPlacement: {
-    marginVertical: SPACING.md,
+    marginVertical: SPACING.sm,
   },
   // Featured Ad Placement - Premium positioning
   featuredAdPlacement: {
-    marginVertical: SPACING.lg,
+    marginVertical: SPACING.md,
   },
   // In-feed Ad - Minimal footprint
   inFeedAd: {
-    marginVertical: SPACING.sm,
+    marginVertical: SPACING.xs,
   },
   nativeAd: {
     borderRadius: RADIUS.lg,

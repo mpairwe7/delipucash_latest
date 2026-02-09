@@ -100,20 +100,20 @@ export interface TransactionsCardProps {
 }
 
 /**
- * Format currency with proper locale
+ * Format currency in Ugandan Shillings (UGX)
  */
 function formatCurrency(amount: number, compact = false): string {
   if (compact && amount >= 1000) {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('en-UG', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'UGX',
       notation: 'compact',
       maximumFractionDigits: 1,
     }).format(amount);
   }
-  return new Intl.NumberFormat('en-US', {
+  return new Intl.NumberFormat('en-UG', {
     style: 'currency',
-    currency: 'USD',
+    currency: 'UGX',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);

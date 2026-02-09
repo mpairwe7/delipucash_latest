@@ -168,6 +168,15 @@ export default function RootLayout() {
               <Stack.Screen name="instant-reward-answer/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="question-answer/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+              {/* Profile destination screens — headerShown: false to avoid double headers
+                  (each screen renders its own custom header with back navigation) */}
+              <Stack.Screen name="help-support" options={{ headerShown: false }} />
+              <Stack.Screen name="ad-registration" options={{ headerShown: false }} />
+              <Stack.Screen name="instant-reward-upload" options={{ headerShown: false }} />
+              <Stack.Screen name="file-upload" options={{ headerShown: false }} />
+              <Stack.Screen name="create-survey" options={{ headerShown: false }} />
+              <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
+              <Stack.Screen name="notifications" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
           </ThemeProvider>

@@ -674,11 +674,11 @@ export default function HomePage(): React.ReactElement {
                   </View>
                   <Text
                     style={styles.walletBalance}
-                    accessibilityLabel={`Wallet balance: ${user?.walletBalance?.toLocaleString() || 0} dollars`}
+                    accessibilityLabel={`Wallet balance: ${user?.walletBalance?.toLocaleString() || 0} Ugandan shillings`}
                     allowFontScaling
                     maxFontSizeMultiplier={1.3}
                   >
-                    ${user?.walletBalance?.toLocaleString() || "0.00"}
+                    UGX {user?.walletBalance?.toLocaleString() || "0"}
                   </Text>
                   <View style={styles.walletActions}>
                     <TouchableOpacity
@@ -716,8 +716,8 @@ export default function HomePage(): React.ReactElement {
                 <StatCard
                   icon={<TrendingUp size={18} color={colors.success} strokeWidth={1.5} />}
                   title="Total Earnings"
-                  value={`$${dashboardStats?.totalEarnings?.toLocaleString() || "0"}`}
-                  subtitle={`+$${dashboardStats?.weeklyEarnings || 0} this week`}
+                  value={`UGX ${dashboardStats?.totalEarnings?.toLocaleString() || "0"}`}
+                  subtitle={`+UGX ${dashboardStats?.weeklyEarnings?.toLocaleString() || "0"} this week`}
                   subtitleColor={colors.success}
                   onPress={() => router.push("/(tabs)/transactions")}
                 />
@@ -981,7 +981,7 @@ export default function HomePage(): React.ReactElement {
                   title="Weekly Earnings Goal"
                   current={dashboardStats?.weeklyEarnings || 0}
                   goal={200}
-                  unit="$"
+                  unit="UGX"
                   icon={<TrendingUp size={18} color={colors.success} strokeWidth={1.5} />}
                   progressColor={colors.success}
                   style={styles.progressCard}

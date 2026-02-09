@@ -370,14 +370,14 @@ export function getMaxFontSizeMultiplier(
  */
 export function formatMoneyForAccessibility(
   amount: number,
-  currency: string = 'USD'
+  currency: string = 'UGX'
 ): string {
-  const formatter = new Intl.NumberFormat('en-US', {
+  const formatter = new Intl.NumberFormat('en-UG', {
     style: 'currency',
     currency,
-    minimumFractionDigits: 2,
+    minimumFractionDigits: 0,
   });
-  return formatter.format(amount).replace('$', 'dollars ').replace('.', ' and ') + ' cents';
+  return formatter.format(amount).replace('UGX', 'Ugandan shillings ');
 }
 
 /**

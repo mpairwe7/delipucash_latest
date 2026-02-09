@@ -295,7 +295,7 @@ export function EarningOpportunityCard({
               +{opportunity.reward}
             </Text>
             <Text style={[styles.rewardType, { color: colors.textMuted }]}>
-              {opportunity.rewardType === 'cash' ? '$' : 'pts'}
+              {opportunity.rewardType === 'cash' ? 'UGX' : 'pts'}
             </Text>
           </View>
           <ChevronRight size={18} color={colors.textMuted} />
