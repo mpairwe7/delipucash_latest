@@ -2,6 +2,12 @@ import { formatCurrency, formatDate } from "@/services/api";
 import { useQuestion, useSubmitResponse } from "@/services/hooks";
 import { Response } from "@/types";
 import {
+    BORDER_WIDTH,
+    COMPONENT_SIZE,
+    ICON_SIZE,
+    RADIUS,
+    SPACING,
+    TYPOGRAPHY,
     ThemeColors,
     useTheme
 } from "@/utils/theme";
@@ -89,7 +95,7 @@ const AnswerCard = memo<AnswerCardProps>(({ answer, colors }) => (
       </View>
       {answer.isAccepted && (
         <View style={[styles.acceptedBadge, { backgroundColor: `${colors.success}20` }]}>
-          <CheckCircle2 size={14} color={colors.success} strokeWidth={1.5} />
+          <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
           <Text style={[styles.acceptedText, { color: colors.success }]}>
             Accepted
           </Text>
@@ -101,7 +107,7 @@ const AnswerCard = memo<AnswerCardProps>(({ answer, colors }) => (
     </Text>
     <View style={styles.answerFooter}>
       <TouchableOpacity style={styles.likeButton} accessibilityRole="button">
-        <ThumbsUp size={16} color={colors.textMuted} strokeWidth={1.5} />
+        <ThumbsUp size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
         <Text style={[styles.likeCount, { color: colors.textMuted }]}>
           {answer.likesCount || 0}
         </Text>
@@ -250,7 +256,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
         style={[
           styles.header,
           {
-            paddingTop: insets.top + 12,
+            paddingTop: insets.top + SPACING.md,
             backgroundColor: colors.card,
             borderBottomColor: colors.border,
           },
@@ -261,8 +267,9 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           onPress={handleBack}
           accessibilityRole="button"
           accessibilityLabel="Go back"
+          accessibilityHint="Returns to the previous screen"
         >
-          <ArrowLeft size={20} color={colors.text} strokeWidth={1.5} />
+          <ArrowLeft size={ICON_SIZE.lg} color={colors.text} strokeWidth={1.5} />
         </TouchableOpacity>
 
         <View style={styles.headerContent}>
@@ -279,7 +286,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
         style={styles.scrollView}
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: insets.bottom + 100 },
+          { paddingBottom: insets.bottom + COMPONENT_SIZE.input.large + COMPONENT_SIZE.touchTarget },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -293,7 +300,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
             </View>
             {question.isInstantReward && (
               <View style={[styles.rewardBadge, { backgroundColor: colors.primary }]}>
-                <Award size={12} color={colors.primaryText} strokeWidth={1.5} />
+                <Award size={ICON_SIZE.xs} color={colors.primaryText} strokeWidth={1.5} />
                 <Text style={[styles.rewardText, { color: colors.primaryText }]}>
                   {formatCurrency(question.rewardAmount)}
                 </Text>
@@ -322,7 +329,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
 
           <View style={[styles.statsRow, { borderTopColor: colors.border }]}>
             <View style={styles.statItem}>
-              <MessageSquare size={16} color={colors.textMuted} strokeWidth={1.5} />
+              <MessageSquare size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
               <Text style={[styles.statText, { color: colors.textMuted }]}>
                 {question.totalAnswers} answers
               </Text>
@@ -387,7 +394,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
         style={[
           styles.submitContainer,
           {
-            paddingBottom: insets.bottom + 16,
+            paddingBottom: insets.bottom + SPACING.base,
             backgroundColor: colors.background,
             borderTopColor: colors.border,
           },
@@ -402,12 +409,13 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           disabled={submitResponse.isPending || submitted}
           accessibilityRole="button"
           accessibilityLabel="Submit answer"
+          accessibilityHint="Submits your answer to this question"
         >
           {submitResponse.isPending ? (
             <ActivityIndicator size="small" color={colors.primaryText} />
           ) : (
             <>
-              <Send size={20} color={colors.primaryText} strokeWidth={1.5} />
+              <Send size={ICON_SIZE.lg} color={colors.primaryText} strokeWidth={1.5} />
               <Text style={[styles.submitButtonText, { color: colors.primaryText }]}>
                 {submitted ? "Submitted!" : "Submit Answer"}
               </Text>
@@ -420,6 +428,7 @@ export default function AnswerQuestionScreen(): React.ReactElement {
           onPress={handleOpenDiscussion}
           accessibilityRole="button"
           accessibilityLabel="Open discussion"
+          accessibilityHint="Opens the full discussion thread for this question"
         >
           <Text style={[styles.viewDiscussionText, { color: colors.primary }]}>View discussion</Text>
         </TouchableOpacity>
@@ -433,17 +442,17 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
+    paddingBottom: SPACING.md,
+    paddingHorizontal: SPACING.base,
+    borderBottomWidth: BORDER_WIDTH.thin,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: SPACING.md,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -451,190 +460,190 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerTitle: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 18,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
   },
   headerSubtitle: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 13,
-    marginTop: 2,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.md,
+    marginTop: SPACING.xxs,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: SPACING.base,
   },
   questionCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    marginBottom: SPACING.base,
   },
   questionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   categoryBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.md,
   },
   categoryText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   rewardBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.md,
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: SPACING.xs,
   },
   rewardText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   questionText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 18,
-    lineHeight: 26,
-    marginBottom: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    lineHeight: TYPOGRAPHY.fontSize.xl * TYPOGRAPHY.lineHeight.normal,
+    marginBottom: SPACING.base,
   },
   questionMeta: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: SPACING.base,
   },
   authorAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: COMPONENT_SIZE.avatar.sm,
+    height: COMPONENT_SIZE.avatar.sm,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
+    marginRight: SPACING.sm,
   },
   authorAvatarText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 10,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   authorName: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 13,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   dotSeparator: {
-    marginHorizontal: 8,
+    marginHorizontal: SPACING.sm,
   },
   questionDate: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 13,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   statsRow: {
-    paddingTop: 12,
-    borderTopWidth: 1,
+    paddingTop: SPACING.md,
+    borderTopWidth: BORDER_WIDTH.thin,
     flexDirection: "row",
   },
   statItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: SPACING.sm,
   },
   statText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 13,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   answerInputCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    marginBottom: SPACING.xl,
   },
   inputLabel: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
-    marginBottom: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    marginBottom: SPACING.md,
   },
   answerInput: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 16,
-    fontFamily: "Roboto_400Regular",
-    fontSize: 15,
+    borderRadius: RADIUS.base,
+    borderWidth: BORDER_WIDTH.thin,
+    padding: SPACING.base,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.body,
     minHeight: 150,
   },
   inputFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 8,
+    marginTop: SPACING.sm,
   },
   charCount: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   inputError: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   answersSection: {
-    marginTop: 8,
+    marginTop: SPACING.sm,
   },
   sectionTitle: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 18,
-    marginBottom: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    marginBottom: SPACING.base,
   },
   answerCard: {
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: RADIUS.lg,
+    padding: SPACING.base,
+    marginBottom: SPACING.md,
   },
   answerHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   answerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: COMPONENT_SIZE.avatar.sm + 4,
+    height: COMPONENT_SIZE.avatar.sm + 4,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: SPACING.md,
   },
   answerAvatarText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     color: "#FFFFFF",
   },
   answerUserInfo: {
     flex: 1,
   },
   answerUserName: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   answerDate: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 12,
-    marginTop: 2,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.xxs,
   },
   acceptedBadge: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    gap: 4,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.sm,
+    gap: SPACING.xs,
   },
   acceptedText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 11,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs + 1,
   },
   answerText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.body,
+    lineHeight: TYPOGRAPHY.fontSize.body * TYPOGRAPHY.lineHeight.relaxed,
+    marginBottom: SPACING.md,
   },
   answerFooter: {
     flexDirection: "row",
@@ -642,62 +651,62 @@ const styles = StyleSheet.create({
   likeButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: SPACING.sm,
   },
   likeCount: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 13,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.md,
   },
   submitContainer: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
+    paddingHorizontal: SPACING.base,
+    paddingTop: SPACING.md,
+    borderTopWidth: BORDER_WIDTH.thin,
   },
   submitButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
+    gap: SPACING.sm,
+    paddingVertical: SPACING.base - 2,
+    borderRadius: RADIUS.base,
   },
   submitButtonText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
   },
   viewDiscussionButton: {
-    marginTop: 12,
-    borderRadius: 12,
-    borderWidth: 1,
+    marginTop: SPACING.md,
+    borderRadius: RADIUS.base,
+    borderWidth: BORDER_WIDTH.thin,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 12,
+    paddingVertical: SPACING.md,
   },
   viewDiscussionText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   loadingContainer: {
     alignItems: "center",
     justifyContent: "center",
   },
   loadingText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 14,
-    marginTop: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    marginTop: SPACING.md,
   },
   errorText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 16,
-    marginBottom: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    marginBottom: SPACING.base,
   },
   backButtonError: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.md,
   },
   backButtonErrorText: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 });

@@ -10,6 +10,7 @@ import {
 import { useCreateRewardQuestion } from "@/services/hooks";
 import { UserRole } from "@/types";
 import {
+  BORDER_WIDTH,
   COMPONENT_SIZE,
   ICON_SIZE,
   RADIUS,
@@ -414,14 +415,14 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   uploadInput: {
-    borderWidth: 1,
+    borderWidth: BORDER_WIDTH.thin,
     borderRadius: RADIUS.md,
     padding: SPACING.md,
     fontSize: TYPOGRAPHY.fontSize.base,
-    minHeight: 48,
+    minHeight: COMPONENT_SIZE.input.medium,
   },
   multilineInput: {
-    minHeight: 100,
+    minHeight: COMPONENT_SIZE.input.medium * 2,
     paddingTop: SPACING.md,
   },
   paymentProviderRow: {
@@ -433,7 +434,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.lg,
     borderRadius: RADIUS.md,
-    borderWidth: 1,
+    borderWidth: BORDER_WIDTH.thin,
     alignItems: 'center',
   },
   paymentProviderText: {

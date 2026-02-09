@@ -122,7 +122,7 @@ export const ResponseCard = memo<ResponseCardProps>(
                   { backgroundColor: withAlpha(colors.success, 0.12) },
                 ]}
               >
-                <CheckCircle2 size={12} color={colors.success} strokeWidth={2} />
+                <CheckCircle2 size={ICON_SIZE.xs} color={colors.success} strokeWidth={2} />
                 <Text style={[layoutStyles.acceptedText, { color: colors.success }]}>
                   Accepted
                 </Text>
@@ -358,7 +358,7 @@ export function QuestionHeroCard({
             { backgroundColor: withAlpha(colors.warning, 0.08) },
           ]}
         >
-          <Award size={16} color={colors.warning} strokeWidth={2} />
+          <Award size={ICON_SIZE.md} color={colors.warning} strokeWidth={2} />
           <Text style={[layoutStyles.rewardText, { color: colors.warning }]}>
             Earn {formatCurrency(question.rewardAmount)}
           </Text>
@@ -674,9 +674,9 @@ const layoutStyles = StyleSheet.create({
   acceptedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: SPACING.xs,
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.sm,
   },
   acceptedText: {

@@ -389,7 +389,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       >
         <StatusBar style={statusBarStyle} />
         <AlertCircle
-          size={48}
+          size={ICON_SIZE['5xl']}
           color={colors.error}
           strokeWidth={1.5}
           style={{ marginBottom: SPACING.md }}
@@ -510,7 +510,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               style={[styles.statCard, { backgroundColor: colors.secondary }]}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: SPACING.xs }}>
-                <Users size={14} color={colors.textMuted} strokeWidth={1.5} />
+                <Users size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>
                   Answers
                 </Text>
@@ -523,7 +523,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               style={[styles.statCard, { backgroundColor: colors.secondary }]}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: SPACING.xs }}>
-                <Clock size={14} color={colors.textMuted} strokeWidth={1.5} />
+                <Clock size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>
                   Posted
                 </Text>

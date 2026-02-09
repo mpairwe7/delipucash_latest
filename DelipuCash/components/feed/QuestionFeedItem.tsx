@@ -65,7 +65,9 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  BORDER_WIDTH,
   COMPONENT_SIZE,
+  ICON_SIZE,
   withAlpha,
 } from "@/utils/theme";
 import { Question } from "@/types";
@@ -265,7 +267,7 @@ const VoteButton = memo(function VoteButton({
       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <Icon
-        size={14}
+        size={ICON_SIZE.sm}
         color={displayColor}
         strokeWidth={isActive ? 2.5 : 1.5}
         fill={isActive ? displayColor : "transparent"}
@@ -448,7 +450,7 @@ function QuestionFeedItemComponent({
                 ]}
                 accessibilityLabel="Instant reward question"
               >
-                <Zap size={10} color={colors.warning} fill={colors.warning} />
+                <Zap size={ICON_SIZE.xs} color={colors.warning} fill={colors.warning} />
                 <Text style={[styles.instantText, { color: colors.warning }]}>
                   Instant
                 </Text>
@@ -465,9 +467,9 @@ function QuestionFeedItemComponent({
                 accessibilityLabel={question.isHot ? "Hot question" : "Trending question"}
               >
                 {question.isHot ? (
-                  <Flame size={10} color={colors.error} fill={colors.error} />
+                  <Flame size={ICON_SIZE.xs} color={colors.error} fill={colors.error} />
                 ) : (
-                  <TrendingUp size={10} color={colors.error} />
+                  <TrendingUp size={ICON_SIZE.xs} color={colors.error} />
                 )}
                 <Text style={[styles.hotText, { color: colors.error }]}>
                   {question.isHot ? "Hot" : "Trending"}
@@ -484,7 +486,7 @@ function QuestionFeedItemComponent({
                 ]}
                 accessibilityLabel="Has expert answer"
               >
-                <Crown size={10} color={colors.primary} />
+                <Crown size={ICON_SIZE.xs} color={colors.primary} />
                 <Text style={[styles.expertText, { color: colors.primary }]}>
                   Expert
                 </Text>
@@ -512,7 +514,7 @@ function QuestionFeedItemComponent({
                 accessibilityLabel={`Time remaining: ${timeRemaining.accessible}`}
               >
                 <Clock 
-                  size={10} 
+                  size={ICON_SIZE.xs} 
                   color={
                     timeRemaining.urgency === "critical" 
                       ? colors.error 
@@ -539,7 +541,7 @@ function QuestionFeedItemComponent({
               </View>
             ) : (
               <>
-                <Clock size={12} color={colors.textMuted} strokeWidth={1.5} />
+                <Clock size={ICON_SIZE.xs} color={colors.textMuted} strokeWidth={1.5} />
                 <Text 
                   style={[styles.timeText, { color: colors.textMuted }]}
                   accessibilityLabel={`Posted ${timeAgo.accessible}`}
@@ -568,13 +570,13 @@ function QuestionFeedItemComponent({
             ]}
             accessibilityLabel={`Earn ${question.rewardAmount} points for answering`}
           >
-            <Award size={16} color={colors.warning} strokeWidth={2} />
+            <Award size={ICON_SIZE.md} color={colors.warning} strokeWidth={2} />
             <Text style={[styles.rewardText, { color: colors.warning }]}>
               Earn {question.rewardAmount} points
             </Text>
             {question.hasAcceptedAnswer && (
               <View style={styles.acceptedIndicator}>
-                <CheckCircle2 size={12} color={colors.success} />
+                <CheckCircle2 size={ICON_SIZE.xs} color={colors.success} />
               </View>
             )}
           </View>
@@ -607,7 +609,7 @@ function QuestionFeedItemComponent({
                       { backgroundColor: withAlpha(authorBadge.color, 0.15) },
                     ]}
                   >
-                    <authorBadge.icon size={10} color={authorBadge.color} />
+                    <authorBadge.icon size={ICON_SIZE.xs} color={authorBadge.color} />
                   </View>
                 )}
               </View>
@@ -652,7 +654,7 @@ function QuestionFeedItemComponent({
                 { backgroundColor: withAlpha(colors.info, 0.1) },
               ]}
             >
-              <MessageCircle size={14} color={colors.info} strokeWidth={1.5} />
+              <MessageCircle size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
             </View>
             <Text 
               style={[styles.statText, { color: colors.textMuted }]}
@@ -662,7 +664,7 @@ function QuestionFeedItemComponent({
               {(question.totalAnswers || 0) === 1 ? "answer" : "answers"}
             </Text>
             {question.hasAcceptedAnswer && (
-              <CheckCircle2 size={12} color={colors.success} style={styles.acceptedIcon} />
+              <CheckCircle2 size={ICON_SIZE.xs} color={colors.success} style={styles.acceptedIcon} />
             )}
           </View>
 
@@ -675,7 +677,7 @@ function QuestionFeedItemComponent({
                   { backgroundColor: withAlpha(colors.primary, 0.1) },
                 ]}
               >
-                <Users size={14} color={colors.primary} strokeWidth={1.5} />
+                <Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
               </View>
               <Text 
                 style={[styles.statText, { color: colors.textMuted }]}
@@ -688,7 +690,7 @@ function QuestionFeedItemComponent({
 
           {/* Arrow indicator */}
           <Animated.View style={[styles.arrowContainer, animatedArrowStyle]}>
-            <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
+            <ChevronRight size={ICON_SIZE.base} color={colors.textMuted} strokeWidth={2} />
           </Animated.View>
         </View>
       </AnimatedPressable>
@@ -774,7 +776,7 @@ const styles = StyleSheet.create({
   },
   containerFeatured: {
     padding: SPACING.lg,
-    borderWidth: 1,
+    borderWidth: BORDER_WIDTH.thin,
     borderColor: "transparent", // Will be set dynamically
   },
   rewardGlow: {
@@ -809,7 +811,7 @@ const styles = StyleSheet.create({
   instantBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
@@ -821,7 +823,7 @@ const styles = StyleSheet.create({
   hotBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
@@ -833,7 +835,7 @@ const styles = StyleSheet.create({
   expertBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
@@ -854,7 +856,7 @@ const styles = StyleSheet.create({
   countdownContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
@@ -893,8 +895,8 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   avatarPlaceholder: {
-    width: 32,
-    height: 32,
+    width: COMPONENT_SIZE.avatar.sm,
+    height: COMPONENT_SIZE.avatar.sm,
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
@@ -916,8 +918,8 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   authorBadge: {
-    width: 18,
-    height: 18,
+    width: ICON_SIZE.base,
+    height: ICON_SIZE.base,
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
@@ -940,7 +942,7 @@ const styles = StyleSheet.create({
   voteButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: SPACING.xs,
     minWidth: COMPONENT_SIZE.touchTarget,
     minHeight: COMPONENT_SIZE.touchTarget,
     justifyContent: "center",
@@ -955,8 +957,8 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   statIconContainer: {
-    width: 24,
-    height: 24,
+    width: COMPONENT_SIZE.avatar.xs,
+    height: COMPONENT_SIZE.avatar.xs,
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
@@ -966,7 +968,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
   acceptedIcon: {
-    marginLeft: 2,
+    marginLeft: SPACING.xxs,
   },
   arrowContainer: {
     marginLeft: "auto",

@@ -44,6 +44,8 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  COMPONENT_SIZE,
+  ICON_SIZE,
   withAlpha,
 } from "@/utils/theme";
 import { Question } from "@/types";
@@ -200,7 +202,7 @@ function QuestionCardComponent({
                   { backgroundColor: withAlpha(colors.warning, 0.12) },
                 ]}
               >
-                <Zap size={10} color={colors.warning} fill={colors.warning} />
+                <Zap size={ICON_SIZE.xs} color={colors.warning} fill={colors.warning} />
                 <Text style={[styles.instantText, { color: colors.warning }]}>
                   Instant
                 </Text>
@@ -210,7 +212,7 @@ function QuestionCardComponent({
 
           {/* Time indicator */}
           <View style={styles.timeContainer}>
-            <Clock size={12} color={colors.textMuted} strokeWidth={1.5} />
+            <Clock size={ICON_SIZE.xs} color={colors.textMuted} strokeWidth={1.5} />
             <Text style={[styles.timeText, { color: colors.textMuted }]}>
               {formatTimeAgo(question.createdAt)}
             </Text>
@@ -235,7 +237,7 @@ function QuestionCardComponent({
                 { backgroundColor: withAlpha(colors.info, 0.1) },
               ]}
             >
-              <MessageCircle size={14} color={colors.info} strokeWidth={1.5} />
+              <MessageCircle size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
             </View>
             <Text style={[styles.statText, { color: colors.textMuted }]}>
               {question.totalAnswers || 0}{" "}
@@ -251,7 +253,7 @@ function QuestionCardComponent({
                 { backgroundColor: withAlpha(colors.primary, 0.1) },
               ]}
             >
-              <Users size={14} color={colors.primary} strokeWidth={1.5} />
+              <Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
             </View>
             <Text style={[styles.statText, { color: colors.textMuted }]}>
               {Math.floor(Math.random() * 50) + 5} following
@@ -260,7 +262,7 @@ function QuestionCardComponent({
 
           {/* Arrow indicator */}
           <Animated.View style={[styles.arrowContainer, animatedArrowStyle]}>
-            <ChevronRight size={18} color={colors.textMuted} strokeWidth={2} />
+            <ChevronRight size={ICON_SIZE.base} color={colors.textMuted} strokeWidth={2} />
           </Animated.View>
         </View>
       </AnimatedPressable>
@@ -306,7 +308,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs,
     borderRadius: RADIUS.full,
-    gap: 3,
+    gap: SPACING.xxs,
   },
   instantText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -338,8 +340,8 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   statIconContainer: {
-    width: 26,
-    height: 26,
+    width: COMPONENT_SIZE.avatar.xs + 2,
+    height: COMPONENT_SIZE.avatar.xs + 2,
     borderRadius: RADIUS.full,
     justifyContent: "center",
     alignItems: "center",

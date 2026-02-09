@@ -14,7 +14,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { X } from "lucide-react-native";
 import { FormInput } from "./FormInput";
 import { PrimaryButton } from "./PrimaryButton";
-import { useTheme } from "@/utils/theme";
+import {
+  BORDER_WIDTH,
+  COMPONENT_SIZE,
+  ICON_SIZE,
+  RADIUS,
+  SPACING,
+  TYPOGRAPHY,
+  useTheme,
+} from "@/utils/theme";
 import { useCreateRewardQuestion } from "@/services/hooks";
 import useUser from "@/utils/useUser";
 
@@ -192,8 +200,9 @@ export function UploadRewardQuestionModal({
               onPress={handleClose}
               accessibilityRole="button"
               accessibilityLabel="Close modal"
+              accessibilityHint="Closes the upload reward question form"
             >
-              <X size={20} color={colors.text} />
+              <X size={ICON_SIZE.lg} color={colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -329,19 +338,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.base,
+    borderBottomWidth: BORDER_WIDTH.thin,
   },
   title: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     flex: 1,
   },
   closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: COMPONENT_SIZE.avatar.sm,
+    height: COMPONENT_SIZE.avatar.sm,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -349,25 +358,25 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: SPACING.lg,
+    paddingBottom: SPACING['3xl'],
   },
   section: {
-    marginBottom: 24,
+    marginBottom: SPACING.xl,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 12,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    marginBottom: SPACING.md,
   },
   row: {
     flexDirection: "row",
-    gap: 12,
+    gap: SPACING.md,
   },
   halfInput: {
     flex: 1,
   },
   submitButton: {
-    marginTop: 8,
+    marginTop: SPACING.sm,
   },
 });
