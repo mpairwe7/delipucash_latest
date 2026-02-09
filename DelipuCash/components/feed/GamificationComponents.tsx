@@ -630,11 +630,11 @@ function RewardProgressComponent({
         <View style={styles.rewardProgressTitleRow}>
           <Gift size={18} color={colors.success} />
           <Text style={[styles.rewardProgressTitle, { color: colors.text }]}>
-            Next Reward: {nextTier.label}
+            Next Reward
           </Text>
         </View>
         <Text style={[styles.rewardProgressValue, { color: colors.success }]}>
-          UGX {nextTier.cashValue.toLocaleString()}
+          {currentPoints.toLocaleString()} / {nextTier.points.toLocaleString()} pts
         </Text>
       </View>
 
@@ -675,7 +675,7 @@ function RewardProgressComponent({
           </Pressable>
         ) : (
           <Text style={[styles.rewardProgressRemaining, { color: colors.textMuted }]}>
-            {pointsRemaining} more points to go
+            {pointsRemaining.toLocaleString()} pts to UGX {nextTier.cashValue.toLocaleString()}
           </Text>
         )}
         <Text style={[styles.rewardProgressPercent, { color: colors.textMuted }]}>

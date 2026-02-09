@@ -1,6 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useTheme, type ThemeColors } from '@/utils/theme';
+import { useTheme, type ThemeColors, TYPOGRAPHY, SPACING, RADIUS } from '@/utils/theme';
 
 /**
  * Password strength levels
@@ -94,11 +94,11 @@ const requirementStyles = StyleSheet.create({
     width: REQUIREMENT_DOT_SIZE,
     height: REQUIREMENT_DOT_SIZE,
     borderRadius: REQUIREMENT_DOT_SIZE / 2,
-    marginRight: 8,
+    marginRight: SPACING.sm,
   },
   text: {
-    fontFamily: 'Roboto_400Regular',
-    fontSize: 12,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });
 
@@ -163,13 +163,13 @@ export const PasswordStrengthIndicator = memo<PasswordStrengthIndicatorProps>(({
 
   const styles = StyleSheet.create({
     container: {
-      marginTop: -8,
-      marginBottom: 16,
+      marginTop: -SPACING.sm,
+      marginBottom: SPACING.base,
     },
     barsContainer: {
       flexDirection: 'row',
-      gap: 4,
-      marginBottom: 8,
+      gap: SPACING.xs,
+      marginBottom: SPACING.sm,
     },
     bar: {
       flex: 1,
@@ -182,13 +182,13 @@ export const PasswordStrengthIndicator = memo<PasswordStrengthIndicatorProps>(({
       alignItems: 'center',
     },
     label: {
-      fontFamily: 'Roboto_500Medium',
-      fontSize: 12,
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.sm,
       color: strength.color,
     },
     requirementsContainer: {
-      marginTop: 12,
-      gap: 6,
+      marginTop: SPACING.md,
+      gap: SPACING.sm - 2,
     },
   });
 

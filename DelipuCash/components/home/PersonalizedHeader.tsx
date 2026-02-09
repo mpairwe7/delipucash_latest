@@ -225,7 +225,7 @@ function WalletPreview({
       activeOpacity={0.7}
       style={[styles.walletPreview, { backgroundColor: withAlpha(colors.success, 0.12) }]}
       accessibilityRole="button"
-      accessibilityLabel={`Wallet balance: $${balance.toFixed(2)}`}
+      accessibilityLabel={`Wallet balance: UGX ${balance.toLocaleString()}`}
       accessibilityHint="Tap to view wallet details"
     >
       <Wallet size={14} color={colors.success} strokeWidth={2} />
@@ -234,7 +234,7 @@ function WalletPreview({
         allowFontScaling
         maxFontSizeMultiplier={1.2}
       >
-        ${balance.toFixed(2)}
+        UGX {balance.toLocaleString()}
       </Text>
     </TouchableOpacity>
   );
@@ -413,18 +413,18 @@ const styles = StyleSheet.create({
   },
   streakBadge: {
     position: 'absolute',
-    bottom: -2,
-    right: -2,
+    bottom: -SPACING.xxs,
+    right: -SPACING.xxs,
     minWidth: 18,
     height: 18,
-    borderRadius: 9,
+    borderRadius: RADIUS.md + 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: SPACING.xs,
   },
   streakBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 10,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
   },
   notificationWrapper: {

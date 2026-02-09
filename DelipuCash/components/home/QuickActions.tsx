@@ -349,18 +349,18 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -SPACING.xs,
+    right: -SPACING.xs,
     minWidth: 18,
     height: 18,
-    borderRadius: 9,
+    borderRadius: RADIUS.md + 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: SPACING.xs,
   },
   badgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 10,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
   },
   sparkle: {

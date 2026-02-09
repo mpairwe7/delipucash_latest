@@ -1240,7 +1240,7 @@ const styles = StyleSheet.create({
     right: -30,
     width: 100,
     height: 100,
-    borderRadius: 50,
+    borderRadius: RADIUS.full,
     backgroundColor: "rgba(255, 255, 255, 0.1)",
   },
   walletDecor2: {
@@ -1249,7 +1249,7 @@ const styles = StyleSheet.create({
     right: 40,
     width: 60,
     height: 60,
-    borderRadius: 30,
+    borderRadius: RADIUS.full,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
   },
 
@@ -1287,7 +1287,7 @@ const styles = StyleSheet.create({
   statusDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: RADIUS.xs,
   },
   surveyStatusText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,

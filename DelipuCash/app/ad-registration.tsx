@@ -102,21 +102,21 @@ interface FormErrors {
 type MediaKind = "image" | "video" | null;
 
 // Configuration constants
-const typeLabels: Record<FormState["type"], { label: string; description: string }> = {
-  regular: { label: "Regular", description: "Standard feed ad" },
-  featured: { label: "Featured", description: "Highlighted placement" },
-  banner: { label: "Banner", description: "Top/bottom banner" },
-  compact: { label: "Compact", description: "Small inline ad" },
+const typeLabels: Record<FormState["type"], { label: string; description: string; icon: string; bestFor: string; recommended?: boolean }> = {
+  regular: { label: "Regular", description: "Standard ad blended into the content feed", icon: "card-text-outline", bestFor: "Brand awareness" },
+  featured: { label: "Featured", description: "Premium highlighted card with larger visuals", icon: "star-circle", bestFor: "Product launches", recommended: true },
+  banner: { label: "Banner", description: "Full-width strip at top or bottom of screen", icon: "page-layout-header", bestFor: "Promotions & sales" },
+  compact: { label: "Compact", description: "Minimal inline unit with small footprint", icon: "card-outline", bestFor: "Retargeting" },
 };
 
-const placementLabels: Record<AdPlacement, { label: string; icon: string }> = {
-  home: { label: "Home", icon: "home" },
-  feed: { label: "Feed", icon: "view-list" },
-  survey: { label: "Survey", icon: "poll" },
-  video: { label: "Video", icon: "play-circle" },
-  question: { label: "Question", icon: "help-circle" },
-  profile: { label: "Profile", icon: "account" },
-  explore: { label: "Explore", icon: "compass" },
+const placementLabels: Record<AdPlacement, { label: string; icon: string; description: string; reach: string }> = {
+  home: { label: "Home Feed", icon: "home", description: "Top of dashboard — highest visibility", reach: "High" },
+  feed: { label: "Content Feed", icon: "view-list", description: "Between feed items — natural scroll", reach: "High" },
+  survey: { label: "Survey", icon: "poll", description: "Between surveys — engaged users", reach: "Medium" },
+  video: { label: "Video", icon: "play-circle", description: "Before or between videos", reach: "Medium" },
+  question: { label: "Q&A", icon: "help-circle", description: "Within Q&A section", reach: "Medium" },
+  profile: { label: "Profile", icon: "account", description: "On user profile pages", reach: "Low" },
+  explore: { label: "Explore", icon: "compass", description: "In the explore/discover tab", reach: "High" },
 };
 
 const pricingLabels: Record<PricingModel, { label: string; description: string }> = {
@@ -948,34 +948,129 @@ export default function AdRegistrationScreen(): React.ReactElement {
                 </View>
 
                 {/* Placement Selection */}
-                <Text style={[themedStyles.label, { color: colors.text, marginTop: SPACING.md }]}>Ad Placement</Text>
-                <View style={themedStyles.placementRow}>
-                  {(Object.keys(placementLabels) as AdPlacement[]).map((placement) => {
-                    const active = form.placement === placement;
-                    const config = placementLabels[placement];
-                    return (
-                      <TouchableOpacity
-                        key={placement}
-                        style={[
-                          themedStyles.placementCard,
-                          {
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active ? withAlpha(colors.primary, 0.08) : colors.card,
-                          },
-                        ]}
-                        onPress={() => updateField("placement", placement)}
+                <View style={{ marginTop: SPACING.md }}>
+                  <View style={themedStyles.placementSectionHeader}>
+                    <View>
+                      <Text
+                        style={[themedStyles.label, { color: colors.text, marginBottom: 0 }]}
+                        accessibilityRole="header"
                       >
-                        <MaterialCommunityIcons 
-                          name={config.icon as any} 
-                          size={24} 
-                          color={active ? colors.primary : colors.textMuted} 
+                        Ad Placement
+                      </Text>
+                      <Text style={[themedStyles.placementSubtitle, { color: colors.textMuted }]}>
+                        Choose where your ad appears in the app
+                      </Text>
+                    </View>
+                    {form.placement && (
+                      <View style={[
+                        themedStyles.placementReachBadge,
+                        {
+                          backgroundColor: placementLabels[form.placement].reach === 'High'
+                            ? withAlpha(colors.success, 0.12)
+                            : placementLabels[form.placement].reach === 'Medium'
+                            ? withAlpha(colors.warning, 0.12)
+                            : withAlpha(colors.textMuted, 0.12),
+                        },
+                      ]}>
+                        <MaterialCommunityIcons
+                          name="signal"
+                          size={14}
+                          color={
+                            placementLabels[form.placement].reach === 'High'
+                              ? colors.success
+                              : placementLabels[form.placement].reach === 'Medium'
+                              ? colors.warning
+                              : colors.textMuted
+                          }
                         />
-                        <Text style={[themedStyles.placementLabel, { color: active ? colors.primary : colors.text }]}>
-                          {config.label}
+                        <Text style={[
+                          themedStyles.placementReachText,
+                          {
+                            color: placementLabels[form.placement].reach === 'High'
+                              ? colors.success
+                              : placementLabels[form.placement].reach === 'Medium'
+                              ? colors.warning
+                              : colors.textMuted,
+                          },
+                        ]}>
+                          {placementLabels[form.placement].reach} reach
                         </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                      </View>
+                    )}
+                  </View>
+
+                  <View
+                    style={themedStyles.placementGrid}
+                    accessibilityRole="radiogroup"
+                    accessibilityLabel="Ad placement options"
+                  >
+                    {(Object.keys(placementLabels) as AdPlacement[]).map((placement) => {
+                      const active = form.placement === placement;
+                      const config = placementLabels[placement];
+                      const reachColor =
+                        config.reach === 'High' ? colors.success
+                        : config.reach === 'Medium' ? colors.warning
+                        : colors.textMuted;
+                      return (
+                        <TouchableOpacity
+                          key={placement}
+                          style={[
+                            themedStyles.placementCard,
+                            {
+                              borderColor: active ? colors.primary : colors.border,
+                              backgroundColor: active ? withAlpha(colors.primary, 0.08) : colors.card,
+                            },
+                            active && { borderWidth: 2 },
+                          ]}
+                          onPress={() => updateField("placement", placement)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: active }}
+                          accessibilityLabel={`${config.label} placement. ${config.description}. ${config.reach} reach`}
+                          accessibilityHint="Double tap to select this placement"
+                        >
+                          <View style={[
+                            themedStyles.placementIconWrap,
+                            { backgroundColor: active ? withAlpha(colors.primary, 0.15) : withAlpha(colors.textMuted, 0.08) },
+                          ]}>
+                            <MaterialCommunityIcons
+                              name={config.icon as any}
+                              size={22}
+                              color={active ? colors.primary : colors.textMuted}
+                            />
+                          </View>
+                          <View style={themedStyles.placementTextWrap}>
+                            <Text
+                              style={[
+                                themedStyles.placementLabel,
+                                { color: active ? colors.primary : colors.text },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {config.label}
+                            </Text>
+                            <Text
+                              style={[themedStyles.placementDesc, { color: colors.textMuted }]}
+                              numberOfLines={2}
+                            >
+                              {config.description}
+                            </Text>
+                          </View>
+                          <View style={[
+                            themedStyles.placementReachDot,
+                            { backgroundColor: reachColor },
+                          ]} />
+                          {active && (
+                            <View style={[
+                              themedStyles.placementCheckmark,
+                              { backgroundColor: colors.primary },
+                            ]}>
+                              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
             </Animated.View>
@@ -1037,32 +1132,98 @@ export default function AdRegistrationScreen(): React.ReactElement {
                 />
                 {errors.targetUrl && <Text style={[themedStyles.error, { color: colors.error }]}>{errors.targetUrl}</Text>}
 
-                <Text style={[themedStyles.label, { color: colors.text, marginTop: SPACING.md }]}>Ad Type</Text>
-                <View style={themedStyles.chipRow}>
-                  {(Object.keys(typeLabels) as FormState["type"][]).map((type) => {
-                    const active = form.type === type;
-                    const config = typeLabels[type];
-                    return (
-                      <TouchableOpacity
-                        key={type}
-                        style={[
-                          themedStyles.typeChip,
-                          {
-                            borderColor: active ? colors.primary : colors.border,
-                            backgroundColor: active ? withAlpha(colors.primary, 0.08) : colors.background,
-                          },
-                        ]}
-                        onPress={() => updateField("type", type)}
+                <View style={{ marginTop: SPACING.md }}>
+                  <View style={themedStyles.adTypeSectionHeader}>
+                    <View>
+                      <Text
+                        style={[themedStyles.label, { color: colors.text, marginBottom: 0 }]}
+                        accessibilityRole="header"
                       >
-                        <Text style={[themedStyles.chipLabel, { color: active ? colors.primary : colors.text }]}>
-                          {config.label}
-                        </Text>
-                        <Text style={[themedStyles.chipDesc, { color: colors.textMuted }]}>
-                          {config.description}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                        Ad Type
+                      </Text>
+                      <Text style={[themedStyles.adTypeSubtitle, { color: colors.textMuted }]}>
+                        Select the format that best fits your campaign goal
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    style={themedStyles.adTypeGrid}
+                    accessibilityRole="radiogroup"
+                    accessibilityLabel="Ad type options"
+                  >
+                    {(Object.keys(typeLabels) as FormState["type"][]).map((type) => {
+                      const active = form.type === type;
+                      const config = typeLabels[type];
+                      return (
+                        <TouchableOpacity
+                          key={type}
+                          style={[
+                            themedStyles.adTypeCard,
+                            {
+                              borderColor: active ? colors.primary : colors.border,
+                              backgroundColor: active ? withAlpha(colors.primary, 0.08) : colors.card,
+                            },
+                            active && { borderWidth: 2 },
+                          ]}
+                          onPress={() => updateField("type", type)}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: active }}
+                          accessibilityLabel={`${config.label} ad type. ${config.description}. Best for ${config.bestFor}${config.recommended ? '. Recommended' : ''}`}
+                          accessibilityHint="Double tap to select this ad type"
+                        >
+                          {config.recommended && (
+                            <View style={[themedStyles.adTypeRecommendedBadge, { backgroundColor: colors.success }]}>
+                              <Text style={themedStyles.adTypeRecommendedText}>Recommended</Text>
+                            </View>
+                          )}
+                          <View style={[
+                            themedStyles.adTypeIconWrap,
+                            { backgroundColor: active ? withAlpha(colors.primary, 0.15) : withAlpha(colors.textMuted, 0.08) },
+                          ]}>
+                            <MaterialCommunityIcons
+                              name={config.icon as any}
+                              size={24}
+                              color={active ? colors.primary : colors.textMuted}
+                            />
+                          </View>
+                          <Text style={[
+                            themedStyles.adTypeLabel,
+                            { color: active ? colors.primary : colors.text },
+                          ]}>
+                            {config.label}
+                          </Text>
+                          <Text
+                            style={[themedStyles.adTypeDesc, { color: colors.textMuted }]}
+                            numberOfLines={2}
+                          >
+                            {config.description}
+                          </Text>
+                          <View style={[
+                            themedStyles.adTypeBestFor,
+                            { backgroundColor: active ? withAlpha(colors.primary, 0.1) : withAlpha(colors.textMuted, 0.06) },
+                          ]}>
+                            <Ionicons
+                              name="flash"
+                              size={12}
+                              color={active ? colors.primary : colors.textMuted}
+                            />
+                            <Text style={[
+                              themedStyles.adTypeBestForText,
+                              { color: active ? colors.primary : colors.textMuted },
+                            ]}>
+                              {config.bestFor}
+                            </Text>
+                          </View>
+                          {active && (
+                            <View style={[themedStyles.adTypeCheckmark, { backgroundColor: colors.primary }]}>
+                              <Ionicons name="checkmark" size={12} color="#FFFFFF" />
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
             </Animated.View>
@@ -1683,26 +1844,86 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"], insets: { t
       fontSize: TYPOGRAPHY.fontSize.sm,
       color: "#FFFFFF",
     },
-    // Placement Row
-    placementRow: {
+    // Placement Section
+    placementSectionHeader: {
       flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: SPACING.md,
+    },
+    placementSubtitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.xs,
+      marginTop: 2,
+    },
+    placementReachBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 4,
+      borderRadius: RADIUS.full,
+    },
+    placementReachText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: TYPOGRAPHY.fontSize.xs,
+    },
+    placementGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
       gap: SPACING.sm,
-      marginTop: SPACING.xs,
     },
     placementCard: {
-      flex: 1,
-      paddingVertical: SPACING.md,
-      paddingHorizontal: SPACING.sm,
-      borderRadius: RADIUS.md,
+      width: "48%" as any,
+      flexGrow: 1,
+      flexDirection: "row",
+      alignItems: "center",
+      padding: SPACING.md,
+      borderRadius: RADIUS.lg,
       borderWidth: 1,
+      minHeight: COMPONENT_SIZE.touchTarget + SPACING.md,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+    },
+    placementIconWrap: {
+      width: 40,
+      height: 40,
+      borderRadius: RADIUS.md,
       alignItems: "center",
       justifyContent: "center",
-      minHeight: 70,
+      marginRight: SPACING.sm,
+    },
+    placementTextWrap: {
+      flex: 1,
+      marginRight: SPACING.sm,
     },
     placementLabel: {
       fontFamily: TYPOGRAPHY.fontFamily.medium,
-      fontSize: TYPOGRAPHY.fontSize.xs,
-      marginTop: SPACING.xs,
+      fontSize: TYPOGRAPHY.fontSize.sm,
+    },
+    placementDesc: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: 11,
+      lineHeight: 14,
+      marginTop: 2,
+    },
+    placementReachDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      position: "absolute" as const,
+      top: SPACING.sm,
+      right: SPACING.sm,
+    },
+    placementCheckmark: {
+      position: "absolute" as const,
+      bottom: 0,
+      right: 0,
+      width: 22,
+      height: 22,
+      borderTopLeftRadius: RADIUS.md,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // Chip Row
     chipRow: {
@@ -1734,6 +1955,89 @@ const createStyles = (colors: ReturnType<typeof useTheme>["colors"], insets: { t
       borderRadius: RADIUS.md,
       borderWidth: 1,
       alignItems: "center",
+    },
+    // Ad Type Section
+    adTypeSectionHeader: {
+      marginBottom: SPACING.md,
+    },
+    adTypeSubtitle: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: TYPOGRAPHY.fontSize.xs,
+      marginTop: 2,
+    },
+    adTypeGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: SPACING.sm,
+    },
+    adTypeCard: {
+      width: "48%" as any,
+      flexGrow: 1,
+      alignItems: "center",
+      padding: SPACING.md,
+      borderRadius: RADIUS.lg,
+      borderWidth: 1,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+      minHeight: 150,
+    },
+    adTypeIconWrap: {
+      width: 48,
+      height: 48,
+      borderRadius: RADIUS.lg,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: SPACING.sm,
+    },
+    adTypeLabel: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: TYPOGRAPHY.fontSize.base,
+      marginBottom: 4,
+      textAlign: "center",
+    },
+    adTypeDesc: {
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
+      fontSize: 11,
+      lineHeight: 15,
+      textAlign: "center",
+      marginBottom: SPACING.sm,
+    },
+    adTypeBestFor: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: SPACING.sm,
+      paddingVertical: 4,
+      borderRadius: RADIUS.full,
+    },
+    adTypeBestForText: {
+      fontFamily: TYPOGRAPHY.fontFamily.medium,
+      fontSize: 10,
+    },
+    adTypeRecommendedBadge: {
+      position: "absolute" as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      paddingVertical: 3,
+      alignItems: "center",
+    },
+    adTypeRecommendedText: {
+      fontFamily: TYPOGRAPHY.fontFamily.bold,
+      fontSize: 9,
+      color: "#FFFFFF",
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.5,
+    },
+    adTypeCheckmark: {
+      position: "absolute" as const,
+      bottom: 0,
+      right: 0,
+      width: 22,
+      height: 22,
+      borderTopLeftRadius: RADIUS.md,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // Targeting Styles
     reachCard: {

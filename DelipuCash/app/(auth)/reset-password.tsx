@@ -12,10 +12,11 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, CheckCircle, AlertCircle } from "lucide-react-native";
-import { useTheme, ThemeColors } from "@/utils/theme";
+import { useTheme, ThemeColors, SPACING, TYPOGRAPHY, RADIUS } from "@/utils/theme";
 import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
+import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
 import { validators, validateForm, ValidationSchema } from "@/utils/validation";
 
 interface FormData {
@@ -38,27 +39,7 @@ const validationSchema: ValidationSchema = {
   confirmPassword: [validators.required],
 };
 
-interface ErrorMessageProps {
-  message: string;
-  colors: ThemeColors;
-}
 
-const ErrorMessage = memo<ErrorMessageProps>(({ message, colors }) => (
-  <View
-    style={[
-      styles.errorContainer,
-      {
-        backgroundColor: `${colors.error}15`,
-        borderColor: `${colors.error}30`,
-      },
-    ]}
-  >
-    <AlertCircle size={20} color={colors.error} style={{ marginRight: 8 }} />
-    <Text style={[styles.errorText, { color: colors.error }]}>{message}</Text>
-  </View>
-));
-
-ErrorMessage.displayName = "ErrorMessage";
 
 interface SuccessScreenProps {
   colors: ThemeColors;
@@ -397,7 +378,16 @@ export default function ResetPasswordScreen(): React.ReactElement {
 
           {/* Error Message */}
           {generalError ? (
-            <ErrorMessage message={generalError} colors={colors} />
+            <AuthErrorMessage
+              message={generalError}
+              icon={
+                <AlertCircle
+                  size={20}
+                  color={colors.error}
+                  style={{ marginRight: 8 }}
+                />
+              }
+            />
           ) : null}
 
           {/* Form */}
@@ -438,6 +428,7 @@ export default function ResetPasswordScreen(): React.ReactElement {
             loading={loading}
             disabled={loading}
             style={styles.submitButton}
+            accessibilityHint="Double tap to reset your password"
           />
 
           {/* Back to Login */}
@@ -470,47 +461,34 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: SPACING.lg,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: SPACING.xl,
   },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   title: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 32,
-    marginBottom: 8,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['4xl'],
+    marginBottom: SPACING.sm,
   },
   subtitle: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  errorContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-  },
-  errorText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
-    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    lineHeight: TYPOGRAPHY.fontSize.base * TYPOGRAPHY.lineHeight.relaxed,
   },
   formContainer: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   submitButton: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   loginLinkContainer: {
     flexDirection: "row",
@@ -518,12 +496,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loginLinkText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   loginLink: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   loadingContainer: {
     flex: 1,
@@ -531,50 +509,50 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   loadingText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   successContainer: {
     flex: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: SPACING.lg,
     alignItems: "center",
     justifyContent: "center",
   },
   successIcon: {
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   errorIcon: {
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   successTitle: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 24,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['2xl'],
     textAlign: "center",
-    marginBottom: 12,
+    marginBottom: SPACING.md,
   },
   successMessage: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
     textAlign: "center",
-    marginBottom: 32,
-    lineHeight: 24,
+    marginBottom: SPACING.xl,
+    lineHeight: TYPOGRAPHY.fontSize.base * TYPOGRAPHY.lineHeight.relaxed,
   },
   successButton: {
     width: "100%",
-    marginBottom: 16,
+    marginBottom: SPACING.base,
   },
   tryAgainText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

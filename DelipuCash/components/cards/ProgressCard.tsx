@@ -14,7 +14,7 @@
  * ```
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   View,
   Text,
@@ -55,7 +55,7 @@ export interface ProgressCardProps {
   testID?: string;
 }
 
-export function ProgressCard({
+function ProgressCardComponent({
   title,
   current,
   goal,
@@ -198,5 +198,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 });
+
+export const ProgressCard = memo(ProgressCardComponent);
+ProgressCard.displayName = 'ProgressCard';
 
 export default ProgressCard;

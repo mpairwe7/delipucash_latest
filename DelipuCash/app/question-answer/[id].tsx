@@ -1,18 +1,19 @@
 /**
- * Question Answer Screen — "Answer & Earn"
+ * Question Answer Screen — Collaborative Q&A
+ *
+ * A Quora/StackOverflow-style question discussion and answer screen.
  *
  * Properly wired with:
  * - TanStack Query v5 via useQuestionDetail + useSubmitQuestionResponse (optimistic updates)
  * - Zustand for draft text / submission guard (ephemeral UI state)
  * - Unified query keys so feed ↔ detail caches stay in sync
  * - Auth check before submission
- * - Reward earned feedback after successful submit
  * - Keyboard avoiding for better mobile UX
  * - Accessible, memoized sub-components
  */
 
 import { PrimaryButton } from "@/components";
-import { formatCurrency, formatDate } from "@/services/api";
+import { formatDate } from "@/services/api";
 import {
   useQuestionDetail,
   useSubmitQuestionResponse,
@@ -39,14 +40,15 @@ import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
   ArrowLeft,
-  Award,
   CheckCircle,
   MessageSquare,
   Send,
-  Sparkles,
+  HelpCircle,
   AlertCircle,
+  Users,
+  Clock,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -120,17 +122,15 @@ const ResponseItem = memo(function ResponseItem({
   );
 });
 
-// ─── Reward Earned Banner ────────────────────────────────────────────────────
+// ─── Answer Submitted Banner ─────────────────────────────────────────────────
 
-interface RewardBannerProps {
-  amount: number;
+interface SubmittedBannerProps {
   colors: ThemeColors;
 }
 
-const RewardBanner = memo(function RewardBanner({
-  amount,
+const SubmittedBanner = memo(function SubmittedBanner({
   colors,
-}: RewardBannerProps) {
+}: SubmittedBannerProps) {
   return (
     <View
       style={[
@@ -152,16 +152,14 @@ const RewardBanner = memo(function RewardBanner({
         >
           Answer submitted!
         </Text>
-        {amount > 0 && (
-          <Text
-            style={[
-              styles.rewardBannerAmount,
-              { color: colors.success || "#22c55e" },
-            ]}
-          >
-            You earned {formatCurrency(amount)}
-          </Text>
-        )}
+        <Text
+          style={[
+            styles.rewardBannerAmount,
+            { color: colors.success || "#22c55e" },
+          ]}
+        >
+          Thanks for contributing to the community
+        </Text>
       </View>
     </View>
   );
@@ -214,9 +212,6 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const scrollRef = useRef<ScrollView>(null);
   const { data: user, loading: userLoading } = useUser();
   const isAuthenticated = !!user;
-
-  // ── Local state for reward feedback ──
-  const [rewardEarned, setRewardEarned] = useState<number | null>(null);
 
   // ── Zustand selectors (granular — avoid full-store re-renders) ──
   const draftText = useQuestionAnswerStore(
@@ -300,25 +295,14 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     submitResponse.mutate(
       { questionId: question.id, responseText: trimmed },
       {
-        onSuccess: (data) => {
+        onSuccess: () => {
           markSubmitted(question.id);
-
-          // Show reward earned feedback
-          const earned = data?.rewardEarned || 0;
-          if (earned > 0) {
-            setRewardEarned(earned);
-          }
 
           // Scroll to top to see result
           scrollRef.current?.scrollTo({ y: 0, animated: true });
 
-          const message =
-            earned > 0
-              ? `You earned ${formatCurrency(earned)}! Your answer helps the community.`
-              : "Thanks for contributing your knowledge!";
-
-          Alert.alert("Answer submitted!", message, [
-            { text: "Answer another", onPress: handleBack },
+          Alert.alert("Answer submitted!", "Thanks for contributing your knowledge!", [
+            { text: "Back to questions", onPress: handleBack },
             {
               text: "View discussion",
               onPress: () =>
@@ -454,19 +438,19 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={[styles.headerTitle, { color: colors.text }]}>
-            Answer & Earn
+            Comment
           </Text>
           <View style={styles.headerRewardRow}>
-            <Award
+            <MessageSquare
               size={ICON_SIZE.sm}
-              color={colors.primary}
+              color={colors.textMuted}
               strokeWidth={1.5}
             />
             <Text
-              style={[styles.headerSubtitle, { color: colors.primary }]}
+              style={[styles.headerSubtitle, { color: colors.textMuted }]}
               numberOfLines={1}
             >
-              {formatCurrency(question.rewardAmount || 0)} reward
+              {responseCount} {responseCount === 1 ? "answer" : "answers"}
             </Text>
           </View>
         </View>
@@ -486,9 +470,9 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           paddingBottom: insets.bottom + SPACING.xl + 80,
         }}
       >
-        {/* Reward banner (shown after successful submission) */}
-        {wasSubmitted && rewardEarned !== null && (
-          <RewardBanner amount={rewardEarned} colors={colors} />
+        {/* Submission confirmation banner */}
+        {wasSubmitted && (
+          <SubmittedBanner colors={colors} />
         )}
 
         {/* Hero card */}
@@ -505,17 +489,17 @@ export default function QuestionAnswerScreen(): React.ReactElement {
                 { backgroundColor: withAlpha(colors.primary, 0.12) },
               ]}
             >
-              <Sparkles
+              <HelpCircle
                 size={ICON_SIZE.sm}
                 color={colors.primary}
                 strokeWidth={1.5}
               />
               <Text style={[styles.badgeText, { color: colors.primary }]}>
-                {question.isInstantReward ? "Instant Reward" : "Standard"}
+                {question.category || "Question"}
               </Text>
             </View>
             <Text style={[styles.heroMeta, { color: colors.textMuted }]}>
-              Posted {formatDate(question.createdAt)}
+              {formatDate(question.createdAt)}
             </Text>
           </View>
           <Text style={[styles.questionText, { color: colors.text }]}>
@@ -525,21 +509,27 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             <View
               style={[styles.statCard, { backgroundColor: colors.secondary }]}
             >
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
-                Reward
-              </Text>
-              <Text style={[styles.statValue, { color: colors.primary }]}>
-                {formatCurrency(question.rewardAmount || 0)}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: SPACING.xs }}>
+                <Users size={14} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                  Answers
+                </Text>
+              </View>
+              <Text style={[styles.statValue, { color: colors.text }]}>
+                {responseCount}
               </Text>
             </View>
             <View
               style={[styles.statCard, { backgroundColor: colors.secondary }]}
             >
-              <Text style={[styles.statLabel, { color: colors.textMuted }]}>
-                Responses
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: SPACING.xs }}>
+                <Clock size={14} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+                  Posted
+                </Text>
+              </View>
               <Text style={[styles.statValue, { color: colors.text }]}>
-                {responseCount}
+                {formatDate(question.createdAt)}
               </Text>
             </View>
           </View>
@@ -584,7 +574,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               placeholder={
                 wasSubmitted
                   ? "Your answer has been submitted"
-                  : "Share a thoughtful, helpful answer…"
+                  : "Share your knowledge or experience…"
               }
               placeholderTextColor={colors.textMuted}
               multiline
@@ -666,7 +656,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
                 strokeWidth={1}
               />
               <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                No responses yet. Be the first to answer!
+                No answers yet. Be the first to share your knowledge!
               </Text>
             </View>
           )}

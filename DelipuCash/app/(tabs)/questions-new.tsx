@@ -131,7 +131,6 @@ import {
   COMPONENT_SIZE,
   withAlpha,
 } from "@/utils/theme";
-import { formatCurrency } from "@/services";
 import { triggerHaptic } from "@/utils/quiz-utils";
 
 // Quiz Session
@@ -303,9 +302,9 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           icon={
             <TrendingUp size={18} color={colors.success} strokeWidth={1.5} />
           }
-          title="Earned"
-          value={formatCurrency(userStats?.totalEarnings || 0)}
-          subtitle="Lifetime rewards"
+          title="Today"
+          value={userStats?.questionsAnsweredToday || 0}
+          subtitle={`Goal: ${userStats?.dailyTarget || 10}`}
         />
       </View>
 

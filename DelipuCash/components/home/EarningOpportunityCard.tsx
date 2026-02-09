@@ -40,6 +40,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  BORDER_WIDTH,
   withAlpha,
 } from '@/utils/theme';
 
@@ -395,12 +396,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.xxs,
     paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.sm,
   },
   typeBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 9,
+    fontSize: TYPOGRAPHY.fontSize.xs - 1,
     color: '#FFFFFF',
     textTransform: 'uppercase',
   },
@@ -410,15 +411,15 @@ const styles = StyleSheet.create({
     right: SPACING.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: SPACING.xxs,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.sm,
   },
   durationText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: 10,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
   },
   hotBadge: {
@@ -427,14 +428,14 @@ const styles = StyleSheet.create({
     right: SPACING.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.sm,
   },
   hotBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 9,
+    fontSize: TYPOGRAPHY.fontSize.xs - 1,
     color: '#FFFFFF',
   },
   content: {
@@ -456,7 +457,7 @@ const styles = StyleSheet.create({
   description: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    lineHeight: 18,
+    lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
     marginBottom: SPACING.xs,
   },
   metaRow: {
@@ -477,7 +478,7 @@ const styles = StyleSheet.create({
   },
   categoryBadge: {
     paddingHorizontal: SPACING.xs,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.sm,
   },
   categoryText: {
@@ -488,7 +489,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     justifyContent: 'center',
     alignItems: 'center',
-    borderLeftWidth: 1,
+    borderLeftWidth: BORDER_WIDTH.thin,
     borderLeftColor: 'rgba(0, 0, 0, 0.05)',
   },
   rewardContent: {

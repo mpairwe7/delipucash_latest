@@ -14,7 +14,7 @@
  * ```
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   View,
   Text,
@@ -52,7 +52,7 @@ export interface StatCardProps {
   testID?: string;
 }
 
-export function StatCard({
+function StatCardComponent({
   icon,
   title,
   value,
@@ -153,5 +153,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
 });
+
+export const StatCard = memo(StatCardComponent);
+StatCard.displayName = 'StatCard';
 
 export default StatCard;

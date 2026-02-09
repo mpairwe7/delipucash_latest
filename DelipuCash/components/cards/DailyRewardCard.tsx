@@ -15,7 +15,7 @@
  * ```
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   View,
   Text,
@@ -53,7 +53,7 @@ export interface DailyRewardCardProps {
   testID?: string;
 }
 
-export function DailyRewardCard({
+function DailyRewardCardComponent({
   isAvailable,
   nextRewardIn = 0,
   currentStreak,
@@ -262,5 +262,8 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
   },
 });
+
+export const DailyRewardCard = memo(DailyRewardCardComponent);
+DailyRewardCard.displayName = 'DailyRewardCard';
 
 export default DailyRewardCard;

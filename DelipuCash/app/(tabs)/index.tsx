@@ -249,6 +249,16 @@ export default function HomePage(): React.ReactElement {
     }
   }, [submitSearch]);
 
+  // Stable navigation callbacks to preserve React.memo on child components
+  const goToNotifications = useCallback(() => router.push("/notifications" as Href), []);
+  const goToWithdraw = useCallback(() => router.push("/(tabs)/withdraw"), []);
+  const goToTransactions = useCallback(() => router.push("/(tabs)/transactions"), []);
+  const goToVideos = useCallback(() => router.push("/(tabs)/videos-new"), []);
+  const goToQuestions = useCallback(() => router.push("/(tabs)/questions-new"), []);
+  const goToSurveys = useCallback(() => router.push("/(tabs)/surveys-new"), []);
+  const openSearchOverlay = useCallback(() => setSearchOverlayVisible(true), []);
+  const closeSearchOverlay = useCallback(() => setSearchOverlayVisible(false), []);
+
   // Handle pressing on a search result
   const handleSearchResultPress = useCallback((item: SearchableItem) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -304,14 +314,14 @@ export default function HomePage(): React.ReactElement {
           <View style={styles.headerActions}>
             <NotificationBell
               count={unreadCount ?? 0}
-              onPress={() => router.push("/notifications" as Href)}
+              onPress={goToNotifications}
             />
           </View>
         </View>
 
         {/* Search Bar */}
         <TouchableOpacity
-          onPress={() => setSearchOverlayVisible(true)}
+          onPress={openSearchOverlay}
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Open search"
@@ -321,7 +331,7 @@ export default function HomePage(): React.ReactElement {
             value={searchQuery}
             onChangeText={setSearchQuery}
             onSubmit={handleSearchSubmit}
-            onFocus={() => setSearchOverlayVisible(true)}
+            onFocus={openSearchOverlay}
             style={styles.searchBar}
           />
         </TouchableOpacity>
@@ -329,7 +339,7 @@ export default function HomePage(): React.ReactElement {
         {/* Search Overlay for full-screen search experience */}
         <SearchOverlay
           visible={searchOverlayVisible}
-          onClose={() => setSearchOverlayVisible(false)}
+          onClose={closeSearchOverlay}
           query={searchQuery}
           onChangeQuery={setSearchQuery}
           onSubmit={handleSearchSubmit}
@@ -412,12 +422,12 @@ export default function HomePage(): React.ReactElement {
             <Text style={styles.walletLabel}>Wallet Balance</Text>
           </View>
           <Text style={styles.walletBalance}>
-            ${user?.walletBalance?.toLocaleString() || "0.00"}
+            UGX {user?.walletBalance?.toLocaleString() || "0"}
           </Text>
           <View style={styles.walletActions}>
             <TouchableOpacity
               style={styles.walletButton}
-              onPress={() => router.push("/(tabs)/withdraw")}
+              onPress={goToWithdraw}
               accessibilityRole="button"
               accessibilityLabel="Withdraw funds"
             >
@@ -425,7 +435,7 @@ export default function HomePage(): React.ReactElement {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.walletButton, styles.walletButtonSecondary]}
-              onPress={() => router.push("/(tabs)/transactions")}
+              onPress={goToTransactions}
               accessibilityRole="button"
               accessibilityLabel="View transactions"
             >
@@ -439,17 +449,17 @@ export default function HomePage(): React.ReactElement {
           <StatCard
             icon={<TrendingUp size={20} color={colors.success} strokeWidth={1.5} />}
             title="Total Earnings"
-            value={`$${dashboardStats?.totalEarnings?.toLocaleString() || "0"}`}
-            subtitle={`+$${dashboardStats?.weeklyEarnings || 0} this week`}
+            value={`UGX ${dashboardStats?.totalEarnings?.toLocaleString() || "0"}`}
+            subtitle={`+UGX ${dashboardStats?.weeklyEarnings?.toLocaleString() || "0"} this week`}
             subtitleColor={colors.success}
-            onPress={() => router.push("/(tabs)/transactions")}
+            onPress={goToTransactions}
           />
           <StatCard
             icon={<Gift size={20} color={colors.warning} strokeWidth={1.5} />}
             title="Rewards Earned"
             value={dashboardStats?.rewardsProgress || 0}
             subtitle={`Goal: ${dashboardStats?.rewardsGoal || 2000}`}
-            onPress={() => router.push("/(tabs)/transactions")}
+            onPress={goToTransactions}
           />
         </View>
 
@@ -471,7 +481,7 @@ export default function HomePage(): React.ReactElement {
           title="Trending Videos"
           subtitle="Most watched this week"
           icon={<Play size={20} color={colors.error} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/videos-new")}
+          onSeeAll={goToVideos}
         />
         <ScrollView
           horizontal
@@ -483,7 +493,7 @@ export default function HomePage(): React.ReactElement {
               key={video.id}
               video={video}
               variant="compact"
-              onPress={() => router.push(`/(tabs)/videos-new`)}
+              onPress={goToVideos}
             />
           ))}
         </ScrollView>
@@ -493,7 +503,7 @@ export default function HomePage(): React.ReactElement {
           title="Questions & Rewards"
           subtitle="Answer and earn"
           icon={<Award size={20} color={colors.primary} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/questions-new")}
+          onSeeAll={goToQuestions}
         />
 
         {/* Recent Questions */}
@@ -524,7 +534,7 @@ export default function HomePage(): React.ReactElement {
           title="Running Surveys"
           subtitle="Complete and earn rewards"
           icon={<Zap size={20} color={colors.success} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/surveys-new")}
+          onSeeAll={goToSurveys}
         />
         <View style={styles.surveysContainer}>
           {runningSurveys?.slice(0, 2).map((survey: Survey) => (
@@ -548,7 +558,7 @@ export default function HomePage(): React.ReactElement {
           title="Upcoming Surveys"
           subtitle="Don't miss out"
           icon={<Calendar size={20} color={colors.warning} strokeWidth={1.5} />}
-          onSeeAll={() => router.push("/(tabs)/surveys-new")}
+          onSeeAll={goToSurveys}
         />
         <View style={styles.surveysContainer}>
           {upcomingSurveys?.slice(0, 2).map((survey: Survey) => (

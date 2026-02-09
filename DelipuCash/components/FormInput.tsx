@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useRef, memo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   Animated,
+  AccessibilityInfo,
   StyleSheet,
   type ViewStyle,
   type TextStyle,
@@ -96,21 +97,31 @@ export const FormInput = memo<FormInputProps>(({
 }) => {
   const { colors } = useTheme();
   const [showPassword, setShowPassword] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
   const focusAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (isEnabled) => setReduceMotion(isEnabled)
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => subscription.remove();
+  }, []);
 
   const handleFocus = useCallback(() => {
     Animated.timing(focusAnim, {
       toValue: 1,
-      duration: ANIMATION.duration.normal,
+      duration: reduceMotion ? 0 : ANIMATION.duration.normal,
       useNativeDriver: false,
     }).start();
-  }, [focusAnim]);
+  }, [focusAnim, reduceMotion]);
 
   const handleBlur = useCallback(
     () => {
       Animated.timing(focusAnim, {
         toValue: 0,
-        duration: ANIMATION.duration.normal,
+        duration: reduceMotion ? 0 : ANIMATION.duration.normal,
         useNativeDriver: false,
       }).start();
       onBlur?.();

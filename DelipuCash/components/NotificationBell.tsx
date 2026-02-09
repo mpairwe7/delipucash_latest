@@ -1,4 +1,4 @@
-import React from "react";
+import React, { memo, useCallback } from "react";
 import {
   GestureResponderEvent,
   StyleSheet,
@@ -18,7 +18,7 @@ export interface NotificationBellProps {
   accessibilityLabel?: string;
 }
 
-export function NotificationBell({
+function NotificationBellComponent({
   count = 0,
   onPress,
   style,
@@ -30,10 +30,10 @@ export function NotificationBell({
   const displayCount = count > 9 ? "9+" : count > 0 ? String(count) : undefined;
   const showIndicator = Boolean(displayCount) || hasNewNotification;
 
-  const handlePress = (event: GestureResponderEvent): void => {
+  const handlePress = useCallback((event: GestureResponderEvent): void => {
     markNotificationsSeen();
     onPress?.(event);
-  };
+  }, [markNotificationsSeen, onPress]);
 
   return (
     <TouchableOpacity
@@ -93,3 +93,6 @@ const styles = StyleSheet.create({
     lineHeight: 12,
   },
 });
+
+export const NotificationBell = memo(NotificationBellComponent);
+NotificationBell.displayName = 'NotificationBell';

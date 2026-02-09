@@ -27,6 +27,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  AccessibilityInfo,
 } from 'react-native';
 import { Gift, Flame, Clock, ChevronRight, Sparkles, Star } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,6 +50,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  BORDER_WIDTH,
   withAlpha,
 } from '@/utils/theme';
 
@@ -217,15 +219,26 @@ export function HeroRewardCard({
 }: HeroRewardCardProps): React.ReactElement {
   const { colors } = useTheme();
   const [showConfetti, setShowConfetti] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   const totalReward = todayReward + streakBonus;
+
+  // Respect reduced-motion accessibility setting (WCAG 2.2 §2.3.3)
+  useEffect(() => {
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (isEnabled) => setReduceMotion(isEnabled)
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => subscription.remove();
+  }, []);
 
   // Pulse animation for CTA button
   const pulseScale = useSharedValue(1);
   const glowOpacity = useSharedValue(0.3);
 
   useEffect(() => {
-    if (isAvailable && !isLoading) {
+    if (isAvailable && !isLoading && !reduceMotion) {
       pulseScale.value = withRepeat(
         withSequence(
           withTiming(1.02, { duration: 1200, easing: Easing.inOut(Easing.ease) }),
@@ -243,7 +256,7 @@ export function HeroRewardCard({
         false
       );
     }
-  }, [isAvailable, isLoading, pulseScale, glowOpacity]);
+  }, [isAvailable, isLoading, reduceMotion, pulseScale, glowOpacity]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
@@ -287,7 +300,7 @@ export function HeroRewardCard({
         end={{ x: 1, y: 1 }}
         style={[
           styles.card,
-          !isAvailable && { borderWidth: 1, borderColor: colors.border },
+          !isAvailable && { borderWidth: BORDER_WIDTH.thin, borderColor: colors.border },
         ]}
       >
         {/* Confetti overlay */}
@@ -533,10 +546,10 @@ const styles = StyleSheet.create({
   },
   buttonGlow: {
     position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
+    top: -SPACING.xs,
+    left: -SPACING.xs,
+    right: -SPACING.xs,
+    bottom: -SPACING.xs,
     backgroundColor: '#FFD700',
     borderRadius: RADIUS.full + 4,
     opacity: 0.3,
@@ -560,7 +573,7 @@ const styles = StyleSheet.create({
     right: -40,
     width: 120,
     height: 120,
-    borderRadius: 60,
+    borderRadius: RADIUS.full,
     backgroundColor: '#FFFFFF',
   },
   decorCircle2: {
@@ -569,7 +582,7 @@ const styles = StyleSheet.create({
     left: -30,
     width: 80,
     height: 80,
-    borderRadius: 40,
+    borderRadius: RADIUS.full,
     backgroundColor: '#FFFFFF',
   },
   confettiContainer: {
@@ -582,7 +595,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 8,
     height: 8,
-    borderRadius: 2,
+    borderRadius: RADIUS.xs,
   },
 });
 

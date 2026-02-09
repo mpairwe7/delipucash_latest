@@ -112,7 +112,7 @@ const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchIt
 
 SearchItem.displayName = 'SearchItem';
 
-export function SearchOverlay({
+function SearchOverlayComponent({
   visible,
   onClose,
   query,
@@ -467,5 +467,8 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xs,
   },
 });
+
+export const SearchOverlay = memo(SearchOverlayComponent);
+SearchOverlay.displayName = 'SearchOverlay';
 
 export default SearchOverlay;

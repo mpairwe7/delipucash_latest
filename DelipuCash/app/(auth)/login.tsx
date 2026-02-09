@@ -1,16 +1,19 @@
 import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
 import { testCredentials } from "@/services/mockAuth";
 import { useAuth } from "@/utils/auth";
 import {
-    ThemeColors,
+    SPACING,
+    TYPOGRAPHY,
+    RADIUS,
     useTheme
 } from "@/utils/theme";
 import { validateForm, ValidationSchema, validators } from "@/utils/validation";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail } from "lucide-react-native";
-import React, { memo, useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
     KeyboardAvoidingView,
     Platform,
@@ -40,27 +43,6 @@ const validationSchema: ValidationSchema = {
   email: [validators.required, validators.email],
   password: [validators.required, validators.minLength(6)],
 };
-
-interface ErrorMessageProps {
-  message: string;
-  colors: ThemeColors;
-}
-
-const ErrorMessage = memo<ErrorMessageProps>(({ message, colors }) => (
-  <View
-    style={[
-      styles.errorContainer,
-      {
-        backgroundColor: `${colors.error}15`,
-        borderColor: `${colors.error}30`,
-      },
-    ]}
-  >
-    <Text style={[styles.errorText, { color: colors.error }]}>{message}</Text>
-  </View>
-));
-
-ErrorMessage.displayName = "ErrorMessage";
 
 /**
  * Login screen component
@@ -192,7 +174,7 @@ export default function LoginScreen(): React.ReactElement {
 
           {/* Error Message */}
           {generalError ? (
-            <ErrorMessage message={generalError} colors={colors} />
+            <AuthErrorMessage message={generalError} />
           ) : null}
 
           {/* Form */}
@@ -208,6 +190,7 @@ export default function LoginScreen(): React.ReactElement {
               keyboardType="email-address"
               autoComplete="email"
               autoCapitalize="none"
+              editable={!isLoading}
               leftIcon={<Mail size={20} color={colors.textMuted} />}
             />
 
@@ -221,6 +204,7 @@ export default function LoginScreen(): React.ReactElement {
               touched={touched.password}
               secureTextEntry
               autoComplete="password"
+              editable={!isLoading}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
 
@@ -230,6 +214,7 @@ export default function LoginScreen(): React.ReactElement {
               style={styles.forgotPasswordLink}
               accessibilityRole="link"
               accessibilityLabel="Forgot password"
+              disabled={isLoading}
             >
               <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>
                 Forgot Password?
@@ -243,6 +228,7 @@ export default function LoginScreen(): React.ReactElement {
             onPress={handleLogin}
             loading={isLoading}
             disabled={isLoading}
+            accessibilityHint="Double tap to sign in to your account"
             style={styles.loginButton}
           />
 
@@ -262,6 +248,7 @@ export default function LoginScreen(): React.ReactElement {
               onPress={handleSignUp}
               accessibilityRole="link"
               accessibilityLabel="Sign up"
+              disabled={isLoading}
             >
               <Text style={[styles.signUpLink, { color: colors.primary }]}>
                 Sign Up
@@ -283,67 +270,56 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: SPACING.lg,
   },
   header: {
-    marginBottom: 40,
+    marginBottom: SPACING['2xl'],
   },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   title: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 32,
-    marginBottom: 8,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['4xl'],
+    marginBottom: SPACING.sm,
   },
   subtitle: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
-  },
-  errorContainer: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-  },
-  errorText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
-    textAlign: "center",
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   formContainer: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   forgotPasswordLink: {
     alignSelf: "flex-end",
-    marginTop: -8,
-    marginBottom: 8,
+    marginTop: -SPACING.sm,
+    marginBottom: SPACING.sm,
   },
   forgotPasswordText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   loginButton: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   dividerContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 14,
-    marginHorizontal: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginHorizontal: SPACING.base,
   },
   signUpContainer: {
     flexDirection: "row",
@@ -351,11 +327,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   signUpText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   signUpLink: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 });

@@ -13,7 +13,7 @@
  * ```
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, memo } from 'react';
 import {
   View,
   TextInput,
@@ -57,7 +57,7 @@ export interface SearchBarProps {
   testID?: string;
 }
 
-export function SearchBar({
+function SearchBarComponent({
   placeholder = 'Search...',
   value = '',
   onChangeText,
@@ -178,5 +178,8 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.xs,
   },
 });
+
+export const SearchBar = memo(SearchBarComponent);
+SearchBar.displayName = 'SearchBar';
 
 export default SearchBar;

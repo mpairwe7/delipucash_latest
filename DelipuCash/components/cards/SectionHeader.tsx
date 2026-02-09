@@ -12,7 +12,7 @@
  * ```
  */
 
-import React from 'react';
+import React, { memo } from 'react';
 import {
   View,
   Text,
@@ -45,7 +45,7 @@ export interface SectionHeaderProps {
   testID?: string;
 }
 
-export function SectionHeader({
+function SectionHeaderComponent({
   title,
   subtitle,
   onSeeAll,
@@ -124,5 +124,8 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
 });
+
+export const SectionHeader = memo(SectionHeaderComponent);
+SectionHeader.displayName = 'SectionHeader';
 
 export default SectionHeader;

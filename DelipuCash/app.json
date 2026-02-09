@@ -36,7 +36,6 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_EXTERNAL_STORAGE"
       ],
-      "googleServicesFile": "./google-services.json",
       "package": "com.arolainc.DelipuCash",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

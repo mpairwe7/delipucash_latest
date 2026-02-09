@@ -3,16 +3,19 @@ import { FormInput } from "@/components/FormInput";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
 import { PhoneInput } from "@/components/PhoneInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
 import { useAuth } from "@/utils/auth";
 import {
-    ThemeColors,
+    SPACING,
+    TYPOGRAPHY,
+    RADIUS,
     useTheme
 } from "@/utils/theme";
 import { FormFieldValue, validateForm, ValidationSchema, validators } from "@/utils/validation";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail, User } from "lucide-react-native";
-import React, { memo, useCallback, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
     KeyboardAvoidingView,
     Linking,
@@ -78,27 +81,6 @@ const createValidationSchema = (formData: FormData): ValidationSchema => ({
     validators.checked("You must accept the terms and conditions"),
   ],
 });
-
-interface ErrorMessageProps {
-  message: string;
-  colors: ThemeColors;
-}
-
-const ErrorMessage = memo<ErrorMessageProps>(({ message, colors }) => (
-  <View
-    style={[
-      styles.errorContainer,
-      {
-        backgroundColor: `${colors.error}15`,
-        borderColor: `${colors.error}30`,
-      },
-    ]}
-  >
-    <Text style={[styles.errorText, { color: colors.error }]}>{message}</Text>
-  </View>
-));
-
-ErrorMessage.displayName = "ErrorMessage";
 
 /**
  * Signup screen component
@@ -241,7 +223,7 @@ export default function SignupScreen(): React.ReactElement {
 
           {/* Error Message */}
           {generalError ? (
-            <ErrorMessage message={generalError} colors={colors} />
+            <AuthErrorMessage message={generalError} />
           ) : null}
 
           {/* Form */}
@@ -363,6 +345,7 @@ export default function SignupScreen(): React.ReactElement {
             onPress={handleSignup}
             loading={isLoading}
             disabled={isLoading}
+            accessibilityHint="Double tap to create your account"
             style={styles.signupButton}
           />
 
@@ -396,72 +379,61 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
+    paddingHorizontal: SPACING.lg,
   },
   header: {
-    marginBottom: 32,
+    marginBottom: SPACING.xl,
   },
   backButton: {
     width: 44,
     height: 44,
-    borderRadius: 12,
+    borderRadius: RADIUS.lg,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   title: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 32,
-    marginBottom: 8,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize['4xl'],
+    marginBottom: SPACING.sm,
   },
   subtitle: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
-  },
-  errorContainer: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-  },
-  errorText: {
-    fontFamily: "Roboto_500Medium",
-    fontSize: 14,
-    textAlign: "center",
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   formContainer: {
-    marginBottom: 16,
+    marginBottom: SPACING.base,
   },
   nameRow: {
     flexDirection: "row",
-    gap: 12,
+    gap: SPACING.md,
   },
   nameField: {
     flex: 1,
   },
   termsText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 14,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     lineHeight: 20,
   },
   checkbox: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   signupButton: {
-    marginBottom: 24,
+    marginBottom: SPACING.lg,
   },
   signInContainer: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: SPACING.base,
   },
   signInText: {
-    fontFamily: "Roboto_400Regular",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   signInLink: {
-    fontFamily: "Roboto_700Bold",
-    fontSize: 16,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 });

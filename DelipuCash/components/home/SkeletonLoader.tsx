@@ -6,8 +6,8 @@
  * WCAG 2.2 AA: Reduced motion support, proper contrast
  */
 
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Dimensions, AccessibilityInfo } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -44,14 +44,25 @@ export function SkeletonBase({
 }: SkeletonBaseProps): React.ReactElement {
   const { colors } = useTheme();
   const shimmer = useSharedValue(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
   useEffect(() => {
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (isEnabled) => setReduceMotion(isEnabled)
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
     shimmer.value = withRepeat(
       withTiming(1, { duration: 1500, easing: Easing.linear }),
       -1,
       false
     );
-  }, [shimmer]);
+  }, [shimmer, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
