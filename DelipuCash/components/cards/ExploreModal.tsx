@@ -24,7 +24,7 @@ import React, { useEffect } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Modal,
   ScrollView,
@@ -39,7 +39,6 @@ import Animated, {
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import {
   useTheme,
   SPACING,
@@ -48,6 +47,7 @@ import {
   SHADOWS,
   withAlpha,
 } from "@/utils/theme";
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 const { width, height } = Dimensions.get("window");
 const isTablet = width >= 768;
@@ -129,12 +129,12 @@ export function ExploreModal({
   }, [visible, opacity, translateY, scale]);
 
   const handleAction = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    triggerHaptic('heavy');
     onAction();
   };
 
   const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onClose();
   };
 
@@ -163,10 +163,9 @@ export function ExploreModal({
     >
       <Animated.View style={[styles.overlay, overlayStyle]}>
         {/* Backdrop */}
-        <TouchableOpacity
+        <Pressable
           style={styles.backdrop}
           onPress={handleClose}
-          activeOpacity={1}
           accessibilityLabel="Close modal"
           accessibilityRole="button"
         />
@@ -187,15 +186,16 @@ export function ExploreModal({
             style={styles.header}
           >
             {/* Close Button */}
-            <TouchableOpacity
+            <Pressable
               style={styles.closeButton}
               onPress={handleClose}
-              activeOpacity={0.7}
               accessibilityLabel="Close"
               accessibilityRole="button"
+              accessibilityHint="Tap to close this modal"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <MaterialCommunityIcons name="close" size={24} color="white" />
-            </TouchableOpacity>
+            </Pressable>
 
             {/* Hero Section */}
             <View style={styles.heroSection}>
@@ -319,12 +319,12 @@ export function ExploreModal({
               },
             ]}
           >
-            <TouchableOpacity
+            <Pressable
               style={styles.actionButton}
               onPress={handleAction}
-              activeOpacity={0.8}
               accessibilityLabel={actionText}
               accessibilityRole="button"
+              accessibilityHint="Tap to start this activity"
             >
               <LinearGradient
                 colors={gradientColors}
@@ -335,7 +335,7 @@ export function ExploreModal({
                 <MaterialCommunityIcons name={icon} size={22} color="white" />
                 <Text style={styles.actionButtonText}>{actionText}</Text>
               </LinearGradient>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </Animated.View>
       </Animated.View>

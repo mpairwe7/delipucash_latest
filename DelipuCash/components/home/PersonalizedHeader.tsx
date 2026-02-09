@@ -25,7 +25,7 @@ import React, { useMemo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -39,7 +39,6 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -48,6 +47,7 @@ import {
   withAlpha,
 } from '@/utils/theme';
 import { NotificationBell } from '@/components/NotificationBell';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
@@ -147,19 +147,19 @@ function StreakRing({
   };
 
   const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onPress?.();
   };
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={handlePress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      activeOpacity={0.9}
       accessibilityRole="button"
       accessibilityLabel={`${current} day streak, ${Math.round(progress)}% to goal`}
       accessibilityHint="Tap to view streak details"
+      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
     >
       <Animated.View style={[styles.streakRingContainer, animatedStyle]}>
         <Svg width={RING_SIZE} height={RING_SIZE}>
@@ -200,7 +200,7 @@ function StreakRing({
           <Text style={styles.streakBadgeText}>{current}</Text>
         </View>
       </Animated.View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -217,16 +217,16 @@ function WalletPreview({
   const { colors } = useTheme();
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        triggerHaptic('light');
         onPress?.();
       }}
-      activeOpacity={0.7}
       style={[styles.walletPreview, { backgroundColor: withAlpha(colors.success, 0.12) }]}
       accessibilityRole="button"
       accessibilityLabel={`Wallet balance: UGX ${balance.toLocaleString()}`}
       accessibilityHint="Tap to view wallet details"
+      hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
     >
       <Wallet size={14} color={colors.success} strokeWidth={2} />
       <Text
@@ -236,7 +236,7 @@ function WalletPreview({
       >
         UGX {balance.toLocaleString()}
       </Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

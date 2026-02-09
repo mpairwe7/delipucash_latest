@@ -11,7 +11,7 @@ import React, { useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Image,
 } from 'react-native';
@@ -33,7 +33,6 @@ import Animated, {
   withSpring,
   FadeInRight,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -43,6 +42,7 @@ import {
   BORDER_WIDTH,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export type OpportunityType = 'video' | 'survey' | 'question' | 'instant-reward';
 
@@ -71,7 +71,7 @@ export interface EarningOpportunityCardProps {
   testID?: string;
 }
 
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /**
  * Get icon and colors for opportunity type
@@ -132,7 +132,7 @@ export function EarningOpportunityCard({
   }, [scale]);
 
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onPress(opportunity);
   }, [opportunity, onPress]);
 
@@ -147,11 +147,10 @@ export function EarningOpportunityCard({
     <Animated.View
       entering={FadeInRight.delay(index * 50).duration(300)}
     >
-      <AnimatedTouchable
+      <AnimatedPressable
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        activeOpacity={0.95}
         style={[
           styles.card,
           isFeatured && styles.cardFeatured,
@@ -301,7 +300,7 @@ export function EarningOpportunityCard({
           </View>
           <ChevronRight size={18} color={colors.textMuted} />
         </View>
-      </AnimatedTouchable>
+      </AnimatedPressable>
     </Animated.View>
   );
 }

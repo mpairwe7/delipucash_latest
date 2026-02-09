@@ -18,7 +18,7 @@ import React, { memo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   StyleProp,
   ViewStyle,
@@ -30,6 +30,7 @@ import {
   RADIUS,
   SHADOWS,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface StatCardProps {
   /** Icon element to display */
@@ -107,15 +108,18 @@ function StatCardComponent({
 
   if (onPress) {
     return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.7}
+      <Pressable
+        onPress={() => {
+          triggerHaptic('light');
+          onPress();
+        }}
         accessibilityRole="button"
         accessibilityLabel={`${title}: ${value}`}
+        accessibilityHint={`Tap to view ${title.toLowerCase()} details`}
         testID={testID}
       >
         {content}
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 

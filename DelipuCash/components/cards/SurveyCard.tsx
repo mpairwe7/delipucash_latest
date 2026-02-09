@@ -37,7 +37,6 @@ import {
   CheckCircle2,
   BarChart3,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -48,6 +47,8 @@ import {
 } from '@/utils/theme';
 import { formatCurrency } from '@/services';
 import { Survey } from '@/types';
+import { triggerHaptic } from '@/utils/quiz-utils';
+import { useReducedMotion } from '@/utils/accessibility';
 
 export interface SurveyCardProps {
   /** Survey data object */
@@ -85,6 +86,7 @@ function SurveyCardComponent({
 }: SurveyCardProps): React.ReactElement {
   const { colors } = useTheme();
   const scale = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
 
   const progress = useMemo(() => {
     return survey.maxResponses
@@ -163,7 +165,7 @@ function SurveyCardComponent({
   }, [scale]);
 
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onPress?.();
   }, [onPress]);
 
@@ -171,7 +173,7 @@ function SurveyCardComponent({
 
   return (
     <Animated.View
-      entering={FadeIn.delay(index * 50).duration(300)}
+      entering={reduceMotion ? undefined : FadeIn.delay(index * 50).duration(300)}
     >
       <AnimatedPressable
         onPress={handlePress}

@@ -19,7 +19,7 @@ import React from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   StyleProp,
   ViewStyle,
@@ -35,6 +35,7 @@ import {
   RADIUS,
   SHADOWS,
 } from "@/utils/theme";
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 const { width } = Dimensions.get("window");
 const isTablet = width >= 768;
@@ -130,12 +131,16 @@ export function Section({
           </Text>
         </View>
         {seeAllAction && (
-          <TouchableOpacity
-            onPress={seeAllAction}
+          <Pressable
+            onPress={() => {
+              triggerHaptic('light');
+              seeAllAction();
+            }}
             style={styles.seeAllButton}
-            activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={`${actionText} ${title}`}
+            accessibilityHint={`Tap to see all ${title.toLowerCase()}`}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text
               style={[
@@ -153,7 +158,7 @@ export function Section({
               size={getResponsiveSize(14, 16, 18)}
               color={colors.primary}
             />
-          </TouchableOpacity>
+          </Pressable>
         )}
       </View>
 

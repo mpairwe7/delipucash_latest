@@ -17,7 +17,7 @@ import React, { useState, useCallback, memo } from 'react';
 import {
   View,
   TextInput,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   StyleProp,
   ViewStyle,
@@ -31,6 +31,7 @@ import {
   RADIUS,
   COMPONENT_SIZE,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface SearchBarProps {
   /** Placeholder text */
@@ -84,6 +85,7 @@ function SearchBarComponent({
   }, [onBlur]);
 
   const handleClear = useCallback(() => {
+    triggerHaptic('light');
     onChangeText?.('');
   }, [onChangeText]);
 
@@ -129,24 +131,29 @@ function SearchBarComponent({
         accessibilityLabel={placeholder}
       />
       {value.length > 0 && (
-        <TouchableOpacity
+        <Pressable
           onPress={handleClear}
           style={styles.clearButton}
-          activeOpacity={0.7}
           accessibilityLabel="Clear search"
+          accessibilityHint="Tap to clear search text"
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <X size={18} color={colors.textMuted} strokeWidth={1.5} />
-        </TouchableOpacity>
+        </Pressable>
       )}
       {onFilter && (
-        <TouchableOpacity
-          onPress={onFilter}
+        <Pressable
+          onPress={() => {
+            triggerHaptic('light');
+            onFilter();
+          }}
           style={[styles.filterButton, { backgroundColor: colors.elevated }]}
-          activeOpacity={0.7}
           accessibilityLabel="Open filters"
+          accessibilityHint="Tap to open search filters"
+          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
         >
           <Sliders size={18} color={colors.text} strokeWidth={1.5} />
-        </TouchableOpacity>
+        </Pressable>
       )}
     </View>
   );

@@ -3,13 +3,14 @@ import {
   GestureResponderEvent,
   StyleSheet,
   Text,
-  TouchableOpacity,
+  Pressable,
   View,
   ViewStyle,
 } from "react-native";
 import { Bell } from "lucide-react-native";
 import { useTheme, RADIUS, SPACING, TYPOGRAPHY } from "@/utils/theme";
 import { usePushNotifications } from "@/utils/usePushNotifications";
+import { triggerHaptic } from "@/utils/quiz-utils";
 
 export interface NotificationBellProps {
   count?: number;
@@ -31,12 +32,13 @@ function NotificationBellComponent({
   const showIndicator = Boolean(displayCount) || hasNewNotification;
 
   const handlePress = useCallback((event: GestureResponderEvent): void => {
+    triggerHaptic('light');
     markNotificationsSeen();
     onPress?.(event);
   }, [markNotificationsSeen, onPress]);
 
   return (
-    <TouchableOpacity
+    <Pressable
       style={[
         styles.button,
         {
@@ -48,6 +50,8 @@ function NotificationBellComponent({
       onPress={handlePress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint="Tap to view your notifications"
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <Bell size={22} color={colors.text} strokeWidth={1.5} />
       {showIndicator && (
@@ -64,7 +68,7 @@ function NotificationBellComponent({
           {displayCount && <Text style={styles.badgeText}>{displayCount}</Text>}
         </View>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 

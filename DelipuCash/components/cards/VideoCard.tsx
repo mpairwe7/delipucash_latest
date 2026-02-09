@@ -21,7 +21,6 @@ import {
   ViewStyle,
   Pressable,
   ImageBackground,
-  ActivityIndicator,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -49,6 +48,7 @@ import {
 } from "@/utils/theme";
 import { Video } from "@/types";
 import { getBestThumbnailUrl, getPlaceholderImage } from "@/utils/thumbnail-utils";
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 // Create AnimatedPressable
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -160,6 +160,7 @@ function VideoCardComponent({
 
   // Press handlers
   const handlePressIn = useCallback(() => {
+    triggerHaptic('light');
     scale.value = withSpring(0.97, SPRING_CONFIG);
     pressed.value = withSpring(1, SPRING_CONFIG);
   }, [scale, pressed]);
@@ -213,7 +214,7 @@ function VideoCardComponent({
           <View style={styles.horizontalThumbnailContainer}>
             {isLoadingThumbnail ? (
               <View style={[styles.horizontalThumbnail, styles.loadingContainer, { backgroundColor: colors.border }]}>
-                <ActivityIndicator size="small" color={colors.primary} />
+                <Play size={20} color={colors.textMuted} />
               </View>
             ) : (
             <ImageBackground
@@ -286,7 +287,7 @@ function VideoCardComponent({
         <View style={styles.thumbnailContainer}>
           {isLoadingThumbnail ? (
             <View style={[styles.thumbnail, styles.loadingContainer, variant === "compact" && styles.thumbnailCompact, { backgroundColor: colors.border }]}>
-              <ActivityIndicator size="large" color={colors.primary} />
+              <Play size={28} color={colors.textMuted} />
             </View>
           ) : (
           <ImageBackground

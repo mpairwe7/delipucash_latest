@@ -19,7 +19,7 @@ import React, { memo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -33,6 +33,7 @@ import {
   SHADOWS,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface DailyRewardCardProps {
   /** Whether reward is available to claim */
@@ -139,13 +140,16 @@ function DailyRewardCardComponent({
                   <Text style={styles.bonusText}>+{streakBonus} bonus!</Text>
                 )}
               </View>
-              <TouchableOpacity
-                onPress={onClaim}
+              <Pressable
+                onPress={() => {
+                  triggerHaptic('medium');
+                  onClaim?.();
+                }}
                 disabled={isLoading}
-                activeOpacity={0.8}
                 style={styles.claimButton}
                 accessibilityRole="button"
                 accessibilityLabel="Claim daily reward"
+                accessibilityHint="Tap to claim your daily reward points"
                 testID={testID}
               >
                 {isLoading ? (
@@ -158,7 +162,7 @@ function DailyRewardCardComponent({
                     <ChevronRight size={16} color={colors.primary} />
                   </>
                 )}
-              </TouchableOpacity>
+              </Pressable>
             </>
           ) : (
             <View style={styles.waitingInfo}>

@@ -1,5 +1,6 @@
+import { useReducedMotion } from "@/utils/accessibility";
+import { triggerHaptic } from "@/utils/quiz-utils";
 import { RADIUS, SPACING, TYPOGRAPHY, useTheme, withAlpha } from "@/utils/theme";
-import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -73,15 +74,23 @@ const FEATURES: FeatureItem[] = [
 
 /** Animated Logo with spring bounce and glow effect */
 const AnimatedLogo = React.memo(function AnimatedLogo({
-  colors
+  colors,
+  reduceMotion,
 }: {
-  colors: ReturnType<typeof useTheme>["colors"]
+  colors: ReturnType<typeof useTheme>["colors"];
+  reduceMotion: boolean;
 }) {
   const scale = useSharedValue(0.6);
   const opacity = useSharedValue(0);
   const glowOpacity = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) {
+      opacity.value = 1;
+      scale.value = 1;
+      glowOpacity.value = 0.25;
+      return;
+    }
     // Entrance animation
     opacity.value = withTiming(1, { duration: 400 });
     scale.value = withSpring(1, { damping: 12, stiffness: 100 });
@@ -98,7 +107,7 @@ const AnimatedLogo = React.memo(function AnimatedLogo({
         true
       )
     );
-  }, [scale, opacity, glowOpacity]);
+  }, [scale, opacity, glowOpacity, reduceMotion]);
 
   const logoStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
@@ -147,16 +156,18 @@ const FeatureCard = React.memo(function FeatureCard({
   feature,
   index,
   colors,
+  reduceMotion,
 }: {
   feature: FeatureItem;
   index: number;
   colors: ReturnType<typeof useTheme>["colors"];
+  reduceMotion: boolean;
 }) {
   const Icon = feature.icon;
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(600 + index * 100).springify().damping(15)}
+      entering={reduceMotion ? undefined : FadeInDown.delay(600 + index * 100).springify().damping(15)}
       style={[
         styles.featureCard,
         { backgroundColor: withAlpha(feature.color, 0.12) },
@@ -192,21 +203,24 @@ const FeatureCard = React.memo(function FeatureCard({
 const PrimaryCTAButton = React.memo(function PrimaryCTAButton({
   onPress,
   colors,
+  reduceMotion,
 }: {
   onPress: () => void;
   colors: ReturnType<typeof useTheme>["colors"];
+  reduceMotion: boolean;
 }) {
   const scale = useSharedValue(1);
   const shimmerPosition = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) return;
     // Subtle shimmer effect
     shimmerPosition.value = withRepeat(
       withTiming(1, { duration: 3000, easing: Easing.linear }),
       -1,
       false
     );
-  }, [shimmerPosition]);
+  }, [shimmerPosition, reduceMotion]);
 
   const buttonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -221,13 +235,13 @@ const PrimaryCTAButton = React.memo(function PrimaryCTAButton({
   }, [scale]);
 
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => { });
+    triggerHaptic('medium');
     onPress();
   }, [onPress]);
 
   return (
     <Animated.View
-      entering={FadeInUp.delay(900).springify().damping(12)}
+      entering={reduceMotion ? undefined : FadeInUp.delay(900).springify().damping(12)}
     >
       <Animated.View style={buttonStyle}>
         <Pressable
@@ -258,17 +272,19 @@ const PrimaryCTAButton = React.memo(function PrimaryCTAButton({
 const SecondarySignIn = React.memo(function SecondarySignIn({
   onPress,
   colors,
+  reduceMotion,
 }: {
   onPress: () => void;
   colors: ReturnType<typeof useTheme>["colors"];
+  reduceMotion: boolean;
 }) {
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => { });
+    triggerHaptic('light');
     onPress();
   }, [onPress]);
 
   return (
-    <Animated.View entering={FadeIn.delay(1000).duration(400)}>
+    <Animated.View entering={reduceMotion ? undefined : FadeIn.delay(1000).duration(400)}>
       <Pressable
         onPress={handlePress}
         style={styles.secondaryButton}
@@ -310,6 +326,7 @@ const SecondarySignIn = React.memo(function SecondarySignIn({
 export default function SplashScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
 
   // Announce screen purpose for screen readers
   useEffect(() => {
@@ -349,11 +366,11 @@ export default function SplashScreen(): React.ReactElement {
         ]}
       >
         {/* Hero Section: Logo */}
-        <AnimatedLogo colors={colors} />
+        <AnimatedLogo colors={colors} reduceMotion={reduceMotion} />
 
         {/* Headline Section */}
         <Animated.View
-          entering={FadeInDown.delay(300).springify().damping(15)}
+          entering={reduceMotion ? undefined : FadeInDown.delay(300).springify().damping(15)}
           style={styles.headlineSection}
         >
           <View style={styles.earningBadge}>
@@ -391,6 +408,7 @@ export default function SplashScreen(): React.ReactElement {
               feature={feature}
               index={index}
               colors={colors}
+              reduceMotion={reduceMotion}
             />
           ))}
         </View>
@@ -400,12 +418,12 @@ export default function SplashScreen(): React.ReactElement {
 
         {/* CTA Section */}
         <View style={styles.ctaSection}>
-          <PrimaryCTAButton onPress={handleGetStarted} colors={colors} />
-          <SecondarySignIn onPress={handleSignIn} colors={colors} />
+          <PrimaryCTAButton onPress={handleGetStarted} colors={colors} reduceMotion={reduceMotion} />
+          <SecondarySignIn onPress={handleSignIn} colors={colors} reduceMotion={reduceMotion} />
 
           {/* Trust indicator */}
           <Animated.View
-            entering={FadeIn.delay(1100).duration(400)}
+            entering={reduceMotion ? undefined : FadeIn.delay(1100).duration(400)}
             style={styles.trustIndicator}
           >
             <Text style={styles.trustText}>

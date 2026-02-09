@@ -18,7 +18,7 @@ import React, { memo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   StyleProp,
   ViewStyle,
@@ -31,6 +31,7 @@ import {
   SHADOWS,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface ProgressCardProps {
   /** Card title */
@@ -127,14 +128,17 @@ function ProgressCardComponent({
 
   if (onPress) {
     return (
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.7}
+      <Pressable
+        onPress={() => {
+          triggerHaptic('light');
+          onPress();
+        }}
         accessibilityRole="button"
         accessibilityLabel={`${title}: ${current} of ${goal} ${unit}`}
+        accessibilityHint={`Tap to view ${title.toLowerCase()} details`}
       >
         {content}
-      </TouchableOpacity>
+      </Pressable>
     );
   }
 

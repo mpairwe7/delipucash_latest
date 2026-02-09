@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, memo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Keyboard,
   Animated,
@@ -29,7 +29,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Search, X, Clock, TrendingUp, ArrowUpLeft } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -37,6 +36,7 @@ import {
   RADIUS,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface SearchOverlayProps {
   /** Whether the overlay is visible */
@@ -77,12 +77,12 @@ const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchIt
   const { colors } = useTheme();
 
   return (
-    <TouchableOpacity
+    <Pressable
       style={[styles.searchItem, { borderBottomColor: colors.border }]}
       onPress={() => onPress(item)}
-      activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`Search for ${item}`}
+      accessibilityHint="Tap to search for this term"
     >
       <View style={styles.searchItemLeft}>
         {icon}
@@ -92,21 +92,22 @@ const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchIt
       </View>
       <View style={styles.searchItemRight}>
         {showRemove && onRemove ? (
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              triggerHaptic('light');
               onRemove(item);
             }}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             accessibilityLabel={`Remove ${item} from history`}
+            accessibilityHint="Tap to remove this search from history"
           >
             <X size={18} color={colors.textMuted} strokeWidth={1.5} />
-          </TouchableOpacity>
+          </Pressable>
         ) : (
           <ArrowUpLeft size={18} color={colors.textMuted} strokeWidth={1.5} />
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 });
 
@@ -168,7 +169,7 @@ function SearchOverlayComponent({
 
   const handleClose = useCallback(() => {
     Keyboard.dismiss();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onClose();
   }, [onClose]);
 
@@ -181,14 +182,14 @@ function SearchOverlayComponent({
   }, [query, onSubmit, onClose]);
 
   const handleSelectItem = useCallback((item: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onChangeQuery(item);
     onSubmit(item);
     onClose();
   }, [onChangeQuery, onSubmit, onClose]);
 
   const handleClear = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onChangeQuery('');
     inputRef.current?.focus();
   }, [onChangeQuery]);
@@ -249,18 +250,19 @@ function SearchOverlayComponent({
                 accessibilityLabel={placeholder}
               />
               {query.length > 0 && (
-                <TouchableOpacity onPress={handleClear} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Pressable onPress={handleClear} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityHint="Tap to clear search text">
                   <X size={18} color={colors.textMuted} strokeWidth={1.5} />
-                </TouchableOpacity>
+                </Pressable>
               )}
             </View>
-            <TouchableOpacity
+            <Pressable
               onPress={handleClose}
               style={styles.cancelButton}
               accessibilityLabel="Cancel search"
+              accessibilityHint="Tap to close search"
             >
               <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
-            </TouchableOpacity>
+            </Pressable>
           </Animated.View>
 
           {/* Search Context Badge */}
@@ -294,9 +296,9 @@ function SearchOverlayComponent({
             <View style={styles.section}>
               <View style={styles.sectionHeader}>
                 <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Recent Searches</Text>
-                <TouchableOpacity onPress={onClearHistory} accessibilityLabel="Clear all recent searches">
+                <Pressable onPress={() => { triggerHaptic('light'); onClearHistory(); }} accessibilityLabel="Clear all recent searches" accessibilityHint="Tap to clear all search history">
                   <Text style={[styles.clearAllText, { color: colors.error }]}>Clear All</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               {recentSearches.map((item, index) => (
                 <SearchItem

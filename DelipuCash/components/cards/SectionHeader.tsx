@@ -16,7 +16,7 @@ import React, { memo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   StyleProp,
   ViewStyle,
@@ -27,6 +27,7 @@ import {
   SPACING,
   TYPOGRAPHY,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 export interface SectionHeaderProps {
   /** Section title */
@@ -70,18 +71,22 @@ function SectionHeaderComponent({
         </View>
       </View>
       {onSeeAll && (
-        <TouchableOpacity
-          onPress={onSeeAll}
+        <Pressable
+          onPress={() => {
+            triggerHaptic('light');
+            onSeeAll();
+          }}
           style={styles.actionButton}
-          activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={`${actionText} ${title}`}
+          accessibilityHint={`Tap to see all ${title.toLowerCase()}`}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
           <Text style={[styles.actionText, { color: colors.primary }]}>
             {actionText}
           </Text>
           <ChevronRight size={16} color={colors.primary} strokeWidth={2} />
-        </TouchableOpacity>
+        </Pressable>
       )}
     </View>
   );

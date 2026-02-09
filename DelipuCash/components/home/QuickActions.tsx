@@ -21,7 +21,7 @@ import React, { useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
 } from 'react-native';
@@ -40,7 +40,6 @@ import Animated, {
   FadeInDown,
   ZoomIn,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -49,6 +48,7 @@ import {
   SHADOWS,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
@@ -90,7 +90,7 @@ export interface QuickActionsProps {
   testID?: string;
 }
 
-const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function QuickActionButton({
   action,
@@ -113,7 +113,7 @@ function QuickActionButton({
   }, [scale]);
 
   const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('medium');
     action.onPress();
   }, [action]);
 
@@ -126,11 +126,10 @@ function QuickActionButton({
       entering={FadeInDown.delay(100 + index * 50).duration(400).springify()}
       style={styles.actionWrapper}
     >
-      <AnimatedTouchable
+      <AnimatedPressable
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        activeOpacity={0.9}
         style={[styles.actionButton, animatedStyle]}
         accessibilityRole="button"
         accessibilityLabel={action.label}
@@ -175,7 +174,7 @@ function QuickActionButton({
             </Animated.View>
           )}
         </LinearGradient>
-      </AnimatedTouchable>
+      </AnimatedPressable>
       
       {/* Label */}
       <Text

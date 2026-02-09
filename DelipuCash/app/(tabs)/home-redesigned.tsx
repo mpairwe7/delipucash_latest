@@ -31,12 +31,11 @@ import {
   View,
   Text,
   FlatList,
-  TouchableOpacity,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Platform,
   Dimensions,
-  Alert,
   ListRenderItem,
   AccessibilityInfo,
 } from "react-native";
@@ -66,7 +65,6 @@ import Animated, {
   interpolate,
   Extrapolation,
 } from "react-native-reanimated";
-import * as Haptics from "expo-haptics";
 import {
   SPACING,
   TYPOGRAPHY,
@@ -75,6 +73,8 @@ import {
   withAlpha,
   COMPONENT_SIZE,
 } from "@/utils/theme";
+import { triggerHaptic } from '@/utils/quiz-utils';
+import { useToast } from '@/components/ui/Toast';
 import useUser from "@/utils/useUser";
 import {
   StatCard,
@@ -273,6 +273,7 @@ export default function HomePage(): React.ReactElement {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [activeModal, setActiveModal] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   // Scroll animation value
   const scrollY = useSharedValue(0);
@@ -419,7 +420,7 @@ export default function HomePage(): React.ReactElement {
   // Refresh handler
   const onRefresh = useCallback(async (): Promise<void> => {
     setRefreshing(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     
     await Promise.all([
       refetch(),
@@ -447,51 +448,47 @@ export default function HomePage(): React.ReactElement {
   // Claim daily reward handler
   const handleClaimDailyReward = useCallback(async () => {
     if (!user) {
-      Alert.alert("Authentication Required", "Please log in to claim rewards.");
-      router.push("/(auth)/login");
+      showToast({ message: 'Please log in to claim rewards.', type: 'warning', action: 'Login', onAction: () => router.push('/(auth)/login') });
       return;
     }
     try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      triggerHaptic('success');
       await claimDailyReward.mutateAsync();
       AccessibilityInfo.announceForAccessibility("Daily reward claimed successfully!");
     } catch (error) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      triggerHaptic('error');
       console.error("Failed to claim daily reward:", error);
     }
-  }, [claimDailyReward, user]);
+  }, [claimDailyReward, user, showToast]);
 
   // Quick action handlers
   const handleAnswerQuestion = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('medium');
     if (!user) {
-      Alert.alert("Authentication Required", "Please log in to answer questions.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Login", onPress: () => router.push("/(auth)/login") },
-      ]);
+      showToast({ message: 'Please log in to answer questions.', type: 'warning', action: 'Login', onAction: () => router.push('/(auth)/login') });
       return;
     }
     router.push("/instant-reward-questions");
-  }, [user]);
+  }, [user, showToast]);
 
   const handleWatchVideo = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('medium');
     router.push("/(tabs)/videos-new");
   }, []);
 
   const handleTakeSurvey = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('medium');
     router.push("/(tabs)/surveys-new");
   }, []);
 
   const handleSearch = useCallback((query: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     console.log("Search:", query);
   }, []);
 
   // Ad handlers
   const handleAdClick = useCallback((ad: any) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     recordAdClick.mutate({
       adId: ad.id,
       placement: "home",
@@ -511,7 +508,7 @@ export default function HomePage(): React.ReactElement {
 
   // Explore modal handlers
   const handleExplorePress = useCallback((itemId: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic('medium');
     setActiveModal(itemId);
   }, []);
 
@@ -563,7 +560,7 @@ export default function HomePage(): React.ReactElement {
 
   // Handle earning opportunity press
   const handleOpportunityPress = useCallback((opportunity: EarningOpportunity) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     
     switch (opportunity.type) {
       case "video":
@@ -601,7 +598,7 @@ export default function HomePage(): React.ReactElement {
                 onNotificationPress={() => router.push("/notifications" as Href)}
                 onWalletPress={() => router.push("/(tabs)/withdraw")}
                 onStreakPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  triggerHaptic('light');
                   // Could open streak details modal
                 }}
               />
@@ -681,10 +678,10 @@ export default function HomePage(): React.ReactElement {
                     UGX {user?.walletBalance?.toLocaleString() || "0"}
                   </Text>
                   <View style={styles.walletActions}>
-                    <TouchableOpacity
+                    <Pressable
                       style={styles.walletButton}
                       onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        triggerHaptic('light');
                         router.push("/(tabs)/withdraw");
                       }}
                       accessibilityRole="button"
@@ -692,18 +689,19 @@ export default function HomePage(): React.ReactElement {
                       accessibilityHint="Tap to withdraw money from your wallet"
                     >
                       <Text style={styles.walletButtonText}>Withdraw</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </Pressable>
+                    <Pressable
                       style={[styles.walletButton, styles.walletButtonSecondary]}
                       onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        triggerHaptic('light');
                         router.push("/(tabs)/transactions");
                       }}
                       accessibilityRole="button"
                       accessibilityLabel="View transaction history"
+                      accessibilityHint="Tap to see your transaction history"
                     >
                       <Text style={styles.walletButtonText}>History</Text>
-                    </TouchableOpacity>
+                    </Pressable>
                   </View>
                   {/* Decorative elements */}
                   <View style={styles.walletDecor1} />

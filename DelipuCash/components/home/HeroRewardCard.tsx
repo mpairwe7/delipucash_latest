@@ -20,11 +20,11 @@
  * ```
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
   AccessibilityInfo,
@@ -43,7 +43,6 @@ import Animated, {
   FadeInDown,
   ZoomIn,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -53,6 +52,7 @@ import {
   BORDER_WIDTH,
   withAlpha,
 } from '@/utils/theme';
+import { triggerHaptic } from '@/utils/quiz-utils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const isSmallScreen = SCREEN_WIDTH < 375;
@@ -90,18 +90,24 @@ export interface HeroRewardCardProps {
 function ConfettiParticle({
   delay,
   color,
+  index,
 }: {
   delay: number;
   color: string;
+  index: number;
 }): React.ReactElement {
   const translateY = useSharedValue(0);
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(1);
   const rotation = useSharedValue(0);
 
+  // Deterministic pseudo-random based on index (no Math.random())
+  const seed = ((index * 2654435761) >>> 0) / 4294967296;
+  const seed2 = (((index + 7) * 2654435761) >>> 0) / 4294967296;
+
   useEffect(() => {
-    const randomX = (Math.random() - 0.5) * 200;
-    const randomRotation = Math.random() * 720 - 360;
+    const deterministicX = (seed - 0.5) * 200;
+    const deterministicRotation = seed2 * 720 - 360;
 
     translateY.value = withDelay(
       delay,
@@ -109,11 +115,11 @@ function ConfettiParticle({
     );
     translateX.value = withDelay(
       delay,
-      withTiming(randomX, { duration: 1000, easing: Easing.out(Easing.cubic) })
+      withTiming(deterministicX, { duration: 1000, easing: Easing.out(Easing.cubic) })
     );
     opacity.value = withDelay(delay, withTiming(0, { duration: 1000 }));
-    rotation.value = withDelay(delay, withTiming(randomRotation, { duration: 1000 }));
-  }, [delay, translateY, translateX, opacity, rotation]);
+    rotation.value = withDelay(delay, withTiming(deterministicRotation, { duration: 1000 }));
+  }, [delay, translateY, translateX, opacity, rotation, seed, seed2]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -269,7 +275,7 @@ export function HeroRewardCard({
   const handleClaim = useCallback(() => {
     if (!isAvailable || isLoading) return;
     
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    triggerHaptic('success');
     setShowConfetti(true);
     
     // Hide confetti after animation
@@ -279,7 +285,7 @@ export function HeroRewardCard({
   }, [isAvailable, isLoading, onClaim]);
 
   const handleStreakInfo = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic('light');
     onStreakInfoPress?.();
   }, [onStreakInfoPress]);
 
@@ -308,7 +314,7 @@ export function HeroRewardCard({
           <View style={styles.confettiContainer}>
             {['#FFD700', '#FF6B6B', '#4ECDC4', '#667eea', '#f093fb', '#44A08D'].map(
               (color, index) => (
-                <ConfettiParticle key={index} delay={index * 50} color={color} />
+                <ConfettiParticle key={index} delay={index * 50} color={color} index={index} />
               )
             )}
           </View>
@@ -348,12 +354,13 @@ export function HeroRewardCard({
             </View>
 
             {/* Streak info */}
-            <TouchableOpacity
+            <Pressable
               onPress={handleStreakInfo}
               style={styles.streakRow}
               accessibilityRole="button"
               accessibilityLabel={`${currentStreak} day streak`}
               accessibilityHint="Tap for streak details"
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
               <Flame
                 size={16}
@@ -374,7 +381,7 @@ export function HeroRewardCard({
                 size={14}
                 color={isAvailable ? 'rgba(255,255,255,0.7)' : colors.textMuted}
               />
-            </TouchableOpacity>
+            </Pressable>
 
             {/* Reward amount or countdown */}
             {isAvailable ? (
@@ -411,13 +418,13 @@ export function HeroRewardCard({
             {/* CTA Button */}
             {isAvailable && (
               <Animated.View style={pulseStyle}>
-                <TouchableOpacity
+                <Pressable
                   onPress={handleClaim}
                   disabled={isLoading}
-                  activeOpacity={0.85}
                   style={styles.claimButton}
                   accessibilityRole="button"
                   accessibilityLabel="Claim daily reward"
+                  accessibilityHint="Tap to claim your daily reward points"
                   accessibilityState={{ disabled: isLoading }}
                 >
                   {/* Glow effect */}
@@ -438,7 +445,7 @@ export function HeroRewardCard({
                       </>
                     )}
                   </LinearGradient>
-                </TouchableOpacity>
+                </Pressable>
               </Animated.View>
             )}
           </View>
