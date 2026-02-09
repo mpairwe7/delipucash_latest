@@ -40,7 +40,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Href, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
   Gift,
   HelpCircle,
@@ -814,7 +814,7 @@ export default function ProfileScreen(): React.ReactElement {
 
       {/* Notification Bell Header */}
       <Animated.View
-        entering={FadeIn}
+        entering={FadeIn.reduceMotion(ReduceMotion.System)}
         style={[
           styles.notificationHeader,
           {

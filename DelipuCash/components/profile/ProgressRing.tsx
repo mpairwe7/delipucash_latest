@@ -23,7 +23,7 @@
  * ```
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Dimensions, Text, ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, LinearGradient, Stop, G } from 'react-native-svg';
 import Animated, {
@@ -124,7 +124,8 @@ export function ProgressRing({
   });
 
   const percentage = Math.round(progress * 100);
-  const gradientId = `gradient-${Math.random().toString(36).substr(2, 9)}`;
+  const gradientIdRef = useRef(`gradient-${Math.random().toString(36).substr(2, 9)}`);
+  const gradientId = gradientIdRef.current;
 
   return (
     <View

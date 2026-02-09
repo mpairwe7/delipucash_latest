@@ -46,6 +46,7 @@ import Animated, {
   withSequence,
   withTiming,
   ZoomIn,
+  ReduceMotion,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
@@ -185,7 +186,7 @@ export function AchievementBadge({
           },
           animatedStyle,
         ]}
-        entering={animate ? ZoomIn.duration(400).springify() : undefined}
+        entering={animate ? ZoomIn.duration(400).springify().reduceMotion(ReduceMotion.System) : undefined}
       >
         {isUnlocked ? (
           <LinearGradient

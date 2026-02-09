@@ -43,6 +43,7 @@ import Animated, {
   FadeIn,
   FadeInDown,
   Layout,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -294,8 +295,8 @@ export function SettingsSection({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(animationDelay).duration(400).springify()}
-      layout={Layout.springify()}
+      entering={FadeInDown.delay(animationDelay).duration(400).springify().reduceMotion(ReduceMotion.System)}
+      layout={Layout.springify().reduceMotion(ReduceMotion.System)}
       style={styles.container}
       testID={testID}
     >
@@ -353,8 +354,8 @@ export function SettingsSection({
       {/* Items Container */}
       {(!collapsible || !isCollapsed) && (
         <Animated.View
-          entering={FadeIn.duration(200)}
-          style={[styles.itemsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+          entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+          style={[styles.itemsContainer, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}
         >
           {items.map((item, index) => (
             <SettingItemRow

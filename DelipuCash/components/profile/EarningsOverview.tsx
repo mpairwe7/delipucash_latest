@@ -47,6 +47,7 @@ import {
 import Animated, {
   FadeInDown,
   FadeIn,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -155,7 +156,7 @@ export function EarningsOverview({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(100).duration(500).springify()}
+      entering={FadeInDown.delay(100).duration(500).springify().reduceMotion(ReduceMotion.System)}
       style={[styles.container, SHADOWS.lg]}
       testID={testID}
     >
@@ -207,7 +208,7 @@ export function EarningsOverview({
 
         {/* Balance Display */}
         <View style={styles.balanceContainer}>
-          <Animated.View entering={FadeIn.delay(200).duration(400)}>
+          <Animated.View entering={FadeIn.delay(200).duration(400).reduceMotion(ReduceMotion.System)}>
             <AccessibleText
               variant="caption"
               customColor="rgba(255,255,255,0.75)"
@@ -301,6 +302,7 @@ export function EarningsOverview({
             activeOpacity={0.8}
             accessibilityRole="button"
             accessibilityLabel="View transaction history"
+            accessibilityHint="View your complete transaction history"
           >
             <History size={ICON_SIZE.lg} color="#FFF" strokeWidth={2} />
             <AccessibleText variant="button" customColor="#FFFFFF">

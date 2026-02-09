@@ -46,6 +46,7 @@ import {
 import Animated, {
   FadeIn,
   FadeInDown,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -245,7 +246,7 @@ export const TransactionsCard = memo(function TransactionsCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(150).duration(400).springify()}
+      entering={FadeInDown.delay(150).duration(400).springify().reduceMotion(ReduceMotion.System)}
       testID={testID}
     >
       <Animated.View style={[cardAnimatedStyle]}>
@@ -346,7 +347,7 @@ export const TransactionsCard = memo(function TransactionsCard({
               <View style={styles.streakProgress}>
                 <View style={[styles.progressBar, { backgroundColor: withAlpha(colors.warning, 0.2) }]}>
                   <Animated.View
-                    entering={FadeIn.delay(300).duration(500)}
+                    entering={FadeIn.delay(300).duration(500).reduceMotion(ReduceMotion.System)}
                     style={[
                       styles.progressFill,
                       {

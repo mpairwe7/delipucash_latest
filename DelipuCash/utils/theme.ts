@@ -170,8 +170,8 @@ export const COMPONENT_SIZE = {
     xl: 64,
     '2xl': 80,
   },
-  /** Touch target minimum (accessibility standard) */
-  touchTarget: 44,
+  /** Touch target minimum (WCAG 2.2 AAA standard) */
+  touchTarget: 48,
   /** Header heights */
   header: {
     compact: 44,

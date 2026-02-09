@@ -41,6 +41,7 @@ import Animated, {
   FadeInDown,
   FadeInUp,
   Layout,
+  ReduceMotion,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
@@ -217,7 +218,7 @@ export function AnimatedCard({
   const getEnteringAnimation = () => {
     if (animationDirection === 'none') return undefined;
     const Animation = animationDirection === 'up' ? FadeInUp : FadeInDown;
-    return Animation.delay(animationDelay).duration(400).springify();
+    return Animation.delay(animationDelay).duration(400).springify().reduceMotion(ReduceMotion.System);
   };
 
   const cardContent = (
@@ -270,7 +271,7 @@ export function AnimatedCard({
     return (
       <Animated.View
         entering={getEnteringAnimation()}
-        layout={Layout.springify()}
+        layout={Layout.springify().reduceMotion(ReduceMotion.System)}
       >
         {cardElement}
       </Animated.View>

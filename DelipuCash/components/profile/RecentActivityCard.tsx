@@ -37,7 +37,7 @@ import {
   Clock,
   LucideIcon,
 } from 'lucide-react-native';
-import Animated, { FadeInRight, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInRight, FadeInDown, ReduceMotion } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
   useTheme,
@@ -152,7 +152,7 @@ function ActivityItemRow({
 
   const content = (
     <Animated.View
-      entering={FadeInRight.delay(50 * index).duration(300)}
+      entering={FadeInRight.delay(50 * index).duration(300).reduceMotion(ReduceMotion.System)}
       style={styles.itemRow}
     >
       {/* Icon */}
@@ -227,8 +227,8 @@ export function RecentActivityCard({
 
   return (
     <Animated.View
-      entering={FadeInDown.delay(300).duration(400).springify()}
-      style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}
+      entering={FadeInDown.delay(300).duration(400).springify().reduceMotion(ReduceMotion.System)}
+      style={[styles.container, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}
       testID={testID}
     >
       {/* Header */}
@@ -244,6 +244,7 @@ export function RecentActivityCard({
             }}
             accessibilityRole="button"
             accessibilityLabel="View all activity"
+            accessibilityHint="Navigate to full activity history"
             style={styles.viewAllButton}
           >
             <AccessibleText variant="bodySmall" color="primary">
@@ -305,6 +306,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
+    minHeight: 48,
   },
   list: {},
   itemRow: {

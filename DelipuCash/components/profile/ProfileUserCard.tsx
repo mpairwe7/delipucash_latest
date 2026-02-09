@@ -23,7 +23,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
-  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -38,6 +37,7 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -63,18 +63,7 @@ const isTablet = SCREEN_WIDTH >= 768;
 // Avatar sizes
 const AVATAR_SIZE = isSmallScreen ? 72 : isTablet ? 100 : 84;
 
-// Platform shadow helper
-const getPlatformShadow = (elevation: number = 4) => {
-  if (Platform.OS === 'android') {
-    return { elevation };
-  }
-  return {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: elevation / 2 },
-    shadowOpacity: 0.08 + elevation * 0.02,
-    shadowRadius: elevation,
-  };
-};
+
 
 export interface ProfileUserCardProps {
   /** User's first name */
@@ -209,11 +198,10 @@ export function ProfileUserCard({
 
   return (
     <Animated.View
-      entering={FadeIn.delay(50).duration(400)}
+      entering={FadeIn.delay(50).duration(400).reduceMotion(ReduceMotion.System)}
       style={[
         styles.container,
-        { backgroundColor: colors.card, borderColor: colors.border },
-        getPlatformShadow(6),
+        { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) },
       ]}
       testID={testID}
       accessible
@@ -252,7 +240,7 @@ export function ProfileUserCard({
       </View>
 
       {/* Divider */}
-      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <View style={[styles.divider, { backgroundColor: withAlpha(colors.border, 0.6) }]} />
 
       {/* User Info Section */}
       <View style={styles.userSection}>
@@ -275,7 +263,7 @@ export function ProfileUserCard({
                 <Animated.Image
                   source={{ uri: avatarUri }}
                   style={styles.avatarImage}
-                  entering={FadeIn.duration(300)}
+                  entering={FadeIn.duration(300).reduceMotion(ReduceMotion.System)}
                 />
               ) : (
                 <LinearGradient
@@ -311,7 +299,7 @@ export function ProfileUserCard({
 
         {/* Name & Details */}
         <View style={styles.userInfo}>
-          <Animated.View entering={FadeInDown.delay(100).springify()}>
+          <Animated.View entering={FadeInDown.delay(100).springify().reduceMotion(ReduceMotion.System)}>
             <Text style={[styles.greeting, { color: colors.textMuted }]}>{greeting} 👋</Text>
             <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
               {fullName}
@@ -328,7 +316,7 @@ export function ProfileUserCard({
 
       {/* Stats Row - Earnings & Streak */}
       <Animated.View
-        entering={FadeInUp.delay(200).springify()}
+        entering={FadeInUp.delay(200).springify().reduceMotion(ReduceMotion.System)}
         style={styles.statsContainer}
       >
         {/* Wallet Balance */}
@@ -439,12 +427,12 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     letterSpacing: -0.2,
   },
   cardSubtitle: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
     marginTop: 2,
   },
   editButton: {
@@ -499,7 +487,7 @@ const styles = StyleSheet.create({
   },
   avatarInitials: {
     fontSize: AVATAR_SIZE * 0.35,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: '#FFFFFF',
     letterSpacing: 1,
   },
@@ -531,12 +519,12 @@ const styles = StyleSheet.create({
   },
   greeting: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
     marginBottom: 2,
   },
   userName: {
     fontSize: isSmallScreen ? TYPOGRAPHY.fontSize.xl : TYPOGRAPHY.fontSize['2xl'],
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     letterSpacing: -0.5,
     marginBottom: SPACING.xs,
   },
@@ -551,7 +539,7 @@ const styles = StyleSheet.create({
   },
   verifiedText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 
   // Stats Container
@@ -567,19 +555,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: SPACING.md,
     paddingHorizontal: SPACING.sm,
-    borderRadius: RADIUS.lg,
+    borderRadius: RADIUS.xl,
+    minHeight: 48,
   },
   statContent: {
     alignItems: 'center',
   },
   statLabel: {
     fontSize: TYPOGRAPHY.fontSize.xs,
-    fontFamily: 'Roboto_400Regular',
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
     marginBottom: 2,
   },
   statValue: {
     fontSize: isSmallScreen ? TYPOGRAPHY.fontSize.base : TYPOGRAPHY.fontSize.lg,
-    fontFamily: 'Roboto_700Bold',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     letterSpacing: -0.3,
   },
 
@@ -591,6 +580,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.md,
     borderTopWidth: 1,
+    minHeight: 48,
   },
   ctaContent: {
     flexDirection: 'row',
@@ -599,7 +589,7 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontFamily: 'Roboto_500Medium',
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     letterSpacing: -0.2,
   },
 });

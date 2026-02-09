@@ -52,6 +52,7 @@ import Animated, {
   FadeIn,
   FadeInDown,
   FadeInUp,
+  ReduceMotion,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
@@ -215,7 +216,7 @@ export function ProfileHeader({
 
   return (
     <Animated.View
-      entering={FadeIn.delay(50).duration(400)}
+      entering={FadeIn.delay(50).duration(400).reduceMotion(ReduceMotion.System)}
       style={[styles.container, { backgroundColor: colors.background }]}
       testID={testID}
       accessible
@@ -243,7 +244,7 @@ export function ProfileHeader({
                 <Animated.Image
                   source={{ uri: avatarUri }}
                   style={styles.avatarImage}
-                  entering={FadeIn.duration(300)}
+                  entering={FadeIn.duration(300).reduceMotion(ReduceMotion.System)}
                 />
               ) : (
                 <LinearGradient
@@ -279,7 +280,7 @@ export function ProfileHeader({
 
         {/* Name & Info Section */}
         <View style={styles.infoContainer}>
-          <Animated.View entering={FadeInDown.delay(100).springify()}>
+          <Animated.View entering={FadeInDown.delay(100).springify().reduceMotion(ReduceMotion.System)}>
             <AccessibleText
               variant="caption"
               color="textMuted"
@@ -331,7 +332,7 @@ export function ProfileHeader({
 
       {/* Stats Row */}
       <Animated.View
-        entering={FadeInUp.delay(200).springify()}
+        entering={FadeInUp.delay(200).springify().reduceMotion(ReduceMotion.System)}
         style={styles.statsContainer}
       >
         {/* Wallet Balance */}
@@ -368,6 +369,7 @@ export function ProfileHeader({
           activeOpacity={0.7}
           accessibilityLabel={`Total earnings: ${formatCurrency(totalEarnings)}`}
           accessibilityRole="button"
+          accessibilityHint="View earnings details"
         >
           <View style={[styles.statIcon, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
             <TrendingUp size={ICON_SIZE.base} color={colors.success} strokeWidth={2} />

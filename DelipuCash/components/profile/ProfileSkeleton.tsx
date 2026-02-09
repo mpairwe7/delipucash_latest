@@ -120,9 +120,9 @@ export function ProfileSkeleton(): React.ReactElement {
 
         {/* Stats row */}
         <View style={styles.statsRow}>
-          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.lg} />
-          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.lg} />
-          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.lg} />
+          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.xl} />
+          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.xl} />
+          <SkeletonBox width="30%" height={60} borderRadius={RADIUS.xl} />
         </View>
       </View>
 
@@ -141,10 +141,10 @@ export function ProfileSkeleton(): React.ReactElement {
       </View>
 
       <View style={styles.quickActionsGrid}>
-        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.lg} />
-        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.lg} />
-        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.lg} style={{ marginTop: SPACING.sm }} />
-        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.lg} style={{ marginTop: SPACING.sm }} />
+        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.xl} />
+        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.xl} />
+        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.xl} style={{ marginTop: SPACING.sm }} />
+        <SkeletonBox width="48%" height={120} borderRadius={RADIUS.xl} style={{ marginTop: SPACING.sm }} />
       </View>
 
       {/* Settings Section Skeleton */}
@@ -152,7 +152,7 @@ export function ProfileSkeleton(): React.ReactElement {
         <SkeletonBox width={100} height={20} />
       </View>
 
-      <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) }]}>
         {[1, 2, 3].map((i) => (
           <View key={i} style={[styles.settingRow, i < 3 && { borderBottomWidth: 1, borderBottomColor: withAlpha(colors.border, 0.6) }]}>
             <SkeletonBox width={40} height={40} borderRadius={10} />
