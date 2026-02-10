@@ -1001,7 +1001,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
 
                   <View
                     style={themedStyles.placementGrid}
-                    accessibilityRole="radiogroup"
+                    role="radiogroup"
                     accessibilityLabel="Ad placement options"
                   >
                     {(Object.keys(placementLabels) as AdPlacement[]).map((placement) => {
@@ -1149,7 +1149,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
 
                   <View
                     style={themedStyles.adTypeGrid}
-                    accessibilityRole="radiogroup"
+                    role="radiogroup"
                     accessibilityLabel="Ad type options"
                   >
                     {(Object.keys(typeLabels) as FormState["type"][]).map((type) => {

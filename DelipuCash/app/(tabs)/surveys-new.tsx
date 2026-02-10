@@ -741,7 +741,7 @@ export default function SurveysScreen(): React.ReactElement {
           <View
             style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             accessible
-            accessibilityRole="summary"
+            role="summary"
           >
             <FileText size={48} color={colors.textMuted} strokeWidth={1.5} />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>

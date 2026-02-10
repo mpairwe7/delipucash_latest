@@ -286,7 +286,7 @@ function FeedTabsComponent({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        accessibilityRole="tablist"
+        role="tablist"
       >
         {tabs.map((tab, index) => (
           <TabButton

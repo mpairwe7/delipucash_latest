@@ -875,7 +875,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
           },
           isExpanded && SHADOWS.md,
         ]}
-        accessibilityRole="group"
+        role="group"
         accessibilityLabel={`Question ${questionIndex + 1}: ${question.text || 'Untitled'}`}
       >
         <Pressable
