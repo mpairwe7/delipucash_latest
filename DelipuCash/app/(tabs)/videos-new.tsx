@@ -140,19 +140,20 @@ const AD_INSERTION_CONFIG = {
 // ============================================================================
 
 /** 2026 Standard: Glassmorphism pill tab with animated indicator */
-const AnimatedTabPill = React.memo(({ 
-  tab, 
-  isActive, 
-  onPress, 
+const AnimatedTabPill = React.memo(({
+  tab,
+  isActive,
+  onPress,
   label,
   icon,
-}: { 
-  tab: FeedTab; 
-  isActive: boolean; 
+}: {
+  tab: FeedTab;
+  isActive: boolean;
   onPress: () => void;
   label: string;
   icon?: React.ReactNode;
 }) => {
+  const { colors, isDark } = useTheme();
   const scale = useSharedValue(1);
   const bgOpacity = useSharedValue(isActive ? 1 : 0);
 
@@ -160,9 +161,12 @@ const AnimatedTabPill = React.memo(({
     bgOpacity.value = withSpring(isActive ? 1 : 0, { damping: 20, stiffness: 300 });
   }, [isActive, bgOpacity]);
 
+  const activeColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
+  const inactiveColor = 'transparent';
+
   const pillStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
-    backgroundColor: `rgba(255, 255, 255, ${interpolate(bgOpacity.value, [0, 1], [0, 0.15])})`,
+    backgroundColor: bgOpacity.value > 0.5 ? activeColor : inactiveColor,
   }));
 
   const textStyle = useAnimatedStyle(() => ({
@@ -187,12 +191,12 @@ const AnimatedTabPill = React.memo(({
       accessibilityState={{ selected: isActive }}
       accessibilityLabel={`${label} tab`}
     >
-      <Animated.View style={[styles.tabPill, pillStyle]}>
+      <Animated.View style={[styles.tabPill, { borderColor: withAlpha(colors.text, 0.08) }, pillStyle]}>
         {icon && <View style={styles.tabPillIcon}>{icon}</View>}
-        <Animated.Text style={[styles.tabPillText, textStyle, isActive && styles.tabPillTextActive]}>
+        <Animated.Text style={[styles.tabPillText, { color: colors.tabInactive }, textStyle, isActive && { ...styles.tabPillTextActive, color: colors.tabActive }]}>
           {label}
         </Animated.Text>
-        <Animated.View style={[styles.tabPillIndicator, indicatorStyle]} />
+        <Animated.View style={[styles.tabPillIndicator, { backgroundColor: colors.tabActive }, indicatorStyle]} />
       </Animated.View>
     </Pressable>
   );
@@ -201,24 +205,27 @@ const AnimatedTabPill = React.memo(({
 AnimatedTabPill.displayName = 'AnimatedTabPill';
 
 /** 2026 Standard: Network quality badge for data saver awareness */
-const NetworkBadge = React.memo(({ isDataSaver, onToggle }: { isDataSaver: boolean; onToggle: () => void }) => (
-  <Pressable
-    onPress={() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      onToggle();
-    }}
-    style={[styles.networkBadge, isDataSaver && styles.networkBadgeActive]}
-    accessibilityRole="switch"
-    accessibilityState={{ checked: isDataSaver }}
-    accessibilityLabel={isDataSaver ? 'Data saver on. Tap to disable' : 'Data saver off. Tap to enable'}
-  >
-    {isDataSaver ? (
-      <WifiOff size={12} color="#FFA726" strokeWidth={2.5} />
-    ) : (
-      <Zap size={12} color="#4CAF50" strokeWidth={2.5} />
-    )}
-  </Pressable>
-));
+const NetworkBadge = React.memo(({ isDataSaver, onToggle }: { isDataSaver: boolean; onToggle: () => void }) => {
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onToggle();
+      }}
+      style={[styles.networkBadge, { backgroundColor: withAlpha(colors.text, 0.08), borderColor: withAlpha(colors.text, 0.06) }, isDataSaver && styles.networkBadgeActive]}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: isDataSaver }}
+      accessibilityLabel={isDataSaver ? 'Data saver on. Tap to disable' : 'Data saver off. Tap to enable'}
+    >
+      {isDataSaver ? (
+        <WifiOff size={12} color="#FFA726" strokeWidth={2.5} />
+      ) : (
+        <Zap size={12} color="#4CAF50" strokeWidth={2.5} />
+      )}
+    </Pressable>
+  );
+});
 
 NetworkBadge.displayName = 'NetworkBadge';
 
@@ -274,7 +281,7 @@ AICuratedChip.displayName = 'AICuratedChip';
 // ============================================================================
 
 export default function VideosScreen(): React.ReactElement {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
 
   // ============================================================================
   // SYSTEM BARS - Industry-standard immersive video experience
@@ -818,9 +825,9 @@ export default function VideosScreen(): React.ReactElement {
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <View style={[styles.container, systemBarsContainerStyle, { backgroundColor: '#000000' }]}>
+      <View style={[styles.container, systemBarsContainerStyle, { backgroundColor: colors.background }]}>
         {/* StatusBar configured via useSystemBars hook for intelligent management */}
-        <StatusBar style={statusBarStyle} translucent animated />
+        <StatusBar style={isDark ? 'light' : 'dark'} translucent animated />
 
         {/* ──────────────────────────────────────────────────────────── */}
         {/* 2026 HEADER: Glassmorphism + adaptive density              */}
@@ -837,38 +844,39 @@ export default function VideosScreen(): React.ReactElement {
           accessibilityRole="toolbar"
           accessibilityLabel="Video feed controls"
       >
-          {/* Glassmorphism blur background */}
+          {/* Glassmorphism blur background — pointerEvents none so touches pass through to video layer */}
           <BlurView
             intensity={40}
-            tint="dark"
+            tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
+            pointerEvents="none"
           />
-          <View style={styles.headerScrim} />
+          <View style={[styles.headerScrim, { backgroundColor: withAlpha(colors.background, 0.35) }]} pointerEvents="none" />
 
           {/* Search Bar Row - 2026: Voice search affordance + data saver */}
           <View style={styles.searchRow}>
             <Pressable
-              style={[styles.searchContainer, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+              style={[styles.searchContainer, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.08) }]}
               onPress={() => setSearchOverlayVisible(true)}
               accessibilityRole="search"
               accessibilityLabel="Search videos"
               accessibilityHint="Opens search overlay with voice and text search"
             >
-              <Search size={ICON_SIZE.sm} color={withAlpha('#FFFFFF', 0.7)} strokeWidth={2} />
+              <Search size={ICON_SIZE.sm} color={withAlpha(colors.text, 0.7)} strokeWidth={2} />
               <Text
-                style={[styles.searchPlaceholder, { color: searchQuery ? '#FFFFFF' : withAlpha('#FFFFFF', 0.5) }]}
+                style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : withAlpha(colors.text, 0.5) }]}
                 numberOfLines={1}
               >
                 {searchQuery || 'Search videos, creators...'}
               </Text>
               {searchQuery.length > 0 ? (
                 <Pressable onPress={clearSearch} accessibilityLabel="Clear search" hitSlop={8}>
-                  <X size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                  <X size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
                 </Pressable>
               ) : (
                 /* 2026: Voice search affordance */
-                <View style={styles.voiceSearchBtn}>
-                  <Mic size={14} color={withAlpha('#FFFFFF', 0.6)} strokeWidth={2} />
+                <View style={[styles.voiceSearchBtn, { backgroundColor: withAlpha(colors.text, 0.1) }]}>
+                  <Mic size={14} color={withAlpha(colors.text, 0.6)} strokeWidth={2} />
                 </View>
               )}
             </Pressable>
@@ -879,27 +887,27 @@ export default function VideosScreen(): React.ReactElement {
               <NetworkBadge isDataSaver={isDataSaverMode} onToggle={toggleDataSaver} />
 
               <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.06) }]}
                 onPress={toggleViewMode}
                 accessibilityRole="button"
                 accessibilityLabel={feedMode === 'vertical' ? 'Switch to grid view' : 'Switch to vertical feed'}
               >
                 {feedMode === 'vertical' ? (
-                  <LayoutGrid size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                  <LayoutGrid size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
                 ) : (
-                  <Play size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                  <Play size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
                 )}
               </Pressable>
 
               <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha('#FFFFFF', 0.1) }]}
+                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.06) }]}
                 onPress={() => router.push('/notifications' as Href)}
                 accessibilityRole="button"
                 accessibilityLabel={`Notifications, ${unreadCount || 0} unread`}
               >
-                <Bell size={ICON_SIZE.sm} color="#FFFFFF" strokeWidth={2} />
+                <Bell size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
                 {(unreadCount ?? 0) > 0 && (
-                  <View style={styles.notificationBadge}>
+                  <View style={[styles.notificationBadge, { borderColor: colors.background }]}>
                     <Text style={styles.notificationCount}>
                       {(unreadCount ?? 0) > 99 ? '99+' : unreadCount}
                     </Text>
@@ -917,21 +925,21 @@ export default function VideosScreen(): React.ReactElement {
                 isActive={activeTab === 'following'}
                 onPress={() => handleTabChange('following')}
                 label="Following"
-                icon={<Users size={12} color="#FFFFFF" strokeWidth={2} />}
+                icon={<Users size={12} color={colors.text} strokeWidth={2} />}
               />
               <AnimatedTabPill
                 tab="for-you"
                 isActive={activeTab === 'for-you'}
                 onPress={() => handleTabChange('for-you')}
                 label="For You"
-                icon={<Sparkles size={12} color="#FFFFFF" strokeWidth={2} />}
+                icon={<Sparkles size={12} color={colors.text} strokeWidth={2} />}
               />
               <AnimatedTabPill
                 tab="trending"
                 isActive={activeTab === 'trending'}
                 onPress={() => handleTabChange('trending')}
                 label="Trending"
-                icon={<TrendingUp size={12} color="#FFFFFF" strokeWidth={2} />}
+                icon={<TrendingUp size={12} color={colors.text} strokeWidth={2} />}
               />
             </View>
 
@@ -1104,14 +1112,13 @@ const styles = StyleSheet.create({
     right: 0,
     flexDirection: 'column',
     paddingHorizontal: SPACING.md,
-    paddingBottom: SPACING.sm,
+    paddingBottom: SPACING.base,
     zIndex: Z_INDEX.sticky,
-    gap: SPACING.xs,
+    gap: SPACING.sm,
     overflow: 'hidden',
   },
   headerScrim: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha('#000000', 0.35),
   },
 
   // ── SEARCH ROW ──
@@ -1130,7 +1137,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     gap: SPACING.sm,
     borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.08),
   },
   searchPlaceholder: {
     flex: 1,
@@ -1141,7 +1147,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: withAlpha('#FFFFFF', 0.1),
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1152,7 +1157,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.06),
   },
   headerRight: {
     flexDirection: 'row',
@@ -1180,7 +1184,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     gap: SPACING.xs,
     borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.08),
   },
   tabPillIcon: {
     opacity: 0.8,
@@ -1188,12 +1191,10 @@ const styles = StyleSheet.create({
   tabPillText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
-    color: withAlpha('#FFFFFF', 0.6),
     letterSpacing: 0.3,
   },
   tabPillTextActive: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    color: '#FFFFFF',
   },
   tabPillIndicator: {
     position: 'absolute',
@@ -1201,7 +1202,6 @@ const styles = StyleSheet.create({
     left: '30%',
     right: '30%',
     height: 2,
-    backgroundColor: '#FFFFFF',
     borderRadius: 1,
   },
 
@@ -1235,11 +1235,9 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: withAlpha('#FFFFFF', 0.08),
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.06),
   },
   networkBadgeActive: {
     backgroundColor: withAlpha('#FFA726', 0.15),
@@ -1283,7 +1281,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 3,
     borderWidth: 1.5,
-    borderColor: '#000000',
   },
   notificationCount: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,

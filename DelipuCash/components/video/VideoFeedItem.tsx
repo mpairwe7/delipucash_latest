@@ -72,7 +72,6 @@ import {
   RotateCcw,
   MoreHorizontal,
   BadgeCheck,
-  Gift,
   Captions,
   Shield,
   Clock,
@@ -840,22 +839,6 @@ function VideoFeedItemComponent({
             </View>
           )}
 
-          {/* Mute Button (top right) */}
-          <Pressable
-            style={styles.muteButton}
-            onPress={handleToggleMute}
-            accessibilityRole="button"
-            accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
-          >
-            <View style={[styles.iconButtonBg, { backgroundColor: withAlpha('#000000', 0.5) }]}>
-              {isMuted ? (
-                <VolumeX size={20} color="#FFFFFF" />
-              ) : (
-                <Volume2 size={20} color="#FFFFFF" />
-              )}
-            </View>
-          </Pressable>
-
           {/* 2026: Persistent top-corner Ad watermark for sponsored content (FTC/IAB compliant) */}
           {video.isSponsored && (
             <View style={styles.adWatermark}>
@@ -863,8 +846,23 @@ function VideoFeedItemComponent({
             </View>
           )}
 
-          {/* Side Action Bar - 2026: Creator economy + engagement metrics */}
+          {/* Side Action Bar - 2026: Standard vertical action column (TikTok/Reels pattern) */}
           <View style={styles.sideActions}>
+            {/* Mute/Unmute — top of action bar for quick access */}
+            <Pressable
+              onPress={handleToggleMute}
+              style={styles.actionButton}
+              accessibilityRole="button"
+              accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
+              accessibilityState={{ selected: isMuted }}
+            >
+              {isMuted ? (
+                <VolumeX size={26} color="#FFFFFF" strokeWidth={2} />
+              ) : (
+                <Volume2 size={26} color="#FFFFFF" strokeWidth={2} />
+              )}
+            </Pressable>
+
             {/* Like - 2026: Enhanced animation feedback */}
             <Pressable
               onPress={() => {
@@ -884,7 +882,7 @@ function VideoFeedItemComponent({
             >
               <Animated.View style={likeButtonStyle}>
                 <Heart
-                  size={30}
+                  size={28}
                   color={isLiked ? '#FF2D55' : '#FFFFFF'}
                   fill={isLiked ? '#FF2D55' : 'transparent'}
                   strokeWidth={isLiked ? 0 : 2}
@@ -903,24 +901,8 @@ function VideoFeedItemComponent({
               accessibilityRole="button"
               accessibilityLabel={`Comment on video. ${formatViews(video.commentsCount || 0)} comments`}
             >
-              <MessageCircle size={30} color="#FFFFFF" strokeWidth={2} />
+              <MessageCircle size={28} color="#FFFFFF" strokeWidth={2} />
               <Text style={styles.actionCount}>{formatViews(video.commentsCount || 0)}</Text>
-            </Pressable>
-
-            {/* 2026 Creator Economy: Gift/Tip Button */}
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                // Gift/tip flow - triggers creator payment modal
-              }}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel="Send a gift or tip to the creator"
-            >
-              <View style={styles.giftButtonGlow}>
-                <Gift size={28} color="#FFD700" strokeWidth={2} />
-              </View>
-              <Text style={[styles.actionCount, { color: '#FFD700' }]}>Gift</Text>
             </Pressable>
 
             {/* Share */}
@@ -933,7 +915,7 @@ function VideoFeedItemComponent({
               accessibilityRole="button"
               accessibilityLabel="Share video"
             >
-              <Share2 size={28} color="#FFFFFF" strokeWidth={2} />
+              <Share2 size={26} color="#FFFFFF" strokeWidth={2} />
               <Text style={styles.actionCount}>Share</Text>
             </Pressable>
 
@@ -949,7 +931,7 @@ function VideoFeedItemComponent({
               accessibilityState={{ selected: isBookmarked }}
             >
               <Bookmark
-                size={28}
+                size={26}
                 color={isBookmarked ? colors.warning : '#FFFFFF'}
                 fill={isBookmarked ? colors.warning : 'transparent'}
                 strokeWidth={2}
@@ -1179,12 +1161,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
-  muteButton: {
-    position: 'absolute',
-    top: SPACING['3xl'],
-    right: SPACING.md,
-    zIndex: 10,
-  },
   iconButtonBg: {
     width: 40,
     height: 40,
@@ -1214,11 +1190,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
-  },
-  giftButtonGlow: {
-    padding: 4,
-    borderRadius: 20,
-    backgroundColor: withAlpha('#FFD700', 0.15),
   },
   bottomInfo: {
     position: 'absolute',
