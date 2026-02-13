@@ -327,7 +327,7 @@ export {
   FREE_LIVESTREAM_LIMIT_SECONDS,
   PREMIUM_LIVESTREAM_LIMIT_SECONDS,
   PREMIUM_RECORDING_LIMIT_SECONDS,
-  // Selectors
+  // Selectors — Upload
   selectPremiumStatus,
   selectHasVideoPremium,
   selectMaxUploadSize,
@@ -336,20 +336,46 @@ export {
   selectCurrentUpload,
   selectUploadHistory,
   selectIsUploading,
+  // Selectors — Recording
   selectCurrentRecording,
   selectRecordingHistory,
   selectIsRecording,
+  // Selectors — Livestream
   selectCurrentLivestream,
   selectLivestreamHistory,
   selectIsLive,
+  // Selectors — UI
   selectActiveWarning,
   selectShowUpgradePrompt,
   selectLastError,
+  // Selectors — Trending Slider
+  selectTrendingSlider,
+  selectTrendingSliderIndex,
+  // Selectors — Player
+  selectPlayer,
+  selectCurrentVideoId,
+  selectIsPlaying,
+  selectIsMuted,
+  // Selectors — Watch History & Queue
+  selectWatchHistory,
+  selectRecentlyWatched,
+  selectVideoQueue,
+  selectQueueLength,
+  // Selectors — Liked (aliased to avoid collision with VideoFeedStore)
+  selectLikedVideoIds as selectVideoStoreLikedVideoIds,
   // Computed selectors
   selectUploadProgress,
   selectRecordingProgress,
   selectLivestreamProgress,
   selectLivestreamStatus,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useVideoPremiumStatus,
+  useVideoTrendingSlider,
+  useVideoPlayer,
+  useVideoUploadProgress,
+  useVideoRecordingProgress,
+  useVideoLivestreamStatus,
+  useVideoLivestreamProgress,
 } from './VideoStore';
 export type {
   UploadStatus,
@@ -402,7 +428,7 @@ export {
   // Selectors
   selectActiveVideo,
   selectFeedMode,
-  selectActiveTab,
+  selectActiveTab as selectFeedActiveTab,
   selectVideos,
   selectUI,
   selectGesture,
@@ -413,6 +439,14 @@ export {
   selectIsVideoBookmarked,
   selectIsActiveVideo,
   selectShouldVideoPlay,
+  // Lifecycle Selectors
+  selectIsScreenFocused,
+  selectIsAppActive,
+  selectIsPlaybackAllowed,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useActiveVideo,
+  useFeedUI,
+  useFeedGesture,
 } from './VideoFeedStore';
 export type {
   FeedMode,

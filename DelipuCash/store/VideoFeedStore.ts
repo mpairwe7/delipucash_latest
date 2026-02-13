@@ -13,7 +13,8 @@
  */
 
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
+import { subscribeWithSelector, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import { Video } from '@/types';
 
 // ============================================================================
@@ -256,6 +257,7 @@ const initialState: VideoFeedState = {
 // ============================================================================
 
 export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
+  devtools(
   subscribeWithSelector((set, get) => ({
     ...initialState,
 
@@ -863,7 +865,9 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     reset: () => {
       set(initialState);
     },
-  }))
+  })),
+  { name: 'VideoFeedStore', enabled: __DEV__ },
+  )
 );
 
 // ============================================================================
@@ -902,3 +906,16 @@ export const selectIsScreenFocused = (state: VideoFeedState) => state.isScreenFo
 export const selectIsAppActive = (state: VideoFeedState) => state.isAppActive;
 export const selectIsPlaybackAllowed = (state: VideoFeedState) =>
   state.isScreenFocused && state.isAppActive && state.feedMode !== 'grid' && !state.ui.showComments;
+
+// ============================================================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ============================================================================
+
+/** Active video state — shallow-compared, re-render safe */
+export const useActiveVideo = () => useVideoFeedStore(useShallow(selectActiveVideo));
+
+/** Feed UI state — shallow-compared, re-render safe */
+export const useFeedUI = () => useVideoFeedStore(useShallow(selectUI));
+
+/** Gesture state — shallow-compared, re-render safe */
+export const useFeedGesture = () => useVideoFeedStore(useShallow(selectGesture));

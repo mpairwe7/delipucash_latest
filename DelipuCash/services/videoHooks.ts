@@ -14,6 +14,7 @@
 import { useMemo } from 'react';
 import {
   useQuery,
+  useSuspenseQuery,
   useMutation,
   useQueryClient,
   useInfiniteQuery,
@@ -175,8 +176,9 @@ export function useLikeVideo(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'like'],
     mutationFn: async ({ videoId, isLiked }) => {
-      const response = isLiked 
+      const response = isLiked
         ? await videoApi.unlike(videoId)
         : await videoApi.like(videoId);
       if (!response.success) throw new Error(response.error);
@@ -235,6 +237,7 @@ export function useBookmarkVideo(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'bookmark'],
     mutationFn: async ({ videoId }) => {
       const response = await videoApi.toggleBookmark(videoId);
       if (!response.success) throw new Error(response.error);
@@ -260,6 +263,7 @@ export function useRecordVideoView(): UseMutationResult<{ views: number }, Error
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'recordView'],
     mutationFn: async (videoId: string) => {
       const response = await videoApi.incrementView(videoId);
       if (!response.success) throw new Error(response.error);
@@ -329,6 +333,7 @@ export function useAddVideoComment(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'addComment'],
     mutationFn: async ({ videoId, text }) => {
       const response = await videoApi.addComment(videoId, text);
       if (!response.success) throw new Error(response.error);
@@ -391,6 +396,7 @@ export function useDeleteVideoComment(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'deleteComment'],
     mutationFn: async ({ videoId, commentId }) => {
       const response = await videoApi.deleteComment(videoId, commentId);
       if (!response.success) throw new Error(response.error);
@@ -534,6 +540,7 @@ export function useUploadVideo(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'upload'],
     mutationFn: async (data) => {
       const response = await videoApi.upload(data);
       if (!response.success) throw new Error(response.error);
@@ -552,6 +559,7 @@ export function useDeleteVideo(): UseMutationResult<{ deleted: boolean }, Error,
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'delete'],
     mutationFn: async (videoId: string) => {
       const response = await videoApi.delete(videoId);
       if (!response.success) throw new Error(response.error);
@@ -657,6 +665,61 @@ export function useVideoState(videoId: string) {
 }
 
 // ============================================================================
+// SUSPENSE HOOKS (2026 — use inside <Suspense> boundary)
+// ============================================================================
+
+/**
+ * Suspense-enabled video detail.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseVideoDetails(videoId: string) {
+  return useSuspenseQuery({
+    queryKey: videoQueryKeys.detail(videoId),
+    queryFn: async () => {
+      const response = await videoApi.getById(videoId);
+      if (!response.success) throw new Error(response.error || 'Failed to fetch video');
+      return response.data;
+    },
+    staleTime: 1000 * 60,
+  });
+}
+
+/**
+ * Suspense-enabled video comments.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseVideoComments(videoId: string) {
+  return useSuspenseQuery({
+    queryKey: videoQueryKeys.comments(videoId),
+    queryFn: async (): Promise<CommentsData> => {
+      const response = await videoApi.getComments(videoId);
+      if (!response.success) throw new Error(response.error || 'Failed to fetch comments');
+      return {
+        comments: response.data,
+        pagination: { page: 1, limit: 20, total: response.data.length, totalPages: 1 },
+      };
+    },
+    staleTime: 1000 * 30,
+  });
+}
+
+/**
+ * Suspense-enabled trending videos.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseTrendingVideos(limit: number = 10) {
+  return useSuspenseQuery({
+    queryKey: videoQueryKeys.trending(),
+    queryFn: async () => {
+      const response = await videoApi.getTrending(limit);
+      if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -681,4 +744,8 @@ export default {
   useVideoStats,
   useVideoState,
   videoQueryKeys,
+  // Suspense variants
+  useSuspenseVideoDetails,
+  useSuspenseVideoComments,
+  useSuspenseTrendingVideos,
 };

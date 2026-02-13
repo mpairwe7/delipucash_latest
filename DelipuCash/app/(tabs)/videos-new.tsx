@@ -309,26 +309,25 @@ export default function VideosScreen(): React.ReactElement {
   // isPlaybackAllowed is used in VerticalVideoFeed for granular control
   // bookmarkedVideoIds available via: useVideoFeedStore(selectBookmarkedVideoIds)
 
-  const {
-    setFeedMode,
-    toggleLike,
-    toggleBookmark,
-    openComments,
-    closeComments,
-    openFullPlayer,
-    closeFullPlayer,
-    closeMiniPlayer,
-    expandMiniPlayer,
-    setRefreshing,
-    setLoadingMore,
-    getVideoById,
-    setPlayerStatus,
-    // Lifecycle management - Industry Standard: TikTok/YouTube/Instagram pattern
-    setScreenFocused,
-    setAppActive,
-    pauseAllPlayback,
-    resumePlayback,
-  } = useVideoFeedStore();
+  // Actions — individual selectors (stable references, no full-store subscription)
+  const setFeedMode = useVideoFeedStore(s => s.setFeedMode);
+  const toggleLike = useVideoFeedStore(s => s.toggleLike);
+  const toggleBookmark = useVideoFeedStore(s => s.toggleBookmark);
+  const openComments = useVideoFeedStore(s => s.openComments);
+  const closeComments = useVideoFeedStore(s => s.closeComments);
+  const openFullPlayer = useVideoFeedStore(s => s.openFullPlayer);
+  const closeFullPlayer = useVideoFeedStore(s => s.closeFullPlayer);
+  const closeMiniPlayer = useVideoFeedStore(s => s.closeMiniPlayer);
+  const expandMiniPlayer = useVideoFeedStore(s => s.expandMiniPlayer);
+  const setRefreshing = useVideoFeedStore(s => s.setRefreshing);
+  const setLoadingMore = useVideoFeedStore(s => s.setLoadingMore);
+  const getVideoById = useVideoFeedStore(s => s.getVideoById);
+  const setPlayerStatus = useVideoFeedStore(s => s.setPlayerStatus);
+  // Lifecycle management - Industry Standard: TikTok/YouTube/Instagram pattern
+  const setScreenFocused = useVideoFeedStore(s => s.setScreenFocused);
+  const setAppActive = useVideoFeedStore(s => s.setAppActive);
+  const pauseAllPlayback = useVideoFeedStore(s => s.pauseAllPlayback);
+  const resumePlayback = useVideoFeedStore(s => s.resumePlayback);
 
   // ============================================================================
   // LOCAL STATE - 2026 Enhanced

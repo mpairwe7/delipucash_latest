@@ -161,15 +161,14 @@ function VerticalVideoFeedComponent({
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
   const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
   // Note: feedMode and ui available via store if needed
-  const {
-    setVideos,
-    setActiveVideo,
-    handleViewableItemsChanged,
-    setRefreshing,
-    setLoadingMore,
-    getPreloadTargets,
-    markPreloaded,
-  } = useVideoFeedStore();
+  // Actions — individual selectors (stable references, no full-store subscription)
+  const setVideos = useVideoFeedStore(s => s.setVideos);
+  const setActiveVideo = useVideoFeedStore(s => s.setActiveVideo);
+  const handleViewableItemsChanged = useVideoFeedStore(s => s.handleViewableItemsChanged);
+  const setRefreshing = useVideoFeedStore(s => s.setRefreshing);
+  const setLoadingMore = useVideoFeedStore(s => s.setLoadingMore);
+  const getPreloadTargets = useVideoFeedStore(s => s.getPreloadTargets);
+  const markPreloaded = useVideoFeedStore(s => s.markPreloaded);
 
   // Local state
   const [isInitialized, setIsInitialized] = useState(false);

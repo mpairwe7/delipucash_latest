@@ -9,7 +9,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================================================
@@ -322,6 +323,7 @@ const formatDuration = (seconds: number): string => {
 // ============================================================================
 
 export const useVideoStore = create<VideoState & VideoActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -796,6 +798,8 @@ export const useVideoStore = create<VideoState & VideoActions>()(
         likedVideoIds: state.likedVideoIds, // Persist liked videos
       }),
     }
+  ),
+  { name: 'VideoStore', enabled: __DEV__ },
   )
 );
 
@@ -948,3 +952,28 @@ export const selectLivestreamProgress = (state: VideoState) => {
     isNearLimit: remainingSeconds <= 30,
   };
 };
+
+// ============================================================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ============================================================================
+
+/** Premium status — shallow-compared, re-render safe */
+export const useVideoPremiumStatus = () => useVideoStore(useShallow(selectPremiumStatus));
+
+/** Trending slider state — shallow-compared, re-render safe */
+export const useVideoTrendingSlider = () => useVideoStore(useShallow(selectTrendingSlider));
+
+/** Player state — shallow-compared, re-render safe */
+export const useVideoPlayer = () => useVideoStore(useShallow(selectPlayer));
+
+/** Upload progress — shallow-compared, re-render safe */
+export const useVideoUploadProgress = () => useVideoStore(useShallow(selectUploadProgress));
+
+/** Recording progress — shallow-compared, re-render safe */
+export const useVideoRecordingProgress = () => useVideoStore(useShallow(selectRecordingProgress));
+
+/** Livestream status — shallow-compared, re-render safe */
+export const useVideoLivestreamStatus = () => useVideoStore(useShallow(selectLivestreamStatus));
+
+/** Livestream progress — shallow-compared, re-render safe */
+export const useVideoLivestreamProgress = () => useVideoStore(useShallow(selectLivestreamProgress));

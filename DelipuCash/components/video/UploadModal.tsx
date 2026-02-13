@@ -114,13 +114,12 @@ function UploadModalComponent({
   // Video store for state management (selectors available for UI display if needed)
   const storeUploadProgress = useVideoStore(selectUploadProgress);
   const storeCurrentUpload = useVideoStore(selectCurrentUpload);
-  const { 
-    startUpload,
-    updateUploadProgress,
-    cancelUpload,
-    completeUpload,
-    setPremiumStatus 
-  } = useVideoStore();
+  // Actions — individual selectors (stable references, no full-store subscription)
+  const startUpload = useVideoStore(s => s.startUpload);
+  const updateUploadProgress = useVideoStore(s => s.updateUploadProgress);
+  const cancelUpload = useVideoStore(s => s.cancelUpload);
+  const completeUpload = useVideoStore(s => s.completeUpload);
+  const setPremiumStatus = useVideoStore(s => s.setPremiumStatus);
 
   // Use store progress for display when available (exposed for parent components)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
