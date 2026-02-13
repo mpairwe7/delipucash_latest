@@ -108,7 +108,7 @@ export function useInfiniteVideos(params: Omit<UseVideosParams, 'page'> = {}): U
   const { limit = 10, category, search, sortBy, enabled = true } = params;
 
   return useInfiniteQuery({
-    queryKey: videoQueryKeys.list({ limit, category, search, sortBy, infinite: true }),
+    queryKey: videoQueryKeys.list({ limit, category, search, sortBy }),
     queryFn: async ({ pageParam = 1 }) => {
       const response = await videoApi.getAll({ page: pageParam, limit, category, search, sortBy });
       if (!response.success) throw new Error('Failed to fetch videos');
@@ -168,7 +168,7 @@ export function useVideoDetails(videoId: string): UseQueryResult<VideoWithDetail
  * ```
  */
 export function useLikeVideo(): UseMutationResult<
-  { likes: number; isLiked: boolean },
+  Video,
   Error,
   { videoId: string; isLiked: boolean },
   { previousVideo: VideoWithDetails | undefined }

@@ -90,8 +90,10 @@ import {
   useBookmarkVideo,
   useShareVideo,
   useUnreadCount,
+  useAddComment,
 } from '@/services/hooks';
 import { useInfiniteVideos } from '@/services/videoHooks';
+import videoApi from '@/services/videoApi';
 import {
   VerticalVideoFeed,
   VideoPlayer,
@@ -383,6 +385,7 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: unlikeVideo } = useUnlikeVideo();
   const { mutate: bookmarkVideo } = useBookmarkVideo();
   const { mutate: shareVideo } = useShareVideo();
+  const { mutateAsync: addComment } = useAddComment();
 
   // Ad data using TanStack Query for optimized caching - Industry Standard
   const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
@@ -546,7 +549,7 @@ export default function VideosScreen(): React.ReactElement {
     });
 
     return result;
-  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
+  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds, sessionAdCount]);
 
   const videos = videosWithAds;
 
@@ -584,9 +587,12 @@ export default function VideosScreen(): React.ReactElement {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, setLoadingMore]);
 
   const handleLike = useCallback((video: Video) => {
+    // Guard: don't call video APIs for sponsored ad items
+    if (video.isSponsored || video.id.startsWith('ad-')) return;
+
     const isCurrentlyLiked = likedVideoIds.has(video.id);
     toggleLike(video.id);
-    
+
     if (isCurrentlyLiked) {
       unlikeVideo(video.id);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -598,6 +604,8 @@ export default function VideosScreen(): React.ReactElement {
   }, [likedVideoIds, toggleLike, likeVideo, unlikeVideo]);
 
   const handleComment = useCallback((video: Video) => {
+    // Guard: don't open comments for sponsored ad items
+    if (video.isSponsored || video.id.startsWith('ad-')) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     openComments(video.id);
   }, [openComments]);
@@ -1025,6 +1033,11 @@ export default function VideosScreen(): React.ReactElement {
         visible={ui.showComments}
         videoId={ui.commentsVideoId || ''}
         onClose={closeComments}
+        onAddComment={async (text: string) => {
+          if (ui.commentsVideoId) {
+            await addComment({ videoId: ui.commentsVideoId, text });
+          }
+        }}
         testID="comments-sheet"
       />
 
@@ -1041,6 +1054,19 @@ export default function VideosScreen(): React.ReactElement {
       <UploadModal
         visible={uploadModalVisible}
         onClose={() => setUploadModalVisible(false)}
+        onUpload={async (data) => {
+          // onUpload is called by UploadModal after validation passes
+          // The actual upload API call happens through the store + videoApi
+          if (data.fileUri) {
+            await videoApi.upload({
+              title: data.title,
+              description: data.description,
+              videoUrl: data.fileUri,
+              thumbnail: '',
+            });
+            refetch();
+          }
+        }}
       />
 
       {/* LiveStream Screen */}

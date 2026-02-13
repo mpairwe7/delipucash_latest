@@ -99,15 +99,26 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-late
 const getCurrentUserId = (): string | null =>
   useAuthStore.getState().auth?.user?.id || null;
 
+/** Get current auth token for protected API calls */
+const getAuthToken = (): string | null =>
+  useAuthStore.getState().auth?.token || null;
+
 /**
- * Request headers with tracing
+ * Request headers with tracing + optional auth
  */
-const getHeaders = (): Record<string, string> => ({
-  'Content-Type': 'application/json',
-  Accept: 'application/json',
-  'X-Client-Version': '1.0.0',
-  'X-Request-ID': `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-});
+const getHeaders = (includeAuth = false): Record<string, string> => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'X-Client-Version': '1.0.0',
+    'X-Request-ID': `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+  };
+  if (includeAuth) {
+    const token = getAuthToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+};
 
 /**
  * Resilient fetch with automatic retry on network/server errors.
@@ -118,6 +129,7 @@ async function fetchJson<T>(
   path: string,
   init?: RequestInit,
   retries = 2,
+  authenticated = false,
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${path}`;
   let lastError: string = 'Network error';
@@ -128,7 +140,7 @@ async function fetchJson<T>(
       const timeoutId = setTimeout(() => controller.abort(), 15_000);
 
       const response = await fetch(url, {
-        headers: getHeaders(),
+        headers: getHeaders(authenticated),
         signal: controller.signal,
         ...init,
       });
@@ -265,9 +277,16 @@ function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQues
         .filter((q) => q.isInstantReward && q.rewardAmount)
         .sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0));
 
-    case 'my-activity':
-      // Would filter by user's questions/answers
-      return sorted.slice(0, 10);
+    case 'my-activity': {
+      // Filter to questions the user authored or answered
+      const userId = getCurrentUserId();
+      if (!userId) return [];
+      return sorted.filter(
+        (q) => q.userId === userId || q.author?.id === userId
+      ).sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    }
 
     default:
       return sorted;
@@ -414,7 +433,9 @@ export function useVoteQuestion(): UseMutationResult<
         {
           method: 'POST',
           body: JSON.stringify({ type, userId }),
-        }
+        },
+        2,
+        true,
       );
       if (!response.success) {
         throw new Error(response.error || 'Vote failed');
@@ -527,7 +548,9 @@ export function useCreateQuestion(): UseMutationResult<
         {
           method: 'POST',
           body: JSON.stringify({ ...data, userId }),
-        }
+        },
+        2,
+        true,
       );
       if (!response.success) {
         throw new Error(response.error || 'Failed to create question');
@@ -565,7 +588,9 @@ export function useSubmitQuestionResponse(): UseMutationResult<
         {
           method: 'POST',
           body: JSON.stringify({ responseText, userId }),
-        }
+        },
+        2,
+        true,
       );
       if (!response.success) {
         throw new Error(response.error || 'Failed to submit response');

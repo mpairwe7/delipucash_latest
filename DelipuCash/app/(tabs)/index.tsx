@@ -269,7 +269,7 @@ export default function HomePage(): React.ReactElement {
         router.push(`/(tabs)/videos-new`);
         break;
       case 'question':
-        router.push(`/question/${item.id}` as Href);
+        router.push(`/question-answer/${item.id}` as Href);
         break;
       case 'survey':
         router.push(`/survey/${item.id}` as Href);
@@ -513,7 +513,7 @@ export default function HomePage(): React.ReactElement {
               key={question.id}
               question={question}
               variant="compact"
-              onPress={() => router.push(`/question/${question.id}`)}
+              onPress={() => router.push(`/question-answer/${question.id}` as Href)}
             />
           ))}
         </View>

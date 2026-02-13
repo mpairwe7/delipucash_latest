@@ -370,9 +370,12 @@ function VideoFeedItemComponent({
   // VIDEO PLAYER
   // ============================================================================
 
+  // Track whether onVideoEnd has fired for this play session (prevents repeat triggers)
+  const hasEndedRef = useRef(false);
+
   const player = useVideoPlayer(video.videoUrl || '', (playerInstance) => {
     try {
-      playerInstance.loop = true;
+      playerInstance.loop = false; // No auto-loop — feed controls advancement
       playerInstance.muted = isMuted;
       playerInstance.volume = isMuted ? 0 : 1;
     } catch (error) {
@@ -422,6 +425,8 @@ function VideoFeedItemComponent({
     if (!player || !isMountedRef.current) return;
 
     if (isActive) {
+      // Reset end-guard so onVideoEnd can fire once per play session
+      hasEndedRef.current = false;
       // Start playing when active
       safePlayerCall(() => player.play());
       setIsPlaying(true);
@@ -435,10 +440,9 @@ function VideoFeedItemComponent({
         }
       }, 200);
     } else {
-      // Pause when not active
+      // Pause when not active — only update local state, not global player status
       safePlayerCall(() => player.pause());
       setIsPlaying(false);
-      setPlayerStatus('paused');
       
       // Show thumbnail again
       thumbnailOpacity.value = withTiming(1, { duration: 200 });
@@ -522,8 +526,9 @@ function VideoFeedItemComponent({
           const prog = currentTime / duration;
           setProgress(prog, duration);
 
-      // Check if video ended
-          if (currentTime >= duration - 0.5) {
+      // Check if video ended — fire once per play session
+          if (currentTime >= duration - 0.5 && !hasEndedRef.current) {
+            hasEndedRef.current = true;
             onVideoEnd?.(video);
           }
         }

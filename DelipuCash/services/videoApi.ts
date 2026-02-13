@@ -12,14 +12,19 @@ import {
   PaginatedResponse,
 } from "@/types";
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+import { useAuthStore } from '@/utils/auth/store';
 
-// Validate that API URL is configured
-if (!API_BASE_URL) {
-  console.warn('[VideoAPI] EXPO_PUBLIC_API_URL is not configured. API calls will fail.');
-}
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
 
-// API Routes
+/** Get current authenticated user ID from auth store */
+const getCurrentUserId = (): string | null =>
+  useAuthStore.getState().auth?.user?.id || null;
+
+/** Get current auth token for protected API calls */
+const getAuthToken = (): string | null =>
+  useAuthStore.getState().auth?.token || null;
+
+// API Routes — aligned with backend videoRoutes.mjs
 const VIDEO_ROUTES = {
   list: "/api/videos/all",
   get: (id: string) => `/api/videos/${id}`,
@@ -27,18 +32,12 @@ const VIDEO_ROUTES = {
   unlike: (id: string) => `/api/videos/${id}/unlike`,
   bookmark: (id: string) => `/api/videos/${id}/bookmark`,
   comments: (id: string) => `/api/videos/${id}/comments`,
-  trending: "/api/videos/trending",
-  live: "/api/videos/live",
-  recommended: "/api/videos/recommended",
-  search: "/api/videos/search",
+  share: (id: string) => `/api/videos/${id}/share`,
   upload: "/api/videos/create",
   delete: (id: string) => `/api/videos/delete/${id}`,
   update: (id: string) => `/api/videos/update/${id}`,
   incrementView: (id: string) => `/api/videos/${id}/views`,
-  analytics: (id: string) => `/api/videos/${id}/analytics`,
-  popular: "/api/videos/popular",
   byUser: (userId: string) => `/api/videos/user/${userId}`,
-  categories: "/api/videos/categories",
   // Video premium & limits
   limits: (userId: string) => `/api/videos/limits/${userId}`,
   validateUpload: "/api/videos/validate-upload",
@@ -47,19 +46,26 @@ const VIDEO_ROUTES = {
   validateSession: "/api/videos/validate-session",
 } as const;
 
-// Helper to fetch JSON
+// Helper to fetch JSON with optional auth
 async function fetchJson<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  authToken?: string | null
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${path}`;
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...(init?.headers as Record<string, string> || {}),
+    };
+
+    if (authToken) {
+      headers["Authorization"] = `Bearer ${authToken}`;
+    }
+
     const response = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        ...(init?.headers || {}),
-      },
       ...init,
+      headers,
     });
 
     const json = await response.json();
@@ -287,68 +293,34 @@ export const videoApi = {
   },
 
   /**
-   * Get trending videos
+   * Get trending videos — uses /all with sortBy=popular (no dedicated backend route)
    */
   async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${VIDEO_ROUTES.trending}?limit=${limit}`);
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?sortBy=popular&limit=${limit}`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**
-   * Get popular videos
+   * Get popular videos — alias for trending
    */
   async getPopular(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${VIDEO_ROUTES.popular}?limit=${limit}`);
+    return videoApi.getTrending(limit);
   },
 
   /**
-   * Get recommended videos for user
+   * Get recommended videos — uses /all (no dedicated backend route)
    */
   async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${VIDEO_ROUTES.recommended}?limit=${limit}`);
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=${limit}`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**
-   * Get live videos
+   * Get live videos — uses /all with isLive filter (no dedicated backend route)
    */
   async getLive(): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(VIDEO_ROUTES.live);
-  },
-
-  /**
-   * Get video by ID
-   */
-  async getById(videoId: string): Promise<ApiResponse<Video | null>> {
-    return fetchJson<Video>(VIDEO_ROUTES.get(videoId));
-  },
-
-  /**
-   * Get video with full details
-   */
-  async getWithDetails(videoId: string): Promise<ApiResponse<VideoWithDetails | null>> {
-    return fetchJson<VideoWithDetails>(`${VIDEO_ROUTES.get(videoId)}?include=author,comments,related`);
-  },
-
-  /**
-   * Search videos
-   */
-  async search(query: string, filters?: Omit<VideoFilters, 'search'>): Promise<PaginatedResponse<Video>> {
-    const params = new URLSearchParams({ q: query });
-    if (filters?.category) params.append("category", filters.category);
-    if (filters?.sortBy) params.append("sortBy", filters.sortBy);
-    if (filters?.page) params.append("page", String(filters.page));
-    if (filters?.limit) params.append("limit", String(filters.limit));
-
-    const response = await fetchJson<{
-      data: Video[];
-      pagination: any;
-    }>(`${VIDEO_ROUTES.search}?${params.toString()}`);
-
-    return {
-      success: response.success,
-      data: response.data?.data || [],
-      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
-      error: response.error,
-    };
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?isLive=true`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**
@@ -356,9 +328,30 @@ export const videoApi = {
    */
   async getByUser(userId: string, page: number = 1, limit: number = 10): Promise<PaginatedResponse<Video>> {
     const response = await fetchJson<{
+      videos: Video[];
+    }>(`${VIDEO_ROUTES.byUser(userId)}?page=${page}&limit=${limit}`);
+
+    return {
+      success: response.success,
+      data: response.data?.videos || [],
+      pagination: { page, limit, total: 0, totalPages: 0 },
+      error: response.error,
+    };
+  },
+
+  /**
+   * Search videos — uses /all with search param (no dedicated backend route)
+   */
+  async search(query: string, filters?: Omit<VideoFilters, 'search'>): Promise<PaginatedResponse<Video>> {
+    const params = new URLSearchParams({ search: query });
+    if (filters?.sortBy) params.append("sortBy", filters.sortBy);
+    if (filters?.page) params.append("page", String(filters.page));
+    if (filters?.limit) params.append("limit", String(filters.limit));
+
+    const response = await fetchJson<{
       data: Video[];
       pagination: any;
-    }>(`${VIDEO_ROUTES.byUser(userId)}?page=${page}&limit=${limit}`);
+    }>(`${VIDEO_ROUTES.list}?${params.toString()}`);
 
     return {
       success: response.success,
@@ -369,13 +362,16 @@ export const videoApi = {
   },
 
   /**
-   * Upload a new video
+   * Upload a new video — sends userId from auth store
    */
   async upload(videoData: UploadVideoData): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(VIDEO_ROUTES.upload, {
+    const userId = getCurrentUserId();
+    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.upload, {
       method: "POST",
-      body: JSON.stringify(videoData),
-    });
+      body: JSON.stringify({ ...videoData, userId }),
+    }, getAuthToken());
+    // Backend wraps in { message, video }
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
@@ -385,7 +381,7 @@ export const videoApi = {
     return fetchJson<Video>(VIDEO_ROUTES.update(videoId), {
       method: "PUT",
       body: JSON.stringify(data),
-    });
+    }, getAuthToken());
   },
 
   /**
@@ -394,68 +390,61 @@ export const videoApi = {
   async delete(videoId: string): Promise<ApiResponse<{ deleted: boolean }>> {
     return fetchJson<{ deleted: boolean }>(VIDEO_ROUTES.delete(videoId), {
       method: "DELETE",
-    });
+    }, getAuthToken());
   },
 
   /**
-   * Like a video
+   * Like a video — backend returns { message, video }
    */
-  async like(videoId: string): Promise<ApiResponse<{ likes: number; isLiked: boolean }>> {
-    return fetchJson<{ likes: number; isLiked: boolean }>(VIDEO_ROUTES.like(videoId), {
+  async like(videoId: string): Promise<ApiResponse<Video>> {
+    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.like(videoId), {
       method: "POST",
-    });
+    }, getAuthToken());
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
-   * Unlike a video
+   * Unlike a video — backend returns { message, video }
    */
-  async unlike(videoId: string): Promise<ApiResponse<{ likes: number; isLiked: boolean }>> {
-    return fetchJson<{ likes: number; isLiked: boolean }>(VIDEO_ROUTES.unlike(videoId), {
+  async unlike(videoId: string): Promise<ApiResponse<Video>> {
+    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.unlike(videoId), {
       method: "POST",
-    });
+    }, getAuthToken());
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
-   * Bookmark a video
+   * Bookmark a video — requires userId, backend returns { message, video }
    */
-  async bookmark(videoId: string): Promise<ApiResponse<{ isBookmarked: boolean }>> {
-    return fetchJson<{ isBookmarked: boolean }>(VIDEO_ROUTES.bookmark(videoId), {
+  async bookmark(videoId: string): Promise<ApiResponse<Video>> {
+    const userId = getCurrentUserId();
+    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.bookmark(videoId), {
       method: "POST",
-    });
-  },
-
-  /**
-   * Remove bookmark from video
-   */
-  async removeBookmark(videoId: string): Promise<ApiResponse<{ isBookmarked: boolean }>> {
-    return fetchJson<{ isBookmarked: boolean }>(VIDEO_ROUTES.bookmark(videoId), {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Toggle bookmark on video (convenience method)
-   */
-  async toggleBookmark(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(VIDEO_ROUTES.bookmark(videoId), {
-      method: "POST",
-    });
-  },
-
-  /**
-   * Get user's bookmarked videos
-   */
-  async getBookmarked(page: number = 1, limit: number = 20): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${VIDEO_ROUTES.list}/bookmarked?page=${page}&limit=${limit}`);
+      body: JSON.stringify({ userId }),
+    }, getAuthToken());
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
    * Increment view count
    */
   async incrementView(videoId: string): Promise<ApiResponse<{ views: number }>> {
-    return fetchJson<{ views: number }>(VIDEO_ROUTES.incrementView(videoId), {
+    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.incrementView(videoId), {
       method: "POST",
     });
+    return { success: response.success, data: { views: response.data?.video?.views ?? 0 }, error: response.error };
+  },
+
+  /**
+   * Share a video (track for analytics) — backend returns { success, data: { shared, platform, ... } }
+   */
+  async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean; platform: string }>> {
+    const userId = getCurrentUserId();
+    const response = await fetchJson<{ data: { shared: boolean; platform: string } }>(VIDEO_ROUTES.share(videoId), {
+      method: "POST",
+      body: JSON.stringify({ platform, userId }),
+    });
+    return { success: response.success, data: response.data?.data || { shared: true, platform }, error: response.error };
   },
 
   /**
@@ -463,56 +452,29 @@ export const videoApi = {
    */
   async getComments(videoId: string, page: number = 1, limit: number = 20): Promise<PaginatedResponse<Comment>> {
     const response = await fetchJson<{
-      data: Comment[];
-      pagination: any;
+      comments: Comment[];
     }>(`${VIDEO_ROUTES.comments(videoId)}?page=${page}&limit=${limit}`);
 
+    // Backend getVideoComments returns { comments: [...] }
     return {
       success: response.success,
-      data: response.data?.data || [],
-      pagination: response.data?.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 },
+      data: response.data?.comments || [],
+      pagination: { page, limit, total: 0, totalPages: 0 },
       error: response.error,
     };
   },
 
   /**
-   * Add comment to video
+   * Add comment to video — backend expects { text, user_id, created_at }
    */
-  async addComment(videoId: string, content: string): Promise<ApiResponse<Comment>> {
-    return fetchJson<Comment>(VIDEO_ROUTES.comments(videoId), {
+  async addComment(videoId: string, text: string): Promise<ApiResponse<Comment>> {
+    const userId = getCurrentUserId();
+    const response = await fetchJson<{ comment: Comment }>(VIDEO_ROUTES.comments(videoId), {
       method: "POST",
-      body: JSON.stringify({ content }),
-    });
-  },
-
-  /**
-   * Delete a comment from video
-   */
-  async deleteComment(videoId: string, commentId: string): Promise<ApiResponse<{ deleted: boolean }>> {
-    return fetchJson<{ deleted: boolean }>(`${VIDEO_ROUTES.comments(videoId)}/${commentId}`, {
-      method: "DELETE",
-    });
-  },
-
-  /**
-   * Get video analytics
-   */
-  async getAnalytics(videoId: string): Promise<ApiResponse<VideoAnalytics>> {
-    return fetchJson<VideoAnalytics>(VIDEO_ROUTES.analytics(videoId));
-  },
-
-  /**
-   * Get video statistics summary
-   */
-  async getStats(): Promise<ApiResponse<VideoStats>> {
-    return fetchJson<VideoStats>("/api/videos/stats");
-  },
-
-  /**
-   * Get video categories
-   */
-  async getCategories(): Promise<ApiResponse<string[]>> {
-    return fetchJson<string[]>(VIDEO_ROUTES.categories);
+      body: JSON.stringify({ text, user_id: userId, created_at: new Date().toISOString() }),
+    }, getAuthToken());
+    // Backend wraps in { message, comment }
+    return { success: response.success, data: response.data?.comment || (response.data as any), error: response.error };
   },
 
   // ============================================================================
@@ -564,6 +526,64 @@ export const videoApi = {
       method: "POST",
       body: JSON.stringify(request),
     });
+  },
+
+  // ============================================================================
+  // STUB METHODS — no dedicated backend routes yet
+  // These exist so videoHooks.ts compiles. Add backend routes to make them real.
+  // ============================================================================
+
+  /**
+   * Get single video by ID — no dedicated GET /:id backend route
+   * Fetches /all and filters client-side.
+   * TODO: Add GET /api/videos/:id backend route for efficiency
+   */
+  async getById(videoId: string): Promise<ApiResponse<VideoWithDetails>> {
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=100`);
+    if (!response.success) return { success: false, data: {} as VideoWithDetails, error: response.error };
+    const videos = response.data?.data || (response.data as any) || [];
+    const video = (Array.isArray(videos) ? videos : []).find((v: Video) => v.id === videoId);
+    if (!video) return { success: false, data: {} as VideoWithDetails, error: 'Video not found' };
+    return { success: true, data: video as VideoWithDetails };
+  },
+
+  /**
+   * Toggle bookmark — alias for bookmark()
+   */
+  async toggleBookmark(videoId: string): Promise<ApiResponse<Video>> {
+    return videoApi.bookmark(videoId);
+  },
+
+  /**
+   * Delete a comment — no backend route yet
+   * TODO: Add DELETE /api/videos/:id/comments/:commentId backend route
+   */
+  async deleteComment(_videoId: string, _commentId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+    return { success: false, data: { deleted: false }, error: 'Delete comment not yet supported by backend' };
+  },
+
+  /**
+   * Get bookmarked videos — no dedicated backend route
+   * TODO: Add GET /api/videos/bookmarked backend route
+   */
+  async getBookmarked(): Promise<ApiResponse<Video[]>> {
+    return { success: false, data: [], error: 'Bookmarked videos endpoint not yet available' };
+  },
+
+  /**
+   * Get video analytics — no backend route yet
+   * TODO: Add analytics backend route
+   */
+  async getAnalytics(_videoId: string): Promise<ApiResponse<VideoAnalytics>> {
+    return { success: false, data: {} as VideoAnalytics, error: 'Analytics not yet available' };
+  },
+
+  /**
+   * Get overall video stats — no backend route yet
+   * TODO: Add stats backend route
+   */
+  async getStats(): Promise<ApiResponse<VideoStats>> {
+    return { success: false, data: {} as VideoStats, error: 'Stats not yet available' };
   },
 };
 

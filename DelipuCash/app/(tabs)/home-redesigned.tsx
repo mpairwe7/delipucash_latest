@@ -166,7 +166,7 @@ const EXPLORE_ITEMS = [
       { icon: "star" as const, title: "Personalized", description: "Content curated based on your interests and activity" },
     ],
     actionText: "Start Discovering",
-    route: "/(tabs)/videos",
+    route: "/(tabs)/videos-new",
   },
   {
     id: "community",
@@ -180,7 +180,7 @@ const EXPLORE_ITEMS = [
       { icon: "heart" as const, title: "Build Connections", description: "Network with like-minded individuals" },
     ],
     actionText: "Join Community",
-    route: "/(tabs)/questions",
+    route: "/(tabs)/questions-new",
   },
   {
     id: "trends",
@@ -194,7 +194,7 @@ const EXPLORE_ITEMS = [
       { icon: "clock" as const, title: "Real-time Updates", description: "Get notifications about emerging trends" },
     ],
     actionText: "Explore Trends",
-    route: "/(tabs)/videos",
+    route: "/(tabs)/videos-new",
   },
   {
     id: "leaderboard",
@@ -568,7 +568,7 @@ export default function HomePage(): React.ReactElement {
         break;
       case "question":
         const questionId = opportunity.id.replace("question-", "");
-        router.push(`/question/${questionId}` as Href);
+        router.push(`/question-answer/${questionId}` as Href);
         break;
       case "survey":
         router.push("/(tabs)/surveys-new");

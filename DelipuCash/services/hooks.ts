@@ -849,13 +849,13 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
 /**
  * Hook to like a response
  */
-export function useLikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string }> {
+export function useLikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string; isLiked?: boolean }> {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ['responses', 'like'],
-    mutationFn: async ({ responseId }) => {
-      const response = await api.responses.like(responseId);
+    mutationFn: async ({ responseId, isLiked = true }) => {
+      const response = await api.responses.like(responseId, isLiked);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
@@ -871,13 +871,13 @@ export function useLikeResponse(): UseMutationResult<Response, Error, { response
 /**
  * Hook to dislike a response
  */
-export function useDislikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string }> {
+export function useDislikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string; isDisliked?: boolean }> {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ['responses', 'dislike'],
-    mutationFn: async ({ responseId }) => {
-      const response = await api.responses.dislike(responseId);
+    mutationFn: async ({ responseId, isDisliked = true }) => {
+      const response = await api.responses.dislike(responseId, isDisliked);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },

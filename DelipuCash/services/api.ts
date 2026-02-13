@@ -29,6 +29,16 @@ import { useAuthStore } from '@/utils/auth/store';
 const getCurrentUserId = (): string | null =>
   useAuthStore.getState().auth?.user?.id || null;
 
+/** Get current auth token for protected API calls */
+const getAuthToken = (): string | null =>
+  useAuthStore.getState().auth?.token || null;
+
+/** Build auth header if token is available */
+const getAuthHeaders = (): Record<string, string> => {
+  const token = getAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 // ===========================================
 // API Configuration
 // ===========================================
@@ -442,58 +452,69 @@ export const videosApi = {
   },
 
   /**
-   * Like a video
+   * Like a video — backend returns { message, video }
    */
   async like(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(API_ROUTES.videos.like(videoId), { method: 'POST' });
+    const response = await fetchJson<{ video: Video }>(API_ROUTES.videos.like(videoId), {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
-   * Unlike a video
+   * Unlike a video — backend returns { message, video }
    */
   async unlike(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(`/api/videos/${videoId}/unlike`, { method: 'POST' });
+    const response = await fetchJson<{ video: Video }>(`/api/videos/${videoId}/unlike`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
-   * Share a video (track for analytics)
+   * Share a video — backend returns { success, data: { shared, platform, ... } }
    */
   async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean }>> {
-    return fetchJson<{ shared: boolean }>(`/api/videos/${videoId}/share`, {
+    const response = await fetchJson<{ data: { shared: boolean } }>(`/api/videos/${videoId}/share`, {
       method: 'POST',
-      body: JSON.stringify({ platform }),
+      body: JSON.stringify({ platform, userId: getCurrentUserId() }),
     });
+    return { success: response.success, data: response.data?.data || { shared: true }, error: response.error };
   },
 
   /**
-   * Bookmark a video
+   * Bookmark a video — requires userId, backend returns { message, video }
    */
   async bookmark(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(API_ROUTES.videos.bookmark(videoId), { method: 'POST' });
+    const response = await fetchJson<{ video: Video }>(API_ROUTES.videos.bookmark(videoId), {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ userId: getCurrentUserId() }),
+    });
+    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
   },
 
   /**
-   * Remove bookmark
-   */
-  async removeBookmark(videoId: string): Promise<ApiResponse<Video>> {
-    return fetchJson<Video>(API_ROUTES.videos.bookmark(videoId), { method: 'DELETE' });
-  },
-
-  /**
-   * Get video comments
+   * Get video comments — backend returns { comments: [...] }
    */
   async getComments(videoId: string): Promise<ApiResponse<Comment[]>> {
-    return fetchJson<Comment[]>(API_ROUTES.videos.comments(videoId));
+    const response = await fetchJson<{ comments: Comment[] }>(API_ROUTES.videos.comments(videoId));
+    return { success: response.success, data: response.data?.comments || [], error: response.error };
   },
 
   /**
-   * Add comment to video
+   * Add comment to video — backend expects { text, user_id, created_at }
    */
   async addComment(videoId: string, content: string, mediaUrls?: string[]): Promise<ApiResponse<Comment>> {
-    return fetchJson<Comment>(API_ROUTES.videos.comments(videoId), {
+    const response = await fetchJson<{ comment: Comment }>(API_ROUTES.videos.comments(videoId), {
       method: 'POST',
-      body: JSON.stringify({ text: content, media: mediaUrls || [] }),
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ text: content, user_id: getCurrentUserId(), media: mediaUrls || [], created_at: new Date().toISOString() }),
     });
+    // Backend wraps in { message, comment }
+    return { success: response.success, data: response.data?.comment || (response.data as any), error: response.error };
   },
 
   /**
@@ -694,6 +715,7 @@ export const questionsApi = {
   async submitResponse(questionId: string, responseText: string): Promise<ApiResponse<Response>> {
     return fetchJson<Response>(API_ROUTES.questions.submitResponse(questionId), {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ responseText, userId: getCurrentUserId() }),
     });
   },
@@ -709,6 +731,7 @@ export const questionsApi = {
   }): Promise<ApiResponse<Question>> {
     return fetchJson<Question>(API_ROUTES.questions.create, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ ...questionData, userId: getCurrentUserId() }),
     });
   },
@@ -719,6 +742,7 @@ export const questionsApi = {
   async vote(questionId: string, type: 'up' | 'down'): Promise<ApiResponse<Question>> {
     return fetchJson<Question>(API_ROUTES.questions.vote(questionId), {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ type, userId: getCurrentUserId() }),
     });
   },

@@ -56,6 +56,7 @@ import {
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
 import { useVideoStore, selectUploadProgress, selectCurrentUpload } from '@/store/VideoStore';
 import { useValidateUpload } from '@/services/hooks';
+import { useAuthStore } from '@/utils/auth/store';
 
 /**
  * Upload form data
@@ -199,7 +200,7 @@ function UploadModalComponent({
       // Server-side validation for additional checks
       try {
         const validationResult = await validateUploadMutation.mutateAsync({
-          userId: '', // Will be populated from auth context on server
+          userId: useAuthStore.getState().auth?.user?.id || '',
           fileSize,
           mimeType,
           fileName,
