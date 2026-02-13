@@ -307,6 +307,9 @@ export {
   useInstantSessionState,
   useInstantRedemptionState,
   useOfflineQueueState,
+  // Unit conversion helpers
+  cashToPoints,
+  pointsToCash,
 } from './InstantRewardStore';
 export type {
   AttemptedRewardQuestion,

@@ -308,7 +308,9 @@ export default function HomePage(): React.ReactElement {
               Welcome back,
             </Text>
             <Text style={[styles.username, { color: colors.text }]}>
-              {user?.firstName || "User"}
+              {user?.firstName
+                ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ""}`
+                : "User"}
             </Text>
           </View>
           <View style={styles.headerActions}>

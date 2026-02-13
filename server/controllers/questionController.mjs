@@ -767,9 +767,11 @@ export const getUserQuestionStats = asyncHandler(async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Calculate real stats in parallel
+    // All stats fetched in a single parallel batch (no N+1)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    thirtyDaysAgo.setHours(0, 0, 0, 0);
 
     const [
       totalResponses,
@@ -777,72 +779,56 @@ export const getUserQuestionStats = asyncHandler(async (req, res) => {
       todayResponses,
       todayAttempts,
       rewardSum,
-      // Get responses from last 7 days for weekly progress
-      weeklyResponses,
+      // Daily activity counts for streak + weekly progress (single query)
+      dailyActivity,
     ] = await Promise.all([
-      // Total responses submitted
       prisma.response.count({ where: { userId } }),
-      // Total quiz attempts
       prisma.questionAttempt.count({ where: { userEmail: user.email } }),
-      // Today's responses
       prisma.response.count({
         where: { userId, createdAt: { gte: today } },
       }),
-      // Today's quiz attempts
       prisma.questionAttempt.count({
         where: { userEmail: user.email, attemptedAt: { gte: today } },
       }),
-      // Total reward earnings
       prisma.reward.aggregate({
         where: { userEmail: user.email },
         _sum: { points: true },
       }),
-      // Weekly progress (last 7 days grouped by day)
-      prisma.response.groupBy({
-        by: ['createdAt'],
-        where: {
-          userId,
-          createdAt: {
-            gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-          },
-        },
-        _count: { id: true },
-      }),
+      // One query for all 30 days of activity — replaces N+1 streak loop
+      prisma.$queryRaw`
+        SELECT DATE(r."createdAt") AS day, COUNT(*)::int AS count
+        FROM "Response" r
+        WHERE r."userId" = ${userId}::uuid
+          AND r."createdAt" >= ${thirtyDaysAgo}
+        GROUP BY DATE(r."createdAt")
+        ORDER BY day DESC
+      `,
     ]);
 
-    // Build weekly progress array (last 7 days)
-    const weeklyProgress = Array.from({ length: 7 }, (_, i) => {
-      const dayDate = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000);
-      const dayStart = new Date(dayDate);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(dayDate);
-      dayEnd.setHours(23, 59, 59, 999);
+    // Build a Set of active day strings for O(1) lookup
+    const activeDays = new Set(
+      dailyActivity.map(r => r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day))
+    );
 
-      return weeklyResponses
-        .filter(r => {
-          const d = new Date(r.createdAt);
-          return d >= dayStart && d <= dayEnd;
-        })
-        .reduce((sum, r) => sum + r._count.id, 0);
+    // Weekly progress (last 7 days) from the same aggregated data
+    const weeklyProgress = Array.from({ length: 7 }, (_, i) => {
+      const dayStr = new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+      const match = dailyActivity.find(r => {
+        const d = r.day instanceof Date ? r.day.toISOString().slice(0, 10) : String(r.day);
+        return d === dayStr;
+      });
+      return match?.count || 0;
     });
 
-    // Calculate streak: count consecutive days with activity going backwards
-    let currentStreak = 0;
+    // Streak: consecutive days with activity going backwards
     const questionsAnsweredToday = todayResponses + todayAttempts;
-    if (questionsAnsweredToday > 0) currentStreak = 1;
+    let currentStreak = questionsAnsweredToday > 0 ? 1 : 0;
 
-    // Check previous days for streak
     for (let i = 1; i <= 30; i++) {
-      const dayStart = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(dayStart);
-      dayEnd.setHours(23, 59, 59, 999);
-
-      const dayActivity = await prisma.response.count({
-        where: { userId, createdAt: { gte: dayStart, lte: dayEnd } },
-      });
-
-      if (dayActivity > 0) {
+      const dayStr = new Date(Date.now() - i * 24 * 60 * 60 * 1000)
+        .toISOString().slice(0, 10);
+      if (activeDays.has(dayStr)) {
         currentStreak++;
       } else {
         break;

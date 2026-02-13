@@ -4,7 +4,7 @@ import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useRewardQuestions } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
-import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult } from "@/types";
 import {
@@ -58,6 +58,60 @@ const formatTime = (seconds: number): string => {
   const secs = seconds % 60;
   return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
 };
+
+// ─── Countdown Timer (isolates per-second re-renders from parent) ────────────
+
+interface CountdownTimerProps {
+  expiryTime: string;
+  colors: { warning: string };
+  onExpired?: () => void;
+}
+
+const CountdownTimer = memo(function CountdownTimer({ expiryTime, colors, onExpired }: CountdownTimerProps) {
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    const diff = Math.max(0, Math.floor((new Date(expiryTime).getTime() - Date.now()) / 1000));
+    return diff;
+  });
+
+  useEffect(() => {
+    const expiry = new Date(expiryTime).getTime();
+    const update = (): void => {
+      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+      setTimeLeft(diff);
+      if (diff === 0) onExpired?.();
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [expiryTime, onExpired]);
+
+  const isExpired = timeLeft <= 0;
+
+  return (
+    <View style={[countdownStyles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+      <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
+      <Text style={[countdownStyles.timerText, { color: colors.warning }]}>
+        {isExpired ? "Expired" : formatTime(timeLeft)}
+      </Text>
+    </View>
+  );
+});
+
+const countdownStyles = StyleSheet.create({
+  timerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  timerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+});
 
 // ─── Memoized sub-components ─────────────────────────────────────────────────
 
@@ -161,7 +215,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [isExpired, setIsExpired] = useState(false);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -190,10 +244,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }))
   );
 
+  // ── Zustand: reactive state (triggers re-render when attemptHistory changes) ──
+  const attemptHistory = useInstantRewardStore((s) => s.attemptHistory);
+
   // ── Zustand: actions (stable references — never cause re-renders) ──
   const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
-  const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
-  const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
   const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
   const confirmReward = useInstantRewardStore((s) => s.confirmReward);
   const startSession = useInstantRewardStore((s) => s.startSession);
@@ -227,42 +282,29 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }
   }, [allQuestions, sessionState, startSession]);
 
-  // Get unanswered questions for auto-transition
+  // Get unanswered questions for auto-transition (reactive via attemptHistory)
   const unansweredQuestions = useMemo(() => {
     if (!allQuestions) return [];
     return allQuestions.filter(q =>
-      !hasAttemptedQuestion(q.id) &&
       q.id !== questionId &&
-      !q.isCompleted
+      !q.isCompleted &&
+      q.isInstantReward === question?.isInstantReward &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id)
     );
-  }, [allQuestions, questionId, hasAttemptedQuestion]);
+  }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
 
-  // Check if user has already attempted this question
+  // Check if user has already attempted this question (reactive via attemptHistory)
   const previousAttempt = useMemo(() => {
-    if (!questionId) return null;
-    return getAttemptedQuestion(questionId);
-  }, [questionId, getAttemptedQuestion]);
+    if (!questionId || !attemptHistory) return null;
+    return attemptHistory.questionAttempts[questionId] ?? null;
+  }, [questionId, attemptHistory]);
 
   const hasAlreadyAttempted = useMemo(() => {
-    return hasAttemptedQuestion(questionId);
-  }, [questionId, hasAttemptedQuestion]);
+    return attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
+  }, [questionId, attemptHistory]);
 
-  useEffect(() => {
-    if (!question?.expiryTime) {
-      setTimeLeft(0);
-      return;
-    }
-
-    const expiry = new Date(question.expiryTime).getTime();
-    const update = (): void => {
-      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
-      setTimeLeft(diff);
-    };
-
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [question?.expiryTime]);
+  // Stable callback for CountdownTimer to signal expiry (no per-second parent re-render)
+  const handleTimerExpired = useCallback(() => setIsExpired(true), []);
 
   const options = useMemo(() => {
     if (!question?.options) return [] as { key: string; label: string }[];
@@ -273,11 +315,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     if (!question) return 0;
     return Math.max(question.maxWinners - question.winnersCount, 0);
   }, [question?.maxWinners, question?.winnersCount]);
-
-  const isExpired = useMemo(() => {
-    if (!question?.expiryTime) return false;
-    return new Date(question.expiryTime).getTime() <= Date.now() || timeLeft <= 0;
-  }, [question?.expiryTime, timeLeft]);
 
   const isClosed = useMemo(
     () =>
@@ -501,7 +538,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     phoneNumber: string
   ): Promise<{ success: boolean; message?: string }> => {
     initiateRedemption({
-      points: amount,
+      points: cashToPoints(amount),
       cashValue: amount,
       type,
       provider,
@@ -642,12 +679,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               <Text style={[styles.badgeText, { color: colors.success }]}>Live</Text>
             </View>
             {!!question.expiryTime && (
-              <View style={[styles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}> 
-                <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
-                <Text style={[styles.timerText, { color: colors.warning }]}>
-                  {isExpired ? "Expired" : formatTime(timeLeft)}
-                </Text>
-              </View>
+              <CountdownTimer
+                expiryTime={question.expiryTime}
+                colors={colors}
+                onExpired={handleTimerExpired}
+              />
             )}
           </View>
 
@@ -956,18 +992,6 @@ const styles = StyleSheet.create({
   badgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-  timerPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
-  },
-  timerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   heroTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,

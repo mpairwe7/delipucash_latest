@@ -25,7 +25,7 @@ import {
   useUserProfile,
 } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
-import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
   BORDER_WIDTH,
@@ -263,9 +263,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       (q) =>
         q.id !== questionId &&
         !q.isCompleted &&
+        q.isInstantReward === question?.isInstantReward &&
         !attemptHistory?.attemptedQuestionIds.includes(q.id)
     );
-  }, [allQuestions, questionId, attemptHistory]);
+  }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
 
   // ── Check if user has already attempted this question ──
   const previousAttempt = useMemo(() => {
@@ -547,7 +548,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       phoneNumber: string
     ): Promise<{ success: boolean; message?: string }> => {
       initiateRedemption({
-        points: amount,
+        points: cashToPoints(amount),
         cashValue: amount,
         type,
         provider,

@@ -1,20 +1,9 @@
 /**
  * StatCard Component
- * Reusable statistics card following design system guidelines
- * 
- * @example
- * ```tsx
- * <StatCard
- *   icon={<TrendingUp size={20} color={colors.success} />}
- *   title="Total Earnings"
- *   value="$1,240"
- *   subtitle="+12% this week"
- *   onPress={() => router.push('/earnings')}
- * />
- * ```
+ * Reusable statistics card with animated counting transitions
  */
 
-import React, { memo } from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -24,6 +13,13 @@ import {
   ViewStyle,
 } from 'react-native';
 import {
+  useSharedValue,
+  useAnimatedReaction,
+  withTiming,
+  Easing,
+  runOnJS,
+} from 'react-native-reanimated';
+import {
   useTheme,
   SPACING,
   TYPOGRAPHY,
@@ -31,6 +27,27 @@ import {
   SHADOWS,
 } from '@/utils/theme';
 import { triggerHaptic } from '@/utils/quiz-utils';
+
+/** Animates toward a target number, returns a formatted display string. */
+function useAnimatedNumber(target: number): string {
+  const sv = useSharedValue(target);
+  const [display, setDisplay] = React.useState(target.toLocaleString());
+
+  useEffect(() => {
+    sv.value = withTiming(target, { duration: 500, easing: Easing.out(Easing.cubic) });
+  }, [target, sv]);
+
+  const update = useCallback((v: number) => {
+    setDisplay(Math.round(v).toLocaleString());
+  }, []);
+
+  useAnimatedReaction(
+    () => sv.value,
+    (current) => { runOnJS(update)(current); },
+  );
+
+  return display;
+}
 
 export interface StatCardProps {
   /** Icon element to display */
@@ -65,6 +82,8 @@ function StatCardComponent({
   testID,
 }: StatCardProps): React.ReactElement {
   const { colors } = useTheme();
+  const isNumeric = typeof value === 'number';
+  const animatedDisplay = useAnimatedNumber(isNumeric ? value : 0);
 
   const content = (
     <View
@@ -84,7 +103,7 @@ function StatCardComponent({
         ]}
         numberOfLines={1}
       >
-        {typeof value === 'number' ? value.toLocaleString() : value}
+        {isNumeric ? animatedDisplay : value}
       </Text>
       <Text
         style={[styles.title, { color: colors.textMuted }]}

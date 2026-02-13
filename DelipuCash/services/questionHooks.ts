@@ -705,9 +705,23 @@ export function useQuestionsLeaderboard(
   });
 }
 
+const DEFAULT_STATS: UserQuestionsStats = {
+  totalAnswered: 0,
+  totalEarnings: 0,
+  currentStreak: 0,
+  questionsAnsweredToday: 0,
+  dailyTarget: 10,
+  weeklyProgress: [0, 0, 0, 0, 0, 0, 0],
+};
+
 /**
  * Fetch user questions stats (answered count, earnings, streak).
- * Shorter staleTime — stats update more frequently.
+ *
+ * Cache strategy:
+ * - placeholderData keeps previous stats visible during background refetch
+ *   (avoids flash-to-zero on tab switch / pull-to-refresh)
+ * - staleTime 2 min lets SSE-invalidated queries refetch automatically
+ * - gcTime 10 min keeps warm cache for fast back-navigation
  */
 export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Error> {
   const userId = getCurrentUserId();
@@ -715,19 +729,12 @@ export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Erro
   return useQuery({
     queryKey: questionQueryKeys.userStats,
     queryFn: async () => {
-      if (!userId) {
-        // Return default stats for unauthenticated users
-        return {
-          totalAnswered: 0,
-          totalEarnings: 0,
-          currentStreak: 0,
-          questionsAnsweredToday: 0,
-          dailyTarget: 10,
-          weeklyProgress: [0, 0, 0, 0, 0, 0, 0],
-        };
-      }
+      if (!userId) return DEFAULT_STATS;
       const response = await fetchJson<{ data: UserQuestionsStats }>(
-        `/api/questions/user-stats?userId=${userId}`
+        `/api/questions/user-stats?userId=${userId}`,
+        undefined,
+        2,
+        true, // authenticated — sends Bearer token
       );
       if (!response.success) {
         throw new Error(response.error || 'Failed to load stats');
@@ -739,7 +746,8 @@ export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Erro
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
     retry: 2,
-    enabled: true, // Always enabled — returns defaults for unauthenticated
+    placeholderData: (prev) => prev, // keep stale data visible during refetch
+    enabled: true,
   });
 }
 

@@ -532,9 +532,9 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
             sessionState: 'SESSION_SUMMARY',
             pendingRedemption: null,
             redemptionHistory: [...state.redemptionHistory, completed],
-            // Deduct points if successful
+            // Deduct cash value if successful (walletBalance is in UGX, same unit as cashValue)
             walletBalance: success
-              ? Math.max(0, state.walletBalance - completed.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE)
+              ? Math.max(0, state.walletBalance - completed.cashValue)
               : state.walletBalance,
           };
         });

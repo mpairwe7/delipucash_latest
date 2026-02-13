@@ -8,23 +8,25 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
   try {
     console.log("Creating reward question with data:", req.body);
 
-    const { 
-      text, 
-      options, 
-      correctAnswer, 
-      rewardAmount, 
-      expiryTime, 
-      userId,
+    const {
+      text,
+      options,
+      correctAnswer,
+      rewardAmount,
+      expiryTime,
       isInstantReward = false,
       maxWinners = 2,
       paymentProvider,
       phoneNumber
     } = req.body;
 
+    // Token-bound identity: use authenticated user from JWT
+    const userId = req.user?.id;
+
     // Validate required fields
     if (!text || !options || !correctAnswer || !rewardAmount || !userId) {
-      return res.status(400).json({ 
-        message: "Text, options, correctAnswer, rewardAmount, and userId are required" 
+      return res.status(400).json({
+        message: "Text, options, correctAnswer, and rewardAmount are required"
       });
     }
 
@@ -445,14 +447,30 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
   try {
     // Support both body-based and URL param-based questionId
     const rewardQuestionId = req.body.rewardQuestionId || req.params.id;
-    const { userEmail, selectedAnswer, phoneNumber } = req.body;
+    const { selectedAnswer, phoneNumber } = req.body;
 
     // Validate required fields
-    if (!rewardQuestionId || !userEmail || !selectedAnswer) {
-      return res.status(400).json({ 
-        message: "Reward question ID, user email, and selected answer are required" 
+    if (!rewardQuestionId || !selectedAnswer) {
+      return res.status(400).json({
+        message: "Reward question ID and selected answer are required"
       });
     }
+
+    // Token-bound identity: resolve user from verified JWT (set by verifyToken middleware)
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const authenticatedUser = await prisma.appUser.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, email: true },
+    });
+
+    if (!authenticatedUser?.email) {
+      return res.status(404).json({ message: "Authenticated user not found" });
+    }
+
+    const userEmail = authenticatedUser.email;
 
     // SINGLE ATTEMPT ENFORCEMENT: Check if user has already attempted this question
     const existingAttempt = await prisma.questionAttempt.findFirst({

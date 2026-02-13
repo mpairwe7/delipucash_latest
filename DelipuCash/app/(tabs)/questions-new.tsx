@@ -31,7 +31,6 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
-  Modal,
   Pressable,
   ListRenderItemInfo,
   ViewToken,
@@ -80,6 +79,7 @@ import {
   QuestionFormData,
   QuestionFeedSkeleton,
   GamificationSkeleton,
+  StatsRowSkeleton,
   FeedTabsSkeleton,
   StreakCounter,
   PointsDisplay,
@@ -99,7 +99,7 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
-import { useUnreadCount, useRewardQuestions } from "@/services/hooks";
+import { useUnreadCount } from "@/services/hooks";
 import {
   useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
@@ -133,9 +133,6 @@ import {
 } from "@/utils/theme";
 import { triggerHaptic } from "@/utils/quiz-utils";
 
-// Quiz Session
-import QuizSessionScreen from "@/app/quiz-session";
-
 // Error Boundary
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -166,13 +163,9 @@ const MemoizedInFeedAd = memo<MemoizedInFeedAdProps>(
   }
 );
 
-// Estimated item height for getItemLayout (improves scroll perf)
-const ESTIMATED_ITEM_HEIGHT = 160;
-const getItemLayout = (_data: any, index: number) => ({
-  length: ESTIMATED_ITEM_HEIGHT,
-  offset: ESTIMATED_ITEM_HEIGHT * index,
-  index,
-});
+// getItemLayout removed: heterogeneous feed rows (questions, ads, CTAs) have
+// different heights — a fixed estimate hurts scroll restoration and virtualization.
+// removeClippedSubviews + windowSize + maxToRenderPerBatch handle perf.
 
 // ============================================================================
 // TYPES
@@ -227,7 +220,6 @@ interface FeedHeaderProps {
   searchResultsCount: number;
   hasNoResults: boolean;
   onTabChange: (tabId: string) => void;
-  onQuizStart: () => void;
   onInstantRewardPress: () => void;
   onAnswerEarnPress: () => void;
   onAdClick: (ad: Ad) => void;
@@ -251,7 +243,6 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
   searchResultsCount,
   hasNoResults,
   onTabChange,
-  onQuizStart,
   onInstantRewardPress,
   onAnswerEarnPress,
   onAdClick,
@@ -291,22 +282,26 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       )}
 
       {/* Stats Row */}
-      <View style={styles.statsRow}>
-        <StatCard
-          icon={<Award size={18} color={colors.primary} strokeWidth={1.5} />}
-          title="Answered"
-          value={userStats?.totalAnswered || 0}
-          subtitle="Total responses"
-        />
-        <StatCard
-          icon={
-            <TrendingUp size={18} color={colors.success} strokeWidth={1.5} />
-          }
-          title="Today"
-          value={userStats?.questionsAnsweredToday || 0}
-          subtitle={`Goal: ${userStats?.dailyTarget || 10}`}
-        />
-      </View>
+      {!isLoading ? (
+        <Animated.View entering={FadeIn.duration(300)} style={styles.statsRow}>
+          <StatCard
+            icon={<Award size={18} color={colors.primary} strokeWidth={1.5} />}
+            title="Answered"
+            value={userStats?.totalAnswered || 0}
+            subtitle="Total responses"
+          />
+          <StatCard
+            icon={
+              <TrendingUp size={18} color={colors.success} strokeWidth={1.5} />
+            }
+            title="Today"
+            value={userStats?.questionsAnsweredToday || 0}
+            subtitle={`Goal: ${userStats?.dailyTarget || 10}`}
+          />
+        </Animated.View>
+      ) : (
+        <StatsRowSkeleton />
+      )}
 
       {/* Smart Banner Ad */}
       {bannerAds && bannerAds.length > 0 && (
@@ -462,7 +457,6 @@ export default function QuestionsScreen(): React.ReactElement {
   // UI State
   const [refreshing, setRefreshing] = useState(false);
   const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
-  const [showQuizSession, setShowQuizSession] = useState(false);
   const [showCreateWizard, setShowCreateWizard] = useState(false);
 
   // FAB animation
@@ -657,7 +651,6 @@ export default function QuestionsScreen(): React.ReactElement {
       if (isInstantReward) {
         router.push(`/instant-reward-answer/${questionId}` as Href);
       } else {
-        // Navigate to answer & earn screen for regular questions
         router.push(`/question-answer/${questionId}` as Href);
       }
     },
@@ -714,15 +707,6 @@ export default function QuestionsScreen(): React.ReactElement {
     setShowCreateWizard(true);
   }, [fabScale, fabRotation]);
 
-  const handleQuizStart = useCallback(() => {
-    if (!isAuthenticated) {
-      router.push("/(auth)/login" as Href);
-      return;
-    }
-    triggerHaptic("medium");
-    setShowQuizSession(true);
-  }, [isAuthenticated]);
-
   const handleQuestionSubmit = useCallback(
     async (data: QuestionFormData) => {
       try {
@@ -755,30 +739,16 @@ export default function QuestionsScreen(): React.ReactElement {
     []
   );
 
-  // Fetch reward questions for CTA navigation
-  const { data: rewardQuestions } = useRewardQuestions();
-
-  // Navigate to reward-question flow (quiz session) for "Answer & Earn"
+  // Navigate to reward-question listing — the listing screen handles its own
+  // data loading, so we don't need to eagerly fetch reward questions here
   const handleAnswerEarnPress = useCallback(() => {
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
     }
     triggerHaptic("light");
-
-    // Find first available reward question from the reward questions API
-    const firstReward = rewardQuestions?.find((q) => !q.isCompleted);
-
-    if (firstReward) {
-      router.push(`/reward-question/${firstReward.id}` as Href);
-    } else if (rewardQuestions && rewardQuestions.length > 0) {
-      // All completed — go to first one anyway
-      router.push(`/reward-question/${rewardQuestions[0].id}` as Href);
-    } else {
-      // No reward questions loaded yet — go to the listing screen
-      router.push("/instant-reward-questions" as Href);
-    }
-  }, [isAuthenticated, rewardQuestions]);
+    router.push("/instant-reward-questions" as Href);
+  }, [isAuthenticated]);
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({
@@ -788,10 +758,6 @@ export default function QuestionsScreen(): React.ReactElement {
       { translateY: fabTranslateY.value },
     ],
   }));
-
-  // Viewability callback ref - stable reference to prevent FlatList recreation
-  const handleAdImpressionRef = useRef(handleAdImpression);
-  handleAdImpressionRef.current = handleAdImpression;
 
   // Viewability config — ad impressions are now tracked by InFeedAd/AdPlacementWrapper
   // via IAB viewability standard (50% visible for 1s). No duplicate impression here.
@@ -823,7 +789,6 @@ export default function QuestionsScreen(): React.ReactElement {
         searchResultsCount={searchResults.length}
         hasNoResults={hasNoResults}
         onTabChange={handleTabChange}
-        onQuizStart={handleQuizStart}
         onInstantRewardPress={handleInstantRewardPress}
         onAnswerEarnPress={handleAnswerEarnPress}
         onAdClick={handleAdClick}
@@ -847,7 +812,6 @@ export default function QuestionsScreen(): React.ReactElement {
       searchResults.length,
       hasNoResults,
       handleTabChange,
-      handleQuizStart,
       handleInstantRewardPress,
       handleAnswerEarnPress,
       handleAdClick,
@@ -1034,7 +998,6 @@ export default function QuestionsScreen(): React.ReactElement {
           windowSize={5}
           initialNumToRender={3}
           updateCellsBatchingPeriod={200}
-          getItemLayout={getItemLayout}
           viewabilityConfigCallbackPairs={
             viewabilityConfigCallbackPairs.current
           }
@@ -1080,16 +1043,6 @@ export default function QuestionsScreen(): React.ReactElement {
         searchContext="Questions"
         trendingSearches={["How to earn", "Rewards", "Survey tips", "Cash out"]}
       />
-
-      {/* Quiz Session Modal */}
-      <Modal
-        visible={showQuizSession}
-        animationType="slide"
-        presentationStyle="fullScreen"
-        onRequestClose={() => setShowQuizSession(false)}
-      >
-        <QuizSessionScreen onClose={() => setShowQuizSession(false)} />
-      </Modal>
 
       {/* Create Question Wizard */}
       <CreateQuestionWizard
