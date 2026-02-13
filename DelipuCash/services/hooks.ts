@@ -1170,20 +1170,36 @@ export interface DailyRewardData {
 
 /**
  * Hook to fetch daily reward status
+ * Calls GET /api/rewards/daily — falls back to defaults if backend route
+ * is not yet implemented (rewardRoutes.mjs currently has no daily endpoint).
  */
 export function useDailyReward(): UseQueryResult<DailyRewardData, Error> {
   return useQuery({
     queryKey: queryKeys.dailyReward,
     queryFn: async () => {
-      // Simulated daily reward data
-      const data: DailyRewardData = {
-        isAvailable: true,
-        nextRewardIn: 0,
-        currentStreak: 7,
-        todayReward: 100,
-        streakBonus: 50,
-      };
-      return data;
+      try {
+        const response = await api.rewards.claimDaily();
+        if (response.success && response.data) {
+          const d = response.data as any;
+          return {
+            isAvailable: d.isAvailable ?? false,
+            nextRewardIn: d.nextRewardIn ?? 0,
+            currentStreak: d.streak ?? d.currentStreak ?? 0,
+            todayReward: d.reward ?? d.todayReward ?? 0,
+            streakBonus: d.streakBonus ?? 0,
+          } satisfies DailyRewardData;
+        }
+      } catch {
+        // Backend route not implemented yet — fall through to defaults
+      }
+      // Fallback: daily reward unavailable until backend is wired
+      return {
+        isAvailable: false,
+        nextRewardIn: 24,
+        currentStreak: 0,
+        todayReward: 0,
+        streakBonus: 0,
+      } satisfies DailyRewardData;
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -1232,16 +1248,19 @@ export function useDashboardStats(): UseQueryResult<DashboardStats, Error> {
 
 /**
  * Hook to claim daily reward
+ * POSTs to /api/rewards/daily — backend should credit the user and return
+ * { reward, streak } or similar. Falls back with an error if not implemented.
  */
 export function useClaimDailyReward(): UseMutationResult<{ points: number; message: string }, Error, void> {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationKey: ['dashboard', 'claimDailyReward'],
     mutationFn: async () => {
-      // Simulated claim response
-      await new Promise(resolve => setTimeout(resolve, 500));
-      return { points: 100, message: "Daily reward claimed!" };
+      const response = await api.rewards.claimDaily();
+      if (!response.success) throw new Error(response.error || 'Failed to claim daily reward');
+      const d = response.data as any;
+      return { points: d.reward ?? 0, message: d.message ?? 'Daily reward claimed!' };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.dailyReward });

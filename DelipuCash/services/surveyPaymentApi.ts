@@ -14,6 +14,7 @@ import {
   SurveySubscriptionType,
   PaymentProvider,
 } from "@/types";
+import { useAuthStore } from "@/utils/auth/store";
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -147,6 +148,12 @@ const SURVEY_PAYMENT_ROUTES = {
 // FETCH HELPER
 // ============================================================================
 
+/** Get auth token from Zustand store for protected API calls */
+const getAuthHeaders = (): Record<string, string> => {
+  const token = useAuthStore.getState().auth?.token || null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
 async function fetchJson<T>(
   path: string,
   init?: RequestInit
@@ -156,6 +163,7 @@ async function fetchJson<T>(
     const response = await fetch(url, {
       headers: {
         "Content-Type": "application/json",
+        ...getAuthHeaders(),
         ...(init?.headers || {}),
       },
       ...init,

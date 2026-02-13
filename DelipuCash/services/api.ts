@@ -431,24 +431,27 @@ export const videosApi = {
   },
 
   /**
-   * Get trending videos
+   * Get trending videos — no dedicated backend route, uses /all?sortBy=popular
    */
   async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${API_ROUTES.videos.trending}?limit=${limit}`);
+    const response = await fetchJson<{ data: Video[] }>(`${API_ROUTES.videos.list}?sortBy=popular&limit=${limit}`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**
-   * Get live videos
+   * Get live videos — uses /all with isLive filter (no dedicated backend route)
    */
   async getLive(): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${API_ROUTES.videos.list}?live=true`);
+    const response = await fetchJson<{ data: Video[] }>(`${API_ROUTES.videos.list}?isLive=true`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**
-   * Get recommended videos for user
+   * Get recommended videos — uses /all (no dedicated backend route)
    */
   async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return fetchJson<Video[]>(`${API_ROUTES.videos.list}?recommended=true&limit=${limit}`);
+    const response = await fetchJson<{ data: Video[] }>(`${API_ROUTES.videos.list}?limit=${limit}`);
+    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
   },
 
   /**

@@ -52,10 +52,10 @@ function transformUserProfile(user: AppUser, stats?: UserStats): UserProfile {
     role: user.role, // Include role for admin checks
     subscriptionStatus: user.subscriptionStatus,
     surveysubscriptionStatus: user.surveysubscriptionStatus,
-    // Computed fields from stats
-    walletBalance: stats?.totalEarnings ? stats.totalEarnings - (stats.totalEarnings * 0.5) : user.points / 100,
-    totalEarnings: stats?.totalEarnings || user.points / 50,
-    totalRewards: stats?.totalRewards || user.points,
+    // Use real backend values — avoid synthetic calculations that diverge from truth
+    walletBalance: stats?.totalEarnings ?? 0,
+    totalEarnings: stats?.totalEarnings ?? 0,
+    totalRewards: stats?.totalRewards ?? 0,
     twoFactorEnabled: false,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,

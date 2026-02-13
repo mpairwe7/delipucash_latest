@@ -66,6 +66,7 @@ export interface QuickAction {
   onPress: () => void;
   badge?: string | number;
   isHighlighted?: boolean;
+  disabled?: boolean;
   accessibilityHint?: string;
 }
 
@@ -130,10 +131,12 @@ function QuickActionButton({
         onPress={handlePress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        style={[styles.actionButton, animatedStyle]}
+        disabled={action.disabled}
+        style={[styles.actionButton, animatedStyle, action.disabled && { opacity: 0.6 }]}
         accessibilityRole="button"
         accessibilityLabel={action.label}
         accessibilityHint={action.accessibilityHint || `Tap to ${action.label.toLowerCase()}`}
+        accessibilityState={{ disabled: action.disabled }}
         testID={testID ? `${testID}-${action.id}` : undefined}
       >
         <LinearGradient
@@ -255,6 +258,7 @@ export function QuickActions({
         : ([withAlpha(colors.textMuted, 0.5), withAlpha(colors.textMuted, 0.3)] as const),
       onPress: onClaimReward || (() => {}),
       isHighlighted: dailyRewardAvailable,
+      disabled: !dailyRewardAvailable,
       accessibilityHint: dailyRewardAvailable
         ? 'Claim your daily reward now'
         : 'Daily reward already claimed, come back tomorrow',

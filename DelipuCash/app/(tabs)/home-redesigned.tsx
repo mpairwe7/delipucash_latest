@@ -96,6 +96,7 @@ import {
   EarningOpportunitiesList,
   type EarningOpportunity,
 } from "@/components/home";
+import { useHomeUIStore, selectSearchQuery, selectActiveModal } from "@/store/HomeUIStore";
 import {
   useTrendingVideos,
   useRecentQuestions,
@@ -271,37 +272,43 @@ export default function HomePage(): React.ReactElement {
   const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
   const { data: user, loading: userLoading, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [activeModal, setActiveModal] = useState<string | null>(null);
+  // UI state from Zustand store (persisted across navigations)
+  const searchQuery = useHomeUIStore(selectSearchQuery);
+  const setSearchQuery = useHomeUIStore(s => s.setSearchQuery);
+  const activeModal = useHomeUIStore(selectActiveModal);
+  const setActiveModal = useHomeUIStore(s => s.setActiveModal);
   const { showToast } = useToast();
 
   // Scroll animation value
   const scrollY = useSharedValue(0);
   const flatListRef = useRef<FlatList<DashboardSection>>(null);
 
-  // Data hooks with loading states
-  const { 
-    data: trendingVideos, 
-    refetch: refetchVideos, 
-    isLoading: videosLoading 
+  // Data hooks with loading + error states
+  const {
+    data: trendingVideos,
+    refetch: refetchVideos,
+    isLoading: videosLoading,
+    isError: videosError,
   } = useTrendingVideos(6);
-  const { 
-    data: recentQuestions, 
-    refetch: refetchQuestions, 
-    isLoading: questionsLoading 
+  const {
+    data: recentQuestions,
+    refetch: refetchQuestions,
+    isLoading: questionsLoading,
+    isError: questionsError,
   } = useRecentQuestions(5);
-  const { 
-    data: runningSurveys, 
-    refetch: refetchRunningSurveys, 
-    isLoading: runningSurveysLoading 
+  const {
+    data: runningSurveys,
+    refetch: refetchRunningSurveys,
+    isLoading: runningSurveysLoading,
+    isError: surveysError,
   } = useRunningSurveys();
-  const { 
-    data: upcomingSurveys, 
-    refetch: refetchUpcomingSurveys, 
-    isLoading: upcomingSurveysLoading 
+  const {
+    data: upcomingSurveys,
+    refetch: refetchUpcomingSurveys,
+    isLoading: upcomingSurveysLoading
   } = useUpcomingSurveys();
   const { data: dailyReward, refetch: refetchDailyReward } = useDailyReward();
-  const { data: dashboardStats, refetch: refetchStats } = useDashboardStats();
+  const { data: dashboardStats, refetch: refetchStats, isError: statsError } = useDashboardStats();
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
@@ -337,13 +344,13 @@ export default function HomePage(): React.ReactElement {
       sectionsList.push({ id: "ad-banner", type: "ad-banner", data: bannerAds[0] });
     }
 
-    // Trending videos
-    if (!videosLoading && trendingVideos && trendingVideos.length > 0) {
+    // Trending videos — show section even on error for retry
+    if (!videosLoading && ((trendingVideos && trendingVideos.length > 0) || videosError)) {
       sectionsList.push({ id: "trending-videos", type: "trending-videos" });
     }
 
     // Earning opportunities (questions transformed)
-    if (!questionsLoading && recentQuestions && recentQuestions.length > 0) {
+    if (!questionsLoading && ((recentQuestions && recentQuestions.length > 0) || questionsError)) {
       sectionsList.push({ id: "earning-opportunities", type: "earning-opportunities" });
     }
 
@@ -397,6 +404,8 @@ export default function HomePage(): React.ReactElement {
     questionsLoading,
     runningSurveysLoading,
     upcomingSurveysLoading,
+    videosError,
+    questionsError,
   ]);
 
   // Scroll handler for animations
@@ -445,10 +454,14 @@ export default function HomePage(): React.ReactElement {
     refetchBannerAds, refetchHomeAds, refetchFeaturedAds,
   ]);
 
-  // Claim daily reward handler
+  // Claim daily reward handler — guarded on availability
   const handleClaimDailyReward = useCallback(async () => {
     if (!user) {
       showToast({ message: 'Please log in to claim rewards.', type: 'warning', action: 'Login', onAction: () => router.push('/(auth)/login') });
+      return;
+    }
+    if (!dailyReward?.isAvailable) {
+      showToast({ message: 'Daily reward already claimed. Come back tomorrow!', type: 'info' });
       return;
     }
     try {
@@ -457,9 +470,9 @@ export default function HomePage(): React.ReactElement {
       AccessibilityInfo.announceForAccessibility("Daily reward claimed successfully!");
     } catch (error) {
       triggerHaptic('error');
-      console.error("Failed to claim daily reward:", error);
+      showToast({ message: 'Failed to claim reward. Please try again.', type: 'error' });
     }
-  }, [claimDailyReward, user, showToast]);
+  }, [claimDailyReward, user, dailyReward?.isAvailable, showToast]);
 
   // Quick action handlers
   const handleAnswerQuestion = useCallback(() => {
@@ -482,8 +495,10 @@ export default function HomePage(): React.ReactElement {
   }, []);
 
   const handleSearch = useCallback((query: string) => {
+    if (!query.trim()) return;
     triggerHaptic('light');
-    console.log("Search:", query);
+    // Navigate to the videos tab with search query as param
+    router.push(`/(tabs)/videos-new?search=${encodeURIComponent(query.trim())}` as Href);
   }, []);
 
   // Ad handlers
@@ -496,14 +511,21 @@ export default function HomePage(): React.ReactElement {
     });
   }, [recordAdClick]);
 
-  const handleAdImpression = useCallback((ad: any, duration: number = 1000) => {
-    recordAdImpression.mutate({
-      adId: ad.id,
-      placement: "home",
-      duration,
-      wasVisible: true,
-      viewportPercentage: 100,
-    });
+  // Ad impression tracking — use viewability-duration based recording.
+  // FlatList only renders visible items, so we record on mount (render)
+  // with a minimum 500ms debounce to avoid premature impressions from fast scrolling.
+  const handleAdImpression = useCallback((ad: any) => {
+    // Defer impression recording to ensure the ad was actually visible
+    const timer = setTimeout(() => {
+      recordAdImpression.mutate({
+        adId: ad.id,
+        placement: "home",
+        duration: 500,
+        wasVisible: true,
+        viewportPercentage: 100,
+      });
+    }, 500);
+    return () => clearTimeout(timer);
   }, [recordAdImpression]);
 
   // Explore modal handlers
@@ -522,6 +544,7 @@ export default function HomePage(): React.ReactElement {
     const opportunities: EarningOpportunity[] = [];
 
     // Add videos as opportunities
+    // Video type: thumbnail (not thumbnailUrl), no reward/isPopular fields
     if (trendingVideos) {
       trendingVideos.slice(0, 3).forEach((video: any) => {
         opportunities.push({
@@ -529,28 +552,29 @@ export default function HomePage(): React.ReactElement {
           type: "video",
           title: video.title || "Watch & Earn",
           description: video.description,
-          reward: video.reward || 10,
+          reward: 10,
           rewardType: "points",
-          thumbnailUrl: video.thumbnailUrl,
+          thumbnailUrl: video.thumbnail,
           duration: video.duration,
           participants: video.views,
-          isHot: video.isPopular,
+          isHot: video.views > 100,
         });
       });
     }
 
     // Add questions as opportunities
+    // Question type: text (not title/content), rewardAmount (not reward), totalAnswers (not answersCount)
     if (recentQuestions) {
       recentQuestions.slice(0, 3).forEach((question: any) => {
         opportunities.push({
           id: `question-${question.id}`,
           type: "question",
-          title: question.title || question.content,
-          reward: question.reward || 50,
+          title: question.text || "Answer & Earn",
+          reward: question.rewardAmount || 50,
           rewardType: "points",
           category: question.category,
-          isNew: question.isNew,
-          participants: question.answersCount,
+          isNew: !question.totalAnswers,
+          participants: question.totalAnswers || 0,
         });
       });
     }
@@ -754,6 +778,14 @@ export default function HomePage(): React.ReactElement {
                 icon="play-circle"
                 seeAllAction={() => router.push("/(tabs)/videos-new")}
               >
+                {videosError ? (
+                  <View style={[styles.emptyState, { backgroundColor: colors.elevated }]}>
+                    <MaterialCommunityIcons name="alert-circle-outline" size={28} color={colors.error} />
+                    <Text style={[styles.emptyStateText, { color: colors.textMuted }]}>
+                      Failed to load videos. Pull to refresh.
+                    </Text>
+                  </View>
+                ) : (
                 <FlatList
                   horizontal
                   data={trendingVideos}
@@ -771,7 +803,7 @@ export default function HomePage(): React.ReactElement {
                   maxToRenderPerBatch={4}
                   windowSize={5}
                   initialNumToRender={3}
-                />
+                />)}
               </Section>
             </View>
           );
@@ -784,6 +816,14 @@ export default function HomePage(): React.ReactElement {
                 icon="star"
                 seeAllAction={() => router.push("/instant-reward-questions")}
               >
+                {questionsError ? (
+                  <View style={[styles.emptyState, { backgroundColor: colors.elevated }]}>
+                    <MaterialCommunityIcons name="alert-circle-outline" size={28} color={colors.error} />
+                    <Text style={[styles.emptyStateText, { color: colors.textMuted }]}>
+                      Failed to load opportunities. Pull to refresh.
+                    </Text>
+                  </View>
+                ) : (<>
                 <View style={styles.opportunitiesHeader}>
                   <Sparkles size={14} color={colors.warning} />
                   <Text
@@ -799,6 +839,7 @@ export default function HomePage(): React.ReactElement {
                   onOpportunityPress={handleOpportunityPress}
                   variant="compact"
                 />
+                </>)}
               </Section>
             </View>
           );
@@ -1084,6 +1125,8 @@ export default function HomePage(): React.ReactElement {
       handleAdImpression,
       handleExplorePress,
       handleOpportunityPress,
+      videosError,
+      questionsError,
       insets.bottom,
     ]
   );
@@ -1146,7 +1189,7 @@ export default function HomePage(): React.ReactElement {
         }}
         // Accessibility
         accessibilityLabel="Dashboard"
-        accessibilityRole="scrollbar"
+        accessibilityRole="list"
       />
 
       {/* Explore Modals */}

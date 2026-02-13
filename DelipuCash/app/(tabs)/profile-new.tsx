@@ -34,7 +34,9 @@ import {
   Dimensions,
   FlatList,
   ListRenderItemInfo,
+  Modal,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,8 +84,12 @@ import type { RecentTransaction } from '@/components/profile/TransactionsCard';
 
 // Services & Hooks
 import {
+  useChangePassword,
   useResend2FACode,
+  useRevokeSession,
+  useTransactions,
   useUnreadCount,
+  useUpdateProfile,
   useUpdateTwoFactor,
   useUserSessions,
   useUserStats,
@@ -337,28 +343,28 @@ export default function ProfileScreen(): React.ReactElement {
   
   // Data fetching
   const { data: user, loading: userLoading, refetch: refetchUser } = useUser();
-  const { data: unreadCount } = useUnreadCount();
-  const { data: userStats, isLoading: statsLoading } = useUserStats();
+  const { data: unreadCount, refetch: refetchUnread } = useUnreadCount();
+  const { data: userStats, isLoading: statsLoading, refetch: refetchStats } = useUserStats();
   const { data: sessions = [], refetch: refetchSessions } = useUserSessions();
-  const { data: surveySubscription } = useSurveySubscriptionStatus();
+  const { data: surveySubscription, refetch: refetchSubscription } = useSurveySubscriptionStatus();
+  const { data: transactions = [] } = useTransactions();
   
   // Mutations
-  // const updateProfileMutation = useUpdateProfile(); // TODO: implement edit profile
+  const updateProfileMutation = useUpdateProfile();
   const updateTwoFactorMutation = useUpdateTwoFactor();
   const verify2FAMutation = useVerify2FACode();
   const resend2FAMutation = useResend2FACode();
-  // const changePasswordMutation = useChangePassword(); // TODO: implement password change
-  // const updatePrivacyMutation = useUpdatePrivacySettings(); // TODO: implement privacy settings
-  // const revokeSessionMutation = useRevokeSession(); // TODO: implement session management
+  const changePasswordMutation = useChangePassword();
+  const revokeSessionMutation = useRevokeSession();
 
   // Local state
   const [twoFactorEnabled, setTwoFactorEnabled] = useState<boolean>(Boolean(user?.twoFactorEnabled));
   const [show2FAModal, setShow2FAModal] = useState(false);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
-  const [isEditingSaving, setIsEditingSaving] = useState(false);
+  const [showDisable2FAPrompt, setShowDisable2FAPrompt] = useState(false);
+  const [disable2FAPassword, setDisable2FAPassword] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
-  // const [privacy, setPrivacy] = useState({ shareProfile: true, shareActivity: false }); // TODO: implement privacy settings
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Subscription status
@@ -380,15 +386,15 @@ export default function ProfileScreen(): React.ReactElement {
 
   // Profile data
   const profile = useMemo(() => ({
-    firstName: user?.firstName || 'User',
+    firstName: user?.firstName || '',
     lastName: user?.lastName || '',
-    email: user?.email || 'user@example.com',
+    email: user?.email || '',
     telephone: user?.telephone || '',
-    walletBalance: user?.walletBalance ?? ((userStats?.totalEarnings || 0) * 0.5),
+    walletBalance: user?.walletBalance ?? 0,
     totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
     totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
     streakDays: userStats?.currentStreak || 0,
-    isVerified: true,
+    isVerified: Boolean(user?.email),
     activeSessions: sessions.filter(s => s.isActive).length,
   }), [user, userStats, sessions]);
 
@@ -420,7 +426,7 @@ export default function ProfileScreen(): React.ReactElement {
       icon: MessageSquare,
       iconColor: '#007B55',
       iconBgColor: 'rgba(0, 123, 85, 0.1)',
-      route: '/(tabs)/surveys',
+      route: '/(tabs)/surveys-new',
       accessibilityHint: 'View and manage your surveys',
     },
     {
@@ -474,33 +480,20 @@ export default function ProfileScreen(): React.ReactElement {
     },
   ], []);
 
-  // Recent transactions for TransactionsCard (formatted for the component)
-  const recentTransactions: RecentTransaction[] = useMemo(() => [
-    {
-      id: '1',
-      type: 'reward',
-      amount: 150,
-      title: 'Daily Reward Claimed',
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      status: 'completed',
-    },
-    {
-      id: '2',
-      type: 'deposit',
-      amount: 500,
-      title: 'Survey Bonus',
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
-      status: 'completed',
-    },
-    {
-      id: '3',
-      type: 'withdrawal',
-      amount: 200,
-      title: 'Mobile Money Transfer',
-      createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
-      status: 'completed',
-    },
-  ], []);
+  // Recent transactions — map from backend Transaction[] to RecentTransaction[]
+  const recentTransactions: RecentTransaction[] = useMemo(() => {
+    if (!transactions.length) return [];
+    return transactions.slice(0, 5).map((tx) => ({
+      id: tx.id,
+      type: tx.type === 'payment' ? 'deposit' as const : tx.type,
+      amount: tx.amount,
+      title: tx.description || tx.type,
+      createdAt: new Date(tx.createdAt),
+      status: tx.status === 'SUCCESSFUL' ? 'completed' as const
+        : tx.status === 'FAILED' ? 'failed' as const
+        : 'pending' as const,
+    }));
+  }, [transactions]);
 
   // ============================================================================
   // HANDLERS
@@ -508,9 +501,15 @@ export default function ProfileScreen(): React.ReactElement {
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    await Promise.all([refetchUser(), refetchSessions()]);
+    await Promise.all([
+      refetchUser(),
+      refetchSessions(),
+      refetchStats(),
+      refetchUnread(),
+      refetchSubscription(),
+    ]);
     setIsRefreshing(false);
-  }, [refetchUser, refetchSessions]);
+  }, [refetchUser, refetchSessions, refetchStats, refetchUnread, refetchSubscription]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -544,56 +543,22 @@ export default function ProfileScreen(): React.ReactElement {
   }, []);
 
   const handleSaveProfile = useCallback(async (data: EditProfileData) => {
-    setIsEditingSaving(true);
     try {
-      // TODO: Implement actual API call
-      // await updateProfileMutation.mutateAsync(data);
-      console.log('Saving profile:', data);
-
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Refetch user data
+      await updateProfileMutation.mutateAsync(data);
       await refetchUser();
-
       setShowEditProfileModal(false);
       Alert.alert('Success', 'Your profile has been updated!');
     } catch (error) {
-      Alert.alert('Error', 'Failed to update profile. Please try again.');
+      Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update profile. Please try again.');
       throw error;
-    } finally {
-      setIsEditingSaving(false);
     }
-  }, [refetchUser]);
+  }, [updateProfileMutation, refetchUser]);
 
   const handleToggle2FA = useCallback(() => {
     if (twoFactorEnabled) {
-      // Disable flow - show password confirmation
-      Alert.alert(
-        'Disable 2FA',
-        'Are you sure you want to disable two-factor authentication?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Disable',
-            style: 'destructive',
-            onPress: () => {
-              updateTwoFactorMutation.mutate(
-                { enabled: false },
-                {
-                  onSuccess: () => {
-                    setTwoFactorEnabled(false);
-                    Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
-                  },
-                  onError: (error) => {
-                    Alert.alert('Error', error.message || 'Failed to disable 2FA.');
-                  },
-                }
-              );
-            },
-          },
-        ]
-      );
+      // Disable flow — prompt for password (backend requires it)
+      setDisable2FAPassword('');
+      setShowDisable2FAPrompt(true);
     } else {
       // Enable flow - request verification code
       updateTwoFactorMutation.mutate(
@@ -614,6 +579,27 @@ export default function ProfileScreen(): React.ReactElement {
       );
     }
   }, [twoFactorEnabled, updateTwoFactorMutation]);
+
+  const handleConfirmDisable2FA = useCallback(() => {
+    if (!disable2FAPassword.trim()) {
+      Alert.alert('Error', 'Password is required to disable 2FA.');
+      return;
+    }
+    updateTwoFactorMutation.mutate(
+      { enabled: false, password: disable2FAPassword },
+      {
+        onSuccess: () => {
+          setTwoFactorEnabled(false);
+          setShowDisable2FAPrompt(false);
+          setDisable2FAPassword('');
+          Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
+        },
+        onError: (error) => {
+          Alert.alert('Error', error.message || 'Failed to disable 2FA.');
+        },
+      }
+    );
+  }, [disable2FAPassword, updateTwoFactorMutation]);
 
   const handleVerify2FA = useCallback((code: string) => {
     verify2FAMutation.mutate(code, {
@@ -642,6 +628,63 @@ export default function ProfileScreen(): React.ReactElement {
     });
   }, [resend2FAMutation]);
 
+  const handleChangePassword = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      Alert.prompt('Current Password', 'Enter your current password:', (currentPassword) => {
+        if (!currentPassword) return;
+        Alert.prompt('New Password', 'Enter your new password (min 8 characters):', (newPassword) => {
+          if (!newPassword || newPassword.length < 8) {
+            Alert.alert('Error', 'New password must be at least 8 characters.');
+            return;
+          }
+          changePasswordMutation.mutate(
+            { currentPassword, newPassword },
+            {
+              onSuccess: () => Alert.alert('Success', 'Password changed successfully!'),
+              onError: (e) => Alert.alert('Error', e.message || 'Failed to change password.'),
+            }
+          );
+        }, 'secure-text');
+      }, 'secure-text');
+    } else {
+      // Android: Alert.prompt not available — guide to forgot-password flow
+      Alert.alert(
+        'Change Password',
+        'To change your password on Android, use the "Forgot Password" option on the sign-in screen.',
+        [{ text: 'OK' }]
+      );
+    }
+  }, [changePasswordMutation]);
+
+  const handleManageSessions = useCallback(() => {
+    const activeSessions = sessions.filter(s => s.isActive);
+    if (activeSessions.length <= 1) {
+      Alert.alert('Sessions', 'Only your current session is active.');
+      return;
+    }
+    Alert.alert(
+      `${activeSessions.length} Active Sessions`,
+      'Would you like to revoke all other sessions?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Revoke Others',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const others = activeSessions.slice(1);
+              await Promise.all(others.map(s => revokeSessionMutation.mutateAsync(s.id)));
+              await refetchSessions();
+              Alert.alert('Success', 'Other sessions revoked.');
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'Failed to revoke sessions.');
+            }
+          },
+        },
+      ]
+    );
+  }, [sessions, revokeSessionMutation, refetchSessions]);
+
   // ============================================================================
   // SETTINGS ITEMS
   // ============================================================================
@@ -662,7 +705,7 @@ export default function ProfileScreen(): React.ReactElement {
       label: 'Change Password',
       subtitle: 'Update your password',
       icon: <KeyRound size={ICON_SIZE.base} color={colors.info} />,
-      onPress: () => Alert.alert('Change Password', 'Password change flow coming soon!'),
+      onPress: handleChangePassword,
     },
     {
       type: 'navigation',
@@ -670,9 +713,9 @@ export default function ProfileScreen(): React.ReactElement {
       label: 'Active Sessions',
       subtitle: `${profile.activeSessions} device${profile.activeSessions !== 1 ? 's' : ''}`,
       icon: <Smartphone size={ICON_SIZE.base} color={colors.warning} />,
-      onPress: () => Alert.alert('Sessions', 'Session management coming soon!'),
+      onPress: handleManageSessions,
     },
-  ], [twoFactorEnabled, handleToggle2FA, colors, profile.activeSessions]);
+  ], [twoFactorEnabled, handleToggle2FA, handleChangePassword, handleManageSessions, colors, profile.activeSessions]);
 
   const appearanceSettings: SettingItem[] = useMemo(() => [
     {
@@ -874,6 +917,63 @@ export default function ProfileScreen(): React.ReactElement {
         isResending={resend2FAMutation.isPending}
       />
 
+      {/* 2FA Disable Password Modal */}
+      <Modal
+        visible={showDisable2FAPrompt}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDisable2FAPrompt(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <AccessibleText variant="h3" style={{ marginBottom: SPACING.sm }}>
+              Disable 2FA
+            </AccessibleText>
+            <AccessibleText variant="body" color="textMuted" style={{ marginBottom: SPACING.md }}>
+              Enter your password to confirm disabling two-factor authentication.
+            </AccessibleText>
+            <TextInput
+              value={disable2FAPassword}
+              onChangeText={setDisable2FAPassword}
+              placeholder="Enter your password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoFocus
+              style={[
+                styles.passwordInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              accessibilityLabel="Password input"
+            />
+            <View style={styles.modalButtons}>
+              <AnimatedCard
+                variant="outlined"
+                onPress={() => {
+                  setShowDisable2FAPrompt(false);
+                  setDisable2FAPassword('');
+                }}
+                style={{ flex: 1, marginRight: SPACING.sm }}
+              >
+                <AccessibleText variant="body" style={{ textAlign: 'center' }}>Cancel</AccessibleText>
+              </AnimatedCard>
+              <AnimatedCard
+                variant="filled"
+                onPress={handleConfirmDisable2FA}
+                style={{ flex: 1 }}
+              >
+                <AccessibleText variant="body" medium customColor="#FFFFFF" style={{ textAlign: 'center' }}>
+                  {updateTwoFactorMutation.isPending ? 'Disabling...' : 'Disable'}
+                </AccessibleText>
+              </AnimatedCard>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Edit Profile Modal */}
       <EditProfileModal
         visible={showEditProfileModal}
@@ -882,11 +982,11 @@ export default function ProfileScreen(): React.ReactElement {
           lastName: profile.lastName,
           email: profile.email,
           telephone: profile.telephone,
-          avatarUri: undefined, // TODO: Add avatar URI from user data
+          avatarUri: undefined,
         }}
         onSave={handleSaveProfile}
         onClose={() => setShowEditProfileModal(false)}
-        isSaving={isEditingSaving}
+        isSaving={updateProfileMutation.isPending}
       />
     </View>
   );
@@ -933,5 +1033,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: SPACING.xl,
+  },
+  modalContent: {
+    width: '100%',
+    borderRadius: 16,
+    padding: SPACING.xl,
+  },
+  passwordInput: {
+    height: 48,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: SPACING.md,
+    fontSize: 16,
+    marginBottom: SPACING.lg,
+  },
+  modalButtons: {
+    flexDirection: 'row' as const,
   },
 });
