@@ -68,6 +68,9 @@ export { default as questionApi } from "./questionApi";
 export { default as surveyPaymentApi } from "./surveyPaymentApi";
 export * from "./surveyPaymentHooks";
 
+// Auth TanStack Query Hooks
+export * from "./authHooks";
+
 // Ad Services
 export { default as adApi } from "./adApi";
 

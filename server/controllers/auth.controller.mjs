@@ -35,30 +35,22 @@ const verifyOTPCode = (inputCode, hashedCode) => {
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
-  console.log("👤 Creating a new user");
-
   const {email, password,firstName,lastName,phone } = req.body;
-
-  console.log('📝 Signup request for email:', email);
 
   // Check if the user already exists
   const userExists = await prisma.appUser.findUnique({ where: {email } });
 
   if (userExists) {
-    console.log("❌ User already exists:", email);
     return res.status(409).send({ message: "User already registered" });
   }
 
-  console.log('✅ User does not exist, proceeding with registration');
-
   // Hash the password
   const hashedPassword = await bcrypt.hash(password, 10);
-  console.log('🔒 Password hashed successfully');
 
   // Create new user
   const newUser = await prisma.appUser.create({
     data: {
-     email,     
+     email,
       password: hashedPassword,
       firstName,
       lastName,
@@ -66,25 +58,19 @@ export const signup = asyncHandler(async (req, res, next) => {
     },
   });
 
-  console.log('✅ New user created successfully:', { id: newUser.id, email: newUser.email, firstName: newUser.firstName, lastName: newUser.lastName });
-
   // Create JWT token
   const token = jwt.sign({ id: newUser.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
-
-  console.log('🎫 JWT token created with 3-hour expiration');
 
   // Send response with user data and token
   res.status(200).send({
     message: "Registered successfully",
+    success: true,
     user: {
       id: newUser.id,
-    email: newUser.email,
-      // image: newUser.image,
+      email: newUser.email,
     },
     token,
   });
-
-  console.log('🎉 User registration completed successfully for:', email);
 });
 
 
@@ -210,16 +196,12 @@ export const getUserPoints = async (req, res, next) => {
 
 export const signin = asyncHandler(async (req, res, next) => {
   const {email, password } = req.body;
-  console.log('Incoming request:', req.body);
 
   const validUser = await prisma.appUser.findUnique({ where: {email } });
 
   if (!validUser) {
-    console.error('user not found');
     return next(errorHandler(404, 'User not found!'));
   }
-
-  console.log('User found:', validUser);
 
   if (typeof validUser.password !== 'string') {
     return next(errorHandler(500, 'Invalid password format!'));
@@ -232,28 +214,21 @@ export const signin = asyncHandler(async (req, res, next) => {
 
   const token = jwt.sign({ id: validUser.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
   const { password: pass, ...rest } = validUser;
-  console.log('✅ Successful login for user:', validUser.email);
-  console.log('🕐 Token expiration set to 3 hours');
-  
-  // Log the user data to ensure the image is included
-  console.log('📤 User data to be returned:', rest);
 
-  // Create login session
+  // Create login session (non-blocking — don't fail login if this errors)
   try {
     const deviceInfo = {
       platform: req.headers['user-agent']?.includes('Mobile') ? 'Mobile' : 'Desktop',
-      browser: req.headers['user-agent']?.includes('Chrome') ? 'Chrome' : 
-               req.headers['user-agent']?.includes('Safari') ? 'Safari' : 
+      browser: req.headers['user-agent']?.includes('Chrome') ? 'Chrome' :
+               req.headers['user-agent']?.includes('Safari') ? 'Safari' :
                req.headers['user-agent']?.includes('Firefox') ? 'Firefox' : 'Unknown',
-      os: req.headers['user-agent']?.includes('Android') ? 'Android' : 
-          req.headers['user-agent']?.includes('iOS') ? 'iOS' : 
-          req.headers['user-agent']?.includes('Windows') ? 'Windows' : 
+      os: req.headers['user-agent']?.includes('Android') ? 'Android' :
+          req.headers['user-agent']?.includes('iOS') ? 'iOS' :
+          req.headers['user-agent']?.includes('Windows') ? 'Windows' :
           req.headers['user-agent']?.includes('Mac') ? 'macOS' : 'Unknown'
     };
 
-    console.log('📱 Creating login session with device info:', deviceInfo);
-
-    const loginSession = await prisma.loginSession.create({
+    await prisma.loginSession.create({
       data: {
         userId: validUser.id,
         deviceInfo,
@@ -262,11 +237,8 @@ export const signin = asyncHandler(async (req, res, next) => {
         sessionToken: token,
       },
     });
-
-    console.log('✅ Login session created successfully:', { sessionId: loginSession.id, userId: loginSession.userId });
   } catch (error) {
-    console.error('❌ Failed to create login session:', error);
-    // Don't fail the login if session creation fails
+    // Non-critical — don't fail the login if session creation fails
   }
 
   res.status(200).json({
@@ -281,12 +253,11 @@ export const signin = asyncHandler(async (req, res, next) => {
 // User SignOut
 export const signOut = asyncHandler(async (req, res, next) => {
   const userId = req.user?.id;
-  console.log('🚪 User signout request for user ID:', userId);
-  
+
   // Mark current session as inactive
   try {
     await prisma.loginSession.updateMany({
-      where: { 
+      where: {
         userId: userId,
         sessionToken: req.headers.authorization?.replace('Bearer ', '')
       },
@@ -295,13 +266,11 @@ export const signOut = asyncHandler(async (req, res, next) => {
         logoutTime: new Date(),
       },
     });
-    console.log('✅ User session marked as inactive for user ID:', userId);
   } catch (error) {
-    console.error('❌ Failed to update login session on logout:', error);
+    // Non-critical — session cleanup failure shouldn't block signout
   }
-  
+
   res.status(200).json('User has been logged out!');
-  console.log('🎉 User logged out successfully for user ID:', userId);
 });
 
 

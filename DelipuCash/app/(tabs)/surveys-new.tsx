@@ -666,7 +666,6 @@ export default function SurveysScreen(): React.ReactElement {
             <BetweenContentAd
               ad={ad}
               onAdClick={() => handleAdClick(ad)}
-              onImpression={() => handleAdImpression(ad)}
               variant="native"
               style={styles.betweenContentAd}
             />

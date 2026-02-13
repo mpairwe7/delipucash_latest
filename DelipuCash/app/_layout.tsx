@@ -189,6 +189,7 @@ export default function RootLayout() {
               <Stack.Screen name="create-survey" options={{ headerShown: false }} />
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
+              <Stack.Screen name="reset-password" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
             </ToastProvider>

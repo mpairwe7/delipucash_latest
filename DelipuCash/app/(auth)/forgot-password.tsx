@@ -17,6 +17,7 @@ import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
 import { validators, validateForm, ValidationSchema } from "@/utils/validation";
+import { useForgotPasswordMutation } from "@/services/authHooks";
 
 interface FormErrors {
   email?: string | null;
@@ -92,10 +93,11 @@ export default function ForgotPasswordScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
 
+  const forgotPasswordMutation = useForgotPasswordMutation();
+
   const [email, setEmail] = useState<string>("");
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
-  const [loading, setLoading] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
   const [generalError, setGeneralError] = useState<string>("");
 
@@ -135,27 +137,10 @@ export default function ForgotPasswordScreen(): React.ReactElement {
       return;
     }
 
-    setLoading(true);
     setGeneralError("");
 
     try {
-      const baseURL = process.env.EXPO_PUBLIC_BASE_URL;
-      const response = await fetch(`${baseURL}/api/auth/forgot-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-createxyz-project-group-id":
-            process.env.EXPO_PUBLIC_PROJECT_GROUP_ID || "",
-        },
-        body: JSON.stringify({ email }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to send reset email.");
-      }
-
+      await forgotPasswordMutation.mutateAsync({ email });
       setSuccess(true);
     } catch (error) {
       const errorMessage =
@@ -163,8 +148,6 @@ export default function ForgotPasswordScreen(): React.ReactElement {
           ? error.message
           : "An error occurred. Please try again.";
       setGeneralError(errorMessage);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -259,8 +242,8 @@ export default function ForgotPasswordScreen(): React.ReactElement {
           <PrimaryButton
             title="Send Reset Link"
             onPress={handleSubmit}
-            loading={loading}
-            disabled={loading}
+            loading={forgotPasswordMutation.isPending}
+            disabled={forgotPasswordMutation.isPending}
             accessibilityHint="Double tap to send a password reset link to your email"
             style={styles.submitButton}
           />

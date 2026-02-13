@@ -48,8 +48,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ testID }) => {
   const mode = useAuthModal(s => s.mode);
   const auth = useAuthStore(s => s.auth);
 
+  // Use canonical API URL as fallback when PROXY/BASE not set
   const proxyURL = process.env.EXPO_PUBLIC_PROXY_BASE_URL;
-  const baseURL = process.env.EXPO_PUBLIC_BASE_URL;
+  const baseURL = process.env.EXPO_PUBLIC_BASE_URL || process.env.EXPO_PUBLIC_API_URL;
 
   // Don't render if missing required URLs
   if (!proxyURL && !baseURL) {

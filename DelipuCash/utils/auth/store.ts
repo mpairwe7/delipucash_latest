@@ -113,12 +113,26 @@ export const useAuthStore = create<AuthState>()(
     isReady: false,
     auth: null,
     setAuth: (auth: AuthData | null): void => {
-      if (auth) {
-        SecureStore.setItemAsync(authKey, JSON.stringify(auth));
-      } else {
-        SecureStore.deleteItemAsync(authKey);
-      }
+      // Optimistically update state, then persist asynchronously with error handling
       set({ auth });
+
+      const persist = async () => {
+        try {
+          if (auth) {
+            await SecureStore.setItemAsync(authKey, JSON.stringify(auth));
+          } else {
+            await SecureStore.deleteItemAsync(authKey);
+          }
+        } catch (err) {
+          console.error('[AuthStore] SecureStore persistence failed:', err);
+          // Rollback: if write failed and we were trying to set auth, clear it
+          // to prevent "authenticated but not persisted" state
+          if (auth) {
+            set({ auth: null });
+          }
+        }
+      };
+      persist();
     },
   }),
   { name: 'AuthStore', enabled: __DEV__ },

@@ -18,6 +18,7 @@ import { PrimaryButton } from "@/components/PrimaryButton";
 import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicator";
 import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
 import { validators, validateForm, ValidationSchema } from "@/utils/validation";
+import { useValidateResetTokenMutation, useResetPasswordMutation } from "@/services/authHooks";
 
 interface FormData {
   password: string;
@@ -148,13 +149,15 @@ export default function ResetPasswordScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const params = useLocalSearchParams<{ token?: string; email?: string }>();
 
+  const validateTokenMutation = useValidateResetTokenMutation();
+  const resetPasswordMutation = useResetPasswordMutation();
+
   const [formData, setFormData] = useState<FormData>({
     password: "",
     confirmPassword: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
-  const [loading, setLoading] = useState<boolean>(false);
   const [validatingToken, setValidatingToken] = useState<boolean>(true);
   const [tokenValid, setTokenValid] = useState<boolean>(false);
   const [success, setSuccess] = useState<boolean>(false);
@@ -163,36 +166,25 @@ export default function ResetPasswordScreen(): React.ReactElement {
   const token = params.token || "";
   const email = params.email || "";
 
-  // Validate token on mount
+  // Validate token on mount using TanStack mutation
   useEffect(() => {
-    const validateToken = async (): Promise<void> => {
-      if (!token || !email) {
-        setTokenValid(false);
-        setValidatingToken(false);
-        return;
-      }
+    if (!token || !email) {
+      setTokenValid(false);
+      setValidatingToken(false);
+      return;
+    }
 
-      try {
-        const baseURL = process.env.EXPO_PUBLIC_BASE_URL;
-        const response = await fetch(`${baseURL}/api/auth/validate-reset-token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ token, email }),
-        });
-
-        const data = await response.json();
+    validateTokenMutation.mutateAsync({ token, email })
+      .then((data) => {
         setTokenValid(data.valid === true);
-      } catch (error) {
-        console.error("Token validation error:", error);
+      })
+      .catch(() => {
         setTokenValid(false);
-      } finally {
+      })
+      .finally(() => {
         setValidatingToken(false);
-      }
-    };
-
-    validateToken();
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, email]);
 
   const handleChange = useCallback(
@@ -231,9 +223,9 @@ export default function ResetPasswordScreen(): React.ReactElement {
   const handleSubmit = async (): Promise<void> => {
     setTouched({ password: true, confirmPassword: true });
 
-    const formValues: Record<string, string> = { 
-      password: formData.password, 
-      confirmPassword: formData.confirmPassword 
+    const formValues: Record<string, string> = {
+      password: formData.password,
+      confirmPassword: formData.confirmPassword
     };
     const { errors: validationErrors, isValid } = validateForm(
       formValues,
@@ -251,29 +243,14 @@ export default function ResetPasswordScreen(): React.ReactElement {
       return;
     }
 
-    setLoading(true);
     setGeneralError("");
 
     try {
-      const baseURL = process.env.EXPO_PUBLIC_BASE_URL;
-      const response = await fetch(`${baseURL}/api/auth/reset-password`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          token,
-          email,
-          newPassword: formData.password,
-        }),
+      await resetPasswordMutation.mutateAsync({
+        token,
+        email,
+        newPassword: formData.password,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to reset password.");
-      }
-
       setSuccess(true);
     } catch (error) {
       const errorMessage =
@@ -281,8 +258,6 @@ export default function ResetPasswordScreen(): React.ReactElement {
           ? error.message
           : "An error occurred. Please try again.";
       setGeneralError(errorMessage);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -425,8 +400,8 @@ export default function ResetPasswordScreen(): React.ReactElement {
           <PrimaryButton
             title="Reset Password"
             onPress={handleSubmit}
-            loading={loading}
-            disabled={loading}
+            loading={resetPasswordMutation.isPending}
+            disabled={resetPasswordMutation.isPending}
             style={styles.submitButton}
             accessibilityHint="Double tap to reset your password"
           />

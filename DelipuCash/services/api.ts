@@ -184,6 +184,12 @@ export const API_ROUTES = {
     subscriptionStatus: (userId: string) => `/api/auth/${userId}/subscription-status`,
     surveySubscriptionStatus: (userId: string) => `/api/auth/${userId}/surveysubscription-status`,
     points: (userId: string) => `/api/auth/${userId}/points`,
+    validateResetToken: "/api/auth/validate-reset-token",
+    twoFactorSend: "/api/auth/two-factor/send",
+    twoFactorVerifyLogin: "/api/auth/two-factor/verify-login",
+    twoFactorToggle: "/api/auth/two-factor",
+    twoFactorVerify: "/api/auth/two-factor/verify",
+    twoFactorResend: "/api/auth/two-factor/resend",
   },
   // User - maps to /api/users/*
   user: {

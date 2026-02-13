@@ -1,96 +1,7 @@
-import { USE_MOCK_AUTH, mockLogin, mockSignup } from "@/services/mockAuth";
-import { API_ROUTES } from "@/services/api";
 import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useState } from "react";
 import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, authKey, useAuthModal, useAuthStore } from "./store";
-
-// API Base URL for real authentication
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
-
-/**
- * Real API login implementation
- */
-async function apiLogin(credentials: LoginCredentials): Promise<AuthResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${API_ROUTES.auth.login}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: credentials.email,
-        password: credentials.password,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.success && data.token) {
-      return {
-        success: true,
-        data: {
-          user: data.user,
-          token: data.token,
-        },
-      };
-    }
-
-    return {
-      success: false,
-      error: data.message || "Login failed. Please check your credentials.",
-    };
-  } catch (error) {
-    console.error("Login API error:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Network error. Please check your connection.",
-    };
-  }
-}
-
-/**
- * Real API signup implementation
- */
-async function apiSignup(credentials: SignupCredentials): Promise<AuthResponse> {
-  try {
-    const response = await fetch(`${API_BASE_URL}${API_ROUTES.auth.register}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: credentials.email,
-        password: credentials.password,
-        firstName: credentials.firstName || "",
-        lastName: credentials.lastName || "",
-        phone: credentials.phoneNumber || "",
-      }),
-    });
-
-    const data = await response.json();
-
-    if (response.ok && data.token) {
-      return {
-        success: true,
-        data: {
-          user: data.user,
-          token: data.token,
-        },
-      };
-    }
-
-    return {
-      success: false,
-      error: data.message || "Signup failed. Please try again.",
-    };
-  } catch (error) {
-    console.error("Signup API error:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Network error. Please check your connection.",
-    };
-  }
-}
+import { useLoginMutation, useSignupMutation } from "@/services/authHooks";
 
 /**
  * Options for requiring authentication
@@ -119,12 +30,14 @@ export interface UseAuthResult {
   setAuth: (auth: AuthData | null) => void;
   /** Initialize auth state from secure storage */
   initiate: () => void;
-  /** Login with credentials (for mock/real auth) */
+  /** Login with credentials (TanStack mutation) */
   login: (credentials: LoginCredentials) => Promise<AuthResponse>;
-  /** Register with credentials (for mock/real auth) */
+  /** Register with credentials (TanStack mutation) */
   register: (credentials: SignupCredentials) => Promise<AuthResponse>;
   /** Loading state for auth operations */
   isLoading: boolean;
+  /** Auth initialization error (if SecureStore read failed) */
+  initError: string | null;
 }
 
 /**
@@ -160,15 +73,58 @@ export const useAuth = (): UseAuthResult => {
   const setAuth = useAuthStore(s => s.setAuth);
   const close = useAuthModal(s => s.close);
   const open = useAuthModal(s => s.open);
-  const [isLoading, setIsLoading] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
+  // TanStack mutations for login/signup
+  const loginMutation = useLoginMutation();
+  const signupMutation = useSignupMutation();
+
+  /**
+   * Robust auth init — state machine: idle → loading → authenticated|anonymous|error
+   * Handles SecureStore read failures, JSON parse errors, and expired tokens.
+   */
   const initiate = useCallback((): void => {
-    SecureStore.getItemAsync(authKey).then((authString: string | null) => {
-      useAuthStore.setState({
-        auth: authString ? (JSON.parse(authString) as AuthData) : null,
-        isReady: true,
+    setInitError(null);
+    SecureStore.getItemAsync(authKey)
+      .then((authString: string | null) => {
+        if (!authString) {
+          useAuthStore.setState({ auth: null, isReady: true });
+          return;
+        }
+
+        try {
+          const parsed = JSON.parse(authString) as AuthData;
+
+          // Basic JWT expiry check (decode payload, check exp claim)
+          if (parsed.token) {
+            try {
+              const payload = JSON.parse(atob(parsed.token.split('.')[1]));
+              if (payload.exp && payload.exp * 1000 < Date.now()) {
+                // Token expired — clear and treat as anonymous
+                SecureStore.deleteItemAsync(authKey).catch(() => {});
+                useAuthStore.setState({ auth: null, isReady: true });
+                return;
+              }
+            } catch {
+              // Token decode failed — still use it, server will reject if invalid
+            }
+          }
+
+          useAuthStore.setState({ auth: parsed, isReady: true });
+        } catch {
+          // JSON parse failed — corrupted data, clear and start fresh
+          SecureStore.deleteItemAsync(authKey).catch(() => {});
+          useAuthStore.setState({ auth: null, isReady: true });
+          setInitError('Stored auth data was corrupted and has been cleared.');
+        }
+      })
+      .catch((err) => {
+        // SecureStore read failed — surface error, set as anonymous
+        const msg = err instanceof Error ? err.message : 'SecureStore read failed';
+        console.error('[Auth] Init error:', msg);
+        setInitError(msg);
+        useAuthStore.setState({ auth: null, isReady: true });
       });
-    });
   }, []);
 
   const signIn = useCallback((): void => {
@@ -185,77 +141,56 @@ export const useAuth = (): UseAuthResult => {
   }, [setAuth, close]);
 
   /**
-   * Login with email and password
-   * Uses mock auth in development when USE_MOCK_AUTH is true, otherwise real API
+   * Login via TanStack mutation — handles mock/real auth, 2FA detection.
+   * Returns AuthResponse for backward compatibility with screen components.
    */
   const login = useCallback(
     async (credentials: LoginCredentials): Promise<AuthResponse> => {
-      setIsLoading(true);
       try {
-        let response: AuthResponse;
+        const data = await loginMutation.mutateAsync(credentials);
 
-        if (USE_MOCK_AUTH) {
-          response = await mockLogin(credentials);
-        } else {
-          response = await apiLogin(credentials);
+        // 2FA required — caller should check this and enter 2FA flow
+        if (data.twoFactorRequired) {
+          return {
+            success: true,
+            message: '2FA_REQUIRED',
+            data: undefined,
+          };
         }
 
-        if (response.success && response.data?.user && response.data?.token) {
-          setAuth({
-            user: response.data.user,
-            token: response.data.token,
-          });
-          close();
-        }
-        return response;
+        return {
+          success: true,
+          data: { user: data.user, token: data.token },
+        };
       } catch (error) {
-        console.error("Login error:", error);
         return {
           success: false,
-          error: "An unexpected error occurred. Please try again.",
+          error: error instanceof Error ? error.message : 'Login failed. Please try again.',
         };
-      } finally {
-        setIsLoading(false);
       }
     },
-    [setAuth, close]
+    [loginMutation]
   );
 
   /**
-   * Register with credentials
-   * Uses mock auth in development when USE_MOCK_AUTH is true, otherwise real API
+   * Register via TanStack mutation.
    */
   const register = useCallback(
     async (credentials: SignupCredentials): Promise<AuthResponse> => {
-      setIsLoading(true);
       try {
-        let response: AuthResponse;
-
-        if (USE_MOCK_AUTH) {
-          response = await mockSignup(credentials);
-        } else {
-          response = await apiSignup(credentials);
-        }
-
-        if (response.success && response.data?.user && response.data?.token) {
-          setAuth({
-            user: response.data.user,
-            token: response.data.token,
-          });
-          close();
-        }
-        return response;
+        const data = await signupMutation.mutateAsync(credentials);
+        return {
+          success: true,
+          data: { user: data.user, token: data.token },
+        };
       } catch (error) {
-        console.error("Registration error:", error);
         return {
           success: false,
-          error: "An unexpected error occurred. Please try again.",
+          error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
         };
-      } finally {
-        setIsLoading(false);
       }
     },
-    [setAuth, close]
+    [signupMutation]
   );
 
   return {
@@ -269,7 +204,8 @@ export const useAuth = (): UseAuthResult => {
     initiate,
     login,
     register,
-    isLoading,
+    isLoading: loginMutation.isPending || signupMutation.isPending,
+    initError,
   };
 };
 
