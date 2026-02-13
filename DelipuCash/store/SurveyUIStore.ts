@@ -16,7 +16,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================================================
@@ -186,6 +187,7 @@ const initialState: SurveyUIState = {
 // ============================================================================
 
 export const useSurveyUIStore = create<SurveyUIState & SurveyUIActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -281,11 +283,13 @@ export const useSurveyUIStore = create<SurveyUIState & SurveyUIActions>()(
         hasSeenImportHint: state.hasSeenImportHint,
       }),
     }
+  ),
+  { name: 'SurveyUIStore', enabled: __DEV__ },
   )
 );
 
 // ============================================================================
-// SELECTORS (for optimized re-renders)
+// Atomic Selectors (stable — no new objects)
 // ============================================================================
 
 export const selectActiveTab = (state: SurveyUIState) => state.activeTab;
@@ -293,10 +297,55 @@ export const selectFilters = (state: SurveyUIState) => state.filters;
 export const selectCreationMode = (state: SurveyUIState) => state.creationMode;
 export const selectDrafts = (state: SurveyUIState) => state.drafts;
 export const selectShowShareModal = (state: SurveyUIState) => state.showShareModal;
+export const selectShowCreationModal = (state: SurveyUIState) => state.showCreationModal;
+export const selectBuilderViewMode = (state: SurveyUIState) => state.builderViewMode;
+export const selectCurrentDraftId = (state: SurveyUIState) => state.currentDraftId;
+export const selectHasUnsavedChanges = (state: SurveyUIState) => state.hasUnsavedChanges;
+export const selectCardViewStyle = (state: SurveyUIState) => state.cardViewStyle;
+export const selectShareTargetSurveyId = (state: SurveyUIState) => state.shareTargetSurveyId;
+export const selectHasSeenOnboarding = (state: SurveyUIState) => state.hasSeenOnboarding;
+
+// ============================================================================
+// Object Selectors — use with useShallow to prevent re-renders
+// ============================================================================
+
 export const selectAccessibilityPrefs = (state: SurveyUIState) => ({
   prefersReducedMotion: state.prefersReducedMotion,
   prefersHighContrast: state.prefersHighContrast,
 });
+
+export const selectCreationState = (state: SurveyUIState) => ({
+  showModal: state.showCreationModal,
+  mode: state.creationMode,
+  builderViewMode: state.builderViewMode,
+});
+
+export const selectShareState = (state: SurveyUIState) => ({
+  showModal: state.showShareModal,
+  targetSurveyId: state.shareTargetSurveyId,
+});
+
+export const selectViewPreferences = (state: SurveyUIState) => ({
+  showCompletionRates: state.showCompletionRates,
+  showResponseCounts: state.showResponseCounts,
+  cardViewStyle: state.cardViewStyle,
+});
+
+// ============================================================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ============================================================================
+
+/** Accessibility preferences — shallow-compared */
+export const useAccessibilityPrefs = () => useSurveyUIStore(useShallow(selectAccessibilityPrefs));
+
+/** Creation flow state — shallow-compared */
+export const useCreationState = () => useSurveyUIStore(useShallow(selectCreationState));
+
+/** Share modal state — shallow-compared */
+export const useShareState = () => useSurveyUIStore(useShallow(selectShareState));
+
+/** View preferences — shallow-compared */
+export const useViewPreferences = () => useSurveyUIStore(useShallow(selectViewPreferences));
 
 // ============================================================================
 // TEMPLATE DATA

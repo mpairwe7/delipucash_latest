@@ -14,7 +14,7 @@
  * - Loading states managed automatically
  */
 
-import { useQuery, useQueryClient, UseQueryResult } from '@tanstack/react-query';
+import { useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from '@tanstack/react-query';
 import type { Survey, SurveyResponse, UploadSurvey } from '@/types';
 import { surveyApi } from './surveyApi';
 
@@ -353,6 +353,90 @@ export function usePrefetchSurveyResponses() {
   };
 }
 
+// ============================================================================
+// Suspense Hooks (2026 — use inside <Suspense> boundary)
+// ============================================================================
+
+/**
+ * Suspense-enabled survey detail.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseSurveyDetail(surveyId: string) {
+  return useSuspenseQuery({
+    queryKey: surveyResponseKeys.detail(surveyId),
+    queryFn: async () => {
+      const response = await surveyApi.getById(surveyId);
+      if (!response.success || !response.data) {
+        throw new Error(response.error || 'Survey not found');
+      }
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    retry: 2,
+  });
+}
+
+/**
+ * Suspense-enabled survey responses.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseSurveyResponses(surveyId: string, filters?: ResponseFilters) {
+  return useSuspenseQuery({
+    queryKey: surveyResponseKeys.list(surveyId, filters),
+    queryFn: async (): Promise<SurveyResponsesData> => {
+      const response = await surveyApi.getResponses(
+        surveyId,
+        filters?.page || 1,
+        filters?.limit || 100
+      );
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to fetch responses');
+      }
+      return {
+        responses: response.data,
+        pagination: response.pagination,
+      };
+    },
+    staleTime: 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 10,
+    retry: 2,
+  });
+}
+
+/**
+ * Suspense-enabled survey analytics.
+ */
+export function useSuspenseSurveyAnalytics(surveyId: string) {
+  return useSuspenseQuery({
+    queryKey: surveyResponseKeys.analytics(surveyId),
+    queryFn: async (): Promise<SurveyAnalyticsData> => {
+      const response = await surveyApi.getAnalytics(surveyId);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to fetch analytics');
+      }
+      return {
+        totalResponses: response.data.totalResponses,
+        completionRate: response.data.completionRate,
+        averageCompletionTime: response.data.averageTime,
+        responsesByDay: response.data.responsesByDay,
+        questionStats: response.data.questionStats.map(stat => ({
+          questionId: stat.questionId,
+          questionText: stat.questionText,
+          questionType: 'multiple_choice',
+          answerDistribution: stat.responseDistribution.reduce((acc, item) => {
+            acc[item.option] = item.count;
+            return acc;
+          }, {} as Record<string, number>),
+        })),
+      };
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    retry: 2,
+  });
+}
+
 export default {
   useSurveyOwnership,
   useSurveyWithQuestions,
@@ -361,4 +445,8 @@ export default {
   useSurveyResponseData,
   useInvalidateSurveyResponses,
   usePrefetchSurveyResponses,
+  // Suspense variants
+  useSuspenseSurveyDetail,
+  useSuspenseSurveyResponses,
+  useSuspenseSurveyAnalytics,
 };

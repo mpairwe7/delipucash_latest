@@ -41,6 +41,7 @@ import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/services";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
 import { useSurveyAttemptStore } from "@/store/SurveyAttemptStore";
+import { useShallow } from "zustand/react/shallow";
 import { UploadSurvey } from "@/types";
 import { useAuth } from "@/utils/auth";
 import {
@@ -150,7 +151,27 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   } = useCheckSurveyAttempt(id || "", userId);
 
   // Client state: Zustand store (draft auto-save, progress tracking)
-  const attemptStore = useSurveyAttemptStore();
+  // ── State via useShallow (grouped, re-render safe) ──
+  const { currentQuestionIndex, answers, submissionStatus, submittedReward } = useSurveyAttemptStore(
+    useShallow((s) => ({
+      currentQuestionIndex: s.currentQuestionIndex,
+      answers: s.answers,
+      submissionStatus: s.submissionStatus,
+      submittedReward: s.submittedReward,
+    }))
+  );
+  // ── Actions (stable references — no useShallow needed) ──
+  const storeStartAttempt = useSurveyAttemptStore((s) => s.startAttempt);
+  const storeAbandonAttempt = useSurveyAttemptStore((s) => s.abandonAttempt);
+  const storeSetAnswer = useSurveyAttemptStore((s) => s.setAnswer);
+  const storeGoNext = useSurveyAttemptStore((s) => s.goNext);
+  const storeGoPrevious = useSurveyAttemptStore((s) => s.goPrevious);
+  const storeSetSubmitting = useSurveyAttemptStore((s) => s.setSubmitting);
+  const storeSetSubmitted = useSurveyAttemptStore((s) => s.setSubmitted);
+  const storeSetSubmissionError = useSurveyAttemptStore((s) => s.setSubmissionError);
+  const storeResetSubmission = useSurveyAttemptStore((s) => s.resetSubmission);
+  const storeReset = useSurveyAttemptStore((s) => s.reset);
+  const storeSetCurrentIndex = useSurveyAttemptStore((s) => s.setCurrentIndex);
 
   // Local UI state
   const [showReview, setShowReview] = useState(false);
@@ -172,7 +193,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     if (surveyData && id && !attemptStatus?.hasAttempted) {
       const totalQ = surveyData.uploads?.length || 0;
       if (totalQ > 0) {
-        attemptStore.startAttempt(id, totalQ);
+        storeStartAttempt(id, totalQ);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -181,8 +202,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Clean up on unmount — save draft if not submitted
   useEffect(() => {
     return () => {
-      if (attemptStore.submissionStatus !== 'submitted') {
-        attemptStore.abandonAttempt();
+      if (useSurveyAttemptStore.getState().submissionStatus !== 'submitted') {
+        storeAbandonAttempt();
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -243,13 +264,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     };
   }, [surveyData]);
 
-  // Derive state from store
-  const currentIndex = attemptStore.currentQuestionIndex;
-  const answers = attemptStore.answers;
-
-  const question = survey?.questions[currentIndex];
-  const isLastQuestion = survey ? currentIndex === survey.questions.length - 1 : false;
-  const progress = survey ? ((currentIndex + 1) / survey.questions.length) * 100 : 0;
+  const question = survey?.questions[currentQuestionIndex];
+  const isLastQuestion = survey ? currentQuestionIndex === survey.questions.length - 1 : false;
+  const progress = survey ? ((currentQuestionIndex + 1) / survey.questions.length) * 100 : 0;
 
   const getDefaultValue = (type: QuestionType): AnswerValue => {
     switch (type) {
@@ -304,7 +321,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Use store's setAnswer for auto-save
   const setAnswer = (value: AnswerValue): void => {
     if (!question) return;
-    attemptStore.setAnswer(question.id, value);
+    storeSetAnswer(question.id, value);
   };
 
   const handleNext = (): void => {
@@ -316,14 +333,14 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     if (isLastQuestion) {
       openReviewModal();
     } else {
-      attemptStore.goNext();
+      storeGoNext();
     }
   };
 
   const handlePrevious = (): void => {
-    if (currentIndex > 0) {
+    if (currentQuestionIndex > 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-      attemptStore.goPrevious();
+      storeGoPrevious();
     }
   };
 
@@ -334,18 +351,18 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     }
 
     // Guard against double-submit
-    if (attemptStore.submissionStatus === 'submitting' || attemptStore.submissionStatus === 'submitted') {
+    if (submissionStatus === 'submitting' || submissionStatus === 'submitted') {
       return;
     }
 
-    attemptStore.setSubmitting();
+    storeSetSubmitting();
 
     submitSurveyMutation.mutate(
       { surveyId: survey.id, responses: answers, userId },
       {
         onSuccess: (data) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          attemptStore.setSubmitted(data.reward || 0);
+          storeSetSubmitted(data.reward || 0);
           closeReviewModal();
           setShowSuccess(true);
           // Animate success
@@ -362,7 +379,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           
           // Check for already attempted error
           if (message.toLowerCase().includes('already completed') || message.toLowerCase().includes('already attempted')) {
-            attemptStore.setSubmissionError(message);
+            storeSetSubmissionError(message);
             closeReviewModal();
             Alert.alert(
               "Already Completed",
@@ -370,9 +387,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               [{ text: "OK", onPress: () => router.back() }]
             );
           } else {
-            attemptStore.setSubmissionError(message);
+            storeSetSubmissionError(message);
             Alert.alert("Submission Failed", message, [
-              { text: "Try Again", onPress: () => attemptStore.resetSubmission() },
+              { text: "Try Again", onPress: () => storeResetSubmission() },
               { text: "Cancel", style: "cancel" },
             ]);
           }
@@ -425,7 +442,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start();
-  }, [currentIndex, slideAnim, isReducedMotion]);
+  }, [currentQuestionIndex, slideAnim, isReducedMotion]);
 
   // Dismiss keyboard helper
   const dismissKeyboard = useCallback(() => {
@@ -454,18 +471,18 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300 }]}>
           Thank you for your responses. Your feedback is valuable.
         </Text>
-        {(attemptStore.submittedReward ?? 0) > 0 && (
+        {(submittedReward ?? 0) > 0 && (
           <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.primary, 0.14) }]}>
             <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
             <Text style={[styles.rewardBadgeText, { color: colors.primary }]}>
-              You earned {formatCurrency(attemptStore.submittedReward || 0)}!
+              You earned {formatCurrency(submittedReward || 0)}!
             </Text>
           </View>
         )}
         <PrimaryButton
           title="Back to Surveys"
           onPress={() => {
-            attemptStore.reset();
+            storeReset();
             router.back();
           }}
           style={{ marginTop: SPACING.xl, minWidth: 200 }}
@@ -774,7 +791,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
             <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress}%` }]} />
           </View>
-          <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Question {currentIndex + 1} of {survey.questions.length}</Text>
+          <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Question {currentQuestionIndex + 1} of {survey.questions.length}</Text>
         </View>
 
         <ScrollView
@@ -802,18 +819,18 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             return (
               <TouchableOpacity
                 key={q.id}
-                onPress={() => attemptStore.setCurrentIndex(idx)}
+                onPress={() => storeSetCurrentIndex(idx)}
                 style={[
                   styles.stepChip,
                   {
-                    borderColor: idx === currentIndex ? colors.primary : colors.border,
-                    backgroundColor: idx === currentIndex ? withAlpha(colors.primary, 0.16) : colors.card,
+                    borderColor: idx === currentQuestionIndex ? colors.primary : colors.border,
+                    backgroundColor: idx === currentQuestionIndex ? withAlpha(colors.primary, 0.16) : colors.card,
                   },
                 ]}
                 accessibilityRole="button"
                 accessibilityLabel={`Go to question ${idx + 1}`}
               >
-                <Text style={[styles.stepNumber, { color: idx === currentIndex ? colors.primary : colors.text }]}>
+                <Text style={[styles.stepNumber, { color: idx === currentQuestionIndex ? colors.primary : colors.text }]}>
                   {idx + 1}
                 </Text>
                 <View style={[styles.stepStatus, { backgroundColor: answered ? withAlpha(colors.primary, 0.8) : withAlpha(colors.textMuted, 0.15) }]} />
@@ -835,7 +852,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         >
           <View style={styles.questionHeader}>
             <View style={[styles.questionBadge, { backgroundColor: withAlpha(colors.primary, 0.14) }]}>
-              <Text style={[styles.questionBadgeText, { color: colors.primary }]}>Question {currentIndex + 1}</Text>
+              <Text style={[styles.questionBadgeText, { color: colors.primary }]}>Question {currentQuestionIndex + 1}</Text>
             </View>
             {question?.required && (
               <View style={[styles.requiredPill, { backgroundColor: withAlpha(colors.error, 0.12) }]}>
@@ -864,7 +881,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           },
         ]}
       >
-        {currentIndex > 0 && (
+        {currentQuestionIndex > 0 && (
           <PrimaryButton
             title="Previous"
             variant="outline"
@@ -876,8 +893,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         <PrimaryButton
           title={isLastQuestion ? "Review & Submit" : "Next"}
           onPress={handleNext}
-          disabled={(question?.required && !isQuestionAnswered()) || attemptStore.submissionStatus === 'submitting'}
-          loading={attemptStore.submissionStatus === 'submitting' && isLastQuestion}
+          disabled={(question?.required && !isQuestionAnswered()) || submissionStatus === 'submitting'}
+          loading={submissionStatus === 'submitting' && isLastQuestion}
           style={styles.navButton}
           rightIcon={!isLastQuestion ? <ChevronRight size={16} color={colors.primaryText} strokeWidth={1.5} /> : <CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
         />
@@ -913,7 +930,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             <View style={styles.modalStats}>
               <View style={styles.modalStatRow}>
                 <Clock size={18} color={colors.text} strokeWidth={1.5} />
-                <Text style={[styles.modalStatText, { color: colors.text }]}>Estimated time left ~ {formatDuration(Math.max(survey.questions.length - currentIndex - 1, 0) * 2)}</Text>
+                <Text style={[styles.modalStatText, { color: colors.text }]}>Estimated time left ~ {formatDuration(Math.max(survey.questions.length - currentQuestionIndex - 1, 0) * 2)}</Text>
               </View>
               <View style={styles.modalStatRow}>
                 <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
@@ -925,8 +942,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               <PrimaryButton
                 title="Submit now"
                 onPress={handleSubmit}
-                loading={attemptStore.submissionStatus === 'submitting'}
-                disabled={attemptStore.submissionStatus === 'submitting'}
+                loading={submissionStatus === 'submitting'}
+                disabled={submissionStatus === 'submitting'}
                 rightIcon={<CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}
                 accessibilityLabel="Submit survey responses"
               />

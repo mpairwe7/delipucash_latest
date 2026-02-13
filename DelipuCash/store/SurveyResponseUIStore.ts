@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { SurveyResponse, Survey, UploadSurvey } from '../types';
 
@@ -590,6 +591,7 @@ export const exportToPDFHtml = (
 // ============================================================================
 
 export const useSurveyResponseUIStore = create<SurveyResponseUIState & SurveyResponseUIActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -664,11 +666,13 @@ export const useSurveyResponseUIStore = create<SurveyResponseUIState & SurveyRes
         pageSize: state.pageSize,
       }),
     }
+  ),
+  { name: 'SurveyResponseUIStore', enabled: __DEV__ },
   )
 );
 
 // ============================================================================
-// SELECTORS
+// Atomic Selectors (stable — no new objects)
 // ============================================================================
 
 export const selectViewMode = (state: SurveyResponseUIState) => state.viewMode;
@@ -676,7 +680,35 @@ export const selectFilters = (state: SurveyResponseUIState) => state.filters;
 export const selectSearchQuery = (state: SurveyResponseUIState) => state.searchQuery;
 export const selectCurrentResponseIndex = (state: SurveyResponseUIState) => state.currentResponseIndex;
 export const selectExpandedQuestionId = (state: SurveyResponseUIState) => state.expandedQuestionId;
-export const selectHasFilters = (state: SurveyResponseUIState) => 
+export const selectHasFilters = (state: SurveyResponseUIState) =>
   Object.keys(state.filters).length > 0;
+export const selectPageSize = (state: SurveyResponseUIState) => state.pageSize;
+export const selectLastSyncedAt = (state: SurveyResponseUIState) => state.lastSyncedAt;
+
+// ============================================================================
+// Object Selectors — use with useShallow to prevent re-renders
+// ============================================================================
+
+export const selectResponseNavigation = (state: SurveyResponseUIState) => ({
+  currentIndex: state.currentResponseIndex,
+  viewMode: state.viewMode,
+  expandedQuestionId: state.expandedQuestionId,
+});
+
+export const selectFilterState = (state: SurveyResponseUIState) => ({
+  filters: state.filters,
+  searchQuery: state.searchQuery,
+  hasFilters: Object.keys(state.filters).length > 0,
+});
+
+// ============================================================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ============================================================================
+
+/** Response navigation state — shallow-compared */
+export const useResponseNavigation = () => useSurveyResponseUIStore(useShallow(selectResponseNavigation));
+
+/** Filter state — shallow-compared */
+export const useFilterState = () => useSurveyResponseUIStore(useShallow(selectFilterState));
 
 export default useSurveyResponseUIStore;

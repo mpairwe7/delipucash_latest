@@ -102,7 +102,55 @@ export {
   selectCurrentResponseIndex,
   selectExpandedQuestionId,
   selectHasFilters,
+  selectPageSize,
+  selectLastSyncedAt,
+  // Object selectors (use with useShallow)
+  selectResponseNavigation,
+  selectFilterState,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useResponseNavigation,
+  useFilterState,
 } from './SurveyResponseUIStore';
+
+// ============================================================================
+// Survey UI Store (NEW - Industry Standard)
+// Survey creation, builder, sharing, view preferences
+// ============================================================================
+export {
+  useSurveyUIStore,
+  // Atomic selectors (stable — no new objects)
+  selectActiveTab as selectSurveyActiveTab,
+  selectFilters as selectSurveyFilters,
+  selectCreationMode,
+  selectDrafts as selectSurveyDrafts,
+  selectShowShareModal,
+  selectShowCreationModal,
+  selectBuilderViewMode,
+  selectCurrentDraftId,
+  selectHasUnsavedChanges,
+  selectCardViewStyle,
+  selectShareTargetSurveyId,
+  selectHasSeenOnboarding,
+  // Object selectors (use with useShallow)
+  selectAccessibilityPrefs,
+  selectCreationState,
+  selectShareState,
+  selectViewPreferences,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useAccessibilityPrefs,
+  useCreationState,
+  useShareState,
+  useViewPreferences,
+  // Constants
+  TEMPLATE_CATEGORIES,
+  FEATURED_TEMPLATES,
+} from './SurveyUIStore';
+export type {
+  SurveyUIState,
+  SurveyUIActions,
+  TemplateCategory,
+  SurveyTemplate,
+} from './SurveyUIStore';
 
 // ============================================================================
 // Survey Attempt Store (NEW - Industry Standard)
@@ -111,16 +159,32 @@ export {
 // ============================================================================
 export {
   useSurveyAttemptStore,
-  // Selectors
+  // Atomic selectors (stable — no new objects)
   selectActiveSurveyId,
   selectAnswers,
-  selectCurrentIndex,
+  selectCurrentIndex as selectAttemptCurrentIndex,
   selectTotalQuestions,
   selectSubmissionStatus,
   selectSubmissionError,
   selectSubmittedReward,
-  selectDrafts,
-  selectIsSubmitting,
+  selectDrafts as selectAttemptDrafts,
+  selectIsSubmitting as selectAttemptIsSubmitting,
+  selectStartedAt,
+  selectLastSavedAt,
+  selectHasActiveAttempt,
+  // Parameterized selectors
+  selectIsAnswered,
+  selectHasDraft,
+  // Derived selectors
+  selectAnsweredCount,
+  selectProgress as selectAttemptProgress,
+  // Object selectors (use with useShallow)
+  selectAttemptProgress as selectAttemptProgressState,
+  selectSubmissionState,
+  selectTimingState,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useAttemptProgress,
+  useSubmissionState,
 } from './SurveyAttemptStore';
 export type {
   AnswerValue,

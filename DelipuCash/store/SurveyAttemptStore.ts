@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ============================================================================
@@ -116,6 +117,7 @@ const initialState: SurveyAttemptState = {
 export const useSurveyAttemptStore = create<
   SurveyAttemptState & SurveyAttemptActions
 >()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -384,11 +386,13 @@ export const useSurveyAttemptStore = create<
         drafts: state.drafts,
       }),
     }
+  ),
+  { name: 'SurveyAttemptStore', enabled: __DEV__ },
   )
 );
 
 // ============================================================================
-// SELECTORS
+// Atomic Selectors (stable — no new objects)
 // ============================================================================
 
 export const selectActiveSurveyId = (s: SurveyAttemptState) => s.activeSurveyId;
@@ -400,5 +404,81 @@ export const selectSubmissionError = (s: SurveyAttemptState) => s.submissionErro
 export const selectSubmittedReward = (s: SurveyAttemptState) => s.submittedReward;
 export const selectDrafts = (s: SurveyAttemptState) => s.drafts;
 export const selectIsSubmitting = (s: SurveyAttemptState) => s.submissionStatus === 'submitting';
+export const selectStartedAt = (s: SurveyAttemptState) => s.startedAt;
+export const selectLastSavedAt = (s: SurveyAttemptState) => s.lastSavedAt;
+
+/** Reactive selector: is there an active attempt? */
+export const selectHasActiveAttempt = (s: SurveyAttemptState) => s.activeSurveyId !== null;
+
+/** Reactive selector: has the given question been answered? */
+export const selectIsAnswered = (questionId: string) => (s: SurveyAttemptState) => {
+  const val = s.answers[questionId];
+  if (val === undefined || val === null) return false;
+  if (typeof val === 'string') return val.trim().length > 0;
+  if (typeof val === 'number') return val > 0;
+  if (Array.isArray(val)) return val.length > 0;
+  return false;
+};
+
+/** Reactive selector: does this survey have a saved draft? */
+export const selectHasDraft = (surveyId: string) => (s: SurveyAttemptState) =>
+  !!s.drafts[surveyId];
+
+/** Reactive selector: count of answered questions */
+export const selectAnsweredCount = (s: SurveyAttemptState) =>
+  Object.values(s.answers).filter((val) => {
+    if (val === undefined || val === null) return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (typeof val === 'number') return val > 0;
+    if (Array.isArray(val)) return val.length > 0;
+    return false;
+  }).length;
+
+/** Reactive selector: progress percentage (0-100) */
+export const selectProgress = (s: SurveyAttemptState) => {
+  if (s.totalQuestions === 0) return 0;
+  const answered = Object.values(s.answers).filter((val) => {
+    if (val === undefined || val === null) return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (typeof val === 'number') return val > 0;
+    if (Array.isArray(val)) return val.length > 0;
+    return false;
+  }).length;
+  return (answered / s.totalQuestions) * 100;
+};
+
+// ============================================================================
+// Object Selectors — use with useShallow to prevent re-renders
+// ============================================================================
+
+export const selectAttemptProgress = (s: SurveyAttemptState) => ({
+  current: s.currentQuestionIndex + 1,
+  total: s.totalQuestions,
+  answeredCount: selectAnsweredCount(s),
+  percentage: selectProgress(s),
+});
+
+export const selectSubmissionState = (s: SurveyAttemptState) => ({
+  status: s.submissionStatus,
+  error: s.submissionError,
+  reward: s.submittedReward,
+  isSubmitting: s.submissionStatus === 'submitting',
+  isSubmitted: s.submissionStatus === 'submitted',
+});
+
+export const selectTimingState = (s: SurveyAttemptState) => ({
+  startedAt: s.startedAt,
+  lastSavedAt: s.lastSavedAt,
+});
+
+// ============================================================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ============================================================================
+
+/** Attempt progress — shallow-compared, re-render safe */
+export const useAttemptProgress = () => useSurveyAttemptStore(useShallow(selectAttemptProgress));
+
+/** Submission state — shallow-compared, re-render safe */
+export const useSubmissionState = () => useSurveyAttemptStore(useShallow(selectSubmissionState));
 
 export default useSurveyAttemptStore;

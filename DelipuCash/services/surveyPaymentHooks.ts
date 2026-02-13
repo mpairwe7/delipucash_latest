@@ -174,6 +174,7 @@ export function useInitiateSurveyPayment(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['surveyPayment', 'initiate'],
     mutationFn: async (request: InitiatePaymentRequest) => {
       const response = await surveyPaymentApi.initiatePayment(request);
       if (!response.success) throw new Error(response.error);
@@ -219,6 +220,7 @@ export function useCheckSurveyPaymentStatus(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['surveyPayment', 'checkStatus'],
     mutationFn: async (paymentId: string) => {
       const response = await surveyPaymentApi.checkPaymentStatus(paymentId);
       if (!response.success) throw new Error(response.error);
@@ -268,6 +270,7 @@ export function useCancelSurveySubscription(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['surveyPayment', 'cancelSubscription'],
     mutationFn: async (subscriptionId: string) => {
       const response = await surveyPaymentApi.cancelSubscription(subscriptionId);
       if (!response.success) throw new Error(response.error);
@@ -298,6 +301,7 @@ export function useSimulatePaymentCompletion(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['surveyPayment', 'simulateCompletion'],
     mutationFn: async ({ paymentId, success }) => {
       const response = await surveyPaymentApi.simulatePaymentCompletion(paymentId, success);
       if (!response.success) throw new Error(response.error);
