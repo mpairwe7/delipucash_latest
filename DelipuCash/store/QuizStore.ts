@@ -13,7 +13,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   QuizSessionState,
@@ -249,6 +250,7 @@ const initialState: QuizUIState = {
 // ===========================================
 
 export const useQuizStore = create<QuizUIState & QuizUIActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -370,16 +372,11 @@ export const useQuizStore = create<QuizUIState & QuizUIActions>()(
           isTransitioning: true,
           slideDirection: 'left',
         });
-
-        // Reset transition state after animation
-        setTimeout(() => {
-          set({ isTransitioning: false, slideDirection: null });
-        }, 300);
       },
 
       goToPreviousQuestion: () => {
         const { currentIndex } = get();
-        
+
         if (currentIndex <= 0) return;
 
         set({
@@ -392,10 +389,6 @@ export const useQuizStore = create<QuizUIState & QuizUIActions>()(
           isTransitioning: true,
           slideDirection: 'right',
         });
-
-        setTimeout(() => {
-          set({ isTransitioning: false, slideDirection: null });
-        }, 300);
       },
 
       // ========================================
@@ -752,6 +745,8 @@ export const useQuizStore = create<QuizUIState & QuizUIActions>()(
         attemptHistory: state.attemptHistory,
       }),
     }
+  ),
+  { name: 'QuizStore', enabled: __DEV__ },
   )
 );
 
@@ -908,17 +903,53 @@ function calculateStreakBonus(streak: number): number {
 }
 
 // ===========================================
-// Selectors
+// Atomic Selectors (stable — no new objects)
 // ===========================================
 
-export const selectCurrentQuestion = (state: QuizUIState) => 
+export const selectCurrentQuestion = (state: QuizUIState) =>
   state.questions[state.currentIndex] || null;
+
+export const selectSessionState = (state: QuizUIState) => state.sessionState;
+export const selectCurrentIndex = (state: QuizUIState) => state.currentIndex;
+export const selectQuestionsCount = (state: QuizUIState) => state.questions.length;
+export const selectTotalPoints = (state: QuizUIState) => state.totalPoints;
+export const selectCurrentStreak = (state: QuizUIState) => state.currentStreak;
+export const selectMaxStreak = (state: QuizUIState) => state.maxStreak;
+export const selectTimeRemaining = (state: QuizUIState) => state.timeRemaining;
+export const selectIsTimerActive = (state: QuizUIState) => state.isTimerActive;
+export const selectIsAnswerRevealed = (state: QuizUIState) => state.isAnswerRevealed;
+export const selectSelectedAnswer = (state: QuizUIState) => state.selectedAnswer;
+export const selectIsTransitioning = (state: QuizUIState) => state.isTransitioning;
+export const selectShowSessionSummary = (state: QuizUIState) => state.showSessionSummary;
+export const selectSessionSummary = (state: QuizUIState) => state.sessionSummary;
+export const selectQuizError = (state: QuizUIState) => state.error;
+export const selectIsSubmitting = (state: QuizUIState) => state.isSubmitting;
+
+export const selectCanStartNewSession = (state: QuizUIState) =>
+  state.sessionState !== 'DISPLAYING_QUESTION' &&
+  state.sessionState !== 'ANSWER_SELECTED' &&
+  state.sessionState !== 'ANSWER_VALIDATED';
+
+/** Reactive selector: has the given question been attempted? */
+export const selectHasAttemptedQuestion = (questionId: string) => (state: QuizUIState) =>
+  state.attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
+
+/** Reactive selector: has user completed at least one session? */
+export const selectHasCompletedSession = (state: QuizUIState) =>
+  (state.attemptHistory?.completedSessions.length ?? 0) > 0;
+
+// ===========================================
+// Object Selectors — use with useShallow to prevent re-renders
+//
+// Usage:
+//   const progress = useQuizStore(useShallow(selectProgress));
+// ===========================================
 
 export const selectProgress = (state: QuizUIState) => ({
   current: state.currentIndex + 1,
   total: state.questions.length,
-  percentage: state.questions.length > 0 
-    ? Math.round(((state.currentIndex + 1) / state.questions.length) * 100) 
+  percentage: state.questions.length > 0
+    ? Math.round(((state.currentIndex + 1) / state.questions.length) * 100)
     : 0,
 });
 
@@ -951,15 +982,12 @@ export const selectPointsState = (state: QuizUIState) => ({
   currentPoints: state.currentUserPoints,
   sessionPoints: state.totalPoints,
   totalPoints: state.initialUserPoints + state.totalPoints,
-  // Available for redemption = user's current points + session earnings
   availableForRedemption: state.currentUserPoints + state.totalPoints,
 });
 
 export const selectRedemptionState = (state: QuizUIState) => {
-  // Available points = current user points + session points earned
   const availablePoints = state.currentUserPoints + state.totalPoints;
   const minRedemptionPoints = 50;
-  
   return {
     showModal: state.showRedemptionModal,
     type: state.selectedRedemptionType,
@@ -973,18 +1001,63 @@ export const selectRedemptionState = (state: QuizUIState) => {
 
 export const selectAttemptHistory = (state: QuizUIState) => ({
   attemptHistory: state.attemptHistory,
-  hasAttemptedQuestions: state.attemptHistory?.attemptedQuestionIds.length ?? 0 > 0,
+  hasAttemptedQuestions: (state.attemptHistory?.attemptedQuestionIds.length ?? 0) > 0,
   totalAttempts: state.attemptHistory?.totalAttemptsCount ?? 0,
   completedSessionsCount: state.attemptHistory?.completedSessions.length ?? 0,
   lastAttemptAt: state.attemptHistory?.lastAttemptAt ?? null,
 });
 
-export const selectCanStartNewSession = (state: QuizUIState) => {
-  // User can start if there are questions and not all have been attempted
-  return state.sessionState !== 'DISPLAYING_QUESTION' && 
-         state.sessionState !== 'ANSWER_SELECTED' &&
-         state.sessionState !== 'ANSWER_VALIDATED';
-};
+// ===========================================
+// Pure Summary Calculator (replaces imperative calculateSummary action)
+// ===========================================
+
+export function computeSessionSummary(state: QuizUIState): QuizSessionSummary {
+  const correctAnswers = state.answers.filter(a => a.isCorrect).length;
+  const incorrectAnswers = state.answers.length - correctAnswers;
+  const totalQuestions = state.questions.length;
+  const accuracy = totalQuestions > 0
+    ? Math.round((correctAnswers / totalQuestions) * 100)
+    : 0;
+  const avgTime = state.answers.length > 0
+    ? Math.round(state.answers.reduce((sum, a) => sum + a.timeTaken, 0) / state.answers.length)
+    : 0;
+  const bonusPoints = calculateStreakBonus(state.maxStreak);
+
+  return {
+    sessionId: state.sessionId || `quiz_${Date.now()}`,
+    totalQuestions,
+    correctAnswers,
+    incorrectAnswers,
+    totalPoints: state.totalPoints,
+    pointsEarned: state.totalPoints,
+    accuracy,
+    averageTime: avgTime,
+    maxStreak: state.maxStreak,
+    bonusPoints,
+    totalEarned: state.totalPoints + bonusPoints,
+    previousPoints: state.initialUserPoints,
+    newTotalPoints: state.initialUserPoints + state.totalPoints + bonusPoints,
+  };
+}
+
+// ===========================================
+// Convenience Hooks — useShallow wrappers for common patterns
+// ===========================================
+
+/** Pre-wrapped hook for progress — shallow-compared, re-render safe */
+export const useQuizProgress = () => useQuizStore(useShallow(selectProgress));
+
+/** Pre-wrapped hook for score — shallow-compared, re-render safe */
+export const useQuizScore = () => useQuizStore(useShallow(selectScoreState));
+
+/** Pre-wrapped hook for timer — shallow-compared, re-render safe */
+export const useQuizTimer = () => useQuizStore(useShallow(selectTimerState));
+
+/** Pre-wrapped hook for answer state — shallow-compared, re-render safe */
+export const useQuizAnswer = () => useQuizStore(useShallow(selectAnswerState));
+
+/** Pre-wrapped hook for redemption — shallow-compared, re-render safe */
+export const useQuizRedemption = () => useQuizStore(useShallow(selectRedemptionState));
 
 // ===========================================
 // Default Export

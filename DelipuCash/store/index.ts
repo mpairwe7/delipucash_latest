@@ -156,8 +156,27 @@ export {
 // ============================================================================
 export {
   useQuizStore,
-  // Selectors
+  // Atomic selectors (stable — no new objects)
   selectCurrentQuestion,
+  selectSessionState,
+  selectCurrentIndex,
+  selectQuestionsCount,
+  selectTotalPoints,
+  selectCurrentStreak,
+  selectMaxStreak,
+  selectTimeRemaining,
+  selectIsTimerActive,
+  selectIsAnswerRevealed,
+  selectSelectedAnswer,
+  selectIsTransitioning,
+  selectShowSessionSummary,
+  selectSessionSummary,
+  selectQuizError,
+  selectIsSubmitting,
+  selectCanStartNewSession,
+  selectHasAttemptedQuestion,
+  selectHasCompletedSession,
+  // Object selectors (use with useShallow)
   selectProgress,
   selectAnswerState,
   selectScoreState,
@@ -165,7 +184,14 @@ export {
   selectPointsState,
   selectRedemptionState,
   selectAttemptHistory,
-  selectCanStartNewSession,
+  // Pure function
+  computeSessionSummary,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useQuizProgress,
+  useQuizScore,
+  useQuizTimer,
+  useQuizAnswer,
+  useQuizRedemption,
 } from './QuizStore';
 export type {
   AnswerType,
@@ -185,14 +211,38 @@ export type {
 export {
   useInstantRewardStore,
   REWARD_CONSTANTS,
-  // Selectors
+  // Atomic selectors (stable — no new objects)
   selectAttemptHistory as selectInstantRewardAttemptHistory,
   selectHasAttempted,
   selectAttemptedCount,
   selectTotalRewardsEarned,
+  selectCanRedeem,
+  selectInstantSessionState,
+  selectCurrentQuestionId,
+  selectInstantSelectedAnswer,
+  selectInstantIsSubmitting,
+  selectInstantLastResult,
+  selectInstantError,
+  selectWalletBalance,
+  selectPendingRewards,
+  selectIsRedeeming,
+  selectInstantSessionSummary,
+  selectIsOnline,
+  selectIsSessionActive,
+  selectHasPendingSubmissions,
+  selectPendingSubmissionForQuestion,
+  // Object selectors (use with useShallow)
   selectWalletState,
   selectCurrentQuestionState,
-  selectCanRedeem,
+  selectSessionState as selectInstantRewardSessionState,
+  selectRedemptionState as selectInstantRedemptionState,
+  selectOfflineQueueState,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useWalletState,
+  useCurrentQuestionState,
+  useInstantSessionState,
+  useInstantRedemptionState,
+  useOfflineQueueState,
 } from './InstantRewardStore';
 export type {
   AttemptedRewardQuestion,

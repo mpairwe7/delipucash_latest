@@ -505,9 +505,9 @@ export default function QuestionsScreen(): React.ReactElement {
   const recordAdClickMutate = useRecordAdClick().mutate;
   const recordAdImpressionMutate = useRecordAdImpression().mutate;
 
-  // Mutations — extract .mutate for stable useCallback deps
+  // Mutations — extract .mutate/.mutateAsync for stable useCallback deps
   const voteMutate = useVoteQuestion().mutate;
-  const createMutation = useCreateQuestion();
+  const createMutateAsync = useCreateQuestion().mutateAsync;
 
   // User permissions
   const isAdmin =
@@ -724,7 +724,7 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleQuestionSubmit = useCallback(
     async (data: QuestionFormData) => {
       try {
-        await createMutation.mutateAsync({
+        await createMutateAsync({
           text: data.title,
           category: data.category,
           rewardAmount: data.rewardAmount,
@@ -737,7 +737,7 @@ export default function QuestionsScreen(): React.ReactElement {
         triggerHaptic("error");
       }
     },
-    [createMutation]
+    [createMutateAsync]
   );
 
   const handleClearSearch = useCallback(

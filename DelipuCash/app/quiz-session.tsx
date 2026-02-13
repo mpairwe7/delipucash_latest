@@ -84,6 +84,8 @@ import {
   QuizSessionSummary,
   RewardRedemptionType,
 } from '@/types';
+import { useQuizStore, selectCurrentQuestion, selectQuestionsCount } from '@/store/QuizStore';
+import { useShallow } from 'zustand/react/shallow';
 
 // ===========================================
 // Constants
@@ -308,36 +310,61 @@ export default function QuizSessionScreen({
   const updatePoints = useUpdatePoints();
   const redeemRewardMutation = useRedeemReward();
 
-  // Session State
-  const [sessionState, setSessionState] = useState<QuizSessionState>('LOADING');
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
-  const [textAnswer, setTextAnswer] = useState('');
-  const [timeRemaining, setTimeRemaining] = useState(DEFAULT_TIME_LIMIT);
-  const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
+  // ── QuizStore: state via useShallow (session, answers, streak, points — persisted) ──
+  const {
+    sessionState,
+    currentIndex,
+    selectedAnswer,
+    textAnswer,
+    timeRemaining,
+    isAnswerRevealed,
+    answers,
+    totalPoints,
+    currentStreak,
+    maxStreak,
+  } = useQuizStore(
+    useShallow((s) => ({
+      sessionState: s.sessionState,
+      currentIndex: s.currentIndex,
+      selectedAnswer: s.selectedAnswer,
+      textAnswer: s.textAnswer,
+      timeRemaining: s.timeRemaining,
+      isAnswerRevealed: s.isAnswerRevealed,
+      answers: s.answers,
+      totalPoints: s.totalPoints,
+      currentStreak: s.currentStreak,
+      maxStreak: s.maxStreak,
+    }))
+  );
 
-  // Results
-  const [answers, setAnswers] = useState<QuizAnswerResult[]>([]);
-  const [totalPoints, setTotalPoints] = useState(0);
-  const [currentStreak, setCurrentStreak] = useState(0);
-  const [maxStreak, setMaxStreak] = useState(0);
+  // ── QuizStore: actions (stable references) ──
+  const storeStartSession = useQuizStore((s) => s.startSession);
+  const storeResetSession = useQuizStore((s) => s.resetSession);
+  const storeSetSessionState = useQuizStore((s) => s.setSessionState);
+  const storeSetCurrentIndex = useQuizStore((s) => s.setCurrentIndex);
+  const storeSetSelectedAnswer = useQuizStore((s) => s.setSelectedAnswer);
+  const storeSetTextAnswer = useQuizStore((s) => s.setTextAnswer);
+  const storeSetTimeRemaining = useQuizStore((s) => s.setTimeRemaining);
+  const storeRevealAnswer = useQuizStore((s) => s.revealAnswer);
+  const storeSubmitAnswer = useQuizStore((s) => s.submitAnswer);
+  const storeGoToNextQuestion = useQuizStore((s) => s.goToNextQuestion);
+  const storeStartTimer = useQuizStore((s) => s.startTimer);
+  const storeStopTimer = useQuizStore((s) => s.stopTimer);
+  const storeSetTransitioning = useQuizStore((s) => s.setTransitioning);
 
-  // Toast
-  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({ 
-    visible: false, 
-    message: '', 
-    type: 'success' 
+  // Toast (component-local — not persisted)
+  const [toast, setToast] = useState<{ visible: boolean; message: string; type: 'success' | 'error' | 'info' }>({
+    visible: false,
+    message: '',
+    type: 'success'
   });
 
-  // Redemption
+  // Redemption (component-local — UI modals)
   const [selectedRedemptionType, setSelectedRedemptionType] = useState<RewardRedemptionType>('CASH');
   const [selectedProvider, setSelectedProvider] = useState<'MTN' | 'AIRTEL'>('MTN');
   const [phoneNumber, setPhoneNumber] = useState(userData?.phone || '');
   const [selectedRedemptionAmount, setSelectedRedemptionAmount] = useState(0);
   const [isRedeeming, setIsRedeeming] = useState(false);
-  // Responsive design - track screen width for tablet
-  const isTablet = screenWidth >= 768;
-  void isTablet; // Used for future responsive layout
 
   // Animation
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -347,28 +374,18 @@ export default function QuizSessionScreen({
   // Timer
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Current question
-  const currentQuestion = useMemo(() => 
-    questions?.[currentIndex] || null, 
-    [questions, currentIndex]
-  );
+  // Current question — from store's filtered+normalized questions (not raw TanStack Query data)
+  // This ensures currentIndex aligns with the store's unattempted question list
+  const currentQuestion = useQuizStore(selectCurrentQuestion);
 
-  const totalQuestions = questions?.length || 0;
+  const totalQuestions = useQuizStore(selectQuestionsCount);
 
-  // Options array
+  // Options array — NormalizedQuestion.options is AnswerOption[] { id, text }
   const optionsArray = useMemo(() => {
     if (!currentQuestion?.options) return [];
-    
-    if (Array.isArray(currentQuestion.options)) {
-      return currentQuestion.options.map((opt, idx) => ({
-        key: String.fromCharCode(65 + idx), // A, B, C, D...
-        value: String(opt),
-      }));
-    }
-    
-    return Object.entries(currentQuestion.options).map(([key, value]) => ({
-      key,
-      value: String(value),
+    return currentQuestion.options.map((opt) => ({
+      key: opt.id,
+      value: opt.text,
     }));
   }, [currentQuestion]);
 
@@ -376,19 +393,16 @@ export default function QuizSessionScreen({
   // Effects
   // ===========================================
 
-  // Initialize session when questions load
+  // Initialize session when questions load — uses store's startSession
   useEffect(() => {
     if (questions && questions.length > 0 && sessionState === 'LOADING') {
-      setSessionState('DISPLAYING_QUESTION');
-      // Start timer inline
-      const timeLimit = questions[0]?.timeLimit || DEFAULT_TIME_LIMIT;
-      setTimeRemaining(timeLimit);
+      storeStartSession(questions, userId, userPoints?.totalPoints || 0);
       questionStartTime.current = Date.now();
       announceForAccessibility(
         getQuestionAccessibilityLabel(1, questions.length, questions[0].text)
       );
     }
-  }, [questions, sessionState]);
+  }, [questions, sessionState, userId, userPoints, storeStartSession]);
 
   // Timer tick effect
   useEffect(() => {
@@ -397,16 +411,16 @@ export default function QuizSessionScreen({
     }
 
     timerRef.current = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          if (timerRef.current) {
-            clearInterval(timerRef.current);
-            timerRef.current = null;
-          }
-          return 0;
+      const store = useQuizStore.getState();
+      if (store.timeRemaining <= 1) {
+        storeSetTimeRemaining(0);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
         }
-        return prev - 1;
-      });
+      } else {
+        storeSetTimeRemaining(store.timeRemaining - 1);
+      }
     }, 1000);
 
     return () => {
@@ -424,8 +438,7 @@ export default function QuizSessionScreen({
       setToast({ visible: true, message: "Time's up!", type: 'error' });
       setTimeout(() => setToast((prev) => ({ ...prev, visible: false })), 2500);
       // Force check answer as timeout
-      setIsAnswerRevealed(true);
-      setSessionState('ANSWER_VALIDATED');
+      storeRevealAnswer();
     }
   }, [timeRemaining, sessionState]);
 
@@ -447,7 +460,8 @@ export default function QuizSessionScreen({
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  }, []);
+    storeStopTimer();
+  }, [storeStopTimer]);
 
   // ===========================================
   // Toast
@@ -464,29 +478,26 @@ export default function QuizSessionScreen({
 
   const handleSelectAnswer = (answer: string) => {
     if (isAnswerRevealed) return;
-    
+
     triggerHaptic('selection');
-    setSelectedAnswer(answer);
-    setSessionState('ANSWER_SELECTED');
+    storeSetSelectedAnswer(answer);
   };
 
   const handleCheckAnswer = useCallback((isTimeout: boolean = false) => {
     if (!currentQuestion) return;
-    
+
     stopTimer();
-    setIsAnswerRevealed(true);
-    setSessionState('ANSWER_VALIDATED');
 
     const userAnswer = currentQuestion.type === 'text' ? textAnswer : selectedAnswer || '';
     const timeTaken = Math.round((Date.now() - questionStartTime.current) / 1000);
-    
+
     const validationResult = validateAnswer(
       userAnswer,
-      currentQuestion.correctAnswer,
+      currentQuestion.correctAnswers,
       currentQuestion.type,
       80 // fuzzy threshold - allows minor typos
     );
-    
+
     const { isCorrect, feedback, similarity = 0 } = validationResult;
 
     // Calculate points with time bonus
@@ -496,50 +507,42 @@ export default function QuizSessionScreen({
       currentStreak,
       timeBonus
     ) : 0;
+    const streakBonus = getStreakBonus(isCorrect ? currentStreak + 1 : 0);
 
-    // Update streak
-    const newStreak = isCorrect ? currentStreak + 1 : 0;
-    setCurrentStreak(newStreak);
-    if (newStreak > maxStreak) setMaxStreak(newStreak);
-
-    // Update total points with streak bonus
-    const streakBonus = getStreakBonus(newStreak);
-    setTotalPoints((prev) => prev + pointsEarned + streakBonus);
-
-    // Save answer result with enhanced feedback
+    // Submit answer to store (handles streak, points, attempt history, answer recording)
     const result: QuizAnswerResult = {
       questionId: currentQuestion.id,
       userAnswer,
-      correctAnswer: currentQuestion.correctAnswer,
+      correctAnswer: currentQuestion.correctAnswers,
       isCorrect,
       pointsEarned: pointsEarned + streakBonus,
       timeTaken,
       feedback,
     };
-    setAnswers((prev) => [...prev, result]);
+    storeSubmitAnswer(result);
 
-    // Haptic and accessibility feedback with encouraging messages
+    // Haptic and accessibility feedback
     if (isCorrect) {
       triggerHaptic('success');
       const totalPointsWithBonus = pointsEarned + streakBonus;
-      const encouragement = similarity === 100 ? '🎯 Perfect!' : '✨ Great!';
+      const encouragement = similarity === 100 ? 'Perfect!' : 'Great!';
       showToast(`${encouragement} +${totalPointsWithBonus} points!`, 'success');
     } else {
       triggerHaptic('error');
-      // Show encouraging message based on how close they were
       const closeMessage = similarity >= 70 ? 'So close!' : 'Keep trying!';
       showToast(closeMessage, 'error');
     }
 
+    const newStreak = isCorrect ? currentStreak + 1 : 0;
     announceForAccessibility(getResultAccessibilityLabel(isCorrect, pointsEarned, newStreak));
-  }, [currentQuestion, selectedAnswer, textAnswer, timeRemaining, currentStreak, maxStreak, stopTimer]);
+  }, [currentQuestion, selectedAnswer, textAnswer, timeRemaining, currentStreak, stopTimer, storeSubmitAnswer]);
 
   const handleNextQuestion = useCallback(() => {
     if (currentIndex >= totalQuestions - 1) {
-      // Last question - show summary
-      setSessionState('SESSION_SUMMARY');
+      // Last question — store handles summary + session completion
       stopTimer();
-      
+      storeGoToNextQuestion(); // triggers SESSION_SUMMARY when at last question
+
       // Update points in database
       if (userId && totalPoints > 0) {
         updatePoints.mutate({
@@ -551,10 +554,6 @@ export default function QuizSessionScreen({
       return;
     }
 
-    // Reset timer for next question
-    const nextQuestion = questions?.[currentIndex + 1];
-    const timeLimit = nextQuestion?.timeLimit || DEFAULT_TIME_LIMIT;
-    setTimeRemaining(timeLimit);
     questionStartTime.current = Date.now();
 
     // Animate transition
@@ -570,11 +569,10 @@ export default function QuizSessionScreen({
         useNativeDriver: true,
       }),
     ]).start(() => {
-      setCurrentIndex((prev) => prev + 1);
-      setSelectedAnswer(null);
-      setTextAnswer('');
-      setIsAnswerRevealed(false);
-      setSessionState('DISPLAYING_QUESTION');
+      // Store handles index increment, answer reset, timer reset, transition flag
+      storeGoToNextQuestion();
+      // Reset transition after animation
+      storeSetTransitioning(false);
 
       slideAnim.setValue(50);
       Animated.parallel([
@@ -591,17 +589,19 @@ export default function QuizSessionScreen({
       ]).start();
 
       // Announce new question
-      if (questions?.[currentIndex + 1]) {
+      const store = useQuizStore.getState();
+      const nextQ = store.questions[store.currentIndex];
+      if (nextQ) {
         announceForAccessibility(
           getQuestionAccessibilityLabel(
-            currentIndex + 2,
-            totalQuestions,
-            questions[currentIndex + 1].text
+            store.currentIndex + 1,
+            store.questions.length,
+            nextQ.text
           )
         );
       }
     });
-  }, [currentIndex, totalQuestions, questions, totalPoints, userId, fadeAnim, slideAnim, stopTimer, updatePoints]);
+  }, [currentIndex, totalQuestions, totalPoints, userId, fadeAnim, slideAnim, stopTimer, updatePoints, storeGoToNextQuestion, storeSetTransitioning]);
 
   // ===========================================
   // Close Handling
@@ -679,8 +679,8 @@ export default function QuizSessionScreen({
       });
 
       if (result.success) {
-        // Update local points state to reflect deduction
-        setTotalPoints((prev) => Math.max(0, prev - result.pointsDeducted));
+        // Update store points to reflect deduction
+        useQuizStore.getState().deductPoints(result.pointsDeducted);
         
         showToast(
           `Success! ${result.amountRedeemed.toLocaleString()} UGX sent to your ${selectedProvider} number`,
@@ -1039,16 +1039,8 @@ export default function QuizSessionScreen({
             <PrimaryButton
               title="Play Again"
               onPress={() => {
-                setCurrentIndex(0);
-                setSelectedAnswer(null);
-                setTextAnswer('');
-                setIsAnswerRevealed(false);
-                setAnswers([]);
-                setTotalPoints(0);
-                setCurrentStreak(0);
-                setMaxStreak(0);
+                storeResetSession();
                 refetch();
-                setSessionState('LOADING');
               }}
               style={{ flex: 1 }}
             />
@@ -1162,7 +1154,7 @@ export default function QuizSessionScreen({
                   option={option.key}
                   label={option.value}
                   isSelected={selectedAnswer === option.key}
-                  isCorrect={isAnswerRevealed && String(currentQuestion?.correctAnswer) === option.key}
+                  isCorrect={isAnswerRevealed && (currentQuestion?.correctAnswers.includes(option.key) ?? false)}
                   isRevealed={isAnswerRevealed}
                   onPress={() => handleSelectAnswer(option.key)}
                   colors={colors}
@@ -1178,8 +1170,7 @@ export default function QuizSessionScreen({
                 placeholderTextColor={colors.textMuted}
                 value={textAnswer}
                 onChangeText={(text) => {
-                  setTextAnswer(text);
-                  if (text.length > 0) setSessionState('ANSWER_SELECTED');
+                  storeSetTextAnswer(text);
                 }}
                 editable={!isAnswerRevealed}
                 multiline

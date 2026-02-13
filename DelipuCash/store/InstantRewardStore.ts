@@ -14,7 +14,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ===========================================
@@ -249,6 +250,7 @@ const initialState: InstantRewardUIState = {
 // ===========================================
 
 export const useInstantRewardStore = create<InstantRewardUIState & InstantRewardUIActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -397,11 +399,6 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           selectedAnswer: null,
           lastResult: null,
         });
-
-        // After a brief delay, switch to answering state
-        setTimeout(() => {
-          set({ sessionState: 'ANSWERING' });
-        }, 300);
 
         return nextQuestionId;
       },
@@ -679,23 +676,57 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
         pendingSubmissions: state.pendingSubmissions,
       }),
     }
+  ),
+  { name: 'InstantRewardStore', enabled: __DEV__ },
   )
 );
 
 // ===========================================
-// Selectors
+// Atomic Selectors (stable — no new objects, no re-renders)
 // ===========================================
 
 export const selectAttemptHistory = (state: InstantRewardUIState) => state.attemptHistory;
+export const selectInstantSessionState = (state: InstantRewardUIState) => state.sessionState;
+export const selectCurrentQuestionId = (state: InstantRewardUIState) => state.currentQuestionId;
+export const selectInstantSelectedAnswer = (state: InstantRewardUIState) => state.selectedAnswer;
+export const selectInstantIsSubmitting = (state: InstantRewardUIState) => state.isSubmitting;
+export const selectInstantLastResult = (state: InstantRewardUIState) => state.lastResult;
+export const selectInstantError = (state: InstantRewardUIState) => state.error;
+export const selectWalletBalance = (state: InstantRewardUIState) => state.walletBalance;
+export const selectPendingRewards = (state: InstantRewardUIState) => state.pendingRewards;
+export const selectIsRedeeming = (state: InstantRewardUIState) => state.isRedeeming;
+export const selectInstantSessionSummary = (state: InstantRewardUIState) => state.sessionSummary;
+export const selectIsOnline = (state: InstantRewardUIState) => state.isOnline;
 
-export const selectHasAttempted = (questionId: string) => (state: InstantRewardUIState) => 
+export const selectHasAttempted = (questionId: string) => (state: InstantRewardUIState) =>
   state.attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
 
-export const selectAttemptedCount = (state: InstantRewardUIState) => 
+export const selectAttemptedCount = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalQuestionsAttempted ?? 0;
 
-export const selectTotalRewardsEarned = (state: InstantRewardUIState) => 
+export const selectTotalRewardsEarned = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalRewardsEarned ?? 0;
+
+/** Reactive selector for canRedeem — subscribes to state changes unlike the imperative action */
+export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
+  const totalPoints = (state.attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+};
+
+export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>
+  state.pendingSubmissions.find(s => s.questionId === questionId) ?? null;
+
+/** Reactive: is this session still active? */
+export const selectIsSessionActive = (state: InstantRewardUIState) =>
+  state.sessionState !== 'IDLE' && state.sessionState !== 'COMPLETED';
+
+/** Reactive: has pending offline submissions? */
+export const selectHasPendingSubmissions = (state: InstantRewardUIState) =>
+  state.pendingSubmissions.length > 0;
+
+// ===========================================
+// Object Selectors — use with useShallow to prevent re-renders
+// ===========================================
 
 export const selectWalletState = (state: InstantRewardUIState) => ({
   balance: state.walletBalance,
@@ -725,20 +756,30 @@ export const selectRedemptionState = (state: InstantRewardUIState) => ({
   history: state.redemptionHistory,
 });
 
-/** Reactive selector for canRedeem — subscribes to state changes unlike the imperative action */
-export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
-  const totalPoints = (state.attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
-  return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
-};
-
 export const selectOfflineQueueState = (state: InstantRewardUIState) => ({
   pendingCount: state.pendingSubmissions.length,
   isOnline: state.isOnline,
   hasPending: state.pendingSubmissions.length > 0,
 });
 
-export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>
-  state.pendingSubmissions.find(s => s.questionId === questionId) ?? null;
+// ===========================================
+// Convenience Hooks — pre-wrapped with useShallow (re-render safe)
+// ===========================================
+
+/** Wallet state — shallow-compared, re-render safe */
+export const useWalletState = () => useInstantRewardStore(useShallow(selectWalletState));
+
+/** Current question state — shallow-compared */
+export const useCurrentQuestionState = () => useInstantRewardStore(useShallow(selectCurrentQuestionState));
+
+/** Session state — shallow-compared */
+export const useInstantSessionState = () => useInstantRewardStore(useShallow(selectSessionState));
+
+/** Redemption state — shallow-compared */
+export const useInstantRedemptionState = () => useInstantRewardStore(useShallow(selectRedemptionState));
+
+/** Offline queue — shallow-compared */
+export const useOfflineQueueState = () => useInstantRewardStore(useShallow(selectOfflineQueueState));
 
 // ===========================================
 // Helper Functions

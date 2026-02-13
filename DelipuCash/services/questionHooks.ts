@@ -27,6 +27,8 @@ import {
   UseQueryResult,
   UseMutationResult,
   useInfiniteQuery,
+  useSuspenseQuery,
+  useSuspenseInfiniteQuery,
   keepPreviousData,
 } from '@tanstack/react-query';
 import { Question, Response, AppUser, ApiResponse } from '@/types';
@@ -404,6 +406,7 @@ export function useVoteQuestion(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['questions', 'vote'],
     mutationFn: async ({ questionId, type }) => {
       const userId = getCurrentUserId();
       const response = await fetchJson<{ upvotes: number; downvotes: number }>(
@@ -554,6 +557,7 @@ export function useSubmitQuestionResponse(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['questions', 'submitResponse'],
     mutationFn: async ({ questionId, responseText }) => {
       const userId = getCurrentUserId();
       const response = await fetchJson<{ response: Response; rewardEarned?: number }>(
@@ -768,6 +772,126 @@ export function usePrefetchQuestions() {
   }, [queryClient]);
 }
 
+// ===========================================
+// Suspense Hooks (2026 — use inside <Suspense> boundary)
+// ===========================================
+
+/**
+ * Suspense-enabled question detail.
+ * Throws promise while loading — wrap in <Suspense fallback={...}>.
+ * Guaranteed non-null data on render.
+ */
+export function useSuspenseQuestionDetail(questionId: string) {
+  return useSuspenseQuery({
+    queryKey: questionQueryKeys.detail(questionId),
+    queryFn: async () => {
+      const [questionRes, responsesRes] = await Promise.all([
+        fetchJson<any>(`/api/questions/${questionId}`),
+        fetchJson<any>(`/api/questions/${questionId}/responses`),
+      ]);
+
+      const questionData = questionRes.data?.data ?? questionRes.data;
+      const responsesData = responsesRes.data?.data ?? responsesRes.data ?? [];
+
+      if (!questionRes.success || !questionData) {
+        throw new Error(questionRes.error || 'Question not found');
+      }
+
+      return {
+        ...transformToFeedQuestion(questionData as Question),
+        responses: Array.isArray(responsesData) ? (responsesData as Response[]) : [],
+      };
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 15,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 8_000),
+  });
+}
+
+/**
+ * Suspense-enabled infinite feed.
+ * Throws promise while loading — wrap in <Suspense fallback={...}>.
+ */
+export function useSuspenseQuestionsFeed(tab: FeedTabId, limit: number = 20) {
+  return useSuspenseInfiniteQuery({
+    queryKey: questionQueryKeys.feed(tab, limit),
+    queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
+      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
+
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to fetch questions');
+      }
+
+      const rawData = response.data;
+      const questions = Array.isArray(rawData?.data)
+        ? rawData.data
+        : Array.isArray(rawData)
+        ? rawData
+        : [];
+
+      if (!Array.isArray(questions)) {
+        throw new Error('Invalid response format from questions API');
+      }
+
+      const feedQuestions = questions.map((q: Question, i: number) => transformToFeedQuestion(q, i));
+      const sortedQuestions = sortQuestionsByTab(feedQuestions, tab);
+      const total = rawData?.pagination?.total ?? sortedQuestions.length;
+
+      return {
+        questions: sortedQuestions,
+        pagination: {
+          page: pageParam as number,
+          limit,
+          total,
+          totalPages: rawData?.pagination?.totalPages ?? Math.ceil(total / limit),
+          hasMore: rawData?.pagination?.hasMore ?? ((pageParam as number) * limit < total),
+        },
+        stats: rawData?.stats ?? {
+          totalQuestions: total,
+          unansweredCount: 0,
+          rewardsCount: 0,
+        },
+      };
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.pagination.hasMore ? lastPage.pagination.page + 1 : undefined,
+    staleTime: 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 10,
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10_000),
+  });
+}
+
+/**
+ * Suspense-enabled leaderboard.
+ */
+export function useSuspenseLeaderboard(limit: number = 10) {
+  const userId = getCurrentUserId();
+
+  return useSuspenseQuery({
+    queryKey: [...questionQueryKeys.leaderboard, limit],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (userId) params.set('userId', userId);
+
+      const response = await fetchJson<{ data: LeaderboardResult }>(
+        `/api/questions/leaderboard?${params}`
+      );
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to load leaderboard');
+      }
+      const payload = (response.data as any)?.data ?? response.data;
+      return payload as LeaderboardResult;
+    },
+    staleTime: 1000 * 60 * 5,
+    gcTime: 1000 * 60 * 30,
+    retry: 2,
+  });
+}
+
 export default {
   useInfiniteQuestionsFeed,
   useQuestionDetail,
@@ -777,4 +901,8 @@ export default {
   useQuestionsLeaderboard,
   useUserQuestionsStats,
   usePrefetchQuestions,
+  // Suspense variants
+  useSuspenseQuestionDetail,
+  useSuspenseQuestionsFeed,
+  useSuspenseLeaderboard,
 };

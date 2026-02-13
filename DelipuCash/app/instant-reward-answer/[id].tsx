@@ -4,6 +4,7 @@ import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useRewardQuestions } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult } from "@/types";
 import {
     BORDER_WIDTH,
@@ -176,15 +177,21 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const { data: user, isLoading: isUserLoading } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
-  // ── Zustand selectors (granular — avoids full-store re-render) ──
+  // ── Zustand: state via useShallow (grouped — prevents re-renders) ──
+  const { walletBalance, sessionState, sessionSummary } = useInstantRewardStore(
+    useShallow((s) => ({
+      walletBalance: s.walletBalance,
+      sessionState: s.sessionState,
+      sessionSummary: s.sessionSummary,
+    }))
+  );
+
+  // ── Zustand: actions (stable references — never cause re-renders) ──
   const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
   const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
   const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
   const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
   const confirmReward = useInstantRewardStore((s) => s.confirmReward);
-  const walletBalance = useInstantRewardStore((s) => s.walletBalance);
-  const sessionState = useInstantRewardStore((s) => s.sessionState);
-  const sessionSummary = useInstantRewardStore((s) => s.sessionSummary);
   const startSession = useInstantRewardStore((s) => s.startSession);
   const endSession = useInstantRewardStore((s) => s.endSession);
   const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
