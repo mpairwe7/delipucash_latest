@@ -25,6 +25,7 @@ import quizRoutes from './routes/quizRoutes.mjs';
 import surveySubscriptionRoutes from './routes/surveySubscriptionRoutes.mjs';
 import surveyPaymentRoutes from './routes/surveyPaymentRoutes.mjs';
 import r2UploadRoutes from './routes/r2UploadRoutes.mjs';
+import sseRoutes from './routes/sseRoutes.mjs';
 
 dotenv.config();
 
@@ -95,6 +96,7 @@ app.use('/api/quiz', quizRoutes);
 app.use('/api/survey-subscriptions', surveySubscriptionRoutes);
 app.use('/api/survey-payments', surveyPaymentRoutes);
 app.use('/api/r2', r2UploadRoutes); // Cloudflare R2 storage routes
+app.use('/api/sse', sseRoutes); // Server-Sent Events stream
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {

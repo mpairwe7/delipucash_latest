@@ -567,3 +567,18 @@ enum NotificationPriority {
   HIGH
   URGENT
 }
+
+// SSE Event Log — stores events for Server-Sent Events delivery.
+// Controllers write events after mutations; the SSE endpoint polls this table.
+// Events are short-lived (10-minute TTL) and cleaned up automatically.
+model SSEEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  seq       Int      @default(autoincrement())
+  userId    String   @db.Uuid
+  type      String   // e.g., "notification.new", "question.response", "payment.status"
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, seq])
+  @@index([createdAt])
+}

@@ -16,6 +16,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/utils/auth/useAuth';
 import { purchasesService } from '@/services/purchasesService';
+import { SSEProvider } from '@/providers/SSEProvider';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -158,6 +159,7 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <QueryClientProvider client={queryClient}>
+        <SSEProvider>
         <NotificationProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <ToastProvider>
@@ -184,6 +186,7 @@ export default function RootLayout() {
             </ToastProvider>
           </ThemeProvider>
         </NotificationProvider>
+        </SSEProvider>
       </QueryClientProvider>
     </View>
   );

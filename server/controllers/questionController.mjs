@@ -1,6 +1,8 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // ============================================================================
 // Resilient Question Select — gracefully handles missing schema fields
@@ -133,6 +135,14 @@ export const createQuestion = asyncHandler(async (req, res) => {
     });
 
     console.log('Question created successfully:', question);
+
+    // SSE: Notify question author (for feed refresh)
+    publishEvent(userId, 'question.new', {
+      questionId: question.id,
+      text: question.text,
+      category: category || 'General',
+    }).catch(() => {});
+
     res.status(201).json({ message: 'Question created successfully', question });
   } catch (error) {
     console.error('Error creating question:', error);
@@ -359,6 +369,15 @@ export const createResponse = asyncHandler(async (req, res) => {
       userId,
       rewardEarned,
     });
+
+    // SSE: Notify question owner of new response
+    if (question.userId && question.userId !== userId) {
+      publishEvent(question.userId, 'question.response', {
+        questionId,
+        responseId: response.id,
+        userId,
+      }).catch(() => {});
+    }
 
     res.status(201).json({
       success: true,
@@ -624,6 +643,15 @@ export const voteQuestion = asyncHandler(async (req, res) => {
       prisma.questionVote.count({ where: { questionId, type: 'up' } }),
       prisma.questionVote.count({ where: { questionId, type: 'down' } }),
     ]);
+
+    // SSE: Notify question owner of vote change
+    if (question.userId && question.userId !== userId) {
+      publishEvent(question.userId, 'question.vote', {
+        questionId,
+        type,
+        totalVotes: upvotes + downvotes,
+      }).catch(() => {});
+    }
 
     res.json({ success: true, upvotes, downvotes });
   } catch (error) {

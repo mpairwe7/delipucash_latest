@@ -1,6 +1,7 @@
 import asyncHandler from "express-async-handler";
 import prisma from '../lib/prisma.mjs';
 import { errorHandler } from "../utils/error.mjs";
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Notification templates inspired by fintech apps
 const NOTIFICATION_TEMPLATES = {
@@ -114,7 +115,7 @@ const createNotificationFromTemplateHelper = async (userId, templateKey, data = 
     body = body.replace(placeholder, data[key]);
   });
 
-  return await prisma.notification.create({
+  const notification = await prisma.notification.create({
     data: {
       userId,
       title,
@@ -129,6 +130,17 @@ const createNotificationFromTemplateHelper = async (userId, templateKey, data = 
       expiresAt: data.expiresAt
     }
   });
+
+  // SSE: Notify user of new notification in real-time
+  publishEvent(userId, 'notification.new', {
+    notificationId: notification.id,
+    title,
+    type: templateKey,
+    priority: template.priority,
+    category: template.category,
+  }).catch(() => {});
+
+  return notification;
 };
 
 const resolveUserId = async (userIdFromRequest) => {

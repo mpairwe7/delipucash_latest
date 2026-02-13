@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Create a Video
 export const createVideo = asyncHandler(async (req, res) => {
@@ -131,6 +132,15 @@ export const commentPost = asyncHandler(async (req, res) => {
       where: { id: videoId },
       data: { commentsCount: { increment: 1 } },
     });
+
+    // SSE: Notify video owner of new comment
+    if (video.userId !== user_id) {
+      publishEvent(video.userId, 'video.comment', {
+        videoId,
+        commentId: comment.id,
+        commentsCount: video.commentsCount + 1,
+      }).catch(() => {});
+    }
 
     res.status(201).json({
       message: "Comment posted successfully",
@@ -386,8 +396,16 @@ export const likeVideo = asyncHandler(async (req, res) => {
       }
     });
 
-    res.json({ 
-      message: 'Video liked successfully', 
+    // SSE: Notify video owner of like
+    if (video.userId) {
+      publishEvent(video.userId, 'video.like', {
+        videoId: id,
+        likes: updatedVideo.likes,
+      }).catch(() => {});
+    }
+
+    res.json({
+      message: 'Video liked successfully',
       video: {
         ...updatedVideo,
         user: {

@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { ObjectId } from 'mongodb';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
@@ -444,6 +445,24 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     }
 
     console.log('Survey response submitted successfully:', surveyResponse.id);
+
+    // SSE: Notify survey owner of new response
+    if (survey.userId && survey.userId !== userId) {
+      const responseCount = await prisma.surveyResponse.count({ where: { surveyId } });
+      publishEvent(survey.userId, 'survey.response', {
+        surveyId,
+        responseCount,
+      }).catch(() => {});
+    }
+
+    // SSE: Notify submitter of completion + reward
+    if (reward > 0) {
+      publishEvent(userId, 'survey.completed', {
+        surveyId,
+        reward,
+      }).catch(() => {});
+    }
+
     res.status(201).json({
       success: true,
       submitted: true,

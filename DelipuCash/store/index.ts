@@ -312,3 +312,17 @@ export type {
   VideoFeedState,
   VideoFeedActions,
 } from './VideoFeedStore';
+
+// ============================================================================
+// SSE Connection Store — Real-time event connection state
+// ============================================================================
+export {
+  useSSEStore,
+  selectSSEStatus,
+  selectSSEConnected,
+  selectSSEEnabled,
+} from './SSEStore';
+export type {
+  SSEState,
+  SSEActions,
+} from './SSEStore';

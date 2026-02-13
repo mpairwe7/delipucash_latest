@@ -2,6 +2,7 @@ import axios from 'axios';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { v4 as uuidv4 } from 'uuid';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // ============================================================================
 // EXPORTED PAYMENT PROCESSING FUNCTIONS FOR AUTOMATIC DISBURSEMENTS
@@ -553,6 +554,15 @@ const checkPaymentStatusAndSave = async (referenceId, provider, token, phoneNumb
         },
       });
       console.log('Payment saved to database:', payment);
+
+      // SSE: Notify user of payment status change
+      publishEvent(userId, 'payment.status', {
+        paymentId: payment.id,
+        status: paymentStatus,
+        amount,
+        provider,
+      }).catch(() => {});
+
       return payment;
     } else {
       // For disbursement operations, return success response
@@ -718,6 +728,16 @@ export const handleCallback = asyncHandler(async (req, res) => {
     where: { id: transactionId },
     data: { status },
   });
+
+  // SSE: Notify user of payment callback status
+  if (payment.userId) {
+    publishEvent(payment.userId, 'payment.status', {
+      paymentId: payment.id,
+      status,
+      amount: payment.amount,
+      provider: payment.provider,
+    }).catch(() => {});
+  }
 
   res.status(200).json({ message: 'Callback handled', payment });
 });

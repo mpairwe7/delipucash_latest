@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Like or Unlike a Response
 export const likeResponse = asyncHandler(async (req, res) => {
@@ -91,6 +92,15 @@ export const likeResponse = asyncHandler(async (req, res) => {
         },
       },
     });
+
+    // SSE: Notify response author of like action
+    if (isLiked && response.userId !== userId) {
+      publishEvent(response.userId, 'response.like', {
+        responseId,
+        questionId: response.questionId,
+        likeCount,
+      }).catch(() => {});
+    }
 
     res.json({
       message: isLiked ? 'Response liked successfully' : 'Like removed successfully',
@@ -196,6 +206,15 @@ export const dislikeResponse = asyncHandler(async (req, res) => {
       },
     });
 
+    // SSE: Notify response author of dislike action
+    if (isDisliked && response.userId !== userId) {
+      publishEvent(response.userId, 'response.dislike', {
+        responseId,
+        questionId: response.questionId,
+        dislikeCount,
+      }).catch(() => {});
+    }
+
     res.json({
       message: isDisliked ? 'Response disliked successfully' : 'Dislike removed successfully',
       likeCount,
@@ -262,6 +281,15 @@ export const submitReply = asyncHandler(async (req, res) => {
     const replyCount = await prisma.responseReply.count({
       where: { responseId },
     });
+
+    // SSE: Notify response author of new reply
+    if (response.userId !== userId) {
+      publishEvent(response.userId, 'response.reply', {
+        responseId,
+        questionId: response.questionId,
+        replyId: reply.id,
+      }).catch(() => {});
+    }
 
     res.status(201).json({
       message: 'Reply posted successfully',
