@@ -11,7 +11,8 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
+import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Ad } from '../types';
 
@@ -231,6 +232,7 @@ export const getRandomAdFromPool = (
 // ============================================================================
 
 export const useAdUIStore = create<AdUIState & AdUIActions>()(
+  devtools(
   persist(
     (set, get) => ({
       ...initialState,
@@ -521,6 +523,8 @@ export const useAdUIStore = create<AdUIState & AdUIActions>()(
         // Don't persist session state (queue, dismissedAds, modal)
       }),
     }
+  ),
+  { name: 'AdUIStore', enabled: __DEV__ },
   )
 );
 
@@ -539,5 +543,13 @@ export const selectCurrentQueueIndex = (state: AdUIState) => state.currentQueueI
 export const selectDismissedAdIds = (state: AdUIState) => state.dismissedAdIds;
 export const selectIsAdModalVisible = (state: AdUIState) => state.isAdModalVisible;
 export const selectCurrentModalAd = (state: AdUIState) => state.currentModalAd;
+
+// ============================================================================
+// CONVENIENCE HOOKS (pre-wrapped with useShallow for object selectors)
+// ============================================================================
+
+export const useAdPreferences = () => useAdUIStore(useShallow(selectAdPreferences));
+export const useLocalMetrics = () => useAdUIStore(useShallow(selectLocalMetrics));
+export const useAdQueue = () => useAdUIStore(useShallow(selectAdQueue));
 
 export default useAdUIStore;

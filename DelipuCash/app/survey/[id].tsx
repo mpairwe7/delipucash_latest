@@ -355,6 +355,31 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       return;
     }
 
+    // Validate all required questions are answered
+    const unanswered = survey.questions.filter(q => {
+      if (!q.required) return false;
+      const val = answers[q.id];
+      if (val === undefined || val === null || val === '') return true;
+      if (q.type === 'rating' && (typeof val !== 'number' || val <= 0)) return true;
+      if (q.type === 'checkbox' && (!Array.isArray(val) || val.length === 0)) return true;
+      if (q.type === 'text' && (typeof val !== 'string' || val.trim().length === 0)) return true;
+      if (q.type === 'radio' && (typeof val !== 'string' || val.length === 0)) return true;
+      return false;
+    });
+
+    if (unanswered.length > 0) {
+      const firstIdx = survey.questions.findIndex(q => q.id === unanswered[0].id);
+      Alert.alert(
+        "Incomplete Survey",
+        `${unanswered.length} required question(s) need an answer. Tap OK to go to the first unanswered question.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "OK", onPress: () => { if (firstIdx >= 0) storeSetCurrentIndex(firstIdx); } },
+        ]
+      );
+      return;
+    }
+
     storeSetSubmitting();
 
     submitSurveyMutation.mutate(

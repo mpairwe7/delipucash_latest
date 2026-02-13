@@ -208,10 +208,11 @@ export function transformResponses(responses: Response[] | undefined): ResponseC
   if (!responses || responses.length === 0) return [];
 
   // Find the response with the most likes (must have > 0)
+  // Backend returns likeCount/dislikeCount; legacy type has likesCount/dislikesCount
   let bestId: string | null = null;
   let bestLikes = 0;
   for (const r of responses) {
-    const likes = r.likesCount ?? 0;
+    const likes = r.likeCount ?? r.likesCount ?? 0;
     if (likes > bestLikes) {
       bestLikes = likes;
       bestId = r.id;
@@ -225,8 +226,8 @@ export function transformResponses(responses: Response[] | undefined): ResponseC
       : 'Anonymous',
     responseText: r.responseText,
     createdAt: r.createdAt,
-    likeCount: r.likesCount ?? 0,
-    dislikeCount: r.dislikesCount ?? 0,
+    likeCount: r.likeCount ?? r.likesCount ?? 0,
+    dislikeCount: r.dislikeCount ?? r.dislikesCount ?? 0,
     isAccepted: bestId !== null && r.id === bestId,
   }));
 }

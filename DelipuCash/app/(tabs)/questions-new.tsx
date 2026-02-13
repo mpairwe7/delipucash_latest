@@ -877,7 +877,7 @@ export default function QuestionsScreen(): React.ReactElement {
             onPressById={handleQuestionPressById}
             onVoteById={handleVoteById}
             variant={index === 0 ? "featured" : "default"}
-            index={0}
+            index={index}
             showRewardGlow={question.isInstantReward}
             testID={`question-${question.id}`}
           />

@@ -736,22 +736,24 @@ export const questionsApi = {
 // ===========================================
 export const responsesApi = {
   /**
-   * Like a response
+   * Like or unlike a response (toggle)
+   * @param isLiked true to add like, false to remove like
    */
-  async like(responseId: string): Promise<ApiResponse<Response>> {
+  async like(responseId: string, isLiked: boolean = true): Promise<ApiResponse<Response>> {
     return fetchJson<Response>(API_ROUTES.responses.like(responseId), {
       method: 'POST',
-      body: JSON.stringify({ userId: getCurrentUserId(), isLiked: true }),
+      body: JSON.stringify({ userId: getCurrentUserId(), isLiked }),
     });
   },
 
   /**
-   * Dislike a response
+   * Dislike or remove dislike from a response (toggle)
+   * @param isDisliked true to add dislike, false to remove dislike
    */
-  async dislike(responseId: string): Promise<ApiResponse<Response>> {
+  async dislike(responseId: string, isDisliked: boolean = true): Promise<ApiResponse<Response>> {
     return fetchJson<Response>(API_ROUTES.responses.dislike(responseId), {
       method: 'POST',
-      body: JSON.stringify({ userId: getCurrentUserId(), isDisliked: true }),
+      body: JSON.stringify({ userId: getCurrentUserId(), isDisliked }),
     });
   },
 

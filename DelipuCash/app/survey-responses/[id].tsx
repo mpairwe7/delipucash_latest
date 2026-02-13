@@ -14,7 +14,7 @@
  * - Zustand: Client state (view mode, filters, UI preferences)
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -86,6 +86,7 @@ import {
   exportToPDFHtml,
   type QuestionAggregate,
 } from '@/store/SurveyResponseUIStore';
+import { useShallow } from 'zustand/react/shallow';
 
 import { useAuth } from '@/utils/auth';
 import {
@@ -139,26 +140,29 @@ const SurveyResponsesScreen = (): React.ReactElement => {
   const { width: screenWidth } = useWindowDimensions();
 
   // ============================================================================
-  // ZUSTAND UI STATE (client-side only)
+  // ZUSTAND UI STATE (client-side only — useShallow prevents unnecessary re-renders)
   // ============================================================================
-  const uiStore = useSurveyResponseUIStore();
   const {
     viewMode,
-    setViewMode,
     filters,
     searchQuery,
-    setSearchQuery,
     currentResponseIndex,
-    nextResponse,
-    previousResponse,
     expandedQuestionId,
-    setExpandedQuestion,
-    updateLastSync,
-  } = uiStore;
-  // Additional store methods available via uiStore:
-  // - setFilters: for filter UI component
-  // - setCurrentResponseIndex: for direct navigation
-  // - reset: for cleanup on unmount
+  } = useSurveyResponseUIStore(useShallow(s => ({
+    viewMode: s.viewMode,
+    filters: s.filters,
+    searchQuery: s.searchQuery,
+    currentResponseIndex: s.currentResponseIndex,
+    expandedQuestionId: s.expandedQuestionId,
+  })));
+  // Actions (stable refs — no useShallow needed)
+  const setViewMode = useSurveyResponseUIStore(s => s.setViewMode);
+  const setSearchQuery = useSurveyResponseUIStore(s => s.setSearchQuery);
+  const setFilters = useSurveyResponseUIStore(s => s.setFilters);
+  const nextResponse = useSurveyResponseUIStore(s => s.nextResponse);
+  const previousResponse = useSurveyResponseUIStore(s => s.previousResponse);
+  const setExpandedQuestion = useSurveyResponseUIStore(s => s.setExpandedQuestion);
+  const updateLastSync = useSurveyResponseUIStore(s => s.updateLastSync);
 
   // Local UI state
   const [showFilters, setShowFilters] = useState(false);
@@ -537,18 +541,81 @@ const SurveyResponsesScreen = (): React.ReactElement => {
       {/* Last Synced */}
       <View style={styles.syncRow} accessibilityRole="text">
         <Clock color={colors.textMuted} size={ICON_SIZE.sm} accessibilityElementsHidden />
-        <Text 
+        <Text
           style={[styles.syncText, { color: colors.textMuted }]}
           accessibilityLabel={`Last synced ${formatRelativeTime(lastSyncedAt)}`}
         >
           Last synced: {formatRelativeTime(lastSyncedAt)}
         </Text>
       </View>
+
+      {/* Filter Panel */}
+      {showFilters && (
+        <View
+          style={[styles.filterPanel, { backgroundColor: colors.card, borderColor: colors.border }]}
+          accessible
+          accessibilityLabel="Response filters"
+        >
+          <Text style={[styles.filterPanelTitle, { color: colors.text }]}>Filters</Text>
+
+          {/* Completion Status */}
+          <View style={styles.filterRow}>
+            <Text style={[styles.filterLabel, { color: colors.textMuted }]}>Status</Text>
+            <View style={styles.filterChips}>
+              {(['all', 'completed', 'partial'] as const).map(status => {
+                const isActive = (filters.completionStatus || 'all') === status;
+                return (
+                  <TouchableOpacity
+                    key={status}
+                    style={[
+                      styles.filterChip,
+                      { borderColor: isActive ? colors.primary : colors.border },
+                      isActive && { backgroundColor: withAlpha(colors.primary, 0.12) },
+                    ]}
+                    onPress={() => setFilters({ completionStatus: status === 'all' ? undefined : status })}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={`Filter by ${status}`}
+                  >
+                    <Text style={[styles.filterChipText, { color: isActive ? colors.primary : colors.textMuted }]}>
+                      {status.charAt(0).toUpperCase() + status.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Clear Filters */}
+          {(filters.completionStatus || filters.dateRange || filters.respondentId) && (
+            <TouchableOpacity
+              style={[styles.clearFiltersBtn, { borderColor: colors.border }]}
+              onPress={() => setFilters({ completionStatus: undefined, dateRange: undefined, respondentId: undefined })}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all filters"
+            >
+              <X color={colors.textMuted} size={ICON_SIZE.sm} />
+              <Text style={[styles.clearFiltersText, { color: colors.textMuted }]}>Clear filters</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
     </View>
   );
 
   const renderSummaryView = () => {
-    if (!analytics) return null;
+    if (!analytics) {
+      return (
+        <View style={[styles.content, { alignItems: 'center', justifyContent: 'center', paddingVertical: SPACING['3xl'] }]}>
+          <BarChart3 color={colors.textMuted} size={48} strokeWidth={1.5} />
+          <Text style={[styles.loadingText, { color: colors.textMuted, marginTop: SPACING.md }]}>
+            {filteredResponses.length === 0
+              ? 'No responses yet. Analytics will appear once responses are submitted.'
+              : 'Computing analytics...'}
+          </Text>
+        </View>
+      );
+    }
 
     const responseData = analytics.responsesByDay.map((d) => ({
       label: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }),
@@ -1158,16 +1225,19 @@ const SurveyResponsesScreen = (): React.ReactElement => {
     );
   }
 
-  if (isError && !isOwner) {
-    const errorMessage = error instanceof Error ? error.message : 'You do not have permission to view these responses.';
+  if (isError) {
+    const isAccessDenied = !isOwner;
+    const errorMessage = isAccessDenied
+      ? 'You do not have permission to view these responses.'
+      : error instanceof Error ? error.message : 'Something went wrong loading responses.';
     return (
-      <View 
+      <View
         style={[styles.errorContainer, { backgroundColor: colors.background, paddingTop: insets.top }]}
         accessibilityRole="alert"
       >
         <StatusBar style={statusBarStyle} />
-        <TouchableOpacity 
-          style={styles.backButtonAbsolute} 
+        <TouchableOpacity
+          style={styles.backButtonAbsolute}
           onPress={() => router.back()}
           accessibilityRole="button"
           accessibilityLabel="Go back"
@@ -1178,16 +1248,20 @@ const SurveyResponsesScreen = (): React.ReactElement => {
           <View style={[styles.errorIcon, { backgroundColor: withAlpha(colors.error, 0.2) }]}>
             <X color={colors.error} size={48} accessibilityElementsHidden />
           </View>
-          <Text 
+          <Text
             style={[styles.errorTitle, { color: colors.text }]}
             accessibilityRole="header"
           >
-            Access Denied
+            {isAccessDenied ? 'Access Denied' : 'Error Loading Data'}
           </Text>
           <Text style={[styles.errorMessage, { color: colors.textSecondary }]}>
             {errorMessage}
           </Text>
-          <PrimaryButton title="Go Back" onPress={() => router.back()} />
+          {isAccessDenied ? (
+            <PrimaryButton title="Go Back" onPress={() => router.back()} />
+          ) : (
+            <PrimaryButton title="Retry" onPress={refetchAll} />
+          )}
         </View>
       </View>
     );
@@ -1397,6 +1471,60 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   syncText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+
+  // Filter Panel
+  filterPanel: {
+    marginTop: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.sm,
+  },
+  filterPanelTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.xs,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  filterLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    minWidth: 48,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.xs,
+  },
+  filterChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  filterChipText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  clearFiltersBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.sm,
+    borderWidth: BORDER_WIDTH.thin,
+    marginTop: SPACING.xs,
+  },
+  clearFiltersText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },

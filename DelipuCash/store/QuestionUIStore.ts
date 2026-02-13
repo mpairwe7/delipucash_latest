@@ -4,7 +4,7 @@
  */
 
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage, devtools } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FeedTabId } from '@/services/questionHooks';
 
@@ -17,6 +17,7 @@ interface QuestionUIActions {
 }
 
 export const useQuestionUIStore = create<QuestionUIState & QuestionUIActions>()(
+  devtools(
   persist(
     (set) => ({
       selectedTab: 'for-you',
@@ -27,6 +28,8 @@ export const useQuestionUIStore = create<QuestionUIState & QuestionUIActions>()(
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ selectedTab: state.selectedTab }),
     }
+  ),
+  { name: 'QuestionUIStore', enabled: __DEV__ },
   )
 );
 

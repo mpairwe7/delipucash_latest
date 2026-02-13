@@ -286,16 +286,11 @@ export const createResponse = asyncHandler(async (req, res) => {
     });
   }
 
-  // Fallback to any existing user for mock/demo flows
-  if (!userId) {
-    const fallbackUser = await prisma.appUser.findFirst({ select: { id: true } });
-    userId = fallbackUser?.id;
-  }
-
+  // Require authenticated userId — no fallback attribution
   if (!userId) {
     return res.status(400).json({
       success: false,
-      message: 'User ID is required',
+      message: 'User ID is required. Please sign in to submit a response.',
     });
   }
 

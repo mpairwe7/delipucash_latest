@@ -23,12 +23,11 @@ import { useAuthStore } from '@/utils/auth/store';
 const getCurrentUserId = (): string | null =>
   useAuthStore.getState().auth?.user?.id || null;
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+/** Get current auth token for protected API calls */
+const getAuthToken = (): string | null =>
+  useAuthStore.getState().auth?.token || null;
 
-// Validate that API URL is configured
-if (!API_BASE_URL) {
-  console.warn('[SurveyAPI] EXPO_PUBLIC_API_URL is not configured. API calls will fail.');
-}
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
 
 // API Routes
 const SURVEY_ROUTES = {
@@ -238,7 +237,8 @@ export const surveyApi = {
       {
         method: "POST",
         body: JSON.stringify({ userId, responses: answers }),
-      }
+      },
+      getAuthToken()
     );
   },
 
@@ -264,7 +264,7 @@ export const surveyApi = {
     return fetchJson<Survey>(SURVEY_ROUTES.create, {
       method: "POST",
       body: JSON.stringify({ ...surveyData, userId: getCurrentUserId() }),
-    });
+    }, getAuthToken());
   },
 
   /**
@@ -274,7 +274,7 @@ export const surveyApi = {
     return fetchJson<Survey>(SURVEY_ROUTES.update(surveyId), {
       method: "PUT",
       body: JSON.stringify(data),
-    });
+    }, getAuthToken());
   },
 
   /**
@@ -283,7 +283,7 @@ export const surveyApi = {
   async delete(surveyId: string): Promise<ApiResponse<{ deleted: boolean }>> {
     return fetchJson<{ deleted: boolean }>(SURVEY_ROUTES.delete(surveyId), {
       method: "DELETE",
-    });
+    }, getAuthToken());
   },
 
   /**

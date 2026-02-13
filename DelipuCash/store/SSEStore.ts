@@ -6,6 +6,7 @@
  */
 
 import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
 import type { SSEConnectionStatus } from '@/services/sse/types';
 
 export interface SSEState {
@@ -24,7 +25,8 @@ export interface SSEActions {
   setEnabled: (enabled: boolean) => void;
 }
 
-export const useSSEStore = create<SSEState & SSEActions>((set) => ({
+export const useSSEStore = create<SSEState & SSEActions>()(
+  devtools((set) => ({
   status: 'disconnected',
   lastEventId: null,
   reconnectAttempt: 0,
@@ -36,7 +38,10 @@ export const useSSEStore = create<SSEState & SSEActions>((set) => ({
   setReconnectAttempt: (attempt) => set({ reconnectAttempt: attempt }),
   setLastError: (error) => set({ lastError: error }),
   setEnabled: (enabled) => set({ isEnabled: enabled }),
-}));
+}),
+  { name: 'SSEStore', enabled: __DEV__ },
+  )
+);
 
 // Selectors
 export const selectSSEStatus = (state: SSEState) => state.status;

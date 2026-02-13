@@ -13,6 +13,7 @@
  */
 
 import { create } from 'zustand';
+import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -74,6 +75,7 @@ const initialState: QuestionAnswerState = {
 export const useQuestionAnswerStore = create<
   QuestionAnswerState & QuestionAnswerActions
 >()(
+  devtools(
   immer((set, get) => ({
     ...initialState,
 
@@ -123,7 +125,9 @@ export const useQuestionAnswerStore = create<
         activeQuestionId: null,
       }));
     },
-  }))
+  })),
+  { name: 'QuestionAnswerStore', enabled: __DEV__ },
+  )
 );
 
 // ─── Selectors (granular subscriptions — avoid full-store re-renders) ────────

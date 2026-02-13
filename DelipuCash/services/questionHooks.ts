@@ -93,7 +93,7 @@ export interface UserQuestionsStats {
 // API Configuration
 // ===========================================
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
 
 /** Get current authenticated user ID from auth store */
 const getCurrentUserId = (): string | null =>

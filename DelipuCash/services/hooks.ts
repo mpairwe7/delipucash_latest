@@ -22,6 +22,7 @@ import {
 } from "@/types";
 import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
+import { questionQueryKeys } from "./questionHooks";
 
 // Query Keys
 export const queryKeys = {
@@ -835,7 +836,10 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
       return response.data;
     },
     onSuccess: (_, variables) => {
+      // Invalidate both legacy and questionHooks query key hierarchies
       queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.responses(variables.questionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.questions });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
     },
@@ -856,7 +860,10 @@ export function useLikeResponse(): UseMutationResult<Response, Error, { response
       return response.data;
     },
     onSuccess: (_, variables) => {
+      // Invalidate both legacy and questionHooks query key hierarchies
       queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.responses(variables.questionId) });
     },
   });
 }
@@ -875,7 +882,10 @@ export function useDislikeResponse(): UseMutationResult<Response, Error, { respo
       return response.data;
     },
     onSuccess: (_, variables) => {
+      // Invalidate both legacy and questionHooks query key hierarchies
       queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(variables.questionId) });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.responses(variables.questionId) });
     },
   });
 }

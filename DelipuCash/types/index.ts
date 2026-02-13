@@ -319,9 +319,15 @@ export interface Response {
   likes?: ResponseLike[];
   dislikes?: ResponseDislike[];
   replies?: ResponseReply[];
-  // Computed fields
+  // Computed fields (backend returns likeCount/dislikeCount/replyCount)
+  likeCount?: number;
+  dislikeCount?: number;
+  replyCount?: number;
+  /** @deprecated Use likeCount — kept for backwards compat */
   likesCount?: number;
+  /** @deprecated Use dislikeCount — kept for backwards compat */
   dislikesCount?: number;
+  /** @deprecated Use replyCount — kept for backwards compat */
   repliesCount?: number;
   isLiked?: boolean;
   isDisliked?: boolean;

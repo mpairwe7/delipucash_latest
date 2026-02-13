@@ -23,6 +23,7 @@ import { adApi, type AdFilters, type CreateAdPayload, type UpdateAdPayload } fro
 
 // Import UI store for client-side interactions (NOT for caching server data)
 import { useAdUIStore, type AdPlacement } from '../store/AdUIStore';
+import { useShallow } from 'zustand/react/shallow';
 
 /** Time before data is considered stale (5 minutes) */
 const STALE_TIME = 1000 * 60 * 5;
@@ -545,18 +546,16 @@ export function useAdRefreshOnFocus() {
  * (Convenience wrapper around Zustand store)
  */
 export function useAdPreferences() {
-  const uiStore = useAdUIStore();
-
-  return {
-    preferences: uiStore.preferences,
-    updatePreferences: uiStore.updatePreferences,
-    togglePersonalizedAds: uiStore.togglePersonalizedAds,
-    setAdFrequency: uiStore.setAdFrequency,
-    blockAdvertiser: uiStore.blockAdvertiser,
-    unblockAdvertiser: uiStore.unblockAdvertiser,
-    blockCategory: uiStore.blockCategory,
-    unblockCategory: uiStore.unblockCategory,
-  };
+  return useAdUIStore(useShallow((s) => ({
+    preferences: s.preferences,
+    updatePreferences: s.updatePreferences,
+    togglePersonalizedAds: s.togglePersonalizedAds,
+    setAdFrequency: s.setAdFrequency,
+    blockAdvertiser: s.blockAdvertiser,
+    unblockAdvertiser: s.unblockAdvertiser,
+    blockCategory: s.blockCategory,
+    unblockCategory: s.unblockCategory,
+  })));
 }
 
 // ============================================================================

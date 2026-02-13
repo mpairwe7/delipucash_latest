@@ -180,13 +180,11 @@ export default function SurveysScreen(): React.ReactElement {
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
-  // Store state
-  const {
-    activeTab,
-    setActiveTab,
-    cardViewStyle,
-    setCardViewStyle,
-  } = useSurveyUIStore();
+  // Store state (individual selectors — avoid full-store subscriptions)
+  const activeTab = useSurveyUIStore(s => s.activeTab);
+  const setActiveTab = useSurveyUIStore(s => s.setActiveTab);
+  const cardViewStyle = useSurveyUIStore(s => s.cardViewStyle);
+  const setCardViewStyle = useSurveyUIStore(s => s.setCardViewStyle);
 
   // Local state for modals
   const [showTemplates, setShowTemplates] = useState(false);
@@ -194,7 +192,7 @@ export default function SurveysScreen(): React.ReactElement {
 
   // Auth state
   const { isAuthenticated, isReady: authReady, auth } = useAuth();
-  const { open: openAuth } = useAuthModal();
+  const openAuth = useAuthModal(s => s.open);
 
   const [refreshing, setRefreshing] = useState(false);
   const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
@@ -360,8 +358,10 @@ export default function SurveysScreen(): React.ReactElement {
         surveys = completedSurveys;
         break;
       case 'discover':
-        // Discover shows featured/popular surveys from all
-        surveys = [...runningSurveys].sort(() => Math.random() - 0.5).slice(0, 10);
+        // Discover shows featured/popular surveys — deterministic sort by reward desc
+        surveys = [...runningSurveys]
+          .sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0))
+          .slice(0, 10);
         break;
     }
 
@@ -373,7 +373,7 @@ export default function SurveysScreen(): React.ReactElement {
     }
 
     return surveys;
-  }, [activeTab, mySurveys, runningSurveys, upcomingSurveys, isSearching, searchedSurveys]);
+  }, [activeTab, mySurveys, runningSurveys, upcomingSurveys, completedSurveys, isSearching, searchedSurveys]);
 
   // Build FlatList data with ads interleaved after every 2 surveys
   // Following IAB Native Advertising Playbook & Google AdMob best practices:
@@ -473,17 +473,23 @@ export default function SurveysScreen(): React.ReactElement {
 
   // Handle tab change with animation
   const handleTabChange = useCallback((key: TabKey, index: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (!prefersReducedMotion) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
     setActiveTab(key);
-    
+
     const tabWidth = (width - SPACING.md * 2) / tabs.length;
-    Animated.spring(tabIndicatorAnim, {
-      toValue: index * tabWidth,
-      tension: 68,
-      friction: 12,
-      useNativeDriver: true,
-    }).start();
-  }, [setActiveTab, width, tabs.length, tabIndicatorAnim]);
+    if (prefersReducedMotion) {
+      tabIndicatorAnim.setValue(index * tabWidth);
+    } else {
+      Animated.spring(tabIndicatorAnim, {
+        toValue: index * tabWidth,
+        tension: 68,
+        friction: 12,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [setActiveTab, width, tabs.length, tabIndicatorAnim, prefersReducedMotion]);
 
   // Handle search
   const handleSearchSubmit = useCallback((query: string) => {
@@ -933,8 +939,21 @@ export default function SurveysScreen(): React.ReactElement {
               </TouchableOpacity>
             );
           })}
+          {/* Animated tab indicator */}
+          <Animated.View
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              height: 2.5,
+              width: (width - SPACING.md * 2) / tabs.length,
+              backgroundColor: colors.primary,
+              borderRadius: 2,
+              transform: [{ translateX: tabIndicatorAnim }],
+            }}
+          />
         </ScrollView>
-        
+
         {/* View mode toggle (tablet only) */}
         {isTablet && (
           <View style={styles.cardViewStyleToggle}>

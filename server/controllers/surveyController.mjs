@@ -407,13 +407,19 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     }
 
     // Validate that all required questions have answers
-    const requiredQuestionIds = (survey.uploads || []).map(q => q.id);
+    const requiredQuestions = (survey.uploads || []).filter(q => q.required !== false);
     const answeredIds = Object.keys(responseData);
-    const missingRequired = requiredQuestionIds.filter(id => !answeredIds.includes(id));
+    const missingRequired = requiredQuestions
+      .filter(q => !answeredIds.includes(q.id) || responseData[q.id] === '' || responseData[q.id] === null || responseData[q.id] === undefined)
+      .map(q => q.id);
 
     if (missingRequired.length > 0) {
-      console.log('Missing required answers:', missingRequired);
-      // Log warning but allow partial submissions (some surveys have optional questions)
+      return res.status(400).json({
+        success: false,
+        submitted: false,
+        message: `Please answer all required questions. ${missingRequired.length} required question(s) unanswered.`,
+        missingQuestionIds: missingRequired,
+      });
     }
 
     // Save the responses
@@ -634,10 +640,99 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error retrieving all surveys:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error retrieving surveys', 
-      error: error.message 
+      message: 'Error retrieving surveys',
+      error: error.message
     });
+  }
+});
+
+// Get Survey Analytics
+export const getSurveyAnalytics = asyncHandler(async (req, res) => {
+  const { surveyId } = req.params;
+
+  try {
+    const survey = await prisma.survey.findUnique({
+      where: { id: surveyId },
+      include: { uploads: true },
+    });
+
+    if (!survey) {
+      return res.status(404).json({ success: false, message: 'Survey not found' });
+    }
+
+    const responses = await prisma.surveyResponse.findMany({
+      where: { surveyId },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const totalResponses = responses.length;
+
+    // Completion rate: responses / maxResponses (or 100% if no cap)
+    const completionRate = survey.maxResponses
+      ? Math.min((totalResponses / survey.maxResponses) * 100, 100)
+      : 100;
+
+    // Average completion time (estimated from response timestamps)
+    const avgTime = totalResponses > 0
+      ? (survey.uploads?.length || 1) * 30 // ~30s per question estimate
+      : 0;
+
+    // Responses grouped by day (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentResponses = responses.filter(r => new Date(r.createdAt) >= thirtyDaysAgo);
+
+    const dayMap = {};
+    recentResponses.forEach(r => {
+      const day = new Date(r.createdAt).toISOString().split('T')[0];
+      dayMap[day] = (dayMap[day] || 0) + 1;
+    });
+    const responsesByDay = Object.entries(dayMap)
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    // Per-question response distribution
+    const questionStats = (survey.uploads || []).map(q => {
+      const dist = {};
+      responses.forEach(r => {
+        let parsed;
+        try { parsed = typeof r.responses === 'string' ? JSON.parse(r.responses) : r.responses; }
+        catch { parsed = {}; }
+        const val = parsed?.[q.id];
+        if (val !== undefined && val !== null && val !== '') {
+          const key = Array.isArray(val) ? val.join(', ') : String(val);
+          dist[key] = (dist[key] || 0) + 1;
+        }
+      });
+
+      const total = Object.values(dist).reduce((sum, c) => sum + c, 0);
+      return {
+        questionId: q.id,
+        questionText: q.question || q.title || `Question ${q.id}`,
+        responseDistribution: Object.entries(dist).map(([option, count]) => ({
+          option,
+          count,
+          percentage: total > 0 ? Math.round((count / total) * 100) : 0,
+        })),
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        surveyId,
+        title: survey.surveyTitle || survey.title || '',
+        totalResponses,
+        completionRate: Math.round(completionRate * 10) / 10,
+        averageTime: avgTime,
+        responsesByDay,
+        questionStats,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching survey analytics:', error);
+    res.status(500).json({ success: false, message: 'Error fetching analytics', error: error.message });
   }
 });
