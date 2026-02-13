@@ -15,7 +15,21 @@ type EventHandler = (data: unknown) => void;
 
 const API_URL =
   process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
-const SSE_ENDPOINT = `${API_URL}/api/sse/stream`;
+const NORMALIZED_API_URL = API_URL.replace(/\/+$/, '');
+const HAS_API_SUFFIX = /\/api$/i.test(NORMALIZED_API_URL);
+const SSE_ENDPOINT_CANDIDATES = Array.from(
+  new Set(
+    HAS_API_SUFFIX
+      ? [
+          `${NORMALIZED_API_URL}/sse/stream`,
+          `${NORMALIZED_API_URL.replace(/\/api$/i, '')}/api/sse/stream`,
+        ]
+      : [
+          `${NORMALIZED_API_URL}/api/sse/stream`,
+          `${NORMALIZED_API_URL}/sse/stream`,
+        ],
+  ),
+);
 
 // Reconnection constants
 const BASE_RECONNECT_DELAY = 3000;
@@ -105,14 +119,37 @@ export class SSEManager {
         headers['Last-Event-ID'] = this.lastEventId;
       }
 
-      const response = await fetch(SSE_ENDPOINT, {
+      const requestOptions: RequestInit = {
         method: 'GET',
         headers,
         signal: this.abortController.signal,
-      });
+      };
+
+      let endpointUsed = SSE_ENDPOINT_CANDIDATES[0];
+      let response = await fetch(endpointUsed, requestOptions);
+
+      // Handle API base-url shape differences:
+      // - EXPO_PUBLIC_API_URL=https://host
+      // - EXPO_PUBLIC_API_URL=https://host/api
+      if (response.status === 404 && SSE_ENDPOINT_CANDIDATES.length > 1) {
+        const fallbackEndpoint = SSE_ENDPOINT_CANDIDATES[1];
+        const fallbackResponse = await fetch(fallbackEndpoint, requestOptions);
+        if (fallbackResponse.ok || fallbackResponse.status !== 404) {
+          endpointUsed = fallbackEndpoint;
+          response = fallbackResponse;
+        } else {
+          throw new Error(
+            `SSE endpoint not found. Tried: ${SSE_ENDPOINT_CANDIDATES.join(' | ')}`,
+          );
+        }
+      } else if (response.status === 404) {
+        throw new Error(`SSE endpoint not found at ${endpointUsed}`);
+      }
 
       if (!response.ok) {
-        throw new Error(`SSE connection failed: HTTP ${response.status}`);
+        throw new Error(
+          `SSE connection failed: HTTP ${response.status} (${endpointUsed})`,
+        );
       }
 
       if (!response.body) {
@@ -127,6 +164,14 @@ export class SSEManager {
       const err = error as { name?: string; message?: string };
       if (err.name === 'AbortError') return;
       console.warn('[SSE] Connection error:', err.message);
+
+      // Endpoint is missing in the backend deployment/config;
+      // do not spam reconnect loops for a permanent 404.
+      if (err.message?.includes('SSE endpoint not found')) {
+        this.setStatus('disconnected');
+        return;
+      }
+
       this.setStatus('error');
       this.scheduleReconnect();
     }

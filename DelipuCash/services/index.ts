@@ -77,27 +77,7 @@ export { default as adApi } from "./adApi";
 // ============================================================================
 export * from "./adHooksRefactored";
 
-// ============================================================================
-// Legacy Ad Hooks (deprecated - kept for backward compatibility)
-// TODO: Migrate remaining usages to adHooksRefactored + AdUIStore
-// ============================================================================
-export {
-    // Re-export with deprecated naming to avoid conflicts
-    useAds as useLegacyAds,
-    useFeaturedAds as useLegacyFeaturedAds,
-    useBannerAds as useLegacyBannerAds,
-    useVideoAds as useLegacyVideoAds,
-    useAdById as useLegacyAdById,
-    useAdsForPlacement as useLegacyAdsForPlacement,
-    useRandomAd as useLegacyRandomAd,
-    useTrackAdClick as useLegacyTrackAdClick,
-    useTrackAdImpression as useLegacyTrackAdImpression,
-    useCreateAd as useLegacyCreateAd,
-    useUpdateAd as useLegacyUpdateAd,
-    useDeleteAd as useLegacyDeleteAd,
-    useAdImpressionTracking as useLegacyAdImpressionTracking,
-    useAdRotation as useLegacyAdRotation,
-} from "./adHooks";
+// Legacy ad hooks removed — all consumers migrated to adHooksRefactored + AdUIStore
 
 // Survey Response TanStack Query Hooks (NEW - Industry Standard)
 export * from "./surveyResponseHooks";

@@ -43,8 +43,9 @@ const getAuthHeaders = (): Record<string, string> => {
 // API Configuration
 // ===========================================
 
-// Ensure the API URL always ends with /api
+// Base API URL (host only). Request paths already include /api/*
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const apiBaseUrl = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // Validate that API URL is configured
 if (!rawApiUrl) {
@@ -83,7 +84,7 @@ const getDefaultHeaders = (): Record<string, string> => ({
 });
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
-  const url = `${rawApiUrl}${path}`;
+  const url = `${apiBaseUrl}${path}`;
   try {
     const response = await fetch(url, {
       headers: {

@@ -9,6 +9,7 @@ import {
 } from "@/utils/theme";
 import { useUploadAdMediaToR2 } from "@/services/r2UploadHooks";
 import { useCreateAd } from "@/services/adHooksRefactored";
+import { useAuth } from "@/utils/auth/useAuth";
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -415,6 +416,8 @@ export default function AdRegistrationScreen(): React.ReactElement {
   
   // TanStack Query mutation for creating ads
   const createAdMutation = useCreateAd();
+  const { auth } = useAuth();
+  const userId = auth?.user?.id;
 
   // Current step in the wizard
   const [currentStep, setCurrentStep] = useState<FormStep>("media");
@@ -582,7 +585,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
       // Upload to Cloudflare R2
       const uploadResult = await uploadAdMedia({
         mediaUri: asset.uri,
-        userId: 'current-user-id', // TODO: Get from auth context
+        userId: userId!, // From auth context
         fileName: asset.fileName ?? asset.uri.split("/").pop() ?? undefined,
         mimeType: asset.mimeType ?? (isVideo ? 'video/mp4' : 'image/jpeg'),
       });
@@ -740,7 +743,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
         enableRetargeting: form.enableRetargeting,
         priority: form.priority,
         frequency: Number(form.frequencyCap) || undefined,
-        userId: 'current-user-id', // TODO: Get from auth context
+        userId: userId!, // From auth context
         // R2 Storage Metadata (Cloudflare R2 / S3-compatible) - similar to Video screen
         ...(r2Metadata && mediaKind === 'image' && {
           r2ImageKey: r2Metadata.key,

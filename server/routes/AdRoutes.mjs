@@ -1,4 +1,5 @@
 import express from 'express';
+import { verifyToken, requireAdmin, requireModerator } from '../utils/verifyUser.mjs';
 import {
   getAllAds,
   getAdsByUser,
@@ -20,7 +21,7 @@ import {
 const router = express.Router();
 
 // ============================================================================
-// PUBLIC ROUTES
+// PUBLIC ROUTES (no auth required — consumed by app feed)
 // ============================================================================
 
 // Get all ads (with optional filtering)
@@ -30,40 +31,40 @@ router.get('/all', getAllAds);
 // Get ads by user
 router.get('/user/:userId', getAdsByUser);
 
-// Create a new ad
-router.post('/create', createAd);
+// Create a new ad (auth required — userId comes from JWT)
+router.post('/create', verifyToken, createAd);
 
 // ============================================================================
-// AD MANAGEMENT ROUTES
+// AD MANAGEMENT ROUTES (auth required — owner or admin)
 // ============================================================================
 
 // Update an ad
-router.put('/:adId/update', updateAd);
+router.put('/:adId/update', verifyToken, updateAd);
 
 // Delete an ad
-router.delete('/:adId/delete', deleteAd);
+router.delete('/:adId/delete', verifyToken, deleteAd);
 
 // Get ad analytics/performance
-router.get('/:adId/analytics', getAdAnalytics);
+router.get('/:adId/analytics', verifyToken, getAdAnalytics);
 
 // Pause ad campaign
-router.put('/:adId/pause', pauseAd);
+router.put('/:adId/pause', verifyToken, pauseAd);
 
 // Resume ad campaign
-router.put('/:adId/resume', resumeAd);
+router.put('/:adId/resume', verifyToken, resumeAd);
 
 // ============================================================================
-// ADMIN ROUTES (should be protected with admin middleware)
+// ADMIN ROUTES (auth + admin/moderator role required)
 // ============================================================================
 
 // Get pending ads for review
-router.get('/admin/pending', getPendingAds);
+router.get('/admin/pending', verifyToken, requireModerator, getPendingAds);
 
 // Approve an ad
-router.put('/:adId/approve', approveAd);
+router.put('/:adId/approve', verifyToken, requireModerator, approveAd);
 
 // Reject an ad
-router.put('/:adId/reject', rejectAd);
+router.put('/:adId/reject', verifyToken, requireModerator, rejectAd);
 
 // ============================================================================
 // TRACKING ROUTES

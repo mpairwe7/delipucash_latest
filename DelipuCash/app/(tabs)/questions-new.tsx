@@ -314,7 +314,8 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           ad={bannerAds[0]}
           placement="banner-top"
           onAdClick={onAdClick}
-          onAdLoad={() => onAdImpression(bannerAds[0])}
+          onImpression={onAdImpression}
+          trackViewability
           style={styles.bannerAdPlacement}
         />
       )}
@@ -338,7 +339,6 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         <BetweenContentAd
           ad={feedAds[0]}
           onAdClick={onAdClick}
-          onAdLoad={() => onAdImpression(feedAds[0])}
           variant="native"
           style={styles.betweenContentAd}
         />
@@ -371,7 +371,8 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           ad={featuredAds[0]}
           placement="between-content"
           onAdClick={onAdClick}
-          onAdLoad={() => onAdImpression(featuredAds[0])}
+          onImpression={onAdImpression}
+          trackViewability
           style={styles.featuredAdPlacement}
         />
       )}
@@ -382,7 +383,8 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           ad={bannerAds[1]}
           index={1}
           onAdClick={onAdClick}
-          onAdLoad={() => onAdImpression(bannerAds[1])}
+          onImpression={onAdImpression}
+          trackViewability
           style={styles.inFeedAd}
         />
       )}
@@ -791,24 +793,13 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleAdImpressionRef = useRef(handleAdImpression);
   handleAdImpressionRef.current = handleAdImpression;
 
-  // Ad impression deduplication — each ad fires at most once per tab session
+  // Viewability config — ad impressions are now tracked by InFeedAd/AdPlacementWrapper
+  // via IAB viewability standard (50% visible for 1s). No duplicate impression here.
   const viewabilityConfigCallbackPairs = useRef([
     {
       viewabilityConfig: VIEWABILITY_CONFIG,
-      onViewableItemsChanged: ({
-        viewableItems,
-      }: {
-        viewableItems: ViewToken[];
-      }) => {
-        viewableItems.forEach((item) => {
-          if (item.item?.type === "ad" && item.item.data) {
-            const ad = item.item.data as Ad;
-            if (!impressedAdIds.current.has(ad.id)) {
-              impressedAdIds.current.add(ad.id);
-              handleAdImpressionRef.current(ad);
-            }
-          }
-        });
+      onViewableItemsChanged: () => {
+        // Impressions handled by individual ad components via trackViewability
       },
     },
   ]);

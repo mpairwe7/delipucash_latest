@@ -487,10 +487,22 @@ const InFeedAdComponent: React.FC<InFeedAdProps> = memo(({
   );
 
   // Handle layout for viewability calculation
-  const handleLayout = useCallback((_event: LayoutChangeEvent) => {
-    // Assume initially 100% visible when laid out
-    // In a real implementation, this would integrate with FlatList's viewability config
-    updateVisibility(100);
+  // Instead of assuming 100% visible immediately, measure actual position
+  // relative to viewport. The IAB timer in useViewabilityTracking ensures
+  // the impression only fires after 1s of continuous 50%+ visibility.
+  const handleLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    if (containerRef.current) {
+      containerRef.current.measureInWindow((_x, y, _w, h) => {
+        if (y === undefined || h === undefined) return;
+        const screenHeight = Dimensions.get('window').height;
+        const visibleTop = Math.max(0, y);
+        const visibleBottom = Math.min(screenHeight, y + (h || height));
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        const percent = (h || height) > 0 ? (visibleHeight / (h || height)) * 100 : 0;
+        updateVisibility(Math.round(percent));
+      });
+    }
   }, [updateVisibility]);
 
   return (

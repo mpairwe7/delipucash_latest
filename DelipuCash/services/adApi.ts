@@ -234,6 +234,7 @@ const AD_ENDPOINTS = {
   impression: (id: string) => `/api/ads/${id}/impression`,
   click: (id: string) => `/api/ads/${id}/click`,
   conversion: (id: string) => `/api/ads/${id}/conversion`,
+  videoProgress: (id: string) => `/api/ads/${id}/view`,
   
   // Legacy endpoints (for backward compatibility) - Updated to use /all with filters
   featured: '/api/ads/all?type=featured',

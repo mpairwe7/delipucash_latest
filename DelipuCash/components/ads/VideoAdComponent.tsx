@@ -18,6 +18,7 @@ import {
   AccessibilityInfo,
   AppState,
   AppStateStatus,
+  Linking,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -205,6 +206,7 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipTimeoutRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const completionFiredRef = useRef(false);
 
   // ========== ANIMATIONS ==========
   const controlsOpacity = useSharedValue(1);
@@ -363,8 +365,9 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
           onVideoProgress?.(Math.round((current / total) * 100), current, total);
         }
 
-        // Check for video completion
-        if (current >= total - 0.5 && total > 0) {
+        // Check for video completion (one-shot guard prevents repeated calls)
+        if (current >= total - 0.5 && total > 0 && !completionFiredRef.current) {
+          completionFiredRef.current = true;
           onVideoComplete?.(ad);
         }
       }, 250);
@@ -458,6 +461,7 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
       videoPlayer.currentTime = 0;
       videoPlayer.play();
     }
+    completionFiredRef.current = false; // Allow re-fire on replay
     setCanSkip(false);
     setSkipCountdown(skipAfterSeconds);
   }, [videoPlayer, skipAfterSeconds]);
@@ -471,6 +475,10 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
 
   const handleAdClick = useCallback(() => {
     onAdClick?.(ad);
+    // Open targetUrl if present (industry standard: ad click → landing page)
+    if (ad.targetUrl) {
+      Linking.openURL(ad.targetUrl).catch(() => {});
+    }
   }, [ad, onAdClick]);
 
   const handleShowControls = useCallback(() => {

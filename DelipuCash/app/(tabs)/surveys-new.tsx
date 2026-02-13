@@ -666,7 +666,7 @@ export default function SurveysScreen(): React.ReactElement {
             <BetweenContentAd
               ad={ad}
               onAdClick={() => handleAdClick(ad)}
-              onAdLoad={() => handleAdImpression(ad)}
+              onImpression={() => handleAdImpression(ad)}
               variant="native"
               style={styles.betweenContentAd}
             />
@@ -688,7 +688,7 @@ export default function SurveysScreen(): React.ReactElement {
               ad={bannerAd}
               placement="banner-bottom"
               onAdClick={() => handleAdClick(bannerAd)}
-              onAdLoad={() => handleAdImpression(bannerAd)}
+              onImpression={() => handleAdImpression(bannerAd)}
               trackViewability
               style={styles.bannerAdPlacement}
             />
@@ -710,7 +710,7 @@ export default function SurveysScreen(): React.ReactElement {
               ad={featuredAd}
               placement="between-content"
               onAdClick={() => handleAdClick(featuredAd)}
-              onAdLoad={() => handleAdImpression(featuredAd)}
+              onImpression={() => handleAdImpression(featuredAd)}
               trackViewability
               style={styles.featuredAdPlacement}
             />
@@ -732,7 +732,7 @@ export default function SurveysScreen(): React.ReactElement {
               ad={inFeedAd}
               index={item.adIndex ?? 0}
               onAdClick={() => handleAdClick(inFeedAd)}
-              onAdLoad={() => handleAdImpression(inFeedAd)}
+              onImpression={() => handleAdImpression(inFeedAd)}
               trackViewability
               style={styles.inFeedAd}
             />

@@ -16,10 +16,11 @@
 
 import { useQuery, useMutation, useQueryClient, UseQueryResult } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
+import { Platform, AppState, AppStateStatus, Linking } from 'react-native';
 import type { Ad } from '../types';
 import type { AdType } from '../store/AdStore';
 import { adApi, type AdFilters, type CreateAdPayload, type UpdateAdPayload } from './adApi';
+import { useAuthStore } from '../utils/auth/store';
 
 // Import UI store for client-side interactions (NOT for caching server data)
 import { useAdUIStore, type AdPlacement } from '../store/AdUIStore';
@@ -49,7 +50,8 @@ export const adQueryKeys = {
   placement: (placement: AdPlacement, limit?: number) => 
     [...adQueryKeys.all, 'placement', placement, limit] as const,
   random: (type?: string, seed?: number) => [...adQueryKeys.all, 'random', type, seed] as const,
-  userAds: (filters?: AdFilters) => [...adQueryKeys.all, 'user', filters] as const,
+  userAdsList: () => [...adQueryKeys.all, 'user'] as const,
+  userAds: (userId: string, filters?: AdFilters) => [...adQueryKeys.all, 'user', userId, filters] as const,
   analytics: (id: string) => [...adQueryKeys.all, 'analytics', id] as const,
 };
 
@@ -85,7 +87,9 @@ export function useAds(filters?: AdFilters): UseQueryResult<AdsListData, Error> 
     queryKey: adQueryKeys.list(filters),
     queryFn: async (): Promise<AdsListData> => {
       const response = await adApi.fetchAds(filters);
-      return { ads: response.data, total: response.pagination?.total ?? response.data.length };
+      // response.data is { ads, featuredAd, bannerAd, all } — unwrap correctly
+      const adsList = response.data?.all ?? response.data?.ads ?? [];
+      return { ads: adsList, total: response.pagination?.total ?? adsList.length };
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -239,10 +243,12 @@ export function useScreenAds(
  */
 export function useUserAds(userId: string, filters?: AdFilters): UseQueryResult<AdsListData, Error> {
   return useQuery({
-    queryKey: adQueryKeys.userAds(filters),
+    queryKey: adQueryKeys.userAds(userId, filters),
     queryFn: async (): Promise<AdsListData> => {
       const response = await adApi.fetchUserAds(userId, filters);
-      return { ads: response.data, total: response.pagination?.total ?? response.data.length };
+      // response.data is { ads, featuredAd, bannerAd, all } — unwrap correctly
+      const adsList = response.data?.all ?? response.data?.ads ?? [];
+      return { ads: adsList, total: response.pagination?.total ?? adsList.length };
     },
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
@@ -293,7 +299,7 @@ export function useCreateAd() {
     onSuccess: () => {
       // Invalidate all ad lists
       queryClient.invalidateQueries({ queryKey: adQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAds() });
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAdsList() });
     },
   });
 }
@@ -312,7 +318,7 @@ export function useUpdateAd() {
       // Invalidate specific ad and lists
       queryClient.invalidateQueries({ queryKey: adQueryKeys.detail(adId) });
       queryClient.invalidateQueries({ queryKey: adQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAds() });
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAdsList() });
     },
   });
 }
@@ -330,7 +336,7 @@ export function useDeleteAd() {
       // Remove from cache and invalidate lists
       queryClient.removeQueries({ queryKey: adQueryKeys.detail(adId) });
       queryClient.invalidateQueries({ queryKey: adQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAds() });
+      queryClient.invalidateQueries({ queryKey: adQueryKeys.userAdsList() });
     },
   });
 }
@@ -612,7 +618,8 @@ export function usePageAds(placement: AdPlacement) {
  * Hook for ad data needed in ad registration/management screens
  */
 export function useAdManagement() {
-  const userAdsQuery = useUserAds();
+  const userId = useAuthStore(s => s.auth?.user?.id ?? '');
+  const userAdsQuery = useUserAds(userId);
   const createAdMutation = useCreateAd();
   const updateAdMutation = useUpdateAd();
   const deleteAdMutation = useDeleteAd();

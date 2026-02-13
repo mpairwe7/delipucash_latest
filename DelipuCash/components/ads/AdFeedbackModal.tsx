@@ -76,6 +76,7 @@ import {
 } from '@/utils/theme';
 import type { Ad } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAdUIStore } from '@/store/AdUIStore';
 
 // ============================================================================
 // TYPES
@@ -196,6 +197,7 @@ const AdFeedbackModalComponent: React.FC<AdFeedbackModalProps> = ({
   testID,
 }) => {
   const { colors } = useTheme();
+  const blockAdvertiser = useAdUIStore(s => s.blockAdvertiser);
 
   // ========== STATE ==========
   const [activeTab, setActiveTab] = useState<'feedback' | 'why'>('feedback');
@@ -250,14 +252,9 @@ const AdFeedbackModalComponent: React.FC<AdFeedbackModalProps> = ({
       feedbackHistory.push(result);
       await AsyncStorage.setItem(AD_FEEDBACK_KEY, JSON.stringify(feedbackHistory));
 
-      // Store advertiser preference if hiding
+      // Store advertiser preference if hiding — use AdUIStore (persisted via Zustand)
       if (hideAdvertiser && ad.userId) {
-        const existingPrefs = await AsyncStorage.getItem(AD_PREFERENCES_KEY);
-        const prefs = existingPrefs ? JSON.parse(existingPrefs) : { hiddenAdvertisers: [] };
-        if (!prefs.hiddenAdvertisers.includes(ad.userId)) {
-          prefs.hiddenAdvertisers.push(ad.userId);
-        }
-        await AsyncStorage.setItem(AD_PREFERENCES_KEY, JSON.stringify(prefs));
+        blockAdvertiser(ad.userId);
       }
 
       // Callback

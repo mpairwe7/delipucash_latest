@@ -17,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/utils/auth/useAuth';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
+import { AdFrequencyManager } from '@/services/adFrequencyManager';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -123,6 +124,13 @@ export default function RootLayout() {
         console.warn('Failed to initialize RevenueCat:', err)
       );
     }
+  }, []);
+
+  // Initialize Ad Frequency Manager (loads persisted caps/session from AsyncStorage)
+  useEffect(() => {
+    AdFrequencyManager.initialize().catch((err) =>
+      console.warn('Failed to initialize AdFrequencyManager:', err)
+    );
   }, []);
 
   // Set default orientation to portrait on app start

@@ -379,11 +379,11 @@ export const getAllAds = asyncHandler(async (req, res) => {
       offset = 0 
     } = req.query;
 
-    // Build where clause
-    const where = { isActive: true };
+    // Build where clause — default to approved ads only (public feed safety)
+    const where = { isActive: true, status: 'approved' };
     if (type) where.type = type;
     if (placement) where.placement = placement;
-    if (status) where.status = status;
+    if (status) where.status = status; // Admin/management views can override
     if (sponsored !== undefined) where.sponsored = sponsored === 'true';
     if (userId) where.userId = userId;
 
