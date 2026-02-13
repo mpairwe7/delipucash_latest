@@ -1,6 +1,7 @@
 import type { AppUser } from "@/types";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
+import { devtools } from 'zustand/middleware';
 
 /**
  * Authentication key for secure storage
@@ -106,18 +107,23 @@ export interface AuthModalState {
  * return <AuthenticatedApp />;
  * ```
  */
-export const useAuthStore = create<AuthState>((set) => ({
-  isReady: false,
-  auth: null,
-  setAuth: (auth: AuthData | null): void => {
-    if (auth) {
-      SecureStore.setItemAsync(authKey, JSON.stringify(auth));
-    } else {
-      SecureStore.deleteItemAsync(authKey);
-    }
-    set({ auth });
-  },
-}));
+export const useAuthStore = create<AuthState>()(
+  devtools(
+  (set) => ({
+    isReady: false,
+    auth: null,
+    setAuth: (auth: AuthData | null): void => {
+      if (auth) {
+        SecureStore.setItemAsync(authKey, JSON.stringify(auth));
+      } else {
+        SecureStore.deleteItemAsync(authKey);
+      }
+      set({ auth });
+    },
+  }),
+  { name: 'AuthStore', enabled: __DEV__ },
+  )
+);
 
 /**
  * Authentication modal state store
@@ -139,10 +145,32 @@ export const useAuthStore = create<AuthState>((set) => ({
  * close();
  * ```
  */
-export const useAuthModal = create<AuthModalState>((set) => ({
-  isOpen: false,
-  mode: "signup",
-  open: (options?: OpenAuthModalOptions): void =>
-    set({ isOpen: true, mode: options?.mode || "signup" }),
-  close: (): void => set({ isOpen: false }),
-}));
+export const useAuthModal = create<AuthModalState>()(
+  devtools(
+  (set) => ({
+    isOpen: false,
+    mode: "signup",
+    open: (options?: OpenAuthModalOptions): void =>
+      set({ isOpen: true, mode: options?.mode || "signup" }),
+    close: (): void => set({ isOpen: false }),
+  }),
+  { name: 'AuthModal', enabled: __DEV__ },
+  )
+);
+
+// ============================================================================
+// AuthStore Selectors
+// ============================================================================
+
+export const selectIsReady = (s: AuthState) => s.isReady;
+export const selectAuth = (s: AuthState) => s.auth;
+export const selectSetAuth = (s: AuthState) => s.setAuth;
+
+// ============================================================================
+// AuthModal Selectors
+// ============================================================================
+
+export const selectIsOpen = (s: AuthModalState) => s.isOpen;
+export const selectMode = (s: AuthModalState) => s.mode;
+export const selectOpen = (s: AuthModalState) => s.open;
+export const selectClose = (s: AuthModalState) => s.close;

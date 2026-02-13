@@ -44,8 +44,9 @@ export interface AuthModalProps {
  * ```
  */
 export const AuthModal: React.FC<AuthModalProps> = ({ testID }) => {
-  const { isOpen, mode } = useAuthModal();
-  const { auth } = useAuthStore();
+  const isOpen = useAuthModal(s => s.isOpen);
+  const mode = useAuthModal(s => s.mode);
+  const auth = useAuthStore(s => s.auth);
 
   const proxyURL = process.env.EXPO_PUBLIC_PROXY_BASE_URL;
   const baseURL = process.env.EXPO_PUBLIC_BASE_URL;

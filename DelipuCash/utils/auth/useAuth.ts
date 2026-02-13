@@ -155,8 +155,11 @@ export interface UseAuthResult {
  * ```
  */
 export const useAuth = (): UseAuthResult => {
-  const { isReady, auth, setAuth } = useAuthStore();
-  const { close, open } = useAuthModal();
+  const isReady = useAuthStore(s => s.isReady);
+  const auth = useAuthStore(s => s.auth);
+  const setAuth = useAuthStore(s => s.setAuth);
+  const close = useAuthModal(s => s.close);
+  const open = useAuthModal(s => s.open);
   const [isLoading, setIsLoading] = useState(false);
 
   const initiate = useCallback((): void => {
@@ -289,7 +292,7 @@ export const useAuth = (): UseAuthResult => {
  */
 export const useRequireAuth = (options?: RequireAuthOptions): void => {
   const { isAuthenticated, isReady } = useAuth();
-  const { open } = useAuthModal();
+  const open = useAuthModal(s => s.open);
 
   useEffect(() => {
     if (!isAuthenticated && isReady) {

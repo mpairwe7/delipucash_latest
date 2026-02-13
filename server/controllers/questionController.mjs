@@ -2,7 +2,6 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
-import { publishEvent } from '../lib/eventBus.mjs';
 
 // ============================================================================
 // Resilient Question Select — gracefully handles missing schema fields
@@ -874,5 +873,4 @@ export const getUserQuestionStats = asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch stats', error: error.message });
   }
 });
-
 

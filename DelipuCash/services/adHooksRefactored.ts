@@ -287,6 +287,7 @@ export function useCreateAd() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['ads', 'create'],
     mutationFn: (payload: CreateAdPayload) => adApi.createAd(payload),
     onSuccess: () => {
       // Invalidate all ad lists
@@ -303,6 +304,7 @@ export function useUpdateAd() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['ads', 'update'],
     mutationFn: ({ adId, payload }: { adId: string; payload: UpdateAdPayload }) =>
       adApi.updateAd(adId, payload),
     onSuccess: (_, { adId }) => {
@@ -321,6 +323,7 @@ export function useDeleteAd() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['ads', 'delete'],
     mutationFn: (adId: string) => adApi.deleteAd(adId),
     onSuccess: (_, adId) => {
       // Remove from cache and invalidate lists
@@ -340,9 +343,10 @@ export function useDeleteAd() {
  * Syncs to both local store and server
  */
 export function useRecordAdClick() {
-  const { recordClick } = useAdUIStore();
+  const recordClick = useAdUIStore(s => s.recordClick);
 
   return useMutation({
+    mutationKey: ['ads', 'recordClick'],
     mutationFn: async (payload: {
       adId: string;
       placement: AdPlacement;
@@ -367,9 +371,10 @@ export function useRecordAdClick() {
  * Syncs to both local store and server
  */
 export function useRecordAdImpression() {
-  const { recordImpression } = useAdUIStore();
+  const recordImpression = useAdUIStore(s => s.recordImpression);
 
   return useMutation({
+    mutationKey: ['ads', 'recordImpression'],
     mutationFn: async (payload: {
       adId: string;
       placement: AdPlacement;
@@ -402,9 +407,10 @@ export function useRecordAdImpression() {
  * Hook to record video ad progress/completion
  */
 export function useRecordVideoProgress() {
-  const { recordCompletion } = useAdUIStore();
+  const recordCompletion = useAdUIStore(s => s.recordCompletion);
 
   return useMutation({
+    mutationKey: ['ads', 'recordVideoProgress'],
     mutationFn: async (payload: {
       adId: string;
       progress: number;

@@ -20,7 +20,7 @@ import {
     UserStats,
     Video,
 } from "@/types";
-import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult } from "@tanstack/react-query";
+import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
 
 // Query Keys
@@ -92,6 +92,7 @@ export function useUpdateProfile(): UseMutationResult<AppUser, Error, Partial<Ap
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['user', 'updateProfile'],
     mutationFn: async (data: Partial<AppUser>) => {
       const response = await api.user.updateProfile(data);
       if (!response.success) throw new Error(response.error);
@@ -125,6 +126,7 @@ export function useRevokeSession(): UseMutationResult<{ revoked: boolean }, Erro
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['user', 'revokeSession'],
     mutationFn: async (sessionId: string) => {
       const response = await api.user.revokeSession(sessionId);
       if (!response.success) throw new Error(response.error);
@@ -160,6 +162,7 @@ export function useUpdateTwoFactor(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['user', 'updateTwoFactor'],
     mutationFn: async ({ enabled, password }) => {
       const response = await api.user.updateTwoFactor(enabled, password);
       if (!response.success) throw new Error(response.error);
@@ -181,6 +184,7 @@ export function useVerify2FACode(): UseMutationResult<{ enabled: boolean }, Erro
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['user', 'verify2FA'],
     mutationFn: async (code: string) => {
       const response = await api.user.verify2FACode(code);
       if (!response.success) throw new Error(response.error);
@@ -201,6 +205,7 @@ export function useResend2FACode(): UseMutationResult<
   void
 > {
   return useMutation({
+    mutationKey: ['user', 'resend2FA'],
     mutationFn: async () => {
       const response = await api.user.resend2FACode();
       if (!response.success) throw new Error(response.error);
@@ -214,6 +219,7 @@ export function useResend2FACode(): UseMutationResult<
  */
 export function useChangePassword(): UseMutationResult<{ success: boolean }, Error, { currentPassword: string; newPassword: string }> {
   return useMutation({
+    mutationKey: ['user', 'changePassword'],
     mutationFn: async ({ currentPassword, newPassword }) => {
       const response = await api.user.changePassword(currentPassword, newPassword);
       if (!response.success) throw new Error(response.error);
@@ -229,6 +235,7 @@ export function useUpdatePrivacySettings(): UseMutationResult<{ shareProfile: bo
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['user', 'updatePrivacy'],
     mutationFn: async (settings) => {
       const response = await api.user.updatePrivacySettings(settings);
       if (!response.success) throw new Error(response.error);
@@ -237,6 +244,58 @@ export function useUpdatePrivacySettings(): UseMutationResult<{ shareProfile: bo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
     },
+  });
+}
+
+// ===========================================
+// User Suspense Hooks (use inside <Suspense> boundary)
+// ===========================================
+
+/**
+ * Suspense-enabled user profile.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseUserProfile() {
+  return useSuspenseQuery({
+    queryKey: queryKeys.user,
+    queryFn: async () => {
+      const response = await api.user.getProfile();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+}
+
+/**
+ * Suspense-enabled user stats.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseUserStats() {
+  return useSuspenseQuery({
+    queryKey: queryKeys.userStats,
+    queryFn: async () => {
+      const response = await api.user.getStats();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Suspense-enabled user sessions.
+ * Throws promise while loading — guaranteed non-null data on render.
+ */
+export function useSuspenseUserSessions() {
+  return useSuspenseQuery({
+    queryKey: queryKeys.userSessions,
+    queryFn: async () => {
+      const response = await api.user.getSessions();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    staleTime: 1000 * 60 * 2,
   });
 }
 
@@ -286,6 +345,7 @@ export function useLikeVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['videos', 'like'],
     mutationFn: async (videoId: string) => {
       const response = await api.videos.like(videoId);
       if (!response.success) throw new Error(response.error);
@@ -351,6 +411,7 @@ export function useBookmarkVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'bookmark'],
     mutationFn: async (videoId: string) => {
       const response = await api.videos.bookmark(videoId);
       if (!response.success) throw new Error(response.error);
@@ -370,6 +431,7 @@ export function useUnlikeVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'unlike'],
     mutationFn: async (videoId: string) => {
       const response = await api.videos.unlike(videoId);
       if (!response.success) throw new Error(response.error);
@@ -397,6 +459,7 @@ export function useShareVideo(): UseMutationResult<
   { videoId: string; platform: SharePlatform }
 > {
   return useMutation({
+    mutationKey: ['videos', 'share'],
     mutationFn: async ({ videoId, platform }) => {
       const response = await api.videos.share(videoId, platform);
       if (!response.success) throw new Error(response.error);
@@ -416,6 +479,7 @@ export function useAddComment(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'addComment'],
     mutationFn: async ({ videoId, text, mediaUrls }) => {
       const response = await api.videos.addComment(videoId, text, mediaUrls);
       if (!response.success) throw new Error(response.error);
@@ -462,6 +526,7 @@ export function useUploadVideo(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'upload'],
     mutationFn: async (data) => {
       const response = await api.videos.upload(data);
       if (!response.success) throw new Error(response.error);
@@ -496,6 +561,7 @@ export function useIncrementVideoView(): UseMutationResult<Video, Error, string>
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'incrementView'],
     mutationFn: async (videoId: string) => {
       const response = await api.videos.incrementView(videoId);
       if (!response.success) throw new Error(response.error);
@@ -514,6 +580,7 @@ export function useAddVideoComment(): UseMutationResult<Comment, Error, { videoI
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['videos', 'addVideoComment'],
     mutationFn: async ({ videoId, text }) => {
       const response = await api.videos.addComment(videoId, text);
       if (!response.success) throw new Error(response.error);
@@ -639,6 +706,7 @@ export function useSubmitSurvey(): UseMutationResult<
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['surveys', 'submit'],
     mutationFn: async ({ surveyId, responses, userId }) => {
       const response = await api.surveys.submit(surveyId, responses, userId);
       if (!response.success) throw new Error(response.error);
@@ -685,6 +753,7 @@ export function useCreateSurvey(): UseMutationResult<Survey, Error, {
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['surveys', 'create'],
     mutationFn: async (data) => {
       const response = await api.surveys.create(data);
       if (!response.success) throw new Error(response.error);
@@ -705,6 +774,7 @@ export function useDeleteSurvey(): UseMutationResult<{ deleted: boolean }, Error
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['surveys', 'delete'],
     mutationFn: async (surveyId) => {
       const response = await api.surveys.delete(surveyId);
       if (!response.success) throw new Error(response.error || "Failed to delete survey");
@@ -758,6 +828,7 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['questions', 'submitResponse'],
     mutationFn: async ({ questionId, responseText }) => {
       const response = await api.questions.submitResponse(questionId, responseText);
       if (!response.success) throw new Error(response.error);
@@ -778,6 +849,7 @@ export function useLikeResponse(): UseMutationResult<Response, Error, { response
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['responses', 'like'],
     mutationFn: async ({ responseId }) => {
       const response = await api.responses.like(responseId);
       if (!response.success) throw new Error(response.error);
@@ -796,6 +868,7 @@ export function useDislikeResponse(): UseMutationResult<Response, Error, { respo
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['responses', 'dislike'],
     mutationFn: async ({ responseId }) => {
       const response = await api.responses.dislike(responseId);
       if (!response.success) throw new Error(response.error);
@@ -885,6 +958,7 @@ export function useMarkNotificationRead(): UseMutationResult<Notification, Error
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['notifications', 'markRead'],
     mutationFn: async (notificationId: string) => {
       const response = await api.notifications.markRead(notificationId);
       if (!response.success) throw new Error(response.error);
@@ -908,6 +982,7 @@ export function useWithdraw(): UseMutationResult<Payment, Error, { amount: numbe
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['payments', 'withdraw'],
     mutationFn: async (data) => {
       const response = await api.payments.withdraw(data);
       if (!response.success) throw new Error(response.error);
@@ -982,6 +1057,7 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['rewards', 'submitAnswer'],
     mutationFn: async ({ questionId, answer, phoneNumber, userEmail }) => {
       const response = await api.rewards.submitAnswer(questionId, answer, phoneNumber, userEmail);
       if (!response.success) throw new Error(response.error);
@@ -1013,6 +1089,7 @@ export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Err
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['rewards', 'createQuestion'],
     mutationFn: async (data) => {
       const response = await api.rewards.createRewardQuestion(data);
       if (!response.success) throw new Error(response.error);
@@ -1052,6 +1129,7 @@ export function useBulkCreateQuestions(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ['rewards', 'bulkCreate'],
     mutationFn: async (data) => {
       const response = await api.rewards.bulkCreateQuestions(data.questions, data.userId);
       if (!response.success) throw new Error(response.error);
@@ -1149,6 +1227,7 @@ export function useClaimDailyReward(): UseMutationResult<{ points: number; messa
   const queryClient = useQueryClient();
   
   return useMutation({
+    mutationKey: ['dashboard', 'claimDailyReward'],
     mutationFn: async () => {
       // Simulated claim response
       await new Promise(resolve => setTimeout(resolve, 500));
@@ -1208,6 +1287,7 @@ export function useVideoLimits(userId: string | undefined): UseQueryResult<Video
  */
 export function useValidateUpload(): UseMutationResult<ValidateUploadResponse, Error, ValidateUploadRequest> {
   return useMutation({
+    mutationKey: ['video', 'validateUpload'],
     mutationFn: async (data: ValidateUploadRequest) => {
       const response = await videoApi.validateUpload(data);
       if (!response.success && response.data?.error) {
@@ -1227,6 +1307,7 @@ export function useValidateUpload(): UseMutationResult<ValidateUploadResponse, E
  */
 export function useStartLivestream(): UseMutationResult<LivestreamSessionResponse, Error, StartLivestreamRequest> {
   return useMutation({
+    mutationKey: ['video', 'startLivestream'],
     mutationFn: async (data: StartLivestreamRequest) => {
       const response = await videoApi.startLivestream(data);
       if (!response.success) throw new Error(response.error);
@@ -1240,6 +1321,7 @@ export function useStartLivestream(): UseMutationResult<LivestreamSessionRespons
  */
 export function useEndLivestream(): UseMutationResult<{ success: boolean; endedAt?: string }, Error, EndLivestreamRequest> {
   return useMutation({
+    mutationKey: ['video', 'endLivestream'],
     mutationFn: async (data: EndLivestreamRequest) => {
       const response = await videoApi.endLivestream(data);
       if (!response.success) throw new Error(response.error);
@@ -1253,6 +1335,7 @@ export function useEndLivestream(): UseMutationResult<{ success: boolean; endedA
  */
 export function useValidateSession(): UseMutationResult<ValidateSessionResponse, Error, ValidateSessionRequest> {
   return useMutation({
+    mutationKey: ['video', 'validateSession'],
     mutationFn: async (data: ValidateSessionRequest) => {
       const response = await videoApi.validateSession(data);
       if (!response.success) throw new Error(response.error);

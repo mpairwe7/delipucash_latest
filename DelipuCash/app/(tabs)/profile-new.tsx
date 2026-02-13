@@ -332,7 +332,7 @@ const SignOutSection = memo(function SignOutSection({ onSignOut, colors }: SignO
 export default function ProfileScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle, isDark } = useTheme();
-  const { toggleTheme } = useThemeStore();
+  const toggleTheme = useThemeStore(s => s.toggleTheme);
   const { signOut } = useAuth();
   
   // Data fetching
