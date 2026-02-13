@@ -1,6 +1,5 @@
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useState } from "react";
-import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, authKey, useAuthModal, useAuthStore } from "./store";
+import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, initializeAuth, useAuthModal, useAuthStore } from "./store";
 import { useLoginMutation, useSignupMutation } from "@/services/authHooks";
 
 /**
@@ -80,51 +79,12 @@ export const useAuth = (): UseAuthResult => {
   const signupMutation = useSignupMutation();
 
   /**
-   * Robust auth init — state machine: idle → loading → authenticated|anonymous|error
-   * Handles SecureStore read failures, JSON parse errors, and expired tokens.
+   * Delegates to standalone initializeAuth() from store.
+   * Kept for backward compatibility with components that use useAuth().initiate.
    */
   const initiate = useCallback((): void => {
     setInitError(null);
-    SecureStore.getItemAsync(authKey)
-      .then((authString: string | null) => {
-        if (!authString) {
-          useAuthStore.setState({ auth: null, isReady: true });
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(authString) as AuthData;
-
-          // Basic JWT expiry check (decode payload, check exp claim)
-          if (parsed.token) {
-            try {
-              const payload = JSON.parse(atob(parsed.token.split('.')[1]));
-              if (payload.exp && payload.exp * 1000 < Date.now()) {
-                // Token expired — clear and treat as anonymous
-                SecureStore.deleteItemAsync(authKey).catch(() => {});
-                useAuthStore.setState({ auth: null, isReady: true });
-                return;
-              }
-            } catch {
-              // Token decode failed — still use it, server will reject if invalid
-            }
-          }
-
-          useAuthStore.setState({ auth: parsed, isReady: true });
-        } catch {
-          // JSON parse failed — corrupted data, clear and start fresh
-          SecureStore.deleteItemAsync(authKey).catch(() => {});
-          useAuthStore.setState({ auth: null, isReady: true });
-          setInitError('Stored auth data was corrupted and has been cleared.');
-        }
-      })
-      .catch((err) => {
-        // SecureStore read failed — surface error, set as anonymous
-        const msg = err instanceof Error ? err.message : 'SecureStore read failed';
-        console.error('[Auth] Init error:', msg);
-        setInitError(msg);
-        useAuthStore.setState({ auth: null, isReady: true });
-      });
+    initializeAuth();
   }, []);
 
   const signIn = useCallback((): void => {

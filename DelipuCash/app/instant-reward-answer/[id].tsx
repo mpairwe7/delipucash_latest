@@ -3,6 +3,7 @@ import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons"
 import { useToast } from "@/components/ui/Toast";
 import { formatCurrency } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useRewardQuestions } from "@/services/hooks";
+import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult } from "@/types";
@@ -171,6 +172,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
+  // ── Auth — Zustand store (synchronous, already hydrated) ──
+  const { isReady: authReady, isAuthenticated } = useAuth();
+
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions } = useRewardQuestions();
@@ -201,12 +205,12 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
   const canRedeem = useInstantRewardStore((s) => s.canRedeem);
 
-  // Redirect unauthenticated users to login
+  // ── Auth guard — uses Zustand store (instant) not useUserProfile (network) ──
   useEffect(() => {
-    if (!isUserLoading && !user) {
+    if (authReady && !isAuthenticated) {
       router.replace("/(auth)/login" as Href);
     }
-  }, [isUserLoading, user]);
+  }, [authReady, isAuthenticated]);
 
   // Initialize attempt history for the user
   useEffect(() => {

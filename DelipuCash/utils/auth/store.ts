@@ -173,6 +173,55 @@ export const useAuthModal = create<AuthModalState>()(
 );
 
 // ============================================================================
+// Standalone auth initializer (no hooks — safe to call outside QueryClientProvider)
+// ============================================================================
+
+/**
+ * Initialize auth state from SecureStore.
+ * Reads persisted JWT, checks expiry, and sets useAuthStore state.
+ * Safe to call from the root layout without any TanStack Query dependency.
+ */
+export function initializeAuth(): void {
+  SecureStore.getItemAsync(authKey)
+    .then((authString: string | null) => {
+      if (!authString) {
+        useAuthStore.setState({ auth: null, isReady: true });
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(authString) as AuthData;
+
+        // Basic JWT expiry check (decode payload, check exp claim)
+        if (parsed.token) {
+          try {
+            const payload = JSON.parse(atob(parsed.token.split('.')[1]));
+            if (payload.exp && payload.exp * 1000 < Date.now()) {
+              // Token expired — clear and treat as anonymous
+              SecureStore.deleteItemAsync(authKey).catch(() => {});
+              useAuthStore.setState({ auth: null, isReady: true });
+              return;
+            }
+          } catch {
+            // Token decode failed — still use it, server will reject if invalid
+          }
+        }
+
+        useAuthStore.setState({ auth: parsed, isReady: true });
+      } catch {
+        // JSON parse failed — corrupted data, clear and start fresh
+        SecureStore.deleteItemAsync(authKey).catch(() => {});
+        useAuthStore.setState({ auth: null, isReady: true });
+      }
+    })
+    .catch((err) => {
+      // SecureStore read failed — set as anonymous
+      console.error('[Auth] Init error:', err instanceof Error ? err.message : 'SecureStore read failed');
+      useAuthStore.setState({ auth: null, isReady: true });
+    });
+}
+
+// ============================================================================
 // AuthStore Selectors
 // ============================================================================
 

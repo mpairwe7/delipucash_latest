@@ -14,7 +14,7 @@ import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react
 import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuth } from '@/utils/auth/useAuth';
+import { useAuthStore, initializeAuth } from '@/utils/auth/store';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
@@ -110,12 +110,14 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
-  const { initiate, isReady } = useAuth();
+  // Read isReady directly from Zustand — no TanStack dependency
+  const isReady = useAuthStore(s => s.isReady);
 
   // Initialize auth state from SecureStore on app start
+  // Uses standalone initializeAuth() — no QueryClient needed
   useEffect(() => {
-    initiate();
-  }, [initiate]);
+    initializeAuth();
+  }, []);
 
   // Initialize RevenueCat Purchases SDK
   useEffect(() => {
@@ -141,25 +143,14 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Keep-awake functionality disabled due to New Architecture incompatibility in Expo Go
-  // Re-enable when building standalone apps or when expo-keep-awake is updated
-  // useEffect(() => {
-  //   if (__DEV__ && Platform.OS !== 'web') {
-  //     // Keep screen awake during development
-  //   }
-  // }, []);
-
   // Callback-based approach for hiding splash screen (recommended)
   const onLayoutRootView = useCallback(async () => {
     if (isReady) {
-      // Hide splash screen after the root view has performed layout
-      // and auth state has been initialized
       await SplashScreen.hideAsync();
     }
   }, [isReady]);
 
   // Keep showing splash screen while fonts load or auth initializes
-  // Return a minimal view instead of null to prevent white flash
   if (!isReady) {
     return null;
   }
@@ -189,7 +180,6 @@ export default function RootLayout() {
               <Stack.Screen name="create-survey" options={{ headerShown: false }} />
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
-              <Stack.Screen name="reset-password" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
             </ToastProvider>

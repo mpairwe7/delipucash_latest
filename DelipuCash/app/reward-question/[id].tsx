@@ -24,6 +24,7 @@ import {
   useSubmitRewardAnswer,
   useUserProfile,
 } from "@/services/hooks";
+import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { RewardAnswerResult } from "@/types";
 import {
@@ -196,6 +197,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const questionId = id || "";
 
+  // ── Auth — Zustand store (synchronous, already hydrated) ──
+  const { isReady: authReady, isAuthenticated, auth } = useAuth();
+
   // ── TanStack Query — server state ──
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions } = useRewardQuestions();
@@ -220,12 +224,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
   const canRedeem = useInstantRewardStore((s) => s.canRedeem);
 
-  // ── Auth guard — redirect unauthenticated users ──
+  // ── Auth guard — uses Zustand store (instant) not useUserProfile (network) ──
   useEffect(() => {
-    if (!isUserLoading && !user) {
+    if (authReady && !isAuthenticated) {
       router.replace("/(auth)/login" as Href);
     }
-  }, [isUserLoading, user]);
+  }, [authReady, isAuthenticated]);
 
   // ── Initialize attempt history for the user ──
   useEffect(() => {

@@ -3,20 +3,17 @@
  * Card for navigating to Notifications from profile screen with unread count
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import { StyleSheet, View, Pressable } from 'react-native';
-import Animated, { 
+import Animated, {
   FadeInDown,
   useSharedValue,
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
-import { 
-  Bell, 
+import {
+  Bell,
   ChevronRight,
-  Shield,
-  Star,
-  CreditCard,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -24,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { ThemedText } from '@/components/themed-text';
 import { NotificationBadge } from '@/components/notifications';
 import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme, withAlpha } from '@/utils/theme';
-import { getUnreadCount, initializeNotifications } from '@/services/notificationApi';
+import { useUnreadCount } from '@/services/hooks';
 
 interface ProfileNotificationCardProps {
   index?: number;
@@ -38,22 +35,7 @@ export const ProfileNotificationCard: React.FC<ProfileNotificationCardProps> = (
   const { colors } = useTheme();
   const router = useRouter();
   const scale = useSharedValue(1);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    // Initialize notifications and get count
-    initializeNotifications('user_123');
-    loadUnreadCount();
-  }, []);
-
-  const loadUnreadCount = async () => {
-    try {
-      const count = await getUnreadCount();
-      setUnreadCount(count);
-    } catch (error) {
-      console.error('Failed to get unread count:', error);
-    }
-  };
+  const { data: unreadCount = 0 } = useUnreadCount();
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -69,7 +51,7 @@ export const ProfileNotificationCard: React.FC<ProfileNotificationCardProps> = (
 
   const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/notifications-screen' as any);
+    router.push('/notifications' as any);
   }, [router]);
 
   const styles = StyleSheet.create({
@@ -117,44 +99,8 @@ export const ProfileNotificationCard: React.FC<ProfileNotificationCardProps> = (
     arrow: {
       opacity: 0.5,
     },
-    statsContainer: {
-      flexDirection: 'row',
-      justifyContent: 'space-around',
-      paddingTop: SPACING.md,
-      borderTopWidth: 1,
-      borderTopColor: colors.border,
-    },
-    statItem: {
-      alignItems: 'center',
-    },
-    statIcon: {
-      width: 32,
-      height: 32,
-      borderRadius: RADIUS.md,
-      backgroundColor: colors.background,
-      justifyContent: 'center',
-      alignItems: 'center',
-      marginBottom: SPACING.xs,
-    },
-    statValue: {
-      fontSize: 15,
-      fontWeight: '700',
-      color: colors.text,
-    },
-    statLabel: {
-      fontSize: 10,
-      color: colors.textSecondary,
-      marginTop: 2,
-      textTransform: 'uppercase',
-    },
   });
 
-  const stats = [
-    { icon: Bell, label: 'Unread', value: unreadCount, color: colors.warning },
-    { icon: Shield, label: 'Security', value: 1, color: colors.error },
-    { icon: Star, label: 'Rewards', value: 3, color: colors.success },
-    { icon: CreditCard, label: 'Payments', value: 2, color: colors.info },
-  ];
 
   return (
     <Animated.View entering={FadeInDown.delay(index * 50).duration(ANIMATION.duration.normal)}>
@@ -186,20 +132,6 @@ export const ProfileNotificationCard: React.FC<ProfileNotificationCardProps> = (
         </View>
       </View>
 
-      <View style={styles.statsContainer}>
-        {stats.map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <View key={idx} style={styles.statItem}>
-              <View style={styles.statIcon}>
-                <Icon size={ICON_SIZE.xs + 2} color={stat.color} />
-              </View>
-              <ThemedText style={styles.statValue}>{stat.value}</ThemedText>
-              <ThemedText style={styles.statLabel}>{stat.label}</ThemedText>
-            </View>
-          );
-        })}
-      </View>
       </AnimatedPressable>
     </Animated.View>
   );

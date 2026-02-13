@@ -289,7 +289,9 @@ export const userApi = {
    * Backend: GET /api/users/profile (requires auth token)
    */
   async getProfile(): Promise<ApiResponse<AppUser>> {
-    return fetchJson<AppUser>(API_ROUTES.user.profile);
+    return fetchJson<AppUser>(API_ROUTES.user.profile, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
@@ -299,6 +301,7 @@ export const userApi = {
   async updateProfile(data: Partial<AppUser>): Promise<ApiResponse<AppUser>> {
     return fetchJson<AppUser>(API_ROUTES.user.update, {
       method: 'PUT',
+      headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
   },
@@ -308,7 +311,9 @@ export const userApi = {
    * Backend: GET /api/users/stats
    */
   async getStats(): Promise<ApiResponse<UserStats>> {
-    return fetchJson<UserStats>(API_ROUTES.user.stats);
+    return fetchJson<UserStats>(API_ROUTES.user.stats, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
@@ -316,7 +321,9 @@ export const userApi = {
    * Backend: GET /api/users/:userId
    */
   async getById(userId: string): Promise<ApiResponse<AppUser | null>> {
-    return fetchJson<AppUser>(`/api/users/${userId}`);
+    return fetchJson<AppUser>(`/api/users/${userId}`, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
@@ -324,7 +331,9 @@ export const userApi = {
    * Backend: GET /api/users/login-activity (requires auth token)
    */
   async getSessions(): Promise<ApiResponse<LoginSession[]>> {
-    return fetchJson<LoginSession[]>(API_ROUTES.user.sessions);
+    return fetchJson<LoginSession[]>(API_ROUTES.user.sessions, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
@@ -334,6 +343,7 @@ export const userApi = {
   async revokeSession(sessionId: string): Promise<ApiResponse<{ revoked: boolean }>> {
     return fetchJson<{ revoked: boolean }>(`/api/users/sessions/${sessionId}/revoke`, {
       method: 'POST',
+      headers: getAuthHeaders(),
     });
   },
 
@@ -349,6 +359,7 @@ export const userApi = {
   }>> {
     return fetchJson<any>('/api/auth/two-factor', {
       method: 'PUT',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ enabled, password }),
     });
   },
@@ -360,6 +371,7 @@ export const userApi = {
   async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean }>> {
     return fetchJson<{ enabled: boolean }>('/api/auth/two-factor/verify', {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ code }),
     });
   },
@@ -371,6 +383,7 @@ export const userApi = {
   async resend2FACode(): Promise<ApiResponse<{ codeSent: boolean; email: string; expiresIn: number }>> {
     return fetchJson<any>('/api/auth/two-factor/resend', {
       method: 'POST',
+      headers: getAuthHeaders(),
     });
   },
 
@@ -381,6 +394,7 @@ export const userApi = {
   async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
     return fetchJson<{ success: boolean }>(API_ROUTES.auth.changePassword, {
       method: 'PUT',
+      headers: getAuthHeaders(),
       body: JSON.stringify({ currentPassword, newPassword }),
     });
   },
@@ -392,6 +406,7 @@ export const userApi = {
   async updatePrivacySettings(settings: { shareProfile: boolean; shareActivity: boolean }): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
     return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy, {
       method: 'PUT',
+      headers: getAuthHeaders(),
       body: JSON.stringify(settings),
     });
   },
@@ -401,7 +416,9 @@ export const userApi = {
    * Backend: GET /api/users/privacy (requires auth token)
    */
   async getPrivacySettings(): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
-    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy);
+    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy, {
+      headers: getAuthHeaders(),
+    });
   },
 };
 
@@ -892,7 +909,9 @@ export const notificationsApi = {
     const queryString = searchParams.toString();
     const path = queryString ? `${API_ROUTES.notifications.list}?${queryString}` : API_ROUTES.notifications.list;
 
-    const response = await fetchJson<{ data: Notification[]; pagination: any }>(path);
+    const response = await fetchJson<{ data: Notification[]; pagination: any }>(path, {
+      headers: getAuthHeaders(),
+    });
     return {
       success: response.success,
       data: response.data?.data || response.data || [],
@@ -905,28 +924,39 @@ export const notificationsApi = {
    * Get unread notification count
    */
   async getUnreadCount(): Promise<ApiResponse<{ count: number }>> {
-    return fetchJson<{ count: number }>(API_ROUTES.notifications.unreadCount);
+    return fetchJson<{ count: number }>(API_ROUTES.notifications.unreadCount, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
    * Mark notification as read
    */
   async markRead(notificationId: string): Promise<ApiResponse<Notification>> {
-    return fetchJson<Notification>(API_ROUTES.notifications.markRead(notificationId), { method: 'POST' });
+    return fetchJson<Notification>(API_ROUTES.notifications.markRead(notificationId), {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
    * Mark all notifications as read
    */
   async markAllRead(): Promise<ApiResponse<{ updated: number }>> {
-    return fetchJson<{ updated: number }>(API_ROUTES.notifications.markAllRead, { method: 'POST' });
+    return fetchJson<{ updated: number }>(API_ROUTES.notifications.markAllRead, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
    * Delete notification
    */
   async delete(notificationId: string): Promise<ApiResponse<{ deleted: boolean }>> {
-    return fetchJson<{ deleted: boolean }>(API_ROUTES.notifications.delete(notificationId), { method: 'DELETE' });
+    return fetchJson<{ deleted: boolean }>(API_ROUTES.notifications.delete(notificationId), {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+    });
   },
 };
 

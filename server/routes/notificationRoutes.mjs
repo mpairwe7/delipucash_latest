@@ -1,8 +1,9 @@
 import express from 'express';
-import { 
-  getUserNotifications, 
+import { verifyToken, requireAdmin } from '../utils/verifyUser.mjs';
+import {
+  getUserNotifications,
   getNotifications,
-  createNotification, 
+  createNotification,
   createNotificationFromTemplate,
   markNotificationAsRead,
   markMultipleNotificationsAsRead,
@@ -16,40 +17,42 @@ import {
 
 const router = express.Router();
 
-// Get notifications (userId optional for local mocks)
-router.get('/notifications', getNotifications);
+// All routes require authentication (mounted at /api/notifications)
+
+// Get notifications for authenticated user
+router.get('/', verifyToken, getNotifications);
 
 // Get notifications for a specific user with filtering and pagination
-router.get('/users/:userId/notifications', getUserNotifications);
+router.get('/users/:userId', verifyToken, getUserNotifications);
 
-// Get notification statistics for a user
-router.get('/users/:userId/notifications/stats', getNotificationStats);
-router.get('/notifications/stats', getNotificationStats);
+// Get notification statistics
+router.get('/users/:userId/stats', verifyToken, getNotificationStats);
+router.get('/stats', verifyToken, getNotificationStats);
 
 // Get unread count
-router.get('/notifications/unread-count', getUnreadCount);
+router.get('/unread-count', verifyToken, getUnreadCount);
 
 // Create a new notification
-router.post('/notifications', createNotification);
+router.post('/', verifyToken, createNotification);
 
 // Create a notification from template
-router.post('/notifications/template', createNotificationFromTemplate);
+router.post('/template', verifyToken, createNotificationFromTemplate);
 
 // Mark a notification as read
-router.put('/notifications/:notificationId/read', markNotificationAsRead);
-router.post('/notifications/:notificationId/read', markNotificationAsRead);
+router.put('/:notificationId/read', verifyToken, markNotificationAsRead);
+router.post('/:notificationId/read', verifyToken, markNotificationAsRead);
 
 // Mark multiple notifications as read
-router.put('/users/:userId/notifications/read', markMultipleNotificationsAsRead);
+router.put('/users/:userId/read', verifyToken, markMultipleNotificationsAsRead);
 
 // Mark all notifications as read
-router.post('/notifications/read-all', markAllNotificationsAsRead);
+router.post('/read-all', verifyToken, markAllNotificationsAsRead);
 
 // Archive a notification
-router.put('/notifications/:notificationId/archive', archiveNotification);
-router.delete('/notifications/:notificationId', deleteNotification);
+router.put('/:notificationId/archive', verifyToken, archiveNotification);
+router.delete('/:notificationId', verifyToken, deleteNotification);
 
-// Cleanup expired notifications (admin function)
-router.delete('/notifications/cleanup', cleanupExpiredNotifications);
+// Cleanup expired notifications (admin only)
+router.delete('/cleanup', verifyToken, requireAdmin, cleanupExpiredNotifications);
 
-export default router; 
+export default router;

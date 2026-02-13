@@ -955,22 +955,92 @@ export function useUnreadCount(): UseQueryResult<number, Error> {
       // Handle both number and object response formats
       return typeof response.data === 'number' ? response.data : response.data?.count ?? 0;
     },
-    staleTime: 1000 * 30,
-    refetchInterval: 1000 * 60, // Refetch every minute
-    refetchIntervalInBackground: false, // Don't poll when app is backgrounded
+    staleTime: 1000 * 30, // SSE handles real-time invalidation
   });
 }
 
 /**
- * Hook to mark notification as read
+ * Hook to mark notification as read (with optimistic update)
  */
 export function useMarkNotificationRead(): UseMutationResult<Notification, Error, string> {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationKey: ['notifications', 'markRead'],
     mutationFn: async (notificationId: string) => {
       const response = await api.notifications.markRead(notificationId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onMutate: async (notificationId) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.notifications });
+      const previous = queryClient.getQueryData<Notification[]>(queryKeys.notifications);
+      if (previous) {
+        queryClient.setQueryData<Notification[]>(queryKeys.notifications,
+          previous.map((n) => n.id === notificationId ? { ...n, read: true, readAt: new Date().toISOString() } : n)
+        );
+      }
+      const prevCount = queryClient.getQueryData<number>(queryKeys.unreadCount);
+      if (typeof prevCount === 'number' && prevCount > 0) {
+        queryClient.setQueryData<number>(queryKeys.unreadCount, prevCount - 1);
+      }
+      return { previous, prevCount };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.notifications, context.previous);
+      if (typeof context?.prevCount === 'number') queryClient.setQueryData(queryKeys.unreadCount, context.prevCount);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
+    },
+  });
+}
+
+/**
+ * Hook to mark all notifications as read
+ */
+export function useMarkAllNotificationsRead() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['notifications', 'markAllRead'],
+    mutationFn: async () => {
+      const response = await api.notifications.markAllRead();
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.notifications });
+      const previous = queryClient.getQueryData<Notification[]>(queryKeys.notifications);
+      if (previous) {
+        queryClient.setQueryData<Notification[]>(queryKeys.notifications,
+          previous.map((n) => ({ ...n, read: true, readAt: n.readAt || new Date().toISOString() }))
+        );
+      }
+      queryClient.setQueryData<number>(queryKeys.unreadCount, 0);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.notifications, context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+      queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
+    },
+  });
+}
+
+/**
+ * Hook to delete a notification
+ */
+export function useDeleteNotification() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['notifications', 'delete'],
+    mutationFn: async (notificationId: string) => {
+      const response = await api.notifications.delete(notificationId);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },

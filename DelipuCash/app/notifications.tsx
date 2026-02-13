@@ -10,7 +10,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect, Href } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ChevronLeft, BellRing, CheckCircle2 } from "lucide-react-native";
+import { ChevronLeft, BellRing, CheckCircle2, AlertCircle } from "lucide-react-native";
 import { formatDistanceToNow } from "date-fns";
 import * as Linking from "expo-linking";
 import {
@@ -30,7 +30,7 @@ import { usePushNotifications } from "@/utils/usePushNotifications";
 export default function NotificationsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const { data, refetch, isFetching } = useNotifications();
+  const { data, refetch, isFetching, isError } = useNotifications();
   const { mutate: markRead } = useMarkNotificationRead();
   const { markNotificationsSeen } = usePushNotifications();
 
@@ -124,6 +124,22 @@ export default function NotificationsScreen(): React.ReactElement {
     [colors],
   );
 
+  const errorComponent = useMemo(
+    () => (
+      <View style={[styles.emptyState, { borderColor: colors.error }]}>
+        <AlertCircle size={28} color={colors.error} strokeWidth={1.5} />
+        <Text style={[styles.emptyTitle, { color: colors.text }]}>Something went wrong</Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+          Could not load notifications. Pull down to try again.
+        </Text>
+        <TouchableOpacity onPress={() => refetch()} style={{ marginTop: SPACING.sm }}>
+          <Text style={[styles.actionText, { color: colors.primary }]}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    ),
+    [colors, refetch],
+  );
+
   const onRefresh = useCallback(() => {
     markNotificationsSeen();
     refetch();
@@ -169,7 +185,7 @@ export default function NotificationsScreen(): React.ReactElement {
             tintColor={colors.primary}
           />
         }
-        ListEmptyComponent={emptyComponent}
+        ListEmptyComponent={isError ? errorComponent : emptyComponent}
         // Performance optimizations
         removeClippedSubviews={true}
         maxToRenderPerBatch={8}
