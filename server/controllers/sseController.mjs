@@ -35,14 +35,16 @@ export const sseStream = async (req, res) => {
 
   // Set SSE response headers
   res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
+    'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
+  res.flushHeaders?.(); // important on some proxies (Vercel, nginx)
 
-  // Send retry instruction (client reconnect delay in ms)
+  // Send retry instruction and initial connected comment
   res.write('retry: 3000\n\n');
+  res.write(': connected\n\n');
 
   // Flush any missed events since last connection
   lastSeq = await flushEvents(res, userId, lastSeq);
