@@ -50,6 +50,7 @@ const allowedOrigins = [
   'https://mpairwe7-delipucashlatest.vercel.app',
   'http://localhost:8081',
   'exp://192.168.0.117:8081',
+    'https://delipucash-latest.vercel.app',
   process.env.FRONTEND_URL // Add your production frontend URL
 ].filter(Boolean);
 
