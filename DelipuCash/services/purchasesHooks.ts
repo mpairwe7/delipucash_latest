@@ -114,7 +114,7 @@ export function useSurveyCreatorAccess() {
  * Hook to check if user has video premium entitlement
  * 
  * Video premium allows:
- * - Upload videos larger than 20MB (up to 500MB)
+ * - Upload videos larger than 40MB (up to 500MB)
  * - Livestream longer than 5 minutes (up to 2 hours)
  * 
  * This hook combines RevenueCat subscription status with backend API limits.
@@ -124,7 +124,7 @@ export function useSurveyCreatorAccess() {
  * ```tsx
  * const { hasVideoPremium, maxUploadSize, maxLivestreamDuration } = useVideoPremiumAccess();
  * 
- * if (!hasVideoPremium && fileSize > 20MB) {
+ * if (!hasVideoPremium && fileSize > 40MB) {
  *   return <UpgradePrompt />;
  * }
  * ```
@@ -141,7 +141,7 @@ export function useVideoPremiumAccess() {
   ) ?? false;
 
   // Constants for limits (synced with backend/VideoStore)
-  const FREE_UPLOAD_LIMIT = 20 * 1024 * 1024; // 20MB
+  const FREE_UPLOAD_LIMIT = 40 * 1024 * 1024; // 40MB
   const PREMIUM_UPLOAD_LIMIT = 500 * 1024 * 1024; // 500MB
   const FREE_DURATION_LIMIT = 300; // 5 minutes
   const PREMIUM_LIVESTREAM_LIMIT = 7200; // 2 hours
@@ -157,7 +157,7 @@ export function useVideoPremiumAccess() {
     maxLivestreamDuration: hasVideoPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
     maxRecordingDuration: hasVideoPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
     // Formatted versions for display
-    maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '20 MB',
+    maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '40 MB',
     maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
     maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
   };

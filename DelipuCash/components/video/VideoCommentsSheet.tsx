@@ -264,6 +264,15 @@ function VideoCommentsSheetComponent({
     }
   }, [visible, translateY, backdropOpacity]);
 
+  // Keep local list in sync with latest comments from parent/query
+  useEffect(() => {
+    const normalized = (propComments || []).map((comment) => ({
+      ...comment,
+      likes: comment.likes || 0,
+    }));
+    setComments(normalized);
+  }, [propComments, videoId, visible]);
+
   // ============================================================================
   // HANDLERS
   // ============================================================================

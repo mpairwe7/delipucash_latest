@@ -227,13 +227,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   // ── Auth — Zustand store (synchronous, already hydrated) ──
-  const { isReady: authReady, isAuthenticated } = useAuth();
+  const { isReady: authReady, isAuthenticated, auth } = useAuth();
 
   const questionId = id || "";
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions } = useRewardQuestions();
-  const { data: user, isLoading: isUserLoading } = useUserProfile();
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
+
+  const userEmail = user?.email ?? auth?.user?.email ?? null;
+  const userPhone = user?.phone ?? auth?.user?.phone ?? null;
 
   // ── Zustand: state via useShallow (grouped — prevents re-renders) ──
   const { walletBalance, sessionState, sessionSummary } = useInstantRewardStore(
@@ -269,10 +272,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // Initialize attempt history for the user
   useEffect(() => {
-    if (user?.email) {
-      initializeAttemptHistory(user.email);
+    if (userEmail) {
+      initializeAttemptHistory(userEmail);
     }
-  }, [user?.email, initializeAttemptHistory]);
+  }, [userEmail, initializeAttemptHistory]);
 
   // Initialize session if not already started
   useEffect(() => {
@@ -378,7 +381,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     if (!question) return;
 
     // Validate user authentication
-    if (!user?.email) {
+    if (!userEmail) {
       triggerHaptic('warning');
       showToast({
         message: 'Please log in to submit answers and earn rewards.',
@@ -390,7 +393,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }
 
     // Validate phone number is available for reward payout
-    if (!user?.phone) {
+    if (!userPhone) {
       triggerHaptic('warning');
       showToast({
         message: 'Please update your profile with a phone number to receive reward payouts.',
@@ -421,8 +424,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       {
         questionId: question.id,
         answer,
-        phoneNumber: user.phone,
-        userEmail: user.email,
+        phoneNumber: userPhone,
+        userEmail,
       },
       {
         onSuccess: (payload) => {
@@ -528,7 +531,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, user, hasAlreadyAttempted, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
+  }, [question, selectedOption, userEmail, userPhone, hasAlreadyAttempted, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
 
   // Handle redemption
   const handleRedeem = useCallback(async (

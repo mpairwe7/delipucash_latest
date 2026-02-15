@@ -71,8 +71,8 @@ export const MAX_RECORDING_DURATION_PREMIUM = 1800; // 30 minutes for premium us
 export const MAX_LIVESTREAM_DURATION = 300; // 5 minutes for free users
 export const MAX_LIVESTREAM_DURATION_PREMIUM = 7200; // 2 hours for premium users
 
-// Max upload file size in bytes (free users: 20MB, premium: 500MB)
-export const MAX_UPLOAD_SIZE_FREE = 20 * 1024 * 1024; // 20MB
+// Max upload file size in bytes (free users: 40MB, premium: 500MB)
+export const MAX_UPLOAD_SIZE_FREE = 40 * 1024 * 1024; // 40MB
 export const MAX_UPLOAD_SIZE_PREMIUM = 500 * 1024 * 1024; // 500MB
 
 // Helper to format file size

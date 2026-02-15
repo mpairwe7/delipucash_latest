@@ -524,11 +524,17 @@ export const videosApi = {
   },
 
   /**
-   * Get video comments — backend returns { comments: [...] }
+   * Get video comments — supports both:
+   * - { comments: [...] }
+   * - { data: { comments: [...] } }
    */
   async getComments(videoId: string): Promise<ApiResponse<Comment[]>> {
-    const response = await fetchJson<{ comments: Comment[] }>(API_ROUTES.videos.comments(videoId));
-    return { success: response.success, data: response.data?.comments || [], error: response.error };
+    const response = await fetchJson<{ comments?: Comment[]; data?: { comments?: Comment[] } }>(
+      API_ROUTES.videos.comments(videoId)
+    );
+    const payload = response.data as any;
+    const comments = payload?.data?.comments ?? payload?.comments ?? [];
+    return { success: response.success, data: comments, error: response.error };
   },
 
   /**

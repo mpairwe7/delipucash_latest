@@ -13,7 +13,7 @@ import { validateForm, ValidationSchema, validators } from "@/utils/validation";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail } from "lucide-react-native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
     KeyboardAvoidingView,
     Platform,
@@ -51,7 +51,7 @@ const validationSchema: ValidationSchema = {
 export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const { login, isLoading } = useAuth();
+  const { login, isLoading, isReady: authReady, isAuthenticated } = useAuth();
 
   const [formData, setFormData] = useState<FormData>({
     email: __DEV__ ? testCredentials.email : "",
@@ -60,6 +60,12 @@ export default function LoginScreen(): React.ReactElement {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
   const [generalError, setGeneralError] = useState<string>("");
+
+  useEffect(() => {
+    if (authReady && isAuthenticated) {
+      router.replace("/(tabs)/home-redesigned");
+    }
+  }, [authReady, isAuthenticated]);
 
   const handleChange = useCallback(
     (field: keyof FormData, value: string): void => {

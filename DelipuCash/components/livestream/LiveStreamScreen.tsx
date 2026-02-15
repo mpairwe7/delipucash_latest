@@ -111,7 +111,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   useEffect(() => {
     setPremiumStatus({
       hasVideoPremium,
-      maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 20 * 1024 * 1024,
+      maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 40 * 1024 * 1024,
       maxRecordingDuration: hasVideoPremium ? 1800 : 300,
       maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
     });

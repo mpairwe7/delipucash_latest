@@ -597,7 +597,7 @@ const SubscriptionScreen: React.FC = () => {
               <View style={styles.videoPremiumFeatureRow}>
                 <Upload size={16} color={colors.success} />
                 <Text style={[styles.videoPremiumFeatureText, { color: colors.text }]}>
-                  Upload videos up to 500MB (vs 20MB free)
+                  Upload videos up to 500MB (vs 40MB free)
                 </Text>
               </View>
               <View style={styles.videoPremiumFeatureRow}>

@@ -23,7 +23,6 @@ import {
 import {
   useQuestionAnswerStore,
   ANSWER_MAX_LENGTH,
-  ANSWER_MIN_LENGTH,
   selectIsValidLength,
   selectWasSubmitted,
 } from "@/store";
@@ -169,39 +168,34 @@ const SubmittedBanner = memo(function SubmittedBanner({
 });
 
 // ─── Character Count Indicator ───────────────────────────────────────────────
+// 2026 industry standard: hidden until near max, progressive color (muted → warning → error)
 
 interface CharCountProps {
   current: number;
   max: number;
-  min: number;
   colors: ThemeColors;
 }
+
+const CHAR_WARNING_THRESHOLD = 50;
+const CHAR_DANGER_THRESHOLD = 20;
 
 const CharCountIndicator = memo(function CharCountIndicator({
   current,
   max,
-  min,
   colors,
 }: CharCountProps) {
   const remaining = max - current;
-  const isNearLimit = remaining < 50;
-  const isTooShort = current > 0 && current < min;
 
-  const color = isTooShort
-    ? colors.error
-    : isNearLimit
-    ? colors.warning
-    : colors.textMuted;
+  // Only visible when approaching the limit
+  if (remaining >= CHAR_WARNING_THRESHOLD) return null;
+
+  const color =
+    remaining <= CHAR_DANGER_THRESHOLD
+      ? colors.error
+      : colors.warning;
 
   return (
-    <View style={styles.charCountRow}>
-      {isTooShort && (
-        <Text style={[styles.charHint, { color: colors.error }]}>
-          {min - current} more needed
-        </Text>
-      )}
-      <Text style={[styles.charCount, { color }]}>{remaining} left</Text>
-    </View>
+    <Text style={[styles.charCount, { color }]}>{remaining}</Text>
   );
 });
 
@@ -292,14 +286,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     }
 
     const trimmed = draftText.trim();
-    if (trimmed.length < ANSWER_MIN_LENGTH) {
-      triggerHaptic('warning');
-      showToast({
-        message: `Please share a more detailed answer (at least ${ANSWER_MIN_LENGTH} characters).`,
-        type: 'warning',
-      });
-      return;
-    }
+    if (!trimmed) return;
 
     triggerHaptic('medium');
     Keyboard.dismiss();
@@ -592,7 +579,6 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             <CharCountIndicator
               current={draftText.length}
               max={ANSWER_MAX_LENGTH}
-              min={ANSWER_MIN_LENGTH}
               colors={colors}
             />
           </View>
@@ -602,8 +588,6 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               {
                 borderColor: wasSubmitted
                   ? colors.border
-                  : draftText.length > 0 && draftText.trim().length < ANSWER_MIN_LENGTH
-                  ? colors.error
                   : draftText.length > 0
                   ? colors.primary
                   : colors.border,
@@ -628,7 +612,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               returnKeyType="default"
               blurOnSubmit={false}
               accessibilityLabel="Answer text input"
-              accessibilityHint={`Minimum ${ANSWER_MIN_LENGTH} characters required`}
+              accessibilityHint={`Maximum ${ANSWER_MAX_LENGTH} characters`}
             />
           </View>
           <PrimaryButton
@@ -733,7 +717,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             ? "Answer already submitted"
             : canSubmit
             ? "Submit answer"
-            : `Answer needs at least ${ANSWER_MIN_LENGTH} characters`
+            : "Write an answer to submit"
         }
         accessibilityState={{ disabled: !canSubmit }}
       >
@@ -916,15 +900,6 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.md,
-  },
-  charCountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-  },
-  charHint: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   charCount: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,

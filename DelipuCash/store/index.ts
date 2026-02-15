@@ -407,7 +407,6 @@ export {
 export {
   useQuestionAnswerStore,
   ANSWER_MAX_LENGTH,
-  ANSWER_MIN_LENGTH,
   selectActiveQuestionId,
   selectDraftText,
   selectRemainingChars,

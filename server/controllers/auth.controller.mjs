@@ -7,6 +7,9 @@ import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/emailService.mjs';
 import crypto from 'crypto';
 
+// Long-lived mobile session token (configurable via env)
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
+
 // ===========================================
 // 2FA Helper Functions
 // ===========================================
@@ -59,7 +62,7 @@ export const signup = asyncHandler(async (req, res, next) => {
   });
 
   // Create JWT token
-  const token = jwt.sign({ id: newUser.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
+  const token = jwt.sign({ id: newUser.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
   // Send response with user data and token
   res.status(200).send({
@@ -212,7 +215,7 @@ export const signin = asyncHandler(async (req, res, next) => {
     return next(errorHandler(401, 'Wrong credentials!'));
   }
 
-  const token = jwt.sign({ id: validUser.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
+  const token = jwt.sign({ id: validUser.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   const { password: pass, ...rest } = validUser;
 
   // Create login session (non-blocking — don't fail login if this errors)
@@ -889,7 +892,7 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
     });
 
     // Generate JWT token for successful 2FA login
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '3h' });
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     console.log('✅ 2FA login successful for:', email);
     return res.status(200).json({
@@ -1142,4 +1145,3 @@ export const validateResetToken = asyncHandler(async (req, res, next) => {
     next(errorHandler(500, "Failed to validate token"));
   }
 });
-

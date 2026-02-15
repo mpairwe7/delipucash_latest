@@ -19,7 +19,6 @@ import { immer } from 'zustand/middleware/immer';
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 export const ANSWER_MAX_LENGTH = 500;
-export const ANSWER_MIN_LENGTH = 10;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -143,7 +142,7 @@ export const selectRemainingChars = (questionId: string) => (s: QuestionAnswerSt
 
 export const selectIsValidLength = (questionId: string) => (s: QuestionAnswerState) => {
   const len = s.drafts[questionId]?.text?.trim().length ?? 0;
-  return len >= ANSWER_MIN_LENGTH && len <= ANSWER_MAX_LENGTH;
+  return len > 0 && len <= ANSWER_MAX_LENGTH;
 };
 
 export const selectWasSubmitted = (questionId: string) => (s: QuestionAnswerState) =>

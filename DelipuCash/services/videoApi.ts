@@ -452,13 +452,16 @@ export const videoApi = {
    */
   async getComments(videoId: string, page: number = 1, limit: number = 20): Promise<PaginatedResponse<Comment>> {
     const response = await fetchJson<{
-      comments: Comment[];
+      comments?: Comment[];
+      data?: { comments?: Comment[] };
     }>(`${VIDEO_ROUTES.comments(videoId)}?page=${page}&limit=${limit}`);
 
-    // Backend getVideoComments returns { comments: [...] }
+    const payload = response.data as any;
+    const comments = payload?.data?.comments ?? payload?.comments ?? [];
+
     return {
       success: response.success,
-      data: response.data?.comments || [],
+      data: comments,
       pagination: { page, limit, total: 0, totalPages: 0 },
       error: response.error,
     };

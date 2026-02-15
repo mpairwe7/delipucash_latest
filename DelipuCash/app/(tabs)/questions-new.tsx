@@ -116,6 +116,7 @@ import {
 } from "@/services/adHooksRefactored";
 import { useSearch } from "@/hooks/useSearch";
 import useUser from "@/utils/useUser";
+import { useAuth } from "@/utils/auth/useAuth";
 
 // Store — persisted tab selection
 import { useQuestionUIStore, selectSelectedTab } from "@/store";
@@ -437,6 +438,7 @@ export default function QuestionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar();
   const { data: user, loading: userLoading } = useUser();
+  const { isReady: authReady, isAuthenticated } = useAuth();
 
   // Refs
   const flatListRef = useRef<FlatList>(null);
@@ -508,7 +510,6 @@ export default function QuestionsScreen(): React.ReactElement {
   // User permissions
   const isAdmin =
     user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
-  const isAuthenticated = !!user;
   const isLoading = isFeedLoading || userLoading;
 
   // Flatten infinite pages into a single array
@@ -643,6 +644,7 @@ export default function QuestionsScreen(): React.ReactElement {
   // Stable handlers that accept IDs — avoids inline closures in renderItem
   const handleQuestionPressById = useCallback(
     (questionId: string, isInstantReward?: boolean) => {
+      if (!authReady) return;
       if (!isAuthenticated) {
         router.push("/(auth)/login" as Href);
         return;
@@ -654,7 +656,7 @@ export default function QuestionsScreen(): React.ReactElement {
         router.push(`/question-answer/${questionId}` as Href);
       }
     },
-    [isAuthenticated]
+    [authReady, isAuthenticated]
   );
 
   const handleVoteById = useCallback(
@@ -735,20 +737,29 @@ export default function QuestionsScreen(): React.ReactElement {
     []
   );
   const handleInstantRewardPress = useCallback(
-    () => router.push("/instant-reward-questions" as Href),
-    []
+    () => {
+      if (!authReady) return;
+      if (!isAuthenticated) {
+        router.push("/(auth)/login" as Href);
+        return;
+      }
+      triggerHaptic("light");
+      router.push("/instant-reward-questions" as Href);
+    },
+    [authReady, isAuthenticated]
   );
 
   // Navigate to reward-question listing — the listing screen handles its own
   // data loading, so we don't need to eagerly fetch reward questions here
   const handleAnswerEarnPress = useCallback(() => {
+    if (!authReady) return;
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
     }
     triggerHaptic("light");
     router.push("/instant-reward-questions" as Href);
-  }, [isAuthenticated]);
+  }, [authReady, isAuthenticated]);
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({

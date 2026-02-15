@@ -17,8 +17,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // CONSTANTS
 // ============================================================================
 
-/** Free user upload limit: 20MB */
-export const FREE_UPLOAD_LIMIT_BYTES = 20 * 1024 * 1024;
+/** Free user upload limit: 40MB */
+export const FREE_UPLOAD_LIMIT_BYTES = 40 * 1024 * 1024;
 
 /** Premium user upload limit: 500MB */
 export const PREMIUM_UPLOAD_LIMIT_BYTES = 500 * 1024 * 1024;

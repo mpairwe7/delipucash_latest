@@ -52,7 +52,7 @@ const REVENUECAT_API_KEYS = {
 export const ENTITLEMENTS = {
   SURVEY_CREATOR: 'survey_creator', // Access to create surveys
   PREMIUM: 'premium', // Premium features
-  VIDEO_PREMIUM: 'video_premium', // Extended video upload (>20MB) and livestream (>5min)
+  VIDEO_PREMIUM: 'video_premium', // Extended video upload (>40MB) and livestream (>5min)
 } as const;
 
 /**

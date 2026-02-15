@@ -1,4 +1,5 @@
 import { useReducedMotion } from "@/utils/accessibility";
+import { useAuth } from "@/utils/auth";
 import { triggerHaptic } from "@/utils/quiz-utils";
 import { RADIUS, SPACING, TYPOGRAPHY, useTheme, withAlpha } from "@/utils/theme";
 import { Image } from "expo-image";
@@ -327,6 +328,7 @@ export default function SplashScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
+  const { isReady: authReady, isAuthenticated } = useAuth();
 
   // Announce screen purpose for screen readers
   useEffect(() => {
@@ -334,6 +336,13 @@ export default function SplashScreen(): React.ReactElement {
       "Welcome to DelipuCash. Earn real money by answering questions, watching videos, and completing surveys. Press Get Started to begin."
     );
   }, []);
+
+  // Skip landing for users with a valid persisted session
+  useEffect(() => {
+    if (authReady && isAuthenticated) {
+      router.replace("/(tabs)/home-redesigned");
+    }
+  }, [authReady, isAuthenticated]);
 
   const handleGetStarted = useCallback((): void => {
     router.push("/(auth)/signup");

@@ -77,10 +77,11 @@ export const commentPost = asyncHandler(async (req, res) => {
   try {
     const { id: videoId } = req.params;
     const { text, media, user_id, created_at } = req.body;
+    const effectiveUserId = user_id || req.user?.id;
     console.log("Received request data for comment:", req.body);
 
     // Validate required fields
-    if (!user_id) {
+    if (!effectiveUserId) {
       return res.status(400).json({ message: "User ID is required" });
     }
 
@@ -90,7 +91,7 @@ export const commentPost = asyncHandler(async (req, res) => {
 
     // Verify user exists
     const user = await prisma.appUser.findUnique({
-      where: { id: user_id },
+      where: { id: effectiveUserId },
     });
 
     if (!user) {
@@ -106,14 +107,19 @@ export const commentPost = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "Video not found" });
     }
 
+    const parsedCreatedAt = created_at ? new Date(created_at) : new Date();
+    const commentCreatedAt = Number.isNaN(parsedCreatedAt.getTime())
+      ? new Date()
+      : parsedCreatedAt;
+
     // Create comment
     const comment = await prisma.comment.create({
       data: {
         text: text || "",
         mediaUrls: media || [],
-        userId: user_id,
+        userId: effectiveUserId,
         videoId: videoId,
-        createdAt: new Date(created_at),
+        createdAt: commentCreatedAt,
       },
       include: {
         user: {
@@ -134,7 +140,7 @@ export const commentPost = asyncHandler(async (req, res) => {
     });
 
     // SSE: Notify video owner of new comment
-    if (video.userId !== user_id) {
+    if (video.userId !== effectiveUserId) {
       publishEvent(video.userId, 'video.comment', {
         videoId,
         commentId: comment.id,
@@ -718,7 +724,7 @@ export const unlikeVideo = asyncHandler(async (req, res) => {
 // Video limits constants
 const VIDEO_LIMITS = {
   FREE: {
-    maxUploadSizeBytes: 20 * 1024 * 1024, // 20MB
+    maxUploadSizeBytes: 40 * 1024 * 1024, // 40MB
     maxRecordingDurationSeconds: 300, // 5 minutes
     maxLivestreamDurationSeconds: 300, // 5 minutes
   },
@@ -768,7 +774,7 @@ export const getVideoLimits = asyncHandler(async (req, res) => {
         maxRecordingDuration: limits.maxRecordingDurationSeconds,
         maxLivestreamDuration: limits.maxLivestreamDurationSeconds,
         // Include human-readable versions
-        maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '20 MB',
+        maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '40 MB',
         maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
         maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
       },
@@ -823,7 +829,7 @@ export const validateUpload = asyncHandler(async (req, res) => {
 
     // Check file size
     if (fileSize > limits.maxUploadSizeBytes) {
-      const maxSizeFormatted = hasVideoPremium ? '500 MB' : '20 MB';
+      const maxSizeFormatted = hasVideoPremium ? '500 MB' : '40 MB';
       const fileSizeFormatted = (fileSize / (1024 * 1024)).toFixed(1) + ' MB';
       
       return res.status(413).json({

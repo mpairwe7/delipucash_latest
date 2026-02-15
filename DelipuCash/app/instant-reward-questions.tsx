@@ -6,8 +6,9 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/services";
-import { useRewardQuestions, useUserProfile } from "@/services/hooks";
+import { useRewardQuestions } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
 import { InstantRewardListSkeleton } from "@/components/question/QuestionSkeletons";
 import {
@@ -54,7 +55,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
   const { data: user } = useUser();
-  const { data: userProfile } = useUserProfile();
+  const { isReady: authReady, isAuthenticated, auth } = useAuth();
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'unanswered' | 'completed'>('unanswered');
 
@@ -67,12 +68,14 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     getAttemptedQuestion,
   } = useInstantRewardStore();
 
+  const userEmail = auth?.user?.email || user?.email;
+
   // Initialize attempt history for current user
   useEffect(() => {
-    if (userProfile?.email) {
-      initializeAttemptHistory(userProfile.email);
+    if (userEmail) {
+      initializeAttemptHistory(userEmail);
     }
-  }, [userProfile?.email, initializeAttemptHistory]);
+  }, [userEmail, initializeAttemptHistory]);
 
   /**
    * Role-based access control: Check user's role field from backend
@@ -139,16 +142,15 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     setShowUploadModal(true);
   }, []);
 
-  const isAuthenticated = !!userProfile;
-
   const handleOpenQuestion = useCallback((id: string) => {
+    if (!authReady) return;
     triggerHaptic('medium');
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
     }
-    router.push(`/instant-reward-answer/${id}`);
-  }, [isAuthenticated]);
+    router.push(`/instant-reward-answer/${id}` as Href);
+  }, [authReady, isAuthenticated]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}> 

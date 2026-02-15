@@ -1,7 +1,7 @@
 /**
  * UploadModal Component
  * A modal for uploading videos with form validation
- * Includes 20MB file size limit for free users with premium upgrade option
+ * Includes 40MB file size limit for free users with premium upgrade option
  * 
  * @example
  * ```tsx

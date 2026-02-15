@@ -39,6 +39,7 @@ import {
   AccessibilityInfo,
   Platform,
   Linking,
+  Alert,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -91,6 +92,7 @@ import {
   useShareVideo,
   useUnreadCount,
   useAddComment,
+  useVideoComments,
 } from '@/services/hooks';
 import { useInfiniteVideos } from '@/services/videoHooks';
 import videoApi from '@/services/videoApi';
@@ -121,6 +123,7 @@ import {
   useRecordAdImpression,
 } from '@/services/adHooksRefactored';
 import { useAdFrequency } from '@/services/adFrequencyManager';
+import { useAuth } from '@/utils/auth/useAuth';
 
 // ============================================================================
 // CONSTANTS & 2026 CONFIGURATION
@@ -284,6 +287,7 @@ AICuratedChip.displayName = 'AICuratedChip';
 
 export default function VideosScreen(): React.ReactElement {
   const { colors, isDark } = useTheme();
+  const { isReady: authReady, isAuthenticated } = useAuth();
 
   // ============================================================================
   // SYSTEM BARS - Industry-standard immersive video experience
@@ -386,6 +390,7 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: bookmarkVideo } = useBookmarkVideo();
   const { mutate: shareVideo } = useShareVideo();
   const { mutateAsync: addComment } = useAddComment();
+  const { data: commentsData, refetch: refetchComments } = useVideoComments(ui.commentsVideoId || '', 1, 20);
 
   // Ad data using TanStack Query for optimized caching - Industry Standard
   const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
@@ -589,6 +594,11 @@ export default function VideosScreen(): React.ReactElement {
   const handleLike = useCallback((video: Video) => {
     // Guard: don't call video APIs for sponsored ad items
     if (video.isSponsored || video.id.startsWith('ad-')) return;
+    if (!authReady) return;
+    if (!isAuthenticated) {
+      router.push('/(auth)/login' as Href);
+      return;
+    }
 
     const isCurrentlyLiked = likedVideoIds.has(video.id);
     toggleLike(video.id);
@@ -601,14 +611,19 @@ export default function VideosScreen(): React.ReactElement {
       // 2026: Distinct success haptic for positive actions
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [likedVideoIds, toggleLike, likeVideo, unlikeVideo]);
+  }, [authReady, isAuthenticated, likedVideoIds, toggleLike, likeVideo, unlikeVideo]);
 
   const handleComment = useCallback((video: Video) => {
     // Guard: don't open comments for sponsored ad items
     if (video.isSponsored || video.id.startsWith('ad-')) return;
+    if (!authReady) return;
+    if (!isAuthenticated) {
+      router.push('/(auth)/login' as Href);
+      return;
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     openComments(video.id);
-  }, [openComments]);
+  }, [authReady, isAuthenticated, openComments]);
 
   const handleShare = useCallback(async (video: Video) => {
     try {
@@ -635,11 +650,16 @@ export default function VideosScreen(): React.ReactElement {
   }, [shareVideo]);
 
   const handleBookmark = useCallback((video: Video) => {
+    if (!authReady) return;
+    if (!isAuthenticated) {
+      router.push('/(auth)/login' as Href);
+      return;
+    }
     toggleBookmark(video.id);
     bookmarkVideo(video.id);
     // 2026: Rigid haptic for save/bookmark - distinct tactile confirmation
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-  }, [toggleBookmark, bookmarkVideo]);
+  }, [authReady, isAuthenticated, toggleBookmark, bookmarkVideo]);
 
   const handleExpandPlayer = useCallback((video: Video) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1032,10 +1052,23 @@ export default function VideosScreen(): React.ReactElement {
       <VideoCommentsSheet
         visible={ui.showComments}
         videoId={ui.commentsVideoId || ''}
+        comments={commentsData?.comments || []}
         onClose={closeComments}
         onAddComment={async (text: string) => {
+          if (!authReady) return;
+          if (!isAuthenticated) {
+            router.push('/(auth)/login' as Href);
+            throw new Error('Please log in to comment.');
+          }
           if (ui.commentsVideoId) {
-            await addComment({ videoId: ui.commentsVideoId, text });
+            try {
+              await addComment({ videoId: ui.commentsVideoId, text });
+              await refetchComments();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Failed to post comment';
+              Alert.alert('Comment failed', message);
+              throw error;
+            }
           }
         }}
         testID="comments-sheet"
