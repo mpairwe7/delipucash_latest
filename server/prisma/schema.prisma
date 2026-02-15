@@ -498,14 +498,19 @@ model LoginSession {
   lastActivity DateTime  @default(now())
   loginTime    DateTime  @default(now())
   logoutTime   DateTime?
-  sessionToken String?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  user         AppUser   @relation(fields: [userId], references: [id])
+  sessionToken          String?
+  refreshTokenHash      String?
+  refreshTokenExpiresAt DateTime?
+  tokenFamily           String?   @db.Uuid
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([isActive])
   @@index([sessionToken])
+  @@index([refreshTokenHash])
+  @@index([tokenFamily])
 }
 
 enum PaymentStatus {

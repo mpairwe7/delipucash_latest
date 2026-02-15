@@ -7,7 +7,9 @@ import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/emailService.mjs';
 import crypto from 'crypto';
 
-// Long-lived mobile session token (configurable via env)
+import { issueTokenPair, hashToken } from '../utils/tokenUtils.mjs';
+
+// Legacy constant — kept only for reference; new tokens use tokenUtils.mjs
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
 
 // ===========================================
@@ -61,10 +63,9 @@ export const signup = asyncHandler(async (req, res, next) => {
     },
   });
 
-  // Create JWT token
-  const token = jwt.sign({ id: newUser.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  // Issue access + refresh token pair (creates LoginSession)
+  const { accessToken, refreshToken } = await issueTokenPair(newUser.id, req);
 
-  // Send response with user data and token
   res.status(200).send({
     message: "Registered successfully",
     success: true,
@@ -72,7 +73,8 @@ export const signup = asyncHandler(async (req, res, next) => {
       id: newUser.id,
       email: newUser.email,
     },
-    token,
+    token: accessToken,
+    refreshToken,
   });
 });
 
@@ -159,7 +161,18 @@ export const changePassword = asyncHandler(async (req, res, next) => {
       data: { password: hashedNewPassword }
     });
 
-    console.log('✅ Password updated successfully in database for user:', user.email);
+    // Revoke ALL active sessions — forces re-login on every device
+    await prisma.loginSession.updateMany({
+      where: { userId, isActive: true },
+      data: {
+        isActive: false,
+        logoutTime: new Date(),
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
+      },
+    });
+
+    console.log('✅ Password updated and all sessions revoked for user:', user.email);
 
     res.status(200).json({
       success: true,
@@ -215,38 +228,15 @@ export const signin = asyncHandler(async (req, res, next) => {
     return next(errorHandler(401, 'Wrong credentials!'));
   }
 
-  const token = jwt.sign({ id: validUser.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   const { password: pass, ...rest } = validUser;
 
-  // Create login session (non-blocking — don't fail login if this errors)
-  try {
-    const deviceInfo = {
-      platform: req.headers['user-agent']?.includes('Mobile') ? 'Mobile' : 'Desktop',
-      browser: req.headers['user-agent']?.includes('Chrome') ? 'Chrome' :
-               req.headers['user-agent']?.includes('Safari') ? 'Safari' :
-               req.headers['user-agent']?.includes('Firefox') ? 'Firefox' : 'Unknown',
-      os: req.headers['user-agent']?.includes('Android') ? 'Android' :
-          req.headers['user-agent']?.includes('iOS') ? 'iOS' :
-          req.headers['user-agent']?.includes('Windows') ? 'Windows' :
-          req.headers['user-agent']?.includes('Mac') ? 'macOS' : 'Unknown'
-    };
-
-    await prisma.loginSession.create({
-      data: {
-        userId: validUser.id,
-        deviceInfo,
-        ipAddress: req.ip || req.connection.remoteAddress,
-        userAgent: req.headers['user-agent'],
-        sessionToken: token,
-      },
-    });
-  } catch (error) {
-    // Non-critical — don't fail the login if session creation fails
-  }
+  // Issue access + refresh token pair (creates LoginSession with device metadata)
+  const { accessToken, refreshToken } = await issueTokenPair(validUser.id, req);
 
   res.status(200).json({
     success: true,
-    token,
+    token: accessToken,
+    refreshToken,
     user: rest,
   });
 });
@@ -257,16 +247,19 @@ export const signin = asyncHandler(async (req, res, next) => {
 export const signOut = asyncHandler(async (req, res, next) => {
   const userId = req.user?.id;
 
-  // Mark current session as inactive
+  // Mark current session as inactive and nullify refresh token
   try {
     await prisma.loginSession.updateMany({
       where: {
         userId: userId,
-        sessionToken: req.headers.authorization?.replace('Bearer ', '')
+        isActive: true,
+        sessionToken: req.headers.authorization?.replace('Bearer ', ''),
       },
       data: {
         isActive: false,
         logoutTime: new Date(),
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
       },
     });
   } catch (error) {
@@ -891,8 +884,8 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    // Generate JWT token for successful 2FA login
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    // Issue access + refresh token pair for successful 2FA login
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, req);
 
     console.log('✅ 2FA login successful for:', email);
     return res.status(200).json({
@@ -904,7 +897,8 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
         firstName: user.firstName,
         lastName: user.lastName,
       },
-      token,
+      token: accessToken,
+      refreshToken,
     });
 
   } catch (error) {
@@ -1081,7 +1075,18 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
       },
     });
 
-    console.log('✅ Password reset successful for:', user.email);
+    // Revoke ALL active sessions — forces re-login everywhere
+    await prisma.loginSession.updateMany({
+      where: { userId: user.id, isActive: true },
+      data: {
+        isActive: false,
+        logoutTime: new Date(),
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
+      },
+    });
+
+    console.log('✅ Password reset successful and all sessions revoked for:', user.email);
 
     return res.status(200).json({
       success: true,
@@ -1143,5 +1148,85 @@ export const validateResetToken = asyncHandler(async (req, res, next) => {
   } catch (error) {
     console.error("❌ Failed to validate reset token:", error);
     next(errorHandler(500, "Failed to validate token"));
+  }
+});
+
+// ===========================================
+// Refresh Access Token
+// ===========================================
+
+/**
+ * Exchange a valid refresh token for a new access + refresh token pair.
+ * Implements rotation: each refresh token is single-use.
+ * Detects reuse of old tokens and revokes the entire token family.
+ *
+ * POST /api/auth/refresh-token
+ * Body: { refreshToken: string }
+ */
+export const refreshAccessToken = asyncHandler(async (req, res, next) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    return res.status(400).json({ success: false, message: 'Refresh token is required' });
+  }
+
+  const hashed = hashToken(refreshToken);
+
+  try {
+    // 1. Look for an active session with this refresh token hash
+    const session = await prisma.loginSession.findFirst({
+      where: {
+        refreshTokenHash: hashed,
+        isActive: true,
+      },
+    });
+
+    if (!session) {
+      // Reuse detection: check if an *inactive* session once had this hash.
+      // If found, an old rotated token was replayed — revoke entire family.
+      const staleSession = await prisma.loginSession.findFirst({
+        where: { refreshTokenHash: hashed, isActive: false },
+      });
+
+      if (staleSession && staleSession.tokenFamily) {
+        console.warn('⚠️  Refresh token reuse detected — revoking family', staleSession.tokenFamily);
+        await prisma.loginSession.updateMany({
+          where: { tokenFamily: staleSession.tokenFamily },
+          data: {
+            isActive: false,
+            refreshTokenHash: null,
+            refreshTokenExpiresAt: null,
+            logoutTime: new Date(),
+          },
+        });
+      }
+
+      return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+    }
+
+    // 2. Check expiry
+    if (session.refreshTokenExpiresAt && session.refreshTokenExpiresAt < new Date()) {
+      await prisma.loginSession.update({
+        where: { id: session.id },
+        data: { isActive: false, logoutTime: new Date() },
+      });
+      return res.status(401).json({ success: false, message: 'Refresh token expired' });
+    }
+
+    // 3. Rotate: issue new pair and update the same session row
+    const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(
+      session.userId,
+      req,
+      session.id
+    );
+
+    return res.status(200).json({
+      success: true,
+      token: accessToken,
+      refreshToken: newRefreshToken,
+    });
+  } catch (error) {
+    console.error('❌ Refresh token error:', error);
+    next(errorHandler(500, 'Failed to refresh token'));
   }
 });

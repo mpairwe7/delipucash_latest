@@ -3,6 +3,7 @@ import {
     signOut,
     signin,
     signup,
+    refreshAccessToken,
     updateSubscriptionStatus,
     checkSubscriptionStatus,
     updateUserPoints,
@@ -26,7 +27,8 @@ const router = express.Router();
 // Public auth routes
 router.post("/signup", signup);
 router.post("/signin", signin);
-router.post('/signout', signOut);
+router.post('/signout', verifyToken, signOut);
+router.post('/refresh-token', refreshAccessToken);
 
 // Password reset routes (public)
 router.post("/forgot-password", forgotPassword);

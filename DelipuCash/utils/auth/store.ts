@@ -47,8 +47,10 @@ export type AuthUser = AppUser;
  * Authentication data structure
  */
 export interface AuthData {
-  /** JWT token or access token */
+  /** Short-lived JWT access token */
   token: string;
+  /** Long-lived opaque refresh token */
+  refreshToken: string;
   /** Authenticated user data */
   user: AppUser;
 }

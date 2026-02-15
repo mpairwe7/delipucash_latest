@@ -194,12 +194,14 @@ export const revokeSession = asyncHandler(async (req, res) => {
       });
     }
 
-    // Revoke the session
+    // Revoke the session and nullify its refresh token
     await prisma.loginSession.update({
       where: { id: sessionId },
       data: {
         isActive: false,
         logoutTime: new Date(),
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
       },
     });
 
@@ -455,15 +457,17 @@ export const signOutAllDevices = asyncHandler(async (req, res) => {
   console.log('🚪 Sign out all devices request for user ID:', userId);
 
   try {
-    // Update all active sessions to inactive and set logout time
+    // Update all active sessions to inactive, set logout time, and nullify refresh tokens
     const result = await prisma.loginSession.updateMany({
-      where: { 
+      where: {
         userId,
-        isActive: true 
+        isActive: true
       },
       data: {
         isActive: false,
         logoutTime: new Date(),
+        refreshTokenHash: null,
+        refreshTokenExpiresAt: null,
       },
     });
 

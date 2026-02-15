@@ -22,13 +22,16 @@ export const verifyToken = (req, res, next) => {
 
   jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
     if (err) {
-      console.log('Token verification failed:', err);
+      // Expired tokens get 401 so the client can silently refresh
+      if (err.name === 'TokenExpiredError') {
+        return next(errorHandler(401, 'Token expired'));
+      }
+      // Invalid/tampered tokens get 403 — no refresh possible
       return next(errorHandler(403, 'Forbidden'));
     }
 
     req.user = decoded;
     req.userRef = decoded.id;
-    console.log('Token verified successfully:', decoded);
     next();
   });
 };
