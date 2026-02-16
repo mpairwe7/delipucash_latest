@@ -1,2 +1,4 @@
-// Placeholder entrypoint for Bun-based API hosting; replace with Express app when ready.
-console.log("Hello via Bun!");
+// Vercel serverless entry point – re-exports the Express app
+import app from '../index.js';
+
+export default app;
