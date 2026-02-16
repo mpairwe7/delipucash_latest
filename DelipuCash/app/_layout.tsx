@@ -182,6 +182,7 @@ export default function RootLayout() {
               <Stack.Screen name="help-support" options={{ headerShown: false }} />
               <Stack.Screen name="ad-registration" options={{ headerShown: false }} />
               <Stack.Screen name="instant-reward-upload" options={{ headerShown: false }} />
+              <Stack.Screen name="welcome" options={{ headerShown: false, gestureEnabled: false }} />
               <Stack.Screen name="file-upload" options={{ headerShown: false }} />
               <Stack.Screen name="create-survey" options={{ headerShown: false }} />
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />

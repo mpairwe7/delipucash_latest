@@ -32,7 +32,7 @@ import {
   Text,
   Pressable,
   StyleSheet,
-  Dimensions,
+  useWindowDimensions,
   ViewStyle,
   Platform,
 } from 'react-native';
@@ -58,15 +58,8 @@ import {
 } from '@/utils/theme';
 import { AccessibleText } from './AccessibleText';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// Responsive breakpoints for future use
-// const isSmallScreen = SCREEN_WIDTH < 375;
-// const isTablet = SCREEN_WIDTH >= 768;
-
-// Calculate card dimensions for 2-column grid
 const GRID_GAP = SPACING.sm;
 const GRID_PADDING = SPACING.base;
-const CARD_WIDTH = (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP) / 2;
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -122,7 +115,8 @@ interface QuickActionCardProps {
   isAdmin: boolean;
   hasSubscription: boolean;
   onSubscriptionRequired?: () => void;
-  columns: number;
+  cardWidth: number;
+  isCompact: boolean;
 }
 
 const SPRING_CONFIG = {
@@ -137,7 +131,8 @@ function QuickActionCard({
   isAdmin,
   hasSubscription,
   onSubscriptionRequired,
-  columns,
+  cardWidth,
+  isCompact,
 }: QuickActionCardProps): React.ReactElement | null {
   const { colors } = useTheme();
   const scale = useSharedValue(1);
@@ -190,10 +185,10 @@ function QuickActionCard({
   // Skip rendering if admin only and not admin
   if (isHidden) return null;
 
-  // Calculate card width based on columns
-  const cardWidth = columns === 3
-    ? (SCREEN_WIDTH - GRID_PADDING * 2 - GRID_GAP * 2) / 3
-    : CARD_WIDTH;
+  // Scale inner elements on narrow screens
+  const iconBoxSize = isCompact ? 44 : 52;
+  const iconSize = isCompact ? ICON_SIZE.base : ICON_SIZE.lg;
+  const cardPadding = isCompact ? SPACING.sm : SPACING.md;
 
   // Stagger animation delay
   const animationDelay = 100 + index * 50;
@@ -206,7 +201,11 @@ function QuickActionCard({
       <AnimatedPressable
         style={[
           styles.card,
-          { backgroundColor: colors.card, borderColor: withAlpha(colors.border, 0.6) },
+          {
+            backgroundColor: colors.card,
+            borderColor: withAlpha(colors.border, 0.6),
+            padding: cardPadding,
+          },
           item.disabled && styles.cardDisabled,
           animatedStyle,
         ]}
@@ -235,13 +234,18 @@ function QuickActionCard({
         <View
           style={[
             styles.iconContainer,
-            { backgroundColor: isLocked ? withAlpha(colors.textMuted, 0.1) : item.iconBgColor },
+            {
+              backgroundColor: isLocked ? withAlpha(colors.textMuted, 0.1) : item.iconBgColor,
+              width: iconBoxSize,
+              height: iconBoxSize,
+              borderRadius: iconBoxSize / 2,
+            },
           ]}
         >
           {isLocked ? (
-            <Lock size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
+            <Lock size={iconSize} color={colors.textMuted} strokeWidth={1.5} />
           ) : (
-            <Icon size={ICON_SIZE.lg} color={item.iconColor} strokeWidth={1.5} />
+            <Icon size={iconSize} color={item.iconColor} strokeWidth={1.5} />
           )}
 
           {/* Badge */}
@@ -266,8 +270,8 @@ function QuickActionCard({
           {item.title}
         </AccessibleText>
 
-        {/* Description (optional) */}
-        {item.description && (
+        {/* Description (optional — hidden on compact to prevent overflow) */}
+        {item.description && !isCompact && (
           <AccessibleText
             variant="caption"
             center
@@ -301,13 +305,28 @@ export function QuickActionsGrid({
   columns = 2,
   testID,
 }: QuickActionsGridProps): React.ReactElement {
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Responsive card width — always maintains the requested column count
+  const cardWidth = useMemo(() => {
+    const totalGaps = GRID_GAP * (columns - 1);
+    return Math.floor((screenWidth - GRID_PADDING * 2 - totalGaps) / columns);
+  }, [screenWidth, columns]);
+
+  // Compact mode on narrow screens (< 340 effective card area)
+  const isCompact = cardWidth < 150;
+
   // Filter visible items for rendering
   const visibleItems = useMemo(() => {
     return items.filter(item => !item.adminOnly || isAdmin);
   }, [items, isAdmin]);
 
   return (
-    <View style={[styles.container, style]} testID={testID}>
+    <View
+      style={[styles.container, style]}
+      testID={testID}
+      accessibilityRole="grid"
+    >
       <View style={styles.grid}>
         {visibleItems.map((item, index) => (
           <QuickActionCard
@@ -317,7 +336,8 @@ export function QuickActionsGrid({
             isAdmin={isAdmin}
             hasSubscription={hasSubscription}
             onSubscriptionRequired={onSubscriptionRequired}
-            columns={columns}
+            cardWidth={cardWidth}
+            isCompact={isCompact}
           />
         ))}
       </View>
@@ -336,7 +356,7 @@ const styles = StyleSheet.create({
     // Width set dynamically
   },
   card: {
-    aspectRatio: 1.1,
+    minHeight: 100,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
     padding: SPACING.md,
@@ -349,9 +369,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   iconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    // width/height/borderRadius set inline for responsive sizing
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: SPACING.sm,

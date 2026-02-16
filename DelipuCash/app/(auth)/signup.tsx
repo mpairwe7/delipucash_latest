@@ -4,7 +4,9 @@ import { PasswordStrengthIndicator } from "@/components/PasswordStrengthIndicato
 import { PhoneInput } from "@/components/PhoneInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
+import { useToast } from "@/components/ui/Toast";
 import { useAuth } from "@/utils/auth";
+import { triggerHaptic } from "@/utils/quiz-utils";
 import {
     SPACING,
     TYPOGRAPHY,
@@ -15,7 +17,7 @@ import { FormFieldValue, validateForm, ValidationSchema, validators } from "@/ut
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail, User } from "lucide-react-native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
     KeyboardAvoidingView,
     Linking,
@@ -89,7 +91,8 @@ const createValidationSchema = (formData: FormData): ValidationSchema => ({
 export default function SignupScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
-  const { register, isLoading } = useAuth();
+  const { register, isLoading, isReady: authReady, isAuthenticated } = useAuth();
+  const { showToast } = useToast();
 
   const [formData, setFormData] = useState<FormData>({
     firstName: "",
@@ -103,6 +106,13 @@ export default function SignupScreen(): React.ReactElement {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
   const [generalError, setGeneralError] = useState<string>("");
+
+  // Auth guard: redirect already-authenticated users to home
+  useEffect(() => {
+    if (authReady && isAuthenticated) {
+      router.replace("/(tabs)/home-redesigned");
+    }
+  }, [authReady, isAuthenticated]);
 
   const handleChange = useCallback(
     <K extends keyof FormData>(field: K, value: FormData[K]): void => {
@@ -165,8 +175,18 @@ export default function SignupScreen(): React.ReactElement {
     });
 
     if (response.success) {
-      router.replace("/(tabs)/home-redesigned");
+      // Haptic celebration + toast on successful signup
+      triggerHaptic("success");
+      showToast({
+        message: "Account created! Welcome aboard 🎉",
+        type: "success",
+        duration: 2500,
+      });
+
+      // Navigate to welcome/onboarding (not directly to home)
+      router.replace("/welcome");
     } else {
+      triggerHaptic("error");
       setGeneralError(response.error || "Registration failed. Please try again.");
     }
   };
