@@ -52,6 +52,8 @@ interface RewardListItem {
   rewardEarned?: number;
 }
 
+const ItemSeparator = () => <View style={{ height: SPACING.md }} />;
+
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
@@ -404,7 +406,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         windowSize={5}
         removeClippedSubviews
         initialNumToRender={6}
-        ItemSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
+        ItemSeparatorComponent={ItemSeparator}
       />
 
       <UploadRewardQuestionModal

@@ -2,7 +2,8 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Platform, View, ErrorUtils } from 'react-native';
+import { Platform, ErrorUtils } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
 // import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
@@ -160,7 +161,7 @@ export default function RootLayout() {
   }, [isReady]);
 
   return (
-    <View style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <SSEProvider>
         <NotificationProvider>
@@ -192,6 +193,6 @@ export default function RootLayout() {
         </NotificationProvider>
         </SSEProvider>
       </QueryClientProvider>
-    </View>
+    </GestureHandlerRootView>
   );
 }
