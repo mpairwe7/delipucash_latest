@@ -117,6 +117,9 @@ export interface Video {
   commentsCount: number;
   createdAt: string;
   updatedAt?: string;
+  // Livestream indicator (set by backend when associated with active livestream)
+  isLive?: boolean;
+  livestreamSessionId?: string;
   // Sponsored content fields (for in-feed ads)
   isSponsored?: boolean;
   sponsorName?: string;

@@ -43,6 +43,10 @@ const VIDEO_ROUTES = {
   validateUpload: "/api/videos/validate-upload",
   livestreamStart: "/api/videos/livestream/start",
   livestreamEnd: "/api/videos/livestream/end",
+  livestreamJoin: (sessionId: string) => `/api/videos/livestream/${sessionId}/join`,
+  livestreamLeave: (sessionId: string) => `/api/videos/livestream/${sessionId}/leave`,
+  livestreamChat: (sessionId: string) => `/api/videos/livestream/${sessionId}/chat`,
+  live: "/api/videos/live",
   validateSession: "/api/videos/validate-session",
 } as const;
 
@@ -164,6 +168,25 @@ export interface EndLivestreamRequest {
   duration: number;
   viewerCount?: number;
   peakViewers?: number;
+}
+
+/** Livestream list item (from /api/videos/live) */
+export interface LivestreamListItem {
+  id: string;
+  sessionId: string;
+  title: string | null;
+  description: string | null;
+  status: string;
+  viewerCount: number;
+  peakViewerCount: number;
+  startedAt: string | null;
+  isPremium: boolean;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    avatar: string | null;
+  } | null;
 }
 
 /** Session duration validation request */
@@ -316,11 +339,17 @@ export const videoApi = {
   },
 
   /**
-   * Get live videos — uses /all with isLive filter (no dedicated backend route)
+   * Get active livestreams from dedicated /live endpoint
    */
-  async getLive(): Promise<ApiResponse<Video[]>> {
-    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?isLive=true`);
-    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
+  async getLive(page: number = 1, limit: number = 20): Promise<ApiResponse<LivestreamListItem[]>> {
+    const response = await fetchJson<{ data: LivestreamListItem[]; pagination: any }>(
+      `${VIDEO_ROUTES.live}?page=${page}&limit=${limit}`
+    );
+    return {
+      success: response.success,
+      data: response.data?.data || [],
+      error: response.error,
+    };
   },
 
   /**
@@ -508,7 +537,7 @@ export const videoApi = {
     return fetchJson<LivestreamSessionResponse>(VIDEO_ROUTES.livestreamStart, {
       method: "POST",
       body: JSON.stringify(request),
-    });
+    }, getAuthToken());
   },
 
   /**
@@ -518,7 +547,35 @@ export const videoApi = {
     return fetchJson<{ success: boolean }>(VIDEO_ROUTES.livestreamEnd, {
       method: "POST",
       body: JSON.stringify(request),
-    });
+    }, getAuthToken());
+  },
+
+  /**
+   * Join a livestream as a viewer
+   */
+  async joinLivestream(sessionId: string): Promise<ApiResponse<{ viewerCount: number }>> {
+    return fetchJson<{ viewerCount: number }>(VIDEO_ROUTES.livestreamJoin(sessionId), {
+      method: "POST",
+    }, getAuthToken());
+  },
+
+  /**
+   * Leave a livestream
+   */
+  async leaveLivestream(sessionId: string): Promise<ApiResponse<{ viewerCount: number }>> {
+    return fetchJson<{ viewerCount: number }>(VIDEO_ROUTES.livestreamLeave(sessionId), {
+      method: "POST",
+    }, getAuthToken());
+  },
+
+  /**
+   * Send a chat message to a livestream
+   */
+  async sendLivestreamChat(sessionId: string, text: string): Promise<ApiResponse<{ messageId: string }>> {
+    return fetchJson<{ messageId: string }>(VIDEO_ROUTES.livestreamChat(sessionId), {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }, getAuthToken());
   },
 
   /**

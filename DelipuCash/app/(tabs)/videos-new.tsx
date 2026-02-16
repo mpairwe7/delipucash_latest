@@ -104,6 +104,7 @@ import {
   VideoErrorBoundary,
 } from '@/components/video';
 import { LiveStreamScreen } from '@/components/livestream';
+import { useVideoStore } from '@/store/VideoStore';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
 import { SearchOverlay } from '@/components/cards';
 import { InterstitialAd, AdFeedbackModal } from '@/components/ads';
@@ -341,6 +342,7 @@ export default function VideosScreen(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<FeedTab>('for-you');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
+  const [liveStreamMode, setLiveStreamMode] = useState<'live' | 'record'>('record');
   const [fabExpanded, setFabExpanded] = useState(false);
   const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
@@ -348,7 +350,10 @@ export default function VideosScreen(): React.ReactElement {
   // 2026 Standards: New state
   const [isDataSaverMode, setIsDataSaverMode] = useState(false);
   const [reducedMotionEnabled, setReducedMotionEnabled] = useState(false);
-  const [liveViewerCount] = useState(0); // Will be populated from real-time subscription
+  // Viewer count from store (updated via SSE in Phase 5)
+  const liveViewerCount = useVideoStore(
+    (state) => state.currentLivestream?.viewerCount ?? 0
+  );
   const [sessionAdCount, setSessionAdCount] = useState(0);
 
   // ============================================================================
@@ -780,8 +785,9 @@ export default function VideosScreen(): React.ReactElement {
     setFeedMode(feedMode === 'vertical' ? 'grid' : 'vertical');
   }, [feedMode, setFeedMode]);
 
-  const openLiveStream = useCallback(() => {
+  const openLiveStream = useCallback((mode: 'live' | 'record' = 'record') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setLiveStreamMode(mode);
     setLiveStreamVisible(true);
   }, []);
 
@@ -821,7 +827,7 @@ export default function VideosScreen(): React.ReactElement {
       label: 'Go Live',
       onPress: () => {
         setFabExpanded(false);
-        openLiveStream();
+        openLiveStream('live');
       },
       color: colors.error,
     },
@@ -830,7 +836,7 @@ export default function VideosScreen(): React.ReactElement {
       label: 'Record',
       onPress: () => {
         setFabExpanded(false);
-        openLiveStream();
+        openLiveStream('record');
       },
       color: colors.warning,
     },
@@ -1096,6 +1102,7 @@ export default function VideosScreen(): React.ReactElement {
       {liveStreamVisible && (
         <LiveStreamScreen
           visible={liveStreamVisible}
+          mode={liveStreamMode}
           onClose={closeLiveStream}
           onVideoUploaded={() => {
             refetch();

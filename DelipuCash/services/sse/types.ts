@@ -18,6 +18,10 @@ export type SSEEventType =
   | 'survey.completed'
   | 'video.comment'
   | 'video.like'
+  | 'livestream.started'
+  | 'livestream.ended'
+  | 'livestream.viewerCount'
+  | 'livestream.chat'
   | 'reconnect';
 
 // Payload types per event
@@ -91,6 +95,32 @@ export interface VideoCommentPayload {
 export interface VideoLikePayload {
   videoId: string;
   likes: number;
+}
+
+export interface LivestreamStartedPayload {
+  sessionId: string;
+  userId: string;
+  title: string;
+}
+
+export interface LivestreamEndedPayload {
+  sessionId: string;
+  durationSeconds: number;
+}
+
+export interface LivestreamViewerCountPayload {
+  sessionId: string;
+  viewerCount: number;
+  peakViewerCount: number;
+}
+
+export interface LivestreamChatPayload {
+  sessionId: string;
+  messageId: string;
+  userId: string;
+  userName: string;
+  text: string;
+  timestamp: string;
 }
 
 export type SSEConnectionStatus =

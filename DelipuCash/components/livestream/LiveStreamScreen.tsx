@@ -34,6 +34,8 @@ import {
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
 import { useVideoStore, selectRecordingProgress, selectLivestreamStatus } from '@/store/VideoStore';
 import { useStartLivestream, useEndLivestream } from '@/services/hooks';
+import { useAuthStore } from '@/utils/auth/store';
+import { uploadVideoToR2 } from '@/services/r2UploadService';
 
 // Components
 import { CameraControls } from './CameraControls';
@@ -42,6 +44,9 @@ import { RecordingTimer } from './RecordingTimer';
 import { RecordingProgressBar } from './RecordingProgressBar';
 import { PermissionPrompt } from './PermissionPrompt';
 import { GradientOverlay } from './GradientOverlay';
+import { PreLiveLobby } from './PreLiveLobby';
+import { StreamHealthBadge } from './StreamHealthBadge';
+import { LiveChat } from './LiveChat';
 
 // ============================================================================
 // TYPES
@@ -50,6 +55,8 @@ import { GradientOverlay } from './GradientOverlay';
 export interface LiveStreamScreenProps {
   /** Whether screen is visible (for modal usage) */
   visible?: boolean;
+  /** Screen mode: 'live' shows pre-live lobby, 'record' goes straight to camera */
+  mode?: 'live' | 'record';
   /** Close handler */
   onClose?: () => void;
   /** Video upload completion handler */
@@ -76,6 +83,7 @@ export interface RecordedVideo {
 
 export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   visible = true,
+  mode = 'record',
   onClose,
   onVideoUploaded,
   maxDuration: propMaxDuration,
@@ -84,24 +92,24 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
 }) => {
   const { colors } = useTheme();
   const { hasVideoPremium, maxRecordingDuration } = useVideoPremiumAccess();
+  const userId = useAuthStore(state => state.auth?.user?.id) ?? null;
 
-  // Video store for state management (selectors available for UI display if needed)
+  // Video store — selector-based reads only (actions accessed via getState)
   const storeRecordingProgress = useVideoStore(selectRecordingProgress);
   const storeLivestreamStatus = useVideoStore(selectLivestreamStatus);
-  const { 
-    startRecording: storeStartRecording, 
-    stopRecording: storeStopRecording,
-    updateRecordingDuration,
-    startLivestream: storeStartLivestream,
-    endLivestream: storeEndLivestream,
-    setPremiumStatus,
-  } = useVideoStore();
 
-  // Use store state for display (exposed for parent components if needed)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const isStoreRecording = storeRecordingProgress.isRecording;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const isStoreLive = storeLivestreamStatus.isActive;
+  // Stable action refs via getState (avoids re-renders from destructuring)
+  const storeActions = useVideoStore.getState;
+  const storeStartRecording = useCallback(() => storeActions().startRecording(), [storeActions]);
+  const storeStopRecording = useCallback(() => storeActions().stopRecording(), [storeActions]);
+  const updateRecordingDuration = useCallback((d: number) => storeActions().updateRecordingDuration(d), [storeActions]);
+  const storeStartLivestream = useCallback((sid?: string, sk?: string) => storeActions().startLivestream(sid, sk), [storeActions]);
+  const storeSetLivestreamLive = useCallback(() => storeActions().setLivestreamLive(), [storeActions]);
+  const storeSetLivestreamEnding = useCallback(() => storeActions().setLivestreamEnding(), [storeActions]);
+  const storeEndLivestream = useCallback(() => storeActions().endLivestream(), [storeActions]);
+
+  // Derive isRecording from store (single source of truth)
+  const isRecording = storeRecordingProgress.isRecording;
 
   // API hooks for server-side session management
   const startLivestreamMutation = useStartLivestream();
@@ -109,13 +117,13 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
 
   // Sync premium status with store
   useEffect(() => {
-    setPremiumStatus({
+    useVideoStore.getState().setPremiumStatus({
       hasVideoPremium,
       maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 40 * 1024 * 1024,
       maxRecordingDuration: hasVideoPremium ? 1800 : 300,
       maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
     });
-  }, [hasVideoPremium, setPremiumStatus]);
+  }, [hasVideoPremium]);
 
   // Use premium limits or prop override
   const effectiveMaxDuration = propMaxDuration ?? (hasVideoPremium ? maxRecordingDuration : MAX_RECORDING_DURATION);
@@ -128,12 +136,12 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const fadeAnim = useRef(new Animated.Value(1)).current;
   
   // State
-  const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showLimitWarning, setShowLimitWarning] = useState(false);
+  const [showLobby, setShowLobby] = useState(mode === 'live');
   
   // Camera hook - industry standard lazy camera initialization
   // autoRequest: false - Show permission prompt UI first for better UX
@@ -321,7 +329,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
             text: 'Stop & Exit', 
             style: 'destructive',
             onPress: () => {
-              setIsRecording(false);
+              storeStopRecording();
               onClose?.();
             }
           },
@@ -344,6 +352,12 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [showControls, fadeAnim]);
   
   const startRecording = useCallback(async () => {
+    // Verify auth before starting
+    if (!userId) {
+      Alert.alert('Sign In Required', 'Please sign in to start recording.');
+      return;
+    }
+
     // Verify all permissions before starting
     if (!hasAllPermissions) {
       Alert.alert(
@@ -359,17 +373,23 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
 
     // Update store state
     storeStartRecording();
-    
-    // Start server-side livestream session
+
+    // Start server-side livestream session (store enters 'connecting')
     try {
       const response = await startLivestreamMutation.mutateAsync({
-        userId: 'current-user', // TODO: Get actual user ID from auth context
+        userId,
         title: 'Live Recording',
       });
       sessionIdRef.current = response.sessionId;
-      storeStartLivestream(response.sessionId);
-    } catch {
-      console.warn('Failed to start server session, continuing locally');
+      storeStartLivestream(response.sessionId, response.streamKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to start session';
+      Alert.alert('Connection Error', message, [
+        { text: 'Try Again', onPress: startRecording },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+      storeStopRecording();
+      return;
     }
 
     // Start actual camera recording
@@ -382,17 +402,21 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       return;
     }
 
-    setIsRecording(true);
+    // Camera started — transition livestream to 'live'
+    storeSetLivestreamLive();
     setShowControls(true);
-    
+
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
+  }, [userId, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
   
   const stopRecording = useCallback(async () => {
+    // Transition livestream to 'ending'
+    storeSetLivestreamEnding();
+
     // Stop actual camera recording first
     let videoUri: string | null = null;
     try {
@@ -401,9 +425,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       console.error('Failed to stop camera recording:', error);
     }
 
-    // Update store state
+    // Update store state (recording stopped)
     storeStopRecording();
-    
+
     // End server-side session
     if (sessionIdRef.current) {
       try {
@@ -418,62 +442,72 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       sessionIdRef.current = null;
     }
 
-    setIsRecording(false);
-
-    // If we have a recorded video, save it to media library
+    // If we have a recorded video, save to library and upload to R2
     if (videoUri) {
       setIsUploading(true);
 
       try {
-        // Save to media library (industry standard behavior)
+        // Save to media library
         await saveToMediaLibrary(videoUri);
 
-        // Simulate upload progress for UX
-        let progress = 0;
-        const uploadInterval = setInterval(() => {
-          progress += Math.random() * 25;
-          if (progress >= 100) {
-            progress = 100;
-            clearInterval(uploadInterval);
-
-            setTimeout(() => {
-              setIsUploading(false);
-              setUploadProgress(0);
-
-              const videoData: RecordedVideo = {
-                id: `video_${Date.now()}`,
-                uri: videoUri!,
-                duration: recordingTime,
-                title: 'New Recording',
-              };
-
-              onVideoUploaded?.(videoData);
-
-              Alert.alert(
-                'Recording Saved',
-                'Your video has been saved and uploaded successfully!',
-                [{ text: 'OK', onPress: onClose }]
-              );
-            }, 500);
+        // Upload to R2 with real progress tracking
+        const result = await uploadVideoToR2(
+          videoUri,
+          userId!,
+          {
+            title: 'New Recording',
+            duration: recordingTime,
+          },
+          {
+            onProgress: (event) => setUploadProgress(event.progress),
           }
-          setUploadProgress(Math.min(Math.round(progress), 100));
-        }, 150);
-      } catch (error) {
-        console.error('Failed to save recording:', error);
+        );
+
         setIsUploading(false);
-        Alert.alert('Save Error', 'Failed to save recording to your library.');
+        setUploadProgress(0);
+
+        if (!result.success) {
+          Alert.alert('Upload Error', result.error || 'Failed to upload recording.');
+          return;
+        }
+
+        const videoData: RecordedVideo = {
+          id: result.data?.id || `video_${Date.now()}`,
+          uri: videoUri,
+          duration: recordingTime,
+          title: 'New Recording',
+        };
+
+        onVideoUploaded?.(videoData);
+
+        Alert.alert(
+          'Recording Saved',
+          'Your video has been saved and uploaded successfully!',
+          [{ text: 'OK', onPress: onClose }]
+        );
+      } catch (error) {
+        console.error('Failed to save/upload recording:', error);
+        setIsUploading(false);
+        setUploadProgress(0);
+        Alert.alert('Upload Error', error instanceof Error ? error.message : 'Failed to upload recording.');
       }
     } else {
       // No video recorded, just close
       Alert.alert('Recording Error', 'No video was recorded.');
     }
-  }, [recordingTime, onVideoUploaded, onClose, storeStopRecording, endLivestreamMutation, storeEndLivestream, cameraStopRecording, saveToMediaLibrary]);
+  }, [userId, recordingTime, onVideoUploaded, onClose, storeStopRecording, storeSetLivestreamEnding, endLivestreamMutation, storeEndLivestream, cameraStopRecording, saveToMediaLibrary]);
 
   // Update ref when stopRecording changes
   useEffect(() => {
     stopRecordingRef.current = stopRecording;
   }, [stopRecording]);
   
+  const handleGoLiveFromLobby = useCallback((title: string) => {
+    setShowLobby(false);
+    // TODO: Pass title to startRecording when lobby is used
+    startRecording();
+  }, [startRecording]);
+
   const handleRecordPress = useCallback(() => {
     if (isRecording) {
       stopRecording();
@@ -565,6 +599,26 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
             </View>
           )}
 
+          {/* Pre-Live Lobby (shown when mode='live' and not yet recording) */}
+          {showLobby && !isRecording && (
+            <PreLiveLobby
+              onGoLive={handleGoLiveFromLobby}
+              onCancel={onClose || (() => {})}
+              maxDuration={effectiveMaxDuration}
+              hasVideoPremium={hasVideoPremium}
+            />
+          )}
+
+          {/* Stream Health Badge */}
+          {isRecording && (
+            <View style={styles.healthBadgeContainer}>
+              <StreamHealthBadge
+                status={storeLivestreamStatus.isActive ? 'live' : 'connecting'}
+                uploadHealth="good"
+              />
+            </View>
+          )}
+
           {/* Recording Progress Bar */}
           <RecordingProgressBar
             isRecording={isRecording}
@@ -616,6 +670,14 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
             isRecording={isRecording}
           />
           
+          {/* Live Chat Overlay (only in live mode while recording) */}
+          {mode === 'live' && isRecording && storeLivestreamStatus.sessionId && (
+            <LiveChat
+              sessionId={storeLivestreamStatus.sessionId}
+              inputEnabled={true}
+            />
+          )}
+
           {/* Bottom Controls */}
           <BottomControls
             isRecording={isRecording}
@@ -628,6 +690,8 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
             fadeAnim={fadeAnim}
             visible={showControls}
             uploadProgress={uploadProgress}
+            maxDuration={effectiveMaxDuration}
+            hasVideoPremium={hasVideoPremium}
           />
         </View>
       </TouchableOpacity>
@@ -710,6 +774,12 @@ const styles = StyleSheet.create({
   upgradeBannerText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  healthBadgeContainer: {
+    position: 'absolute',
+    top: 80,
+    left: SPACING.lg,
+    zIndex: 90,
   },
 });
 

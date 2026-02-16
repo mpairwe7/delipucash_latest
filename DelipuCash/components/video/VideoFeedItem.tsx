@@ -744,7 +744,7 @@ function VideoFeedItemComponent({
   // ============================================================================
 
   const progress = duration > 0 ? currentTime / duration : 0;
-  const isLive = video.videoUrl?.includes('.m3u8') || video.videoUrl?.includes('live');
+  const isLive = video.isLive ?? false;
 
   return (
     <View style={{ height: itemHeight }}>

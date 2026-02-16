@@ -15,7 +15,8 @@ import { useAuthStore } from '@/utils/auth/store';
 import { queryKeys } from '@/services/hooks';
 import { questionQueryKeys } from '@/services/questionHooks';
 import { videoQueryKeys } from '@/services/videoHooks';
-import type { SSEEventType } from './types';
+import { useVideoStore } from '@/store/VideoStore';
+import type { SSEEventType, LivestreamViewerCountPayload } from './types';
 
 /**
  * Root-level hook that manages the SSE connection and routes events
@@ -107,6 +108,19 @@ export function useSSEConnection(): void {
           queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
         },
       ],
+      [
+        'livestream.started',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.livestreams() });
+        },
+      ],
+      [
+        'livestream.ended',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.livestreams() });
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+        },
+      ],
     ];
 
     for (const [eventType, handler] of routes) {
@@ -175,6 +189,16 @@ export function useSSEConnection(): void {
           queryClient.invalidateQueries({
             queryKey: videoQueryKeys.detail(payload.videoId),
           });
+        }
+      }),
+    );
+
+    // Livestream viewer count — update store directly for real-time display
+    cleanupRef.current.push(
+      manager.on('livestream.viewerCount', (data: unknown) => {
+        const payload = data as LivestreamViewerCountPayload;
+        if (payload?.viewerCount !== undefined) {
+          useVideoStore.getState().updateViewerCount(payload.viewerCount);
         }
       }),
     );

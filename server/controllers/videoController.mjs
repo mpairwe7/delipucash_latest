@@ -214,96 +214,93 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
   }
 });
 
-// Get All Videos (for Streaming or Browsing)
+// Get All Videos (for Streaming or Browsing) — paginated
 export const getAllVideos = asyncHandler(async (req, res) => {
   try {
-    console.log('VideoController: getAllVideos - Starting to fetch videos from database')
-    
-    const videos = await prisma.video.findMany({
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const sortBy = req.query.sortBy || 'recent';
+    const skip = (page - 1) * limit;
+
+    // Build orderBy based on sortBy param
+    let orderBy = { createdAt: 'desc' };
+    if (sortBy === 'trending') {
+      orderBy = { views: 'desc' };
+    } else if (sortBy === 'popular') {
+      orderBy = { likes: 'desc' };
+    }
+
+    const [videos, total, activeLivestreams] = await Promise.all([
+      prisma.video.findMany({
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
           },
         },
-      },
-      orderBy: {
-        createdAt: 'desc'
-      },
-      // Prisma Accelerate: Long-lived cache for videos (1 hour TTL, 10 min SWR)
-    });
+        orderBy,
+        skip,
+        take: limit,
+      }),
+      prisma.video.count(),
+      // Fetch active livestream userIds for live badge
+      prisma.livestream.findMany({
+        where: { status: 'live' },
+        select: { userId: true, sessionId: true },
+      }),
+    ]);
 
-    console.log('VideoController: getAllVideos - Database query completed:', {
-      videosCount: videos.length,
-      videos: videos.slice(0, 2).map(v => ({
-        id: v.id,
-        title: v.title,
-        hasVideoUrl: !!v.videoUrl,
-        hasThumbnail: !!v.thumbnail,
-        userId: v.userId,
-        hasUser: !!v.user,
-        videoUrl: v.videoUrl?.substring(0, 50) + '...',
-        thumbnail: v.thumbnail?.substring(0, 50) + '...'
-      }))
-    });
+    // Build a map of userId → sessionId for active livestreams
+    const liveUserMap = new Map(
+      activeLivestreams.map((ls) => [ls.userId, ls.sessionId])
+    );
 
-    const formattedVideos = videos.map(video => {
-      const formattedVideo = {
-        id: video.id,
-        title: video.title || 'Untitled Video',
-        description: video.description || '',
-        videoUrl: video.videoUrl,
-        thumbnail: video.thumbnail,
-        userId: video.userId,
-        likes: video.likes || 0,
-        views: video.views || 0,
-        isBookmarked: video.isBookmarked || false,
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(), // ISO string for frontend consistency
-        updatedAt: video.updatedAt.toISOString(), // ISO string for frontend consistency
-        duration: video.duration || 0, // Duration in seconds from database
-        comments: [], // Empty comments array
-        user: video.user ? {
-          id: video.user.id,
-          firstName: video.user.firstName || 'Anonymous',
-          lastName: video.user.lastName || '',
-          avatar: video.user.avatar
-        } : null
-      }
-      
-      console.log('VideoController: Formatted video:', {
-        id: formattedVideo.id,
-        title: formattedVideo.title,
-        hasVideoUrl: !!formattedVideo.videoUrl,
-        hasThumbnail: !!formattedVideo.thumbnail,
-        hasUser: !!formattedVideo.user
-      })
-      
-      return formattedVideo
-    })
+    const formattedVideos = videos.map(video => ({
+      id: video.id,
+      title: video.title || 'Untitled Video',
+      description: video.description || '',
+      videoUrl: video.videoUrl,
+      thumbnail: video.thumbnail,
+      userId: video.userId,
+      likes: video.likes || 0,
+      views: video.views || 0,
+      isBookmarked: video.isBookmarked || false,
+      commentsCount: video.commentsCount || 0,
+      createdAt: video.createdAt.toISOString(),
+      updatedAt: video.updatedAt.toISOString(),
+      duration: video.duration || 0,
+      comments: [],
+      isLive: liveUserMap.has(video.userId),
+      livestreamSessionId: liveUserMap.get(video.userId) || null,
+      user: video.user ? {
+        id: video.user.id,
+        firstName: video.user.firstName || 'Anonymous',
+        lastName: video.user.lastName || '',
+        avatar: video.user.avatar,
+      } : null,
+    }));
 
-    console.log('VideoController: getAllVideos - Sending response:', {
-      videosCount: formattedVideos.length,
-      message: "All videos fetched successfully"
-    })
+    const totalPages = Math.ceil(total / limit);
 
-    res.json({ 
+    res.json({
       success: true,
-      message: "All videos fetched successfully", 
+      message: 'All videos fetched successfully',
       data: formattedVideos,
       pagination: {
-        page: 1,
-        limit: formattedVideos.length,
-        total: formattedVideos.length,
-        totalPages: 1,
+        page,
+        limit,
+        total,
+        totalPages,
+        hasMore: page < totalPages,
       },
     });
   } catch (error) {
-    console.error("VideoController: getAllVideos - Error occurred:", error);
-    res.status(500).json({ message: "Failed to fetch videos" });
+    console.error('VideoController: getAllVideos - Error occurred:', error);
+    res.status(500).json({ message: 'Failed to fetch videos' });
   }
 });
 
@@ -862,7 +859,9 @@ export const validateUpload = asyncHandler(async (req, res) => {
 // Start a livestream session
 export const startLivestream = asyncHandler(async (req, res) => {
   try {
-    const { userId, title, description } = req.body;
+    // Use authenticated user from verifyToken middleware
+    const userId = req.user || req.body.userId;
+    const { title, description } = req.body;
 
     if (!userId) {
       return res.status(400).json({ message: 'User ID is required' });
@@ -886,13 +885,35 @@ export const startLivestream = asyncHandler(async (req, res) => {
     const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
     const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
 
-    // Generate stream key (in production, integrate with streaming service)
+    // Generate stream key
     const streamKey = `stream_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Persist livestream session to database
+    const livestream = await prisma.livestream.create({
+      data: {
+        sessionId: streamKey,
+        userId,
+        title: title || 'Live Stream',
+        description: description || '',
+        status: 'live',
+        streamKey,
+        startedAt: new Date(),
+        maxDurationSeconds: limits.maxLivestreamDurationSeconds,
+        isPremium: hasVideoPremium,
+      },
+    });
+
+    // Notify via SSE that a new livestream started
+    await publishEvent(userId, 'livestream.started', {
+      sessionId: livestream.sessionId,
+      userId,
+      title: livestream.title,
+    });
 
     res.json({
       success: true,
       data: {
-        sessionId: streamKey,
+        sessionId: livestream.sessionId,
         streamKey,
         maxDuration: limits.maxLivestreamDurationSeconds,
         maxDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
@@ -901,9 +922,9 @@ export const startLivestream = asyncHandler(async (req, res) => {
           id: user.id,
           name: `${user.firstName} ${user.lastName}`,
         },
-        title: title || 'Live Stream',
-        description: description || '',
-        startedAt: new Date().toISOString(),
+        title: livestream.title,
+        description: livestream.description || '',
+        startedAt: livestream.startedAt.toISOString(),
       },
     });
   } catch (error) {
@@ -921,22 +942,212 @@ export const endLivestream = asyncHandler(async (req, res) => {
       return res.status(400).json({ message: 'Session ID is required' });
     }
 
-    // In production, save livestream stats to database
-    // For now, just acknowledge the end
+    // Update livestream record in database
+    const livestream = await prisma.livestream.update({
+      where: { sessionId },
+      data: {
+        status: 'ended',
+        endedAt: new Date(),
+        durationSeconds: duration ? Math.round(duration) : null,
+        viewerCount: viewerCount || 0,
+        peakViewerCount: peakViewers || 0,
+      },
+    });
+
+    // Notify via SSE that livestream ended
+    await publishEvent(livestream.userId, 'livestream.ended', {
+      sessionId,
+      durationSeconds: livestream.durationSeconds,
+    });
 
     res.json({
       success: true,
       message: 'Livestream ended successfully',
       data: {
         sessionId,
-        duration,
-        viewerCount,
-        peakViewers,
-        endedAt: new Date().toISOString(),
+        duration: livestream.durationSeconds,
+        viewerCount: livestream.viewerCount,
+        peakViewers: livestream.peakViewerCount,
+        endedAt: livestream.endedAt.toISOString(),
       },
     });
   } catch (error) {
     console.error('Error ending livestream:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Get active livestreams
+export const getLiveStreams = asyncHandler(async (req, res) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [livestreams, total] = await Promise.all([
+      prisma.livestream.findMany({
+        where: { status: 'live' },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+        orderBy: { viewerCount: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.livestream.count({ where: { status: 'live' } }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      success: true,
+      data: livestreams.map(ls => ({
+        id: ls.id,
+        sessionId: ls.sessionId,
+        title: ls.title,
+        description: ls.description,
+        status: ls.status,
+        viewerCount: ls.viewerCount,
+        peakViewerCount: ls.peakViewerCount,
+        startedAt: ls.startedAt?.toISOString(),
+        isPremium: ls.isPremium,
+        user: ls.user ? {
+          id: ls.user.id,
+          firstName: ls.user.firstName || 'Anonymous',
+          lastName: ls.user.lastName || '',
+          avatar: ls.user.avatar,
+        } : null,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasMore: page < totalPages,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching live streams:', error);
+    res.status(500).json({ message: 'Failed to fetch live streams' });
+  }
+});
+
+// Viewer tracking: join a livestream
+export const joinLivestream = asyncHandler(async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user;
+
+    const livestream = await prisma.livestream.findUnique({
+      where: { sessionId },
+    });
+
+    if (!livestream || livestream.status !== 'live') {
+      return res.status(404).json({ message: 'Livestream not found or not active' });
+    }
+
+    const updated = await prisma.livestream.update({
+      where: { sessionId },
+      data: {
+        viewerCount: { increment: 1 },
+        peakViewerCount: Math.max(livestream.peakViewerCount, livestream.viewerCount + 1),
+      },
+    });
+
+    // Notify stream owner of viewer count change
+    await publishEvent(livestream.userId, 'livestream.viewerCount', {
+      sessionId,
+      viewerCount: updated.viewerCount,
+      peakViewerCount: updated.peakViewerCount,
+    });
+
+    res.json({ success: true, viewerCount: updated.viewerCount });
+  } catch (error) {
+    console.error('Error joining livestream:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Viewer tracking: leave a livestream
+export const leaveLivestream = asyncHandler(async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const livestream = await prisma.livestream.findUnique({
+      where: { sessionId },
+    });
+
+    if (!livestream) {
+      return res.status(404).json({ message: 'Livestream not found' });
+    }
+
+    const updated = await prisma.livestream.update({
+      where: { sessionId },
+      data: {
+        viewerCount: Math.max(0, livestream.viewerCount - 1),
+      },
+    });
+
+    await publishEvent(livestream.userId, 'livestream.viewerCount', {
+      sessionId,
+      viewerCount: updated.viewerCount,
+      peakViewerCount: updated.peakViewerCount,
+    });
+
+    res.json({ success: true, viewerCount: updated.viewerCount });
+  } catch (error) {
+    console.error('Error leaving livestream:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Send a chat message to a livestream
+export const sendLivestreamChat = asyncHandler(async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { text } = req.body;
+    const userId = req.user;
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ message: 'Message text is required' });
+    }
+
+    const livestream = await prisma.livestream.findUnique({
+      where: { sessionId },
+    });
+
+    if (!livestream || livestream.status !== 'live') {
+      return res.status(404).json({ message: 'Livestream not found or not active' });
+    }
+
+    // Get sender info
+    const sender = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { id: true, firstName: true, lastName: true },
+    });
+
+    const chatPayload = {
+      sessionId,
+      messageId: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      userId,
+      userName: sender ? `${sender.firstName} ${sender.lastName}`.trim() : 'Anonymous',
+      text: text.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    // Notify stream owner of chat message
+    await publishEvent(livestream.userId, 'livestream.chat', chatPayload);
+
+    res.json({ success: true, data: chatPayload });
+  } catch (error) {
+    console.error('Error sending livestream chat:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 });

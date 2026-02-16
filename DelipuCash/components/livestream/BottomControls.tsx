@@ -17,7 +17,7 @@ import {
 import { Music, Sparkles, ImageIcon, Filter } from 'lucide-react-native';
 import { SPACING, TYPOGRAPHY, RADIUS, Z_INDEX, useTheme } from '@/utils/theme';
 import { RecordButton } from './RecordButton';
-import { getResponsiveSize, getResponsivePadding } from '@/utils/video-utils';
+import { getResponsiveSize, getResponsivePadding, formatDuration } from '@/utils/video-utils';
 
 // ============================================================================
 // TYPES
@@ -44,6 +44,10 @@ export interface BottomControlsProps {
   visible?: boolean;
   /** Upload progress (0-100) */
   uploadProgress?: number;
+  /** Maximum recording duration in seconds (for dynamic hint) */
+  maxDuration?: number;
+  /** Whether user has premium access */
+  hasVideoPremium?: boolean;
 }
 
 // ============================================================================
@@ -93,6 +97,8 @@ export const BottomControls = memo<BottomControlsProps>(({
   fadeAnim,
   visible = true,
   uploadProgress,
+  maxDuration,
+  hasVideoPremium,
 }) => {
   useTheme(); // Theme context for potential future use
   const iconSize = getResponsiveSize(20, 24, 28);
@@ -166,7 +172,8 @@ export const BottomControls = memo<BottomControlsProps>(({
           {/* Recording hint */}
           {!isRecording && (
             <Text style={styles.hint}>
-              Tap to start recording (max 60 sec)
+              Tap to start recording (max {formatDuration(maxDuration || 300)})
+              {!hasVideoPremium ? ' \u00B7 Upgrade for more' : ''}
             </Text>
           )}
         </>

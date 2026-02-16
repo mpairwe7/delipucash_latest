@@ -188,7 +188,9 @@ export interface VideoActions {
   failRecording: (error: string) => void;
   
   // Livestream management
-  startLivestream: (streamKey?: string) => LivestreamSession;
+  startLivestream: (serverSessionId?: string, streamKey?: string) => LivestreamSession;
+  setLivestreamLive: () => void;
+  setLivestreamEnding: () => void;
   updateLivestreamDuration: (duration: number) => void;
   updateViewerCount: (count: number) => void;
   endLivestream: () => void;
@@ -488,21 +490,39 @@ export const useVideoStore = create<VideoState & VideoActions>()(
       },
 
       // Livestream management
-      startLivestream: (streamKey) => {
+      startLivestream: (serverSessionId, streamKey) => {
         const { premiumStatus } = get();
         const session: LivestreamSession = {
-          sessionId: generateSessionId(),
+          sessionId: serverSessionId || generateSessionId(),
           streamKey,
           startedAt: new Date().toISOString(),
           duration: 0,
           maxDuration: premiumStatus.maxLivestreamDuration,
-          status: 'live',
+          status: 'connecting',
           viewerCount: 0,
           peakViewers: 0,
         };
 
         set({ currentLivestream: session, lastError: null });
         return session;
+      },
+
+      setLivestreamLive: () => {
+        const { currentLivestream } = get();
+        if (currentLivestream && currentLivestream.status === 'connecting') {
+          set({
+            currentLivestream: { ...currentLivestream, status: 'live' },
+          });
+        }
+      },
+
+      setLivestreamEnding: () => {
+        const { currentLivestream } = get();
+        if (currentLivestream && currentLivestream.status === 'live') {
+          set({
+            currentLivestream: { ...currentLivestream, status: 'ending' },
+          });
+        }
       },
 
       updateLivestreamDuration: (duration) => {

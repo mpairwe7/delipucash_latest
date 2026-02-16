@@ -132,9 +132,10 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
   
   // Camera ref
   const cameraRef = useRef<CameraView | null>(null);
-  
-  // Recording ref to track recording state
+
+  // Recording refs for stable access without closure staleness
   const isRecordingRef = useRef(false);
+  const recordingUriRef = useRef<string | null>(null);
 
   // State
   const [state, setState] = useState<CameraState>(() => ({
@@ -391,37 +392,39 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
       return;
     }
 
-    try {
-      isRecordingRef.current = true;
-      setState(prev => ({ ...prev, isRecording: true, error: null, recordingUri: null }));
+    isRecordingRef.current = true;
+    recordingUriRef.current = null;
+    setState(prev => ({ ...prev, isRecording: true, error: null, recordingUri: null }));
 
-      // Start recording - expo-camera will handle audio recording automatically
-      // when microphone permission is granted
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: 3600, // 1 hour max (will be limited by app logic)
+    // Fire-and-forget: recordAsync resolves only when recording stops,
+    // so we must NOT await it here — that would block the caller until stop.
+    cameraRef.current.recordAsync({
+      maxDuration: 3600, // 1 hour max (will be limited by app logic)
+    })
+      .then((video) => {
+        if (isMountedRef.current && video?.uri) {
+          recordingUriRef.current = video.uri;
+          setState(prev => ({
+            ...prev,
+            isRecording: false,
+            recordingUri: video.uri,
+          }));
+        }
+      })
+      .catch((error) => {
+        const errorMessage = error instanceof Error ? error.message : 'Recording failed';
+        if (isMountedRef.current) {
+          setState(prev => ({
+            ...prev,
+            isRecording: false,
+            error: errorMessage,
+          }));
+          opts.onError(errorMessage);
+        }
+      })
+      .finally(() => {
+        isRecordingRef.current = false;
       });
-
-      if (isMountedRef.current && video?.uri) {
-        setState(prev => ({
-          ...prev,
-          isRecording: false,
-          recordingUri: video.uri
-        }));
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start recording';
-
-      if (isMountedRef.current) {
-        setState(prev => ({
-          ...prev,
-          isRecording: false,
-          error: errorMessage
-        }));
-        opts.onError(errorMessage);
-      }
-    } finally {
-      isRecordingRef.current = false;
-    }
   }, [state.hasAllPermissions, opts]);
 
   /**
@@ -441,19 +444,24 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     try {
       cameraRef.current.stopRecording();
 
-      // Wait for recording to complete and state to update
+      // Poll the ref (not state) to avoid stale closure issues.
+      // recordingUriRef is set by the recordAsync .then() callback.
       return new Promise((resolve) => {
         const checkInterval = setInterval(() => {
-          if (!isRecordingRef.current || state.recordingUri) {
+          if (!isRecordingRef.current || recordingUriRef.current) {
             clearInterval(checkInterval);
-            resolve(state.recordingUri);
+            const uri = recordingUriRef.current;
+            recordingUriRef.current = null;
+            resolve(uri);
           }
         }, 100);
 
         // Timeout after 5 seconds
         setTimeout(() => {
           clearInterval(checkInterval);
-          resolve(state.recordingUri);
+          const uri = recordingUriRef.current;
+          recordingUriRef.current = null;
+          resolve(uri);
         }, 5000);
       });
     } catch (error) {
@@ -466,7 +474,7 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
 
       return null;
     }
-  }, [state.recordingUri, opts]);
+  }, [opts]);
 
   /**
    * Save recording to device media library

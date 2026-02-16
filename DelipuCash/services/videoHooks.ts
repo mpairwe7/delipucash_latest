@@ -23,7 +23,7 @@ import {
   type UseInfiniteQueryResult,
 } from '@tanstack/react-query';
 import { Video, Comment } from '@/types';
-import { videoApi, VideoWithDetails, VideoAnalytics, VideoStats } from './videoApi';
+import { videoApi, VideoWithDetails, VideoAnalytics, VideoStats, LivestreamListItem } from './videoApi';
 
 // ============================================================================
 // QUERY KEYS
@@ -48,6 +48,9 @@ export const videoQueryKeys = {
   userVideos: (userId: string) => [...videoQueryKeys.all, 'user', userId] as const,
   analytics: (videoId: string) => [...videoQueryKeys.all, 'analytics', videoId] as const,
   stats: () => [...videoQueryKeys.all, 'stats'] as const,
+  // Livestream keys
+  livestreams: () => [...videoQueryKeys.all, 'livestreams'] as const,
+  livestreamSession: (sessionId: string) => [...videoQueryKeys.all, 'livestream', sessionId] as const,
 } as const;
 
 // ============================================================================
@@ -452,16 +455,52 @@ export function useTrendingVideos(limit: number = 10): UseQueryResult<Video[]> {
 /**
  * Hook to fetch live videos
  */
-export function useLiveVideos(): UseQueryResult<Video[]> {
+export function useLiveVideos(): UseQueryResult<LivestreamListItem[]> {
   return useQuery({
-    queryKey: videoQueryKeys.live(),
+    queryKey: videoQueryKeys.livestreams(),
     queryFn: async () => {
       const response = await videoApi.getLive();
-      if (!response.success) throw new Error(response.error || 'Failed to fetch live videos');
+      if (!response.success) throw new Error(response.error || 'Failed to fetch live streams');
       return response.data;
     },
     staleTime: 1000 * 30, // 30 seconds - live status changes frequently
     refetchInterval: 1000 * 60, // Refetch every minute
+  });
+}
+
+/**
+ * Hook to join a livestream (mutation)
+ */
+export function useJoinLivestream() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => videoApi.joinLivestream(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.livestreams() });
+    },
+  });
+}
+
+/**
+ * Hook to leave a livestream (mutation)
+ */
+export function useLeaveLivestream() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => videoApi.leaveLivestream(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.livestreams() });
+    },
+  });
+}
+
+/**
+ * Hook to send a chat message to a livestream
+ */
+export function useSendLivestreamChat() {
+  return useMutation({
+    mutationFn: ({ sessionId, text }: { sessionId: string; text: string }) =>
+      videoApi.sendLivestreamChat(sessionId, text),
   });
 }
 
@@ -744,6 +783,10 @@ export default {
   useVideoStats,
   useVideoState,
   videoQueryKeys,
+  // Livestream hooks
+  useJoinLivestream,
+  useLeaveLivestream,
+  useSendLivestreamChat,
   // Suspense variants
   useSuspenseVideoDetails,
   useSuspenseVideoComments,
