@@ -32,7 +32,7 @@ import {
   formatDuration,
 } from '@/utils/video-utils';
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
-import { useVideoStore, selectRecordingProgress, selectLivestreamStatus } from '@/store/VideoStore';
+import { useVideoStore, useVideoRecordingProgress, useVideoLivestreamStatus } from '@/store/VideoStore';
 import { useStartLivestream, useEndLivestream } from '@/services/hooks';
 import { useAuthStore } from '@/utils/auth/store';
 import { uploadVideoToR2 } from '@/services/r2UploadService';
@@ -95,9 +95,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const { hasVideoPremium, maxRecordingDuration } = useVideoPremiumAccess();
   const userId = useAuthStore(state => state.auth?.user?.id) ?? null;
 
-  // Video store — selector-based reads only (actions accessed via getState)
-  const storeRecordingProgress = useVideoStore(selectRecordingProgress);
-  const storeLivestreamStatus = useVideoStore(selectLivestreamStatus);
+  // Video store — useShallow-wrapped hooks (re-render safe)
+  const storeRecordingProgress = useVideoRecordingProgress();
+  const storeLivestreamStatus = useVideoLivestreamStatus();
 
   // Stable action refs via getState (avoids re-renders from destructuring)
   const storeActions = useVideoStore.getState;
@@ -396,6 +396,12 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       return;
     }
 
+    // Wait for camera hardware to be ready before starting
+    if (!isReady) {
+      Alert.alert('Camera Initializing', 'Please wait a moment for the camera to start.');
+      return;
+    }
+
     // Update store state
     storeStartRecording();
 
@@ -444,7 +450,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [userId, mode, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
+  }, [userId, mode, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording, isReady]);
   
   const stopRecording = useCallback(async () => {
     // Transition livestream to 'ending' (only for actual livestreams)
