@@ -1128,7 +1128,7 @@ export const adsApi = {
 };
 
 // ===========================================
-// Utility Functions (moved from mockData)
+// Utility Functions
 // ===========================================
 
 /**

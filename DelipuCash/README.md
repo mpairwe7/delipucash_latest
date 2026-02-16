@@ -97,8 +97,7 @@ DelipuCash/
 │   └── ...
 │
 ├── constants/          # App constants
-│   ├── theme.ts       # Theme configuration
-│   └── mockData.ts    # Mock data for development
+│   └── theme.ts       # Theme configuration
 │
 ├── types/             # TypeScript type definitions
 ├── utils/             # Utility functions
