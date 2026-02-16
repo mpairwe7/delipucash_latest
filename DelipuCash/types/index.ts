@@ -112,6 +112,7 @@ export interface Video {
   likes: number;
   views: number;
   duration?: number; // Duration in seconds
+  isLiked?: boolean;
   isBookmarked?: boolean;
   comments?: Comment[];
   commentsCount: number;
@@ -236,7 +237,7 @@ export interface RewardQuestion {
   id: string;
   text: string;
   options: Record<string, unknown>;
-  correctAnswer: string;
+  correctAnswer?: string;
   rewardAmount: number;
   expiryTime: string | null;
   isActive: boolean;
@@ -248,8 +249,7 @@ export interface RewardQuestion {
   maxWinners: number;
   winnersCount: number;
   isCompleted: boolean;
-  paymentProvider: string | null;
-  phoneNumber: string | null;
+  paymentProvider?: string | null;
   attempts?: RewardQuestionOnAttempt[];
   winners?: InstantRewardWinner[];
 }
@@ -264,6 +264,7 @@ export interface RewardQuestionOnAttempt {
 
 export interface RewardAnswerResult {
   isCorrect: boolean;
+  correctAnswer?: string;
   rewardEarned: number;
   remainingSpots: number;
   isExpired: boolean;

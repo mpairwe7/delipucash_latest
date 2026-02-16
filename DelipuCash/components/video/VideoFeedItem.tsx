@@ -117,10 +117,6 @@ export interface VideoFeedItemProps {
   isActive: boolean;
   /** Whether video is muted */
   isMuted: boolean;
-  /** Whether this video is liked (passed from parent to avoid per-item store subscriptions) */
-  isLiked: boolean;
-  /** Whether this video is bookmarked (passed from parent to avoid per-item store subscriptions) */
-  isBookmarked: boolean;
   /** Like handler - receives video object */
   onLike: (video: Video) => void;
   /** Comment handler - receives video object */
@@ -304,8 +300,6 @@ function VideoFeedItemComponent({
   itemHeight,
   isActive,
   isMuted,
-  isLiked,
-  isBookmarked,
   onLike,
   onComment,
   onShare,
@@ -324,6 +318,11 @@ function VideoFeedItemComponent({
   const toggleMute = useVideoFeedStore((s) => s.toggleMute);
   const setPlayerStatus = useVideoFeedStore((s) => s.setPlayerStatus);
   const setProgress = useVideoFeedStore((s) => s.setProgress);
+
+  // Per-item store subscriptions — returns primitive boolean, only re-renders
+  // this specific item when its liked/bookmarked state actually changes
+  const isLiked = useVideoFeedStore(state => state.likedVideoIds.has(video.id));
+  const isBookmarked = useVideoFeedStore(state => state.bookmarkedVideoIds.has(video.id));
 
   // ============================================================================
   // STATE
@@ -1442,11 +1441,12 @@ const styles = StyleSheet.create({
  * - video.id changes (different video)
  * - isActive changes (play/pause state)
  * - isMuted changes (audio state)
- * - isLiked / isBookmarked changes (engagement state)
  * - itemHeight changes (layout)
  * - screenReaderEnabled changes (accessibility)
- * 
- * Callbacks are excluded since they should be stable references from parent
+ *
+ * isLiked/isBookmarked are resolved via per-item store subscriptions inside
+ * the component, so they bypass React.memo and trigger targeted re-renders.
+ * Callbacks are excluded since they should be stable references from parent.
  */
 function arePropsEqual(
   prevProps: VideoFeedItemProps,
@@ -1458,8 +1458,6 @@ function arePropsEqual(
     prevProps.video.commentsCount === nextProps.video.commentsCount &&
     prevProps.isActive === nextProps.isActive &&
     prevProps.isMuted === nextProps.isMuted &&
-    prevProps.isLiked === nextProps.isLiked &&
-    prevProps.isBookmarked === nextProps.isBookmarked &&
     prevProps.itemHeight === nextProps.itemHeight &&
     prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&
     prevProps.index === nextProps.index

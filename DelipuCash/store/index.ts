@@ -1,11 +1,15 @@
 /**
  * Store Index
  * Export all Zustand stores
- * 
+ *
  * Architecture:
  * - Zustand: Client-side UI state (view preferences, filters, navigation)
  * - TanStack Query: Server state (data fetching, caching, sync)
  */
+
+// Immer plugins — must run before any store that uses Map/Set with immer
+import { enableMapSet } from 'immer';
+enableMapSet();
 
 // ============================================================================
 // Ad UI Store (NEW - Industry Standard)

@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Platform, View, ErrorUtils } from 'react-native';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
@@ -18,6 +18,7 @@ import { useAuthStore, initializeAuth } from '@/utils/auth/store';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
+import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -108,6 +109,12 @@ const queryClient = new QueryClient({
   },
 });
 
+/** Invisible component that runs global background tasks inside the provider tree */
+function GlobalProcessors() {
+  useOfflineQueueProcessor();
+  return null;
+}
+
 export default function RootLayout() {
   const colorScheme = useColorScheme();
   // Read isReady directly from Zustand — no TanStack dependency
@@ -143,25 +150,21 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Callback-based approach for hiding splash screen (recommended)
-  const onLayoutRootView = useCallback(async () => {
+  // Hide native splash after auth state initialization is complete.
+  useEffect(() => {
     if (isReady) {
-      await SplashScreen.hideAsync();
+      SplashScreen.hideAsync().catch(() => {});
     }
   }, [isReady]);
 
-  // Keep showing splash screen while fonts load or auth initializes
-  if (!isReady) {
-    return null;
-  }
-
   return (
-    <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    <View style={{ flex: 1 }}>
       <QueryClientProvider client={queryClient}>
         <SSEProvider>
         <NotificationProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
             <ToastProvider>
+            <GlobalProcessors />
             <Stack>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />

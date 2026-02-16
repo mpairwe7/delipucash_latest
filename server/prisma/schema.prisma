@@ -36,6 +36,7 @@ model AppUser {
   questions                Question[]
   questionVotes            QuestionVote[]
   attempts                 QuestionAttempt[]
+  rewardQuestionAttempts   RewardQuestionAttempt[]
   Response                 Response[]
   responseDislikes         ResponseDislike[]
   responseLikes            ResponseLike[]
@@ -46,6 +47,8 @@ model AppUser {
   UploadQuestionQuestion   UploadQuestion[]
   UploadSurvey             UploadSurvey[]
   videos                   Video[]
+  videoLikes               VideoLike[]
+  videoBookmarks           VideoBookmark[]
   SurveyResponse           SurveyResponse[]
 }
 
@@ -59,7 +62,6 @@ model Video {
   likes         Int       @default(0)
   views         Int       @default(0)
   duration      Int?      // Duration in seconds (optional for upload, can be extracted from video)
-  isBookmarked  Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   commentsCount Int       @default(0)
@@ -77,11 +79,37 @@ model Video {
   isProcessed      Boolean   @default(false) // Whether video has been processed (transcoding, etc.)
   processingStatus String?   // Processing status: pending, processing, completed, failed
   
-  comments      Comment[]
-  user          AppUser   @relation(fields: [userId], references: [id])
+  comments       Comment[]
+  videoLikes     VideoLike[]
+  videoBookmarks VideoBookmark[]
+  user           AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([r2VideoKey])
+}
+
+model VideoLike {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  videoId   String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      AppUser  @relation(fields: [userId], references: [id])
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([videoId])
+}
+
+model VideoBookmark {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  videoId   String   @db.Uuid
+  createdAt DateTime @default(now())
+  user      AppUser  @relation(fields: [userId], references: [id])
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@index([videoId])
 }
 
 model Livestream {
@@ -279,6 +307,7 @@ model RewardQuestion {
   winners         InstantRewardWinner[]
   user            AppUser                   @relation(fields: [userId], references: [id])
   attempts        RewardQuestionOnAttempt[]
+  rewardAttempts  RewardQuestionAttempt[]
 
   @@index([userId])
   @@index([isActive])
@@ -295,6 +324,20 @@ model RewardQuestionOnAttempt {
   rewardQuestion    RewardQuestion  @relation(fields: [rewardQuestionId], references: [id])
 
   @@index([rewardQuestionId, questionAttemptId])
+}
+
+model RewardQuestionAttempt {
+  id               String          @id @default(uuid()) @db.Uuid
+  userEmail        String
+  rewardQuestionId String          @db.Uuid
+  selectedAnswer   String
+  isCorrect        Boolean
+  attemptedAt      DateTime        @default(now())
+  rewardQuestion   RewardQuestion  @relation(fields: [rewardQuestionId], references: [id])
+  user             AppUser         @relation(fields: [userEmail], references: [email])
+
+  @@unique([userEmail, rewardQuestionId])
+  @@index([userEmail, attemptedAt])
 }
 
 model InstantRewardWinner {
@@ -431,7 +474,7 @@ model QuestionAttempt {
   user            AppUser                   @relation(fields: [userEmail], references: [email])
   rewardQuestions RewardQuestionOnAttempt[]
 
-  @@index([userEmail, questionId])
+  @@unique([userEmail, questionId])
   @@index([userEmail, attemptedAt])
 }
 

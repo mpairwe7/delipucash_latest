@@ -26,6 +26,7 @@ import React, {
   memo,
 } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -99,7 +100,7 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
-import { useUnreadCount } from "@/services/hooks";
+import { useRegularRewardQuestions, useUnreadCount } from "@/services/hooks";
 import {
   useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
@@ -332,7 +333,13 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         onPress={onInstantRewardPress}
       />
 
-      {/* In-Feed Native Ad */}
+      {/* Ask Questions CTA */}
+      <AskCommunityCTA
+        colors={colors}
+        onPress={onOpenCreateWizard}
+      />
+
+      {/* In-Feed Native Ad — placed after CTAs to avoid overlapping */}
       {feedAds && feedAds.length > 0 && (
         <BetweenContentAd
           ad={feedAds[0]}
@@ -341,12 +348,6 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
           style={styles.betweenContentAd}
         />
       )}
-
-      {/* Ask Questions CTA */}
-      <AskCommunityCTA
-        colors={colors}
-        onPress={onOpenCreateWizard}
-      />
 
       {/* Reward Progress — wired to real stats */}
       <RewardProgress
@@ -492,6 +493,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Notification count
   const { data: unreadCount } = useUnreadCount();
+  const { data: rewardQuestions, isLoading: isRewardQuestionsLoading } = useRegularRewardQuestions();
 
   // Consolidated ads — single hook replaces 3 separate ones, deferred until feed loads
   const { data: screenAds } = useScreenAds("question", {
@@ -521,6 +523,12 @@ export default function QuestionsScreen(): React.ReactElement {
   const allQuestions = useMemo(
     () => infiniteData?.pages.flatMap((p) => p.questions) ?? [],
     [infiniteData]
+  );
+
+  // Regular reward questions for "Answer Questions & Earn" flow (server already excludes instant)
+  const rewardQuestionsOnly = useMemo(
+    () => (rewardQuestions ?? []).filter((q) => !q.isCompleted),
+    [rewardQuestions]
   );
 
   const feedStats = useMemo(
@@ -656,7 +664,8 @@ export default function QuestionsScreen(): React.ReactElement {
       }
       triggerHaptic("light");
       if (isInstantReward) {
-        router.push(`/instant-reward-answer/${questionId}` as Href);
+        // Route to listing screen — feed Question.id != RewardQuestion.id
+        router.push("/instant-reward-questions" as Href);
       } else {
         router.push(`/question-answer/${questionId}` as Href);
       }
@@ -754,17 +763,28 @@ export default function QuestionsScreen(): React.ReactElement {
     [authReady, isAuthenticated]
   );
 
-  // Navigate to reward-question listing — the listing screen handles its own
-  // data loading, so we don't need to eagerly fetch reward questions here
+  // Navigate to reward-question flow using reward questions (not instant rewards)
   const handleAnswerEarnPress = useCallback(() => {
     if (!authReady) return;
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
     }
+    if (isRewardQuestionsLoading) {
+      // Data still loading — silently ignore tap to prevent false "No questions" alert
+      return;
+    }
     triggerHaptic("light");
-    router.push("/instant-reward-questions" as Href);
-  }, [authReady, isAuthenticated]);
+    const firstReward = rewardQuestionsOnly[0];
+    if (firstReward) {
+      router.push(`/reward-question/${firstReward.id}` as Href);
+    } else {
+      Alert.alert(
+        "No reward questions available",
+        "Please check back soon for new reward questions."
+      );
+    }
+  }, [authReady, isAuthenticated, isRewardQuestionsLoading, rewardQuestionsOnly]);
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({

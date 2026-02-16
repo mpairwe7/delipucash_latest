@@ -124,15 +124,19 @@ export interface RedemptionRequest {
 }
 
 export interface InstantRewardUIState {
+  // User Identity (for cross-user persist isolation)
+  currentUserEmail: string | null;
+
   // Attempt History
   attemptHistory: InstantRewardAttemptHistory | null;
-  
+
   // Wallet State (cached from server)
   walletBalance: number;
   pendingRewards: number;
   
   // Session State (for continuous question flow)
   sessionState: InstantRewardSessionState;
+  sessionType: 'instant' | 'regular' | null;
   sessionQuestionIds: string[];
   currentSessionIndex: number;
   sessionSummary: InstantRewardSessionSummary;
@@ -168,7 +172,7 @@ export interface InstantRewardUIActions {
   getUnattemptedQuestions: <T extends { id: string }>(questions: T[]) => T[];
   
   // Session Management (for continuous flow)
-  startSession: (questionIds: string[]) => void;
+  startSession: (questionIds: string[], type?: 'instant' | 'regular') => void;
   endSession: () => void;
   goToNextQuestion: () => string | null;
   goToPreviousQuestion: () => string | null;
@@ -208,6 +212,9 @@ export interface InstantRewardUIActions {
   // Reset
   resetCurrentQuestion: () => void;
   resetSession: () => void;
+
+  /** Reset all persisted state when user identity changes (login/logout/switch) */
+  resetForUser: (newUserEmail: string | null) => void;
 }
 
 // ===========================================
@@ -226,10 +233,12 @@ const initialSessionSummary: InstantRewardSessionSummary = {
 };
 
 const initialState: InstantRewardUIState = {
+  currentUserEmail: null,
   attemptHistory: null,
   walletBalance: 0,
   pendingRewards: 0,
   sessionState: 'IDLE',
+  sessionType: null,
   sessionQuestionIds: [],
   currentSessionIndex: 0,
   sessionSummary: initialSessionSummary,
@@ -342,10 +351,11 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       // Session Management
       // ========================================
 
-      startSession: (questionIds) => {
+      startSession: (questionIds, type = 'instant') => {
         const now = new Date().toISOString();
         set({
           sessionState: 'ANSWERING',
+          sessionType: type,
           sessionQuestionIds: questionIds,
           currentSessionIndex: 0,
           currentQuestionId: questionIds[0] || null,
@@ -565,6 +575,11 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       // ========================================
 
       addPendingSubmission: (submission) => {
+        // Dedupe: if a submission for this questionId already exists, skip
+        if (get().pendingSubmissions.some(s => s.questionId === submission.questionId)) {
+          return;
+        }
+
         const now = new Date().toISOString();
         const newSubmission: PendingSubmission = {
           ...submission,
@@ -654,6 +669,7 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       resetSession: () => {
         set({
           sessionState: 'IDLE',
+          sessionType: null,
           sessionQuestionIds: [],
           currentSessionIndex: 0,
           sessionSummary: initialSessionSummary,
@@ -666,11 +682,35 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           pendingRedemption: null,
         });
       },
+
+      resetForUser: (newUserEmail) => {
+        const { currentUserEmail } = get();
+
+        // Same user or null→null: no-op
+        if (newUserEmail === currentUserEmail) return;
+
+        // User changed: reset all persisted + session state
+        set({
+          ...initialState,
+          currentUserEmail: newUserEmail,
+          attemptHistory: newUserEmail
+            ? {
+                userId: newUserEmail,
+                attemptedQuestionIds: [],
+                attemptedQuestions: [],
+                totalRewardsEarned: 0,
+                totalQuestionsAttempted: 0,
+                lastAttemptAt: null,
+              }
+            : null,
+        });
+      },
     }),
     {
       name: 'instant-reward-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
+        currentUserEmail: state.currentUserEmail,
         attemptHistory: state.attemptHistory,
         walletBalance: state.walletBalance,
         pendingSubmissions: state.pendingSubmissions,
@@ -687,6 +727,7 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
 
 export const selectAttemptHistory = (state: InstantRewardUIState) => state.attemptHistory;
 export const selectInstantSessionState = (state: InstantRewardUIState) => state.sessionState;
+export const selectSessionType = (state: InstantRewardUIState) => state.sessionType;
 export const selectCurrentQuestionId = (state: InstantRewardUIState) => state.currentQuestionId;
 export const selectInstantSelectedAnswer = (state: InstantRewardUIState) => state.selectedAnswer;
 export const selectInstantIsSubmitting = (state: InstantRewardUIState) => state.isSubmitting;
@@ -804,6 +845,23 @@ export const getAvailableRedemptionOptions = (totalRewardsEarned: number) => {
   const points = totalRewardsEarned / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
   return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= points);
 };
+
+// ===========================================
+// Auth Change Listener
+// ===========================================
+
+// Subscribe to auth changes at module scope.
+// When user identity changes (login/logout/switch), reset all persisted
+// state to prevent wallet/queue data leaking between accounts.
+import { useAuthStore } from '@/utils/auth/store';
+
+useAuthStore.subscribe((state, prevState) => {
+  const newEmail = state.auth?.user?.email ?? null;
+  const prevEmail = prevState?.auth?.user?.email ?? null;
+  if (newEmail !== prevEmail) {
+    useInstantRewardStore.getState().resetForUser(newEmail);
+  }
+});
 
 // ===========================================
 // Default Export

@@ -15,6 +15,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
+// enableMapSet() is called centrally in store/index.ts
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

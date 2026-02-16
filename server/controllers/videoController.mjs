@@ -7,12 +7,13 @@ export const createVideo = asyncHandler(async (req, res) => {
   try {
     console.log("Received request data:", req.body);
 
-    const { title, description, videoUrl, thumbnail, userId, duration, timestamp } = req.body;
+    const { title, description, videoUrl, thumbnail, duration, timestamp } = req.body;
+    const userId = req.user.id;
 
     // Validate required fields
-    if (!title || !videoUrl || !userId || !thumbnail) {
-      console.warn("Missing fields:", { title, videoUrl, userId, thumbnail });
-      return res.status(400).json({ message: "Title, videoUrl, userId, and thumbnail are required" });
+    if (!title || !videoUrl || !thumbnail) {
+      console.warn("Missing fields:", { title, videoUrl, thumbnail });
+      return res.status(400).json({ message: "Title, videoUrl, and thumbnail are required" });
     }
 
     // Ensure user exists
@@ -76,8 +77,8 @@ export const createVideo = asyncHandler(async (req, res) => {
 export const commentPost = asyncHandler(async (req, res) => {
   try {
     const { id: videoId } = req.params;
-    const { text, media, user_id, created_at } = req.body;
-    const effectiveUserId = user_id || req.user?.id;
+    const { text, media, created_at } = req.body;
+    const effectiveUserId = req.user.id;
     console.log("Received request data for comment:", req.body);
 
     // Validate required fields
@@ -230,7 +231,10 @@ export const getAllVideos = asyncHandler(async (req, res) => {
       orderBy = { likes: 'desc' };
     }
 
-    const [videos, total, activeLivestreams] = await Promise.all([
+    // Optional authenticated user (set by optionalAuth middleware)
+    const authUserId = req.user?.id;
+
+    const [videos, total, activeLivestreams, userLikes, userBookmarks] = await Promise.all([
       prisma.video.findMany({
         include: {
           user: {
@@ -252,12 +256,28 @@ export const getAllVideos = asyncHandler(async (req, res) => {
         where: { status: 'live' },
         select: { userId: true, sessionId: true },
       }),
+      // Per-user like status (only if authenticated)
+      authUserId
+        ? prisma.videoLike.findMany({
+            where: { userId: authUserId },
+            select: { videoId: true },
+          })
+        : Promise.resolve([]),
+      // Per-user bookmark status (only if authenticated)
+      authUserId
+        ? prisma.videoBookmark.findMany({
+            where: { userId: authUserId },
+            select: { videoId: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     // Build a map of userId → sessionId for active livestreams
     const liveUserMap = new Map(
       activeLivestreams.map((ls) => [ls.userId, ls.sessionId])
     );
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
 
     const formattedVideos = videos.map(video => ({
       id: video.id,
@@ -268,7 +288,8 @@ export const getAllVideos = asyncHandler(async (req, res) => {
       userId: video.userId,
       likes: video.likes || 0,
       views: video.views || 0,
-      isBookmarked: video.isBookmarked || false,
+      isLiked: likedSet.has(video.id),
+      isBookmarked: bookmarkedSet.has(video.id),
       commentsCount: video.commentsCount || 0,
       createdAt: video.createdAt.toISOString(),
       updatedAt: video.updatedAt.toISOString(),
@@ -365,42 +386,43 @@ export const deleteVideo = asyncHandler(async (req, res) => {
   }
 });
 
-// Like a Video (Increment Likes)
+// Like a Video — per-user with idempotency
 export const likeVideo = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
 
-    // Check if video exists
-    const video = await prisma.video.findUnique({
-      where: { id },
-    });
-
+    const video = await prisma.video.findUnique({ where: { id } });
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Atomically increment likes count
-    const updatedVideo = await prisma.video.update({
-      where: { id },
-      data: {
-        likes: {
-          increment: 1,
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      }
+    // Check if already liked
+    const existingLike = await prisma.videoLike.findUnique({
+      where: { userId_videoId: { userId, videoId: id } },
     });
 
+    if (existingLike) {
+      return res.status(409).json({
+        message: 'Video already liked',
+        video: { ...video, isLiked: true },
+      });
+    }
+
+    // Create like + increment counter atomically
+    const [, updatedVideo] = await prisma.$transaction([
+      prisma.videoLike.create({ data: { userId, videoId: id } }),
+      prisma.video.update({
+        where: { id },
+        data: { likes: { increment: 1 } },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+      }),
+    ]);
+
     // SSE: Notify video owner of like
-    if (video.userId) {
+    if (video.userId !== userId) {
       publishEvent(video.userId, 'video.like', {
         videoId: id,
         likes: updatedVideo.likes,
@@ -409,15 +431,7 @@ export const likeVideo = asyncHandler(async (req, res) => {
 
     res.json({
       message: 'Video liked successfully',
-      video: {
-        ...updatedVideo,
-        user: {
-          id: updatedVideo.user.id,
-          firstName: updatedVideo.user.firstName,
-          lastName: updatedVideo.user.lastName,
-          avatar: updatedVideo.user.avatar
-        }
-      }
+      video: { ...updatedVideo, isLiked: true },
     });
   } catch (error) {
     console.error('Error liking video:', error);
@@ -425,57 +439,68 @@ export const likeVideo = asyncHandler(async (req, res) => {
   }
 });
 
-// Bookmark a Video
+// Bookmark a Video — per-user toggle
 export const bookmarkVideo = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { userId } = req.body;
+    const userId = req.user.id;
 
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    // Check if video exists
-    const video = await prisma.video.findUnique({
-      where: { id },
-    });
-
+    const video = await prisma.video.findUnique({ where: { id } });
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Toggle bookmark status
-    const updatedVideo = await prisma.video.update({
-      where: { id },
-      data: {
-        isBookmarked: !video.isBookmarked,
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      }
+    // Check if already bookmarked
+    const existingBookmark = await prisma.videoBookmark.findUnique({
+      where: { userId_videoId: { userId, videoId: id } },
     });
 
-    res.json({ 
-      message: 'Video bookmark toggled successfully', 
-      video: {
-        ...updatedVideo,
-        user: {
-          id: updatedVideo.user.id,
-          firstName: updatedVideo.user.firstName,
-          lastName: updatedVideo.user.lastName,
-          avatar: updatedVideo.user.avatar
-        }
-      }
+    if (existingBookmark) {
+      // Remove bookmark
+      await prisma.videoBookmark.delete({
+        where: { userId_videoId: { userId, videoId: id } },
+      });
+      return res.json({
+        message: 'Bookmark removed',
+        isBookmarked: false,
+        videoId: id,
+      });
+    }
+
+    // Add bookmark
+    await prisma.videoBookmark.create({ data: { userId, videoId: id } });
+    res.json({
+      message: 'Video bookmarked',
+      isBookmarked: true,
+      videoId: id,
     });
   } catch (error) {
     console.error('Error bookmarking video:', error);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// Get per-user like/bookmark status for a video
+export const getVideoStatus = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const [like, bookmark] = await Promise.all([
+      prisma.videoLike.findUnique({
+        where: { userId_videoId: { userId, videoId: id } },
+      }),
+      prisma.videoBookmark.findUnique({
+        where: { userId_videoId: { userId, videoId: id } },
+      }),
+    ]);
+
+    res.json({
+      success: true,
+      data: { videoId: id, isLiked: !!like, isBookmarked: !!bookmark },
+    });
+  } catch (error) {
+    console.error('Error fetching video status:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 });
@@ -661,52 +686,46 @@ export const getVideoComments = asyncHandler(async (req, res) => {
   }
 });
 
-// Unlike a Video (Toggle like - decrement)
+// Unlike a Video — per-user with idempotency
 export const unlikeVideo = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = req.user.id;
 
-    // Check if video exists
-    const video = await prisma.video.findUnique({
-      where: { id },
-    });
-
+    const video = await prisma.video.findUnique({ where: { id } });
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Atomically decrement likes count (minimum 0)
-    const updatedVideo = await prisma.video.update({
-      where: { id },
-      data: {
-        likes: {
-          decrement: video.likes > 0 ? 1 : 0,
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      }
+    // Check if like exists
+    const existingLike = await prisma.videoLike.findUnique({
+      where: { userId_videoId: { userId, videoId: id } },
     });
 
-    res.json({ 
-      message: 'Video unliked successfully', 
-      video: {
-        ...updatedVideo,
-        isLiked: false,
-        user: {
-          id: updatedVideo.user.id,
-          firstName: updatedVideo.user.firstName,
-          lastName: updatedVideo.user.lastName,
-          avatar: updatedVideo.user.avatar
-        }
-      }
+    if (!existingLike) {
+      return res.status(409).json({
+        message: 'Video not liked',
+        video: { ...video, isLiked: false },
+      });
+    }
+
+    // Delete like + decrement counter atomically
+    const [, updatedVideo] = await prisma.$transaction([
+      prisma.videoLike.delete({
+        where: { userId_videoId: { userId, videoId: id } },
+      }),
+      prisma.video.update({
+        where: { id },
+        data: { likes: { decrement: 1 } },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+      }),
+    ]);
+
+    res.json({
+      message: 'Video unliked successfully',
+      video: { ...updatedVideo, isLiked: false },
     });
   } catch (error) {
     console.error('Error unliking video:', error);
@@ -860,7 +879,7 @@ export const validateUpload = asyncHandler(async (req, res) => {
 export const startLivestream = asyncHandler(async (req, res) => {
   try {
     // Use authenticated user from verifyToken middleware
-    const userId = req.user || req.body.userId;
+    const userId = req.user.id;
     const { title, description } = req.body;
 
     if (!userId) {
@@ -1043,7 +1062,7 @@ export const getLiveStreams = asyncHandler(async (req, res) => {
 export const joinLivestream = asyncHandler(async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const userId = req.user;
+    const userId = req.user.id;
 
     const livestream = await prisma.livestream.findUnique({
       where: { sessionId },
@@ -1113,7 +1132,7 @@ export const sendLivestreamChat = asyncHandler(async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { text } = req.body;
-    const userId = req.user;
+    const userId = req.user.id;
 
     if (!text || !text.trim()) {
       return res.status(400).json({ message: 'Message text is required' });

@@ -2,13 +2,16 @@
  * Reward Question Answer Screen — Full Quiz Session
  *
  * Features:
- * - Zustand InstantRewardStore integration (session state machine, attempt tracking)
+ * - Zustand RewardStore with useShallow for grouped state reads
  * - TanStack Query for server state (question data, answer submission)
  * - Single-attempt enforcement via persistent attempt history
- * - Auto-transition to next unanswered question with animated feedback
- * - Live countdown timer for expiring questions
+ * - Auto-transition to next unanswered question with reanimated native-thread animations
+ * - Isolated CountdownTimer component (per-second renders don't touch parent)
  * - Memoized sub-components (OptionItem, WinnerRow) for performance
- * - Auth guard with redirect to login
+ * - Soft auth guard (toast, not hard redirect — source screen already verified)
+ * - Dynamic reward amounts from question model
+ * - Session progress bar (Question X of Y)
+ * - Proper accessibility roles (radiogroup + radio)
  * - Session summary + redemption modals
  * - Haptic feedback & accessibility
  */
@@ -20,12 +23,13 @@ import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
 import { formatCurrency } from "@/services/api";
 import {
   useRewardQuestion,
-  useRewardQuestions,
+  useRegularRewardQuestions,
   useSubmitRewardAnswer,
   useUserProfile,
 } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
-import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult } from "@/types";
 import {
   BORDER_WIDTH,
@@ -56,9 +60,8 @@ import {
   Users,
   Zap,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Animated,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -66,6 +69,13 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated, {
+  FadeIn,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ─── Pure utility (stable — outside component) ──────────────────────────────
@@ -75,6 +85,72 @@ const formatTime = (seconds: number): string => {
   const secs = seconds % 60;
   return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
 };
+
+// ─── CountdownTimer (isolates per-second re-renders from parent) ─────────────
+
+interface CountdownTimerProps {
+  expiryTime: string;
+  colors: { warning: string };
+  onExpired?: () => void;
+}
+
+const CountdownTimer = memo(function CountdownTimer({
+  expiryTime,
+  colors,
+  onExpired,
+}: CountdownTimerProps) {
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    const diff = Math.max(
+      0,
+      Math.floor((new Date(expiryTime).getTime() - Date.now()) / 1000)
+    );
+    return diff;
+  });
+
+  useEffect(() => {
+    const expiry = new Date(expiryTime).getTime();
+    const update = (): void => {
+      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
+      setTimeLeft(diff);
+      if (diff === 0) onExpired?.();
+    };
+
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [expiryTime, onExpired]);
+
+  const isExpired = timeLeft <= 0;
+
+  return (
+    <View
+      style={[
+        countdownStyles.timerPill,
+        { backgroundColor: withAlpha(colors.warning, 0.12) },
+      ]}
+    >
+      <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
+      <Text style={[countdownStyles.timerText, { color: colors.warning }]}>
+        {isExpired ? "Expired" : formatTime(timeLeft)}
+      </Text>
+    </View>
+  );
+});
+
+const countdownStyles = StyleSheet.create({
+  timerPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: RADIUS.full,
+  },
+  timerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+});
 
 // ─── Memoized sub-components ─────────────────────────────────────────────────
 
@@ -99,7 +175,10 @@ const OptionItem = memo(function OptionItem({
   onPress,
   colors,
 }: OptionItemProps) {
-  const handlePress = useCallback(() => onPress(optionKey), [optionKey, onPress]);
+  const handlePress = useCallback(
+    () => onPress(optionKey),
+    [optionKey, onPress]
+  );
 
   return (
     <Pressable
@@ -117,7 +196,7 @@ const OptionItem = memo(function OptionItem({
       ]}
       onPress={handlePress}
       disabled={isDisabled}
-      accessibilityRole="button"
+      accessibilityRole="radio"
       accessibilityState={{ selected: isSelected, disabled: isDisabled }}
     >
       <View style={styles.optionLeft}>
@@ -133,15 +212,30 @@ const OptionItem = memo(function OptionItem({
         <Text
           style={[
             styles.optionLabel,
-            { color: isDisabled && !wasSelectedPreviously ? colors.textMuted : colors.text },
+            {
+              color:
+                isDisabled && !wasSelectedPreviously
+                  ? colors.textMuted
+                  : colors.text,
+            },
           ]}
         >
           {`${optionKey.toUpperCase()}. ${label}`}
         </Text>
       </View>
-      {isCorrect && <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+      {isCorrect && (
+        <CheckCircle2
+          size={ICON_SIZE.sm}
+          color={colors.success}
+          strokeWidth={1.5}
+        />
+      )}
       {wasSelectedPreviously && !isCorrect && (
-        <AlertCircle size={ICON_SIZE.sm} color={colors.error} strokeWidth={1.5} />
+        <AlertCircle
+          size={ICON_SIZE.sm}
+          color={colors.error}
+          strokeWidth={1.5}
+        />
       )}
     </Pressable>
   );
@@ -162,15 +256,24 @@ const WinnerRow = memo(function WinnerRow({ winner, colors }: WinnerRowProps) {
   return (
     <View style={[styles.winnerRow, { borderColor: colors.border }]}>
       <View style={styles.winnerLeft}>
-        <Text style={[styles.winnerPosition, { color: colors.primary }]}>{winner.position}.</Text>
+        <Text style={[styles.winnerPosition, { color: colors.primary }]}>
+          {winner.position}.
+        </Text>
         <View style={styles.winnerInfo}>
-          <Text style={[styles.winnerEmail, { color: colors.text }]} numberOfLines={1}>
+          <Text
+            style={[styles.winnerEmail, { color: colors.text }]}
+            numberOfLines={1}
+          >
             {winner.userEmail}
           </Text>
-          <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>{winner.paymentStatus}</Text>
+          <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>
+            {winner.paymentStatus}
+          </Text>
         </View>
       </View>
-      <Text style={[styles.winnerAmount, { color: colors.success }]}>{formatCurrency(winner.amountAwarded)}</Text>
+      <Text style={[styles.winnerAmount, { color: colors.success }]}>
+        {formatCurrency(winner.amountAwarded)}
+      </Text>
     </View>
   );
 });
@@ -184,16 +287,19 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
-  const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [revealedCorrectAnswer, setRevealedCorrectAnswer] = useState<
+    string | null
+  >(null);
+  const [isExpired, setIsExpired] = useState(false);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
 
-  // Animation values
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  // Reanimated transition values (native thread)
+  const transitionOpacity = useSharedValue(1);
+  const transitionTranslateX = useSharedValue(0);
 
   const questionId = id || "";
 
@@ -201,79 +307,139 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const { isReady: authReady, isAuthenticated, auth } = useAuth();
 
   // ── TanStack Query — server state ──
-  const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
-  const { data: allQuestions } = useRewardQuestions();
-  const { data: user, isLoading: isUserLoading } = useUserProfile();
+  const {
+    data: question,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+  } = useRewardQuestion(questionId);
+  // Server-side filtered — only non-instant reward questions
+  const { data: rewardQuestionsOnly = [] } = useRegularRewardQuestions();
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
-  // ── Zustand selectors (granular — avoids full-store re-render) ──
-  const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
-  const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
-  const confirmReward = useInstantRewardStore((s) => s.confirmReward);
-  const walletBalance = useInstantRewardStore((s) => s.walletBalance);
-  const sessionState = useInstantRewardStore((s) => s.sessionState);
-  // Subscribe to attemptHistory so memos re-run when questions are marked attempted
+  // ── User data — auth store (instant) with profile enrichment (network) ──
+  const userEmail = user?.email ?? auth?.user?.email ?? null;
+  const userPhone = user?.phone ?? auth?.user?.phone ?? null;
+
+  // ── Dynamic reward amount from question model ──
+  const rewardAmount = question?.rewardAmount || REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT;
+  const rewardPoints = Math.round(rewardAmount / REWARD_CONSTANTS.POINTS_TO_UGX_RATE) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
+
+  // ── Zustand: grouped read-state via useShallow (prevents re-renders) ──
+  // TODO: Extract shared reward session/wallet/redemption logic into a base RewardStore
+  // to decouple regular reward flow from the instant reward store (separation-of-concerns).
+  // Currently both flows share useInstantRewardStore via the sessionType field ('instant'|'regular').
+  const { walletBalance, sessionState, sessionType, sessionSummary } = useInstantRewardStore(
+    useShallow((s) => ({
+      walletBalance: s.walletBalance,
+      sessionState: s.sessionState,
+      sessionType: s.sessionType,
+      sessionSummary: s.sessionSummary,
+    }))
+  );
+
+  // ── Zustand: reactive state (triggers re-render when attemptHistory changes) ──
   const attemptHistory = useInstantRewardStore((s) => s.attemptHistory);
-  const sessionSummary = useInstantRewardStore((s) => s.sessionSummary);
+
+  // ── Zustand: reactive selector for redemption eligibility ──
+  const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
+
+  // ── Zustand: actions (stable references — never cause re-renders) ──
+  const initializeAttemptHistory = useInstantRewardStore(
+    (s) => s.initializeAttemptHistory
+  );
+  const markQuestionAttempted = useInstantRewardStore(
+    (s) => s.markQuestionAttempted
+  );
+  const confirmReward = useInstantRewardStore((s) => s.confirmReward);
   const startSession = useInstantRewardStore((s) => s.startSession);
   const endSession = useInstantRewardStore((s) => s.endSession);
   const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
-  const updateSessionSummary = useInstantRewardStore((s) => s.updateSessionSummary);
-  const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
-  const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
+  const updateSessionSummary = useInstantRewardStore(
+    (s) => s.updateSessionSummary
+  );
+  const initiateRedemption = useInstantRewardStore(
+    (s) => s.initiateRedemption
+  );
+  const completeRedemption = useInstantRewardStore(
+    (s) => s.completeRedemption
+  );
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
-  const canRedeem = useInstantRewardStore((s) => s.canRedeem);
 
-  // ── Auth guard — uses Zustand store (instant) not useUserProfile (network) ──
+  // ── Soft auth check — user navigated from an auth-guarded screen,
+  //    so only show a toast if auth expires mid-session (no hard redirect) ──
   useEffect(() => {
     if (authReady && !isAuthenticated) {
-      router.replace("/(auth)/login" as Href);
+      showToast({
+        message: "Your session has expired. Please log in again.",
+        type: "warning",
+        action: "Login",
+        onAction: () => router.push("/(auth)/login" as Href),
+      });
     }
-  }, [authReady, isAuthenticated]);
+  }, [authReady, isAuthenticated, showToast]);
 
-  // ── Initialize attempt history for the user ──
+  // ── Initialize attempt history — uses auth store (instant) with profile fallback ──
   useEffect(() => {
-    if (user?.email) {
-      initializeAttemptHistory(user.email);
+    if (userEmail) {
+      initializeAttemptHistory(userEmail);
     }
-  }, [user?.email, initializeAttemptHistory]);
+  }, [userEmail, initializeAttemptHistory]);
 
-  // ── Initialize session if not already started ──
+  // ── Initialize session if not already started (or if switching from a different session type) ──
   useEffect(() => {
-    if (allQuestions && allQuestions.length > 0 && sessionState === "IDLE") {
-      const questionIds = allQuestions.map((q) => q.id);
-      startSession(questionIds);
+    if (rewardQuestionsOnly.length > 0 && (sessionState === "IDLE" || sessionType !== "regular")) {
+      const questionIds = rewardQuestionsOnly.map((q) => q.id);
+      startSession(questionIds, "regular");
     }
-  }, [allQuestions, sessionState, startSession]);
+  }, [rewardQuestionsOnly, sessionState, sessionType, startSession]);
 
-  // ── Reset local state when navigating to a new question ──
+  // ── Reset ALL local state when navigating to a new question ──
   useEffect(() => {
     setSelectedOption(null);
     setResult(null);
+    setRevealedCorrectAnswer(null);
+    setIsExpired(false);
     setIsTransitioning(false);
-    fadeAnim.setValue(1);
-    slideAnim.setValue(0);
-  }, [questionId, fadeAnim, slideAnim]);
+    transitionOpacity.value = 1;
+    transitionTranslateX.value = 0;
+  }, [questionId, transitionOpacity, transitionTranslateX]);
 
-  // ── Unanswered questions for auto-transition ──
-  // Uses attemptHistory as dependency so this re-evaluates after markQuestionAttempted
+  // ── Unanswered reward questions for auto-transition (excludes instant rewards) ──
   const unansweredQuestions = useMemo(() => {
-    if (!allQuestions) return [];
-    return allQuestions.filter(
+    if (rewardQuestionsOnly.length === 0) return [];
+    return rewardQuestionsOnly.filter(
       (q) =>
         q.id !== questionId &&
         !q.isCompleted &&
-        q.isInstantReward === question?.isInstantReward &&
         !attemptHistory?.attemptedQuestionIds.includes(q.id)
     );
-  }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
+  }, [rewardQuestionsOnly, questionId, attemptHistory]);
+
+  // ── Session progress ──
+  const sessionProgress = useMemo(() => {
+    if (rewardQuestionsOnly.length === 0) return { current: 0, total: 0 };
+    const total = rewardQuestionsOnly.length;
+    const attempted = attemptHistory?.attemptedQuestionIds.filter((id) =>
+      rewardQuestionsOnly.some((q) => q.id === id)
+    ).length ?? 0;
+    return { current: attempted + (result || hasAlreadyAttempted(attemptHistory, questionId) ? 0 : 1), total };
+
+    function hasAlreadyAttempted(history: typeof attemptHistory, qId: string) {
+      return history?.attemptedQuestionIds.includes(qId) ?? false;
+    }
+  }, [rewardQuestionsOnly, attemptHistory, questionId, result]);
 
   // ── Check if user has already attempted this question ──
   const previousAttempt = useMemo(() => {
     if (!questionId || !attemptHistory) return null;
-    return attemptHistory.attemptedQuestions.find(
-      (a) => a.questionId === questionId
-    ) ?? null;
+    return (
+      attemptHistory.attemptedQuestions.find(
+        (a) => a.questionId === questionId
+      ) ?? null
+    );
   }, [questionId, attemptHistory]);
 
   const hasAlreadyAttempted = useMemo(() => {
@@ -281,28 +447,16 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     return attemptHistory.attemptedQuestionIds.includes(questionId);
   }, [questionId, attemptHistory]);
 
-  // ── Live countdown timer ──
-  useEffect(() => {
-    if (!question?.expiryTime) {
-      setTimeLeft(0);
-      return;
-    }
-
-    const expiry = new Date(question.expiryTime).getTime();
-    const update = (): void => {
-      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
-      setTimeLeft(diff);
-    };
-
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [question?.expiryTime]);
+  // ── Stable callback for CountdownTimer to signal expiry ──
+  const handleTimerExpired = useCallback(() => setIsExpired(true), []);
 
   // ── Derived state ──
   const options = useMemo(() => {
     if (!question?.options) return [] as { key: string; label: string }[];
-    return Object.entries(question.options).map(([key, label]) => ({ key, label: String(label) }));
+    return Object.entries(question.options).map(([key, label]) => ({
+      key,
+      label: String(label),
+    }));
   }, [question?.options]);
 
   const spotsLeft = useMemo(() => {
@@ -310,11 +464,6 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     return Math.max(question.maxWinners - question.winnersCount, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question?.maxWinners, question?.winnersCount]);
-
-  const isExpired = useMemo(() => {
-    if (!question?.expiryTime) return false;
-    return new Date(question.expiryTime).getTime() <= Date.now() || timeLeft <= 0;
-  }, [question?.expiryTime, timeLeft]);
 
   const isClosed = useMemo(
     () =>
@@ -330,11 +479,26 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted]
   );
 
+  // ── Reanimated transition style (native thread) ──
+  const transitionStyle = useAnimatedStyle(() => ({
+    opacity: transitionOpacity.value,
+    transform: [{ translateX: transitionTranslateX.value }],
+  }));
+
   // ── Handlers ──
   const handleBack = useCallback((): void => {
-    triggerHaptic('light');
+    triggerHaptic("light");
     router.back();
   }, []);
+
+  // Navigate to next question after transition animation completes
+  const executeTransition = useCallback(
+    (nextId: string) => {
+      goToNextQuestion();
+      router.replace(`/reward-question/${nextId}` as Href);
+    },
+    [goToNextQuestion]
+  );
 
   // Auto-transition to next question or show session summary
   const handleTransitionToNext = useCallback(() => {
@@ -342,28 +506,23 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
     if (nextQuestion) {
       setIsTransitioning(true);
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: -50,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        goToNextQuestion();
-        router.replace(`/reward-question/${nextQuestion.id}` as Href);
+      // Animate on native thread via reanimated
+      transitionOpacity.value = withTiming(0, { duration: 200 });
+      transitionTranslateX.value = withTiming(-50, { duration: 200 }, () => {
+        runOnJS(executeTransition)(nextQuestion.id);
       });
     } else {
-      // No more questions — show session summary
       triggerHaptic("success");
       endSession();
       setShowSessionSummary(true);
     }
-  }, [unansweredQuestions, fadeAnim, slideAnim, goToNextQuestion, endSession]);
+  }, [
+    unansweredQuestions,
+    transitionOpacity,
+    transitionTranslateX,
+    executeTransition,
+    endSession,
+  ]);
 
   const handleSelectOption = useCallback(
     (optionKey: string) => {
@@ -379,41 +538,46 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
     if (!question) return;
 
-    // Auth validation
-    if (!user?.email) {
-      triggerHaptic('warning');
+    // Auth validation — uses auth store (instant) with profile fallback
+    if (!userEmail) {
+      triggerHaptic("warning");
       showToast({
-        message: 'Please log in to submit answers and earn rewards.',
-        type: 'warning',
-        action: 'Login',
+        message: "Please log in to submit answers and earn rewards.",
+        type: "warning",
+        action: "Login",
         onAction: () => router.push("/(auth)/login" as Href),
       });
       return;
     }
 
-    // Phone number validation for payout
-    if (!user?.phone) {
-      triggerHaptic('warning');
+    // Phone number validation — only needed for instant reward payouts (not regular quiz points)
+    if (question?.isInstantReward && !userPhone) {
+      triggerHaptic("warning");
       showToast({
-        message: 'Please update your profile with a phone number to receive reward payouts.',
-        type: 'warning',
+        message:
+          "Please update your profile with a phone number to receive reward payouts.",
+        type: "warning",
       });
       return;
     }
 
     // Prevent re-attempts
     if (hasAlreadyAttempted) {
-      triggerHaptic('warning');
+      triggerHaptic("warning");
       showToast({
-        message: 'You have already attempted this question. Each question can only be attempted once.',
-        type: 'warning',
+        message:
+          "You have already attempted this question. Each question can only be attempted once.",
+        type: "warning",
       });
       return;
     }
 
     if (!answer) {
-      triggerHaptic('warning');
-      showToast({ message: 'Select the option you think is correct.', type: 'warning' });
+      triggerHaptic("warning");
+      showToast({
+        message: "Select the option you think is correct.",
+        type: "warning",
+      });
       return;
     }
 
@@ -423,34 +587,37 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       {
         questionId: question.id,
         answer,
-        phoneNumber: user.phone,
-        userEmail: user.email,
+        phoneNumber: userPhone || undefined,
+        userEmail,
       },
       {
         onSuccess: (payload) => {
           setResult(payload);
+          if (payload.correctAnswer) {
+            setRevealedCorrectAnswer(payload.correctAnswer);
+          }
 
-          const rewardAmount = payload.isCorrect ? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT : 0;
+          const earnedAmount = payload.isCorrect ? rewardAmount : 0;
 
           // Mark question as attempted (persisted — single attempt enforcement)
           markQuestionAttempted({
             questionId: question.id,
             isCorrect: payload.isCorrect,
             selectedAnswer: answer,
-            rewardEarned: rewardAmount,
+            rewardEarned: earnedAmount,
             isWinner: payload.isWinner || false,
             position: payload.position || null,
             paymentStatus: payload.paymentStatus || null,
           });
 
           // Update session statistics
-          updateSessionSummary(payload.isCorrect, rewardAmount);
+          updateSessionSummary(payload.isCorrect, earnedAmount);
 
           if (payload.isCorrect) {
             triggerHaptic("success");
 
-            // Credit wallet
-            confirmReward(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT);
+            // Credit wallet with question's actual reward amount
+            confirmReward(rewardAmount);
 
             // Build payment status message for winners
             if (payload.isWinner) {
@@ -463,64 +630,83 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               }
 
               showToast({
-                message: `Correct! +${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!${paymentMessage}`,
-                type: 'success',
-                action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
-                onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+                message: `Correct! +${formatCurrency(rewardAmount)} earned!${paymentMessage}`,
+                type: "success",
+                action:
+                  unansweredQuestions.length > 0
+                    ? "Next Question"
+                    : "View Summary",
+                onAction: () =>
+                  setTimeout(() => handleTransitionToNext(), 300),
               });
             } else {
               showToast({
-                message: `Correct! +${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} earned!`,
-                type: 'success',
-                action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
-                onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+                message: `Correct! +${formatCurrency(rewardAmount)} earned!`,
+                type: "success",
+                action:
+                  unansweredQuestions.length > 0
+                    ? "Next Question"
+                    : "View Summary",
+                onAction: () =>
+                  setTimeout(() => handleTransitionToNext(), 300),
               });
             }
           } else if (payload.isExpired || payload.isCompleted) {
             triggerHaptic("warning");
             showToast({
-              message: payload.message || 'Rewards are no longer available.',
-              type: 'warning',
-              action: unansweredQuestions.length > 0 ? 'Try Another' : 'View Summary',
-              onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+              message:
+                payload.message || "Rewards are no longer available.",
+              type: "warning",
+              action:
+                unansweredQuestions.length > 0
+                  ? "Try Another"
+                  : "View Summary",
+              onAction: () =>
+                setTimeout(() => handleTransitionToNext(), 300),
             });
           } else {
             triggerHaptic("error");
             showToast({
-              message: payload.message || 'That was not correct.',
-              type: 'error',
-              action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
-              onAction: () => setTimeout(() => handleTransitionToNext(), 300),
+              message: payload.message || "That was not correct.",
+              type: "error",
+              action:
+                unansweredQuestions.length > 0
+                  ? "Next Question"
+                  : "View Summary",
+              onAction: () =>
+                setTimeout(() => handleTransitionToNext(), 300),
             });
           }
         },
         onError: (err) => {
           triggerHaptic("error");
-          const errorMessage = err?.message || "Unable to submit your answer. Please try again.";
+          const errorMessage =
+            err?.message || "Unable to submit your answer. Please try again.";
 
           if (errorMessage.includes("already attempted")) {
             showToast({
-              message: 'You have already attempted this question.',
-              type: 'warning',
-              action: 'Go Back',
+              message: "You have already attempted this question.",
+              type: "warning",
+              action: "Go Back",
               onAction: () => router.back(),
             });
           } else if (errorMessage.includes("expired")) {
             showToast({
-              message: 'This question has expired and is no longer available.',
-              type: 'info',
-              action: 'Next',
+              message:
+                "This question has expired and is no longer available.",
+              type: "info",
+              action: "Next",
               onAction: () => handleTransitionToNext(),
             });
           } else if (errorMessage.includes("completed")) {
             showToast({
-              message: 'All winners have been found for this question.',
-              type: 'info',
-              action: 'Try Another',
+              message: "All winners have been found for this question.",
+              type: "info",
+              action: "Try Another",
               onAction: () => handleTransitionToNext(),
             });
           } else {
-            showToast({ message: errorMessage, type: 'error' });
+            showToast({ message: errorMessage, type: "error" });
           }
         },
       }
@@ -528,8 +714,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   }, [
     question,
     selectedOption,
-    user,
+    userEmail,
+    userPhone,
     hasAlreadyAttempted,
+    rewardAmount,
     submitAnswer,
     markQuestionAttempted,
     confirmReward,
@@ -570,7 +758,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Stable modal callbacks ──
   const handleRefresh = useCallback(async () => {
-    triggerHaptic('light');
+    triggerHaptic("light");
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
@@ -588,7 +776,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const handleContinue = useCallback(() => {
     setShowSessionSummary(false);
-    router.push("/instant-reward-questions" as Href);
+    router.back();
   }, []);
 
   const handleCloseSession = useCallback(() => {
@@ -602,14 +790,33 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   }, [cancelRedemption]);
 
   const handleFooterPress = useMemo(
-    () => (result || hasAlreadyAttempted ? handleTransitionToNext : handleSubmit),
+    () =>
+      result || hasAlreadyAttempted
+        ? handleTransitionToNext
+        : handleSubmit,
     [result, hasAlreadyAttempted, handleTransitionToNext, handleSubmit]
   );
+
+  // ── Feedback text — distinguish fresh incorrect from previously attempted ──
+  const feedbackText = useMemo(() => {
+    const isCorrect = result?.isCorrect || previousAttempt?.isCorrect;
+    if (isCorrect) {
+      return `You answered correctly and earned ${formatCurrency(rewardAmount)} (${rewardPoints} points)!`;
+    }
+    if (result && !previousAttempt) {
+      // Fresh incorrect — just submitted
+      return result.message || "That was not the correct answer. Better luck next time!";
+    }
+    // Returning to a previously attempted question
+    return "Each question can only be attempted once.";
+  }, [result, previousAttempt, rewardAmount, rewardPoints]);
 
   // ── Loading state ──
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.loadingContainer, { backgroundColor: colors.background }]}
+      >
         <StatusBar style={statusBarStyle} />
         <RewardQuestionSkeleton />
       </View>
@@ -619,13 +826,32 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Error state ──
   if (error || !question) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.background }]}>
+      <View
+        style={[styles.loadingContainer, { backgroundColor: colors.background }]}
+      >
         <StatusBar style={statusBarStyle} />
-        <AlertCircle size={ICON_SIZE['5xl']} color={colors.error} strokeWidth={1.5} style={{ marginBottom: SPACING.md }} />
-        <Text style={[styles.errorText, { color: colors.error }]}>Reward question not found</Text>
+        <AlertCircle
+          size={ICON_SIZE["5xl"]}
+          color={colors.error}
+          strokeWidth={1.5}
+          style={{ marginBottom: SPACING.md }}
+        />
+        <Text style={[styles.errorText, { color: colors.error }]}>
+          Reward question not found
+        </Text>
         <View style={styles.errorActions}>
-          <PrimaryButton title="Retry" onPress={() => { triggerHaptic('light'); refetch(); }} />
-          <PrimaryButton title="Go back" onPress={handleBack} variant="secondary" />
+          <PrimaryButton
+            title="Retry"
+            onPress={() => {
+              triggerHaptic("light");
+              refetch();
+            }}
+          />
+          <PrimaryButton
+            title="Go back"
+            onPress={handleBack}
+            variant="secondary"
+          />
         </View>
       </View>
     );
@@ -654,14 +880,22 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           accessibilityHint="Returns to previous screen"
           hitSlop={8}
         >
-          <ArrowLeft size={ICON_SIZE.md} color={colors.text} strokeWidth={1.5} />
+          <ArrowLeft
+            size={ICON_SIZE.md}
+            color={colors.text}
+            strokeWidth={1.5}
+          />
         </Pressable>
 
         <View style={styles.headerCenter}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Reward Question</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            Answer correctly to earn instant rewards
+          <Text style={[styles.headerTitle, { color: colors.text }]}>
+            Reward Question
           </Text>
+          {sessionProgress.total > 0 && (
+            <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+              Question {sessionProgress.current} of {sessionProgress.total}
+            </Text>
+          )}
         </View>
 
         <Pressable
@@ -672,246 +906,344 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           accessibilityHint="Reload question data"
           hitSlop={8}
         >
-          <RefreshCcw size={ICON_SIZE.md} color={isFetching ? colors.primary : colors.text} strokeWidth={1.5} />
+          <RefreshCcw
+            size={ICON_SIZE.md}
+            color={isFetching ? colors.primary : colors.text}
+            strokeWidth={1.5}
+          />
         </Pressable>
       </View>
 
-      {/* ── Content ── */}
-      <ScrollView
-        style={styles.scroll}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          padding: SPACING.lg,
-          paddingBottom: insets.bottom + SPACING["2xl"],
-        }}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={colors.primary}
-            colors={[colors.primary]}
-          />
-        }
-      >
-        {/* Hero — reward amount & live status */}
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.14), withAlpha(colors.warning, 0.08)]}
-          style={[styles.hero, { borderColor: colors.border }]}
-        >
-          <View style={styles.heroTop}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
-              <Zap size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-              <Text style={[styles.badgeText, { color: colors.success }]}>Live</Text>
-            </View>
-            {!!question.expiryTime && (
-              <View
-                style={[styles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}
-              >
-                <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
-                <Text style={[styles.timerText, { color: colors.warning }]}>
-                  {isExpired ? "Expired" : formatTime(timeLeft)}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          <Text style={[styles.heroTitle, { color: colors.text }]}>
-            {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}
-          </Text>
-          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>
-            Earn {REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points per correct answer • One attempt
-            only
-          </Text>
-
-          <View style={styles.heroStats}>
-            <StatCard
-              icon={<Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-              title="Spots left"
-              value={spotsLeft}
-              subtitle="Remaining winners"
-            />
-            <StatCard
-              icon={<ShieldCheck size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-              title="Status"
-              value={isClosed ? "Closed" : "Active"}
-              subtitle={question.isCompleted ? "Completed" : "Live"}
-            />
-          </View>
-        </LinearGradient>
-
-        {/* Already Attempted Banner */}
-        {hasAlreadyAttempted && previousAttempt && (
+      {/* ── Session Progress Bar ── */}
+      {sessionProgress.total > 1 && (
+        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
           <View
             style={[
-              styles.attemptedBanner,
+              styles.progressBarFill,
               {
-                backgroundColor: withAlpha(
-                  previousAttempt.isCorrect ? colors.success : colors.warning,
-                  0.12
-                ),
-                borderColor: withAlpha(
-                  previousAttempt.isCorrect ? colors.success : colors.warning,
-                  0.5
-                ),
+                backgroundColor: colors.primary,
+                width: `${Math.min((sessionProgress.current / sessionProgress.total) * 100, 100)}%`,
               },
             ]}
-          >
-            <Lock
-              size={ICON_SIZE.sm}
-              color={previousAttempt.isCorrect ? colors.success : colors.warning}
-              strokeWidth={1.5}
+          />
+        </View>
+      )}
+
+      {/* ── Content (animated for transitions) ── */}
+      <Animated.View style={[{ flex: 1 }, transitionStyle]}>
+        <ScrollView
+          style={styles.scroll}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
             />
-            <View style={styles.attemptedBannerContent}>
-              <Text
+          }
+        >
+          {/* Hero — reward amount & live status */}
+          <LinearGradient
+            colors={[
+              withAlpha(colors.primary, 0.14),
+              withAlpha(colors.warning, 0.08),
+            ]}
+            style={[styles.hero, { borderColor: colors.border }]}
+          >
+            <View style={styles.heroTop}>
+              <View
                 style={[
-                  styles.attemptedBannerTitle,
-                  {
-                    color: previousAttempt.isCorrect ? colors.success : colors.warning,
-                  },
+                  styles.badge,
+                  { backgroundColor: withAlpha(colors.success, 0.12) },
                 ]}
               >
-                {previousAttempt.isCorrect ? "You answered correctly! 🎉" : "Already attempted"}
-              </Text>
-              <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
-                {previousAttempt.isCorrect
-                  ? `You earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)`
-                  : "Each question can only be attempted once."}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* Question Card */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-              <Sparkles size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
-              <Text style={[styles.badgeText, { color: colors.primary }]}>Instant reward</Text>
-            </View>
-            {!!question.createdAt && (
-              <Text style={[styles.cardMeta, { color: colors.textMuted }]}>
-                Added {new Date(question.createdAt).toLocaleDateString()}
-              </Text>
-            )}
-          </View>
-
-          <Text style={[styles.questionText, { color: colors.text }]}>{question.text}</Text>
-
-          {/* Options */}
-          <View style={styles.optionsList}>
-            {options.map((option) => {
-              const isSelected =
-                selectedOption === option.key ||
-                previousAttempt?.selectedAnswer === option.key;
-              const isCorrectOption = Boolean(
-                (result?.isCorrect || previousAttempt?.isCorrect) &&
-                  normalizeText(question.correctAnswer) === normalizeText(option.key)
-              );
-              const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
-              const isOptionDisabled = isClosed || hasAlreadyAttempted;
-
-              return (
-                <OptionItem
-                  key={option.key}
-                  optionKey={option.key}
-                  label={option.label}
-                  isSelected={isSelected}
-                  isCorrect={isCorrectOption}
-                  wasSelectedPreviously={wasSelectedPreviously}
-                  isDisabled={isOptionDisabled}
-                  onPress={handleSelectOption}
-                  colors={colors}
+                <Zap
+                  size={ICON_SIZE.sm}
+                  color={colors.success}
+                  strokeWidth={1.5}
                 />
-              );
-            })}
-          </View>
+                <Text style={[styles.badgeText, { color: colors.success }]}>
+                  Live
+                </Text>
+              </View>
+              {!!question.expiryTime && (
+                <CountdownTimer
+                  expiryTime={question.expiryTime}
+                  colors={colors}
+                  onExpired={handleTimerExpired}
+                />
+              )}
+            </View>
 
-          {/* Feedback Card */}
-          {(result || previousAttempt) && (
-            <View
+            <Text style={[styles.heroTitle, { color: colors.text }]}>
+              {formatCurrency(rewardAmount)}
+            </Text>
+            <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>
+              Earn {rewardPoints} points per correct answer • One attempt only
+            </Text>
+
+            <View style={styles.heroStats}>
+              <StatCard
+                icon={
+                  <Users
+                    size={ICON_SIZE.sm}
+                    color={colors.primary}
+                    strokeWidth={1.5}
+                  />
+                }
+                title="Spots left"
+                value={spotsLeft}
+                subtitle="Remaining winners"
+              />
+              <StatCard
+                icon={
+                  <ShieldCheck
+                    size={ICON_SIZE.sm}
+                    color={colors.success}
+                    strokeWidth={1.5}
+                  />
+                }
+                title="Status"
+                value={isClosed ? "Closed" : "Active"}
+                subtitle={question.isCompleted ? "Completed" : "Live"}
+              />
+            </View>
+          </LinearGradient>
+
+          {/* Already Attempted Banner */}
+          {hasAlreadyAttempted && previousAttempt && (
+            <Animated.View
+              entering={FadeIn.duration(300)}
               style={[
-                styles.feedback,
+                styles.attemptedBanner,
                 {
                   backgroundColor: withAlpha(
-                    result?.isCorrect || previousAttempt?.isCorrect
-                      ? colors.success
-                      : colors.error,
+                    previousAttempt.isCorrect ? colors.success : colors.warning,
                     0.12
                   ),
                   borderColor: withAlpha(
-                    result?.isCorrect || previousAttempt?.isCorrect
-                      ? colors.success
-                      : colors.error,
+                    previousAttempt.isCorrect ? colors.success : colors.warning,
                     0.5
                   ),
                 },
               ]}
             >
-              <View style={styles.feedbackRow}>
-                <CheckCircle2
-                  size={ICON_SIZE.sm}
-                  color={
-                    result?.isCorrect || previousAttempt?.isCorrect
-                      ? colors.success
-                      : colors.error
-                  }
-                  strokeWidth={1.5}
-                />
+              <Lock
+                size={ICON_SIZE.sm}
+                color={
+                  previousAttempt.isCorrect ? colors.success : colors.warning
+                }
+                strokeWidth={1.5}
+              />
+              <View style={styles.attemptedBannerContent}>
                 <Text
                   style={[
-                    styles.feedbackTitle,
+                    styles.attemptedBannerTitle,
                     {
-                      color:
-                        result?.isCorrect || previousAttempt?.isCorrect
-                          ? colors.success
-                          : colors.error,
+                      color: previousAttempt.isCorrect
+                        ? colors.success
+                        : colors.warning,
                     },
                   ]}
                 >
-                  {result?.isCorrect || previousAttempt?.isCorrect
-                    ? "Correct answer"
-                    : result?.isExpired || result?.isCompleted
-                      ? "Unavailable"
-                      : "Incorrect answer"}
+                  {previousAttempt.isCorrect
+                    ? "You answered correctly!"
+                    : "Already attempted"}
+                </Text>
+                <Text
+                  style={[
+                    styles.attemptedBannerText,
+                    { color: colors.textMuted },
+                  ]}
+                >
+                  {previousAttempt.isCorrect
+                    ? `You earned ${formatCurrency(rewardAmount)} (${rewardPoints} points)`
+                    : "Each question can only be attempted once."}
                 </Text>
               </View>
-              <Text style={[styles.feedbackText, { color: colors.text }]}>
-                {result?.isCorrect || previousAttempt?.isCorrect
-                  ? `You answered correctly and earned ${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (${REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)!`
-                  : "This question has already been attempted. Each question can only be answered once."}
-              </Text>
-              {result?.remainingSpots !== undefined && (
-                <Text style={[styles.feedbackMeta, { color: colors.textMuted }]}>
-                  Remaining spots: {result.remainingSpots}
+            </Animated.View>
+          )}
+
+          {/* Question Card */}
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.cardHeader}>
+              <View
+                style={[
+                  styles.badge,
+                  { backgroundColor: withAlpha(colors.primary, 0.1) },
+                ]}
+              >
+                <Sparkles
+                  size={ICON_SIZE.sm}
+                  color={colors.primary}
+                  strokeWidth={1.5}
+                />
+                <Text style={[styles.badgeText, { color: colors.primary }]}>
+                  Reward question
+                </Text>
+              </View>
+              {!!question.createdAt && (
+                <Text style={[styles.cardMeta, { color: colors.textMuted }]}>
+                  Added {new Date(question.createdAt).toLocaleDateString()}
                 </Text>
               )}
-              {(result?.isCorrect || previousAttempt?.isCorrect) && (
-                <Text style={[styles.feedbackReward, { color: colors.success }]}>
-                  +{formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} (
-                  {REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points)
+            </View>
+
+            <Text style={[styles.questionText, { color: colors.text }]}>
+              {question.text}
+            </Text>
+
+            {/* Options — radiogroup for accessibility */}
+            <View
+              style={styles.optionsList}
+              accessibilityRole="radiogroup"
+              accessibilityLabel="Answer options"
+            >
+              {options.map((option) => {
+                const isSelected =
+                  selectedOption === option.key ||
+                  previousAttempt?.selectedAnswer === option.key;
+                const correctKey =
+                  revealedCorrectAnswer || previousAttempt?.selectedAnswer;
+                const isCorrectOption = Boolean(
+                  (result?.isCorrect || previousAttempt?.isCorrect) &&
+                    correctKey &&
+                    normalizeText(correctKey) === normalizeText(option.key)
+                );
+                const wasSelectedPreviously =
+                  previousAttempt?.selectedAnswer === option.key;
+                const isOptionDisabled = isClosed || hasAlreadyAttempted;
+
+                return (
+                  <OptionItem
+                    key={option.key}
+                    optionKey={option.key}
+                    label={option.label}
+                    isSelected={isSelected}
+                    isCorrect={isCorrectOption}
+                    wasSelectedPreviously={wasSelectedPreviously}
+                    isDisabled={isOptionDisabled}
+                    onPress={handleSelectOption}
+                    colors={colors}
+                  />
+                );
+              })}
+            </View>
+
+            {/* Feedback Card */}
+            {(result || previousAttempt) && (
+              <Animated.View
+                entering={FadeIn.duration(300)}
+                style={[
+                  styles.feedback,
+                  {
+                    backgroundColor: withAlpha(
+                      result?.isCorrect || previousAttempt?.isCorrect
+                        ? colors.success
+                        : colors.error,
+                      0.12
+                    ),
+                    borderColor: withAlpha(
+                      result?.isCorrect || previousAttempt?.isCorrect
+                        ? colors.success
+                        : colors.error,
+                      0.5
+                    ),
+                  },
+                ]}
+              >
+                <View style={styles.feedbackRow}>
+                  <CheckCircle2
+                    size={ICON_SIZE.sm}
+                    color={
+                      result?.isCorrect || previousAttempt?.isCorrect
+                        ? colors.success
+                        : colors.error
+                    }
+                    strokeWidth={1.5}
+                  />
+                  <Text
+                    style={[
+                      styles.feedbackTitle,
+                      {
+                        color:
+                          result?.isCorrect || previousAttempt?.isCorrect
+                            ? colors.success
+                            : colors.error,
+                      },
+                    ]}
+                  >
+                    {result?.isCorrect || previousAttempt?.isCorrect
+                      ? "Correct answer"
+                      : result?.isExpired || result?.isCompleted
+                        ? "Unavailable"
+                        : "Incorrect answer"}
+                  </Text>
+                </View>
+                <Text style={[styles.feedbackText, { color: colors.text }]}>
+                  {feedbackText}
                 </Text>
-              )}
+                {result?.remainingSpots !== undefined && (
+                  <Text
+                    style={[styles.feedbackMeta, { color: colors.textMuted }]}
+                  >
+                    Remaining spots: {result.remainingSpots}
+                  </Text>
+                )}
+                {(result?.isCorrect || previousAttempt?.isCorrect) && (
+                  <Text
+                    style={[styles.feedbackReward, { color: colors.success }]}
+                  >
+                    +{formatCurrency(rewardAmount)} ({rewardPoints} points)
+                  </Text>
+                )}
+              </Animated.View>
+            )}
+          </View>
+
+          {/* Winners Card */}
+          {Boolean(question.winners && question.winners.length) && (
+            <View
+              style={[
+                styles.card,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.cardHeader}>
+                <View
+                  style={[
+                    styles.badge,
+                    { backgroundColor: withAlpha(colors.info, 0.12) },
+                  ]}
+                >
+                  <PartyPopper
+                    size={ICON_SIZE.sm}
+                    color={colors.info}
+                    strokeWidth={1.5}
+                  />
+                  <Text style={[styles.badgeText, { color: colors.info }]}>
+                    Winners
+                  </Text>
+                </View>
+                <Text style={[styles.cardMeta, { color: colors.textMuted }]}>
+                  Latest payouts
+                </Text>
+              </View>
+
+              {(question.winners || []).map((winner) => (
+                <WinnerRow key={winner.id} winner={winner} colors={colors} />
+              ))}
             </View>
           )}
-        </View>
-
-        {/* Winners Card */}
-        {Boolean(question.winners && question.winners.length) && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.badge, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
-                <PartyPopper size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
-                <Text style={[styles.badgeText, { color: colors.info }]}>Winners</Text>
-              </View>
-              <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
-            </View>
-
-            {(question.winners || []).map((winner) => (
-              <WinnerRow key={winner.id} winner={winner} colors={colors} />
-            ))}
-          </View>
-        )}
-      </ScrollView>
+        </ScrollView>
+      </Animated.View>
 
       {/* ── Footer ── */}
       <View
@@ -925,15 +1257,23 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         ]}
       >
         {/* Progress indicator for remaining questions */}
-        {unansweredQuestions.length > 0 && !hasAlreadyAttempted && !result && (
-          <View style={styles.progressIndicator}>
-            <Text style={[styles.progressText, { color: colors.textMuted }]}>
-              {unansweredQuestions.length} more question
-              {unansweredQuestions.length > 1 ? "s" : ""} available
-            </Text>
-            <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
-          </View>
-        )}
+        {unansweredQuestions.length > 0 &&
+          !hasAlreadyAttempted &&
+          !result && (
+            <View style={styles.progressIndicator}>
+              <Text
+                style={[styles.progressText, { color: colors.textMuted }]}
+              >
+                {unansweredQuestions.length} more question
+                {unansweredQuestions.length > 1 ? "s" : ""} available
+              </Text>
+              <ChevronRight
+                size={ICON_SIZE.sm}
+                color={colors.textMuted}
+                strokeWidth={1.5}
+              />
+            </View>
+          )}
 
         <PrimaryButton
           title={
@@ -952,7 +1292,11 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           onPress={handleFooterPress}
           loading={submitAnswer.isPending || isTransitioning}
           disabled={isClosed && !hasAlreadyAttempted && !result}
-          variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
+          variant={
+            hasAlreadyAttempted && !previousAttempt?.isCorrect
+              ? "secondary"
+              : "primary"
+          }
         />
       </View>
 
@@ -965,7 +1309,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         totalEarned={sessionSummary.totalEarned}
         sessionEarnings={sessionSummary.totalEarned}
         totalBalance={walletBalance}
-        canRedeemRewards={canRedeem()}
+        canRedeemRewards={canRedeemRewards}
         onRedeemCash={handleRedeemCash}
         onRedeemAirtime={handleRedeemAirtime}
         onContinue={handleContinue}
@@ -1032,8 +1376,20 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
+  progressBar: {
+    height: 3,
+    width: "100%",
+  },
+  progressBarFill: {
+    height: "100%",
+    borderRadius: 1.5,
+  },
   scroll: {
     flex: 1,
+  },
+  scrollContent: {
+    padding: SPACING.lg,
+    paddingBottom: SPACING["2xl"],
   },
   hero: {
     borderRadius: RADIUS.lg,
@@ -1091,18 +1447,6 @@ const styles = StyleSheet.create({
   badgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-  timerPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
-  },
-  timerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
   },
   card: {
     borderRadius: RADIUS.lg,

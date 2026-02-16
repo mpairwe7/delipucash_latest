@@ -14,7 +14,39 @@ import {
 
 import { useAuthStore } from '@/utils/auth/store';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+// Normalize to host-only base so `/api/*` routes are never doubled.
+const API_BASE_URL = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
+
+const isAbsoluteUrl = (url: string): boolean => /^(https?:\/\/|blob:|data:)/i.test(url);
+
+const toAbsoluteUrl = (url: string | null | undefined): string => {
+  const value = (url || '').trim();
+  if (!value) return '';
+  if (isAbsoluteUrl(value)) return value;
+  if (value.startsWith('//')) return `https:${value}`;
+  return `${API_BASE_URL}${value.startsWith('/') ? '' : '/'}${value}`;
+};
+
+const normalizeVideo = (video: Video): Video => ({
+  ...video,
+  videoUrl: toAbsoluteUrl(video.videoUrl),
+  thumbnail: toAbsoluteUrl(video.thumbnail),
+});
+
+const extractVideos = (payload: unknown): Video[] => {
+  if (Array.isArray(payload)) return payload as Video[];
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    const data = (payload as { data?: unknown }).data;
+    if (Array.isArray(data)) return data as Video[];
+  }
+  return [];
+};
+
+const getPlayableVideos = (videos: Video[]): Video[] =>
+  videos
+    .map(normalizeVideo)
+    .filter((video) => typeof video.videoUrl === 'string' && video.videoUrl.trim().length > 0);
 
 /** Get current authenticated user ID from auth store */
 const getCurrentUserId = (): string | null =>
@@ -31,6 +63,7 @@ const VIDEO_ROUTES = {
   like: (id: string) => `/api/videos/${id}/like`,
   unlike: (id: string) => `/api/videos/${id}/unlike`,
   bookmark: (id: string) => `/api/videos/${id}/bookmark`,
+  status: (id: string) => `/api/videos/${id}/status`,
   comments: (id: string) => `/api/videos/${id}/comments`,
   share: (id: string) => `/api/videos/${id}/share`,
   upload: "/api/videos/create",
@@ -300,9 +333,10 @@ export const videoApi = {
     }>(path);
 
     if (response.success) {
+      const videos = getPlayableVideos(extractVideos(response.data));
       return {
         success: true,
-        data: response.data?.data || [],
+        data: videos,
         pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
       };
     }
@@ -320,7 +354,11 @@ export const videoApi = {
    */
   async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
     const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?sortBy=popular&limit=${limit}`);
-    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      error: response.error,
+    };
   },
 
   /**
@@ -335,7 +373,11 @@ export const videoApi = {
    */
   async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
     const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=${limit}`);
-    return { success: response.success, data: response.data?.data || (response.data as any) || [], error: response.error };
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      error: response.error,
+    };
   },
 
   /**
@@ -362,7 +404,7 @@ export const videoApi = {
 
     return {
       success: response.success,
-      data: response.data?.videos || [],
+      data: getPlayableVideos(response.data?.videos || []),
       pagination: { page, limit, total: 0, totalPages: 0 },
       error: response.error,
     };
@@ -384,23 +426,26 @@ export const videoApi = {
 
     return {
       success: response.success,
-      data: response.data?.data || [],
+      data: getPlayableVideos(extractVideos(response.data)),
       pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
       error: response.error,
     };
   },
 
   /**
-   * Upload a new video — sends userId from auth store
+   * Upload a new video — server derives userId from auth token
    */
   async upload(videoData: UploadVideoData): Promise<ApiResponse<Video>> {
-    const userId = getCurrentUserId();
     const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.upload, {
       method: "POST",
-      body: JSON.stringify({ ...videoData, userId }),
+      body: JSON.stringify(videoData),
     }, getAuthToken());
     // Backend wraps in { message, video }
-    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
+    return {
+      success: response.success,
+      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      error: response.error,
+    };
   },
 
   /**
@@ -429,7 +474,11 @@ export const videoApi = {
     const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.like(videoId), {
       method: "POST",
     }, getAuthToken());
-    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
+    return {
+      success: response.success,
+      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      error: response.error,
+    };
   },
 
   /**
@@ -439,19 +488,36 @@ export const videoApi = {
     const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.unlike(videoId), {
       method: "POST",
     }, getAuthToken());
-    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
+    return {
+      success: response.success,
+      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      error: response.error,
+    };
   },
 
   /**
-   * Bookmark a video — requires userId, backend returns { message, video }
+   * Bookmark a video — server derives userId from auth token
    */
   async bookmark(videoId: string): Promise<ApiResponse<Video>> {
-    const userId = getCurrentUserId();
     const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.bookmark(videoId), {
       method: "POST",
-      body: JSON.stringify({ userId }),
     }, getAuthToken());
-    return { success: response.success, data: response.data?.video || (response.data as any), error: response.error };
+    return {
+      success: response.success,
+      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      error: response.error,
+    };
+  },
+
+  /**
+   * Get per-user like/bookmark status for a video
+   */
+  async getVideoStatus(videoId: string): Promise<ApiResponse<{ videoId: string; isLiked: boolean; isBookmarked: boolean }>> {
+    return fetchJson<{ videoId: string; isLiked: boolean; isBookmarked: boolean }>(
+      VIDEO_ROUTES.status(videoId),
+      undefined,
+      getAuthToken()
+    );
   },
 
   /**
@@ -468,10 +534,9 @@ export const videoApi = {
    * Share a video (track for analytics) — backend returns { success, data: { shared, platform, ... } }
    */
   async share(videoId: string, platform: string): Promise<ApiResponse<{ shared: boolean; platform: string }>> {
-    const userId = getCurrentUserId();
     const response = await fetchJson<{ data: { shared: boolean; platform: string } }>(VIDEO_ROUTES.share(videoId), {
       method: "POST",
-      body: JSON.stringify({ platform, userId }),
+      body: JSON.stringify({ platform }),
     });
     return { success: response.success, data: response.data?.data || { shared: true, platform }, error: response.error };
   },
@@ -497,13 +562,12 @@ export const videoApi = {
   },
 
   /**
-   * Add comment to video — backend expects { text, user_id, created_at }
+   * Add comment to video — server derives userId from auth token
    */
   async addComment(videoId: string, text: string): Promise<ApiResponse<Comment>> {
-    const userId = getCurrentUserId();
     const response = await fetchJson<{ comment: Comment }>(VIDEO_ROUTES.comments(videoId), {
       method: "POST",
-      body: JSON.stringify({ text, user_id: userId, created_at: new Date().toISOString() }),
+      body: JSON.stringify({ text }),
     }, getAuthToken());
     // Backend wraps in { message, comment }
     return { success: response.success, data: response.data?.comment || (response.data as any), error: response.error };
@@ -601,7 +665,7 @@ export const videoApi = {
   async getById(videoId: string): Promise<ApiResponse<VideoWithDetails>> {
     const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=100`);
     if (!response.success) return { success: false, data: {} as VideoWithDetails, error: response.error };
-    const videos = response.data?.data || (response.data as any) || [];
+    const videos = getPlayableVideos(extractVideos(response.data));
     const video = (Array.isArray(videos) ? videos : []).find((v: Video) => v.id === videoId);
     if (!video) return { success: false, data: {} as VideoWithDetails, error: 'Video not found' };
     return { success: true, data: video as VideoWithDetails };

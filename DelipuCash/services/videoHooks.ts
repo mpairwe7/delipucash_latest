@@ -46,6 +46,7 @@ export const videoQueryKeys = {
   search: (query: string) => [...videoQueryKeys.all, 'search', query] as const,
   bookmarked: () => [...videoQueryKeys.all, 'bookmarked'] as const,
   userVideos: (userId: string) => [...videoQueryKeys.all, 'user', userId] as const,
+  status: (videoId: string) => [...videoQueryKeys.all, 'status', videoId] as const,
   analytics: (videoId: string) => [...videoQueryKeys.all, 'analytics', videoId] as const,
   stats: () => [...videoQueryKeys.all, 'stats'] as const,
   // Livestream keys
@@ -157,6 +158,22 @@ export function useVideoDetails(videoId: string): UseQueryResult<VideoWithDetail
   });
 }
 
+/**
+ * Hook to get per-user like/bookmark status for a specific video
+ */
+export function useVideoStatus(videoId: string) {
+  return useQuery({
+    queryKey: videoQueryKeys.status(videoId),
+    queryFn: async () => {
+      const response = await videoApi.getVideoStatus(videoId);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    enabled: !!videoId,
+    staleTime: 1000 * 60, // 1 minute
+  });
+}
+
 // ============================================================================
 // VIDEO INTERACTION HOOKS
 // ============================================================================
@@ -187,38 +204,59 @@ export function useLikeVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    // Optimistic update
+    // Optimistic update — detail + infinite list caches
     onMutate: async ({ videoId, isLiked }) => {
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.lists() });
 
-      // Snapshot previous value
+      // Snapshot detail
       const previousVideo = queryClient.getQueryData<VideoWithDetails>(
         videoQueryKeys.detail(videoId)
       );
 
-      // Optimistically update
+      // Optimistically update detail cache
       if (previousVideo) {
         queryClient.setQueryData<VideoWithDetails>(
           videoQueryKeys.detail(videoId),
           {
             ...previousVideo,
             likes: isLiked ? previousVideo.likes - 1 : previousVideo.likes + 1,
+            isLiked: !isLiked,
           }
         );
       }
 
+      // Optimistically update infinite list pages
+      queryClient.setQueriesData<{ pages: Array<{ videos: Video[] }>; pageParams: number[] }>(
+        { queryKey: videoQueryKeys.lists() },
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              videos: page.videos.map((v: Video) =>
+                v.id === videoId
+                  ? { ...v, likes: isLiked ? v.likes - 1 : v.likes + 1, isLiked: !isLiked }
+                  : v
+              ),
+            })),
+          };
+        }
+      );
+
       return { previousVideo };
     },
     onError: (_, { videoId }, context) => {
-      // Rollback on error
       if (context?.previousVideo) {
         queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
       }
+      // Rollback list by refetching
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
     },
     onSettled: (_, __, { videoId }) => {
-      // Refetch to ensure consistency
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.status(videoId) });
     },
   });
 }
@@ -235,7 +273,8 @@ export function useLikeVideo(): UseMutationResult<
 export function useBookmarkVideo(): UseMutationResult<
   Video,
   Error,
-  { videoId: string; isBookmarked: boolean }
+  { videoId: string; isBookmarked: boolean },
+  { previousVideo: VideoWithDetails | undefined }
 > {
   const queryClient = useQueryClient();
 
@@ -246,16 +285,82 @@ export function useBookmarkVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: (_, { videoId }) => {
+    // Optimistic update — detail + infinite list caches
+    onMutate: async ({ videoId, isBookmarked }) => {
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.lists() });
+
+      const previousVideo = queryClient.getQueryData<VideoWithDetails>(
+        videoQueryKeys.detail(videoId)
+      );
+
+      // Optimistically update detail cache
+      if (previousVideo) {
+        queryClient.setQueryData<VideoWithDetails>(
+          videoQueryKeys.detail(videoId),
+          { ...previousVideo, isBookmarked: !isBookmarked }
+        );
+      }
+
+      // Optimistically update infinite list pages
+      queryClient.setQueriesData<{ pages: Array<{ videos: Video[] }>; pageParams: number[] }>(
+        { queryKey: videoQueryKeys.lists() },
+        (old) => {
+          if (!old?.pages) return old;
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              videos: page.videos.map((v: Video) =>
+                v.id === videoId ? { ...v, isBookmarked: !isBookmarked } : v
+              ),
+            })),
+          };
+        }
+      );
+
+      return { previousVideo };
+    },
+    onError: (_, { videoId }, context) => {
+      if (context?.previousVideo) {
+        queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
+      }
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
+    },
+    onSettled: (_, __, { videoId }) => {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.bookmarked() });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.status(videoId) });
+    },
+  });
+}
+
+/**
+ * Hook to share a video (analytics tracking)
+ */
+export function useShareVideo(): UseMutationResult<
+  { shared: boolean; platform: string },
+  Error,
+  { videoId: string; platform: 'copy' | 'twitter' | 'facebook' | 'whatsapp' | 'instagram' | 'telegram' | 'email' | 'sms' | 'other' }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['videos', 'share'],
+    mutationFn: async ({ videoId, platform }) => {
+      const response = await videoApi.share(videoId, platform);
+      if (!response.success) throw new Error(response.error);
+      return response.data;
+    },
+    onSettled: (_, __, { videoId }) => {
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
     },
   });
 }
 
 /**
  * Hook to increment video view count
- * 
+ *
  * @example
  * ```tsx
  * const { mutate: recordView } = useRecordVideoView();

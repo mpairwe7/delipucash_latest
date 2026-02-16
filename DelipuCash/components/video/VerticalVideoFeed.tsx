@@ -57,10 +57,7 @@ import {
 import { Video } from '@/types';
 import {
   useVideoFeedStore,
-  selectActiveVideo,
   selectIsPlaybackAllowed,
-  selectLikedVideoIds,
-  selectBookmarkedVideoIds,
 } from '@/store/VideoFeedStore';
 import { VideoFeedItem } from './VideoFeedItem';
 import { VideoFeedSkeleton } from './VideoFeedSkeleton';
@@ -155,11 +152,11 @@ function VerticalVideoFeedComponent({
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<Video>>(null);
 
-  // Store state
-  const activeVideo = useVideoFeedStore(selectActiveVideo);
+  // Store state — granular field selectors (primitives) to avoid re-render from setProgress every 250ms
+  const activeVideoId = useVideoFeedStore(state => state.activeVideo.videoId);
+  const activeVideoIndex = useVideoFeedStore(state => state.activeVideo.index);
+  const isMuted = useVideoFeedStore(state => state.activeVideo.isMuted);
   const isPlaybackAllowed = useVideoFeedStore(selectIsPlaybackAllowed);
-  const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
-  const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
   // Note: feedMode and ui available via store if needed
   // Actions — individual selectors (stable references, no full-store subscription)
   const setVideos = useVideoFeedStore(s => s.setVideos);
@@ -234,7 +231,7 @@ function VerticalVideoFeedComponent({
       // Mark as preloaded (actual preloading handled by VideoFeedItem)
       markPreloaded(videoId);
     });
-  }, [activeVideo.index, getPreloadTargets, markPreloaded]);
+  }, [activeVideoIndex, getPreloadTargets, markPreloaded]);
 
   // ============================================================================
   // CALLBACKS
@@ -343,14 +340,9 @@ function VerticalVideoFeedComponent({
     [itemHeight]
   );
 
-  // Memoized active video ID and muted state for stable reference
-  const activeVideoId = activeVideo.videoId;
-  const isMuted = activeVideo.isMuted;
-
-  // Render video item - optimized to pass stable references
-  // Industry Standard: Only set isActive=true if playback is actually allowed
-  // This ensures videos pause when screen loses focus or app backgrounds
-  // isLiked/isBookmarked passed as props to avoid per-item store subscriptions
+  // Render video item - optimized with granular selectors
+  // isActive computed from primitive activeVideoId (no object re-creation on setProgress)
+  // isLiked/isBookmarked resolved per-item inside VideoFeedItem via store subscriptions
   const renderItem = useCallback(
     ({ item, index }: { item: Video; index: number }) => (
       <VideoFeedItem
@@ -359,8 +351,6 @@ function VerticalVideoFeedComponent({
         itemHeight={itemHeight}
         isActive={activeVideoId === item.id && isPlaybackAllowed}
         isMuted={isMuted}
-        isLiked={likedVideoIds.has(item.id)}
-        isBookmarked={bookmarkedVideoIds.has(item.id)}
         onLike={handleLike}
         onComment={handleComment}
         onShare={handleShare}
@@ -378,8 +368,6 @@ function VerticalVideoFeedComponent({
       activeVideoId,
       isPlaybackAllowed,
       isMuted,
-      likedVideoIds,
-      bookmarkedVideoIds,
       handleLike,
       handleComment,
       handleShare,
@@ -421,6 +409,19 @@ function VerticalVideoFeedComponent({
       </View>
     );
   }, [isLoading, itemHeight, colors]);
+
+  // Stable scroll-to-index failure handler (extracted from inline closure)
+  const handleScrollToIndexFailed = useCallback(
+    (info: { index: number }) => {
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: info.index,
+          animated: false,
+        });
+      }, 100);
+    },
+    []
+  );
 
   // Animated container style
   const animatedContainerStyle = useAnimatedStyle(() => ({
@@ -491,14 +492,7 @@ function VerticalVideoFeedComponent({
         accessibilityRole="list"
         accessibilityLabel="Video feed"
         // Error handling for initialScrollIndex
-        onScrollToIndexFailed={(info) => {
-          setTimeout(() => {
-            flatListRef.current?.scrollToIndex({
-              index: info.index,
-              animated: false,
-            });
-          }, 100);
-        }}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
         // Content styling
         contentContainerStyle={[
           styles.contentContainer,

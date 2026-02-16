@@ -22,6 +22,7 @@ import {
 } from "@/types";
 import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
+import { useAuthStore } from '@/utils/auth/store';
 import { questionQueryKeys } from "./questionHooks";
 
 // Query Keys
@@ -46,11 +47,42 @@ export const queryKeys = {
   unreadCount: ["notifications", "unread"] as const,
   rewards: ["rewards"] as const,
   rewardQuestions: ["rewards", "questions"] as const,
+  regularRewardQuestions: ["rewards", "questions", "regular"] as const,
   rewardQuestion: (id: string) => ["rewards", "questions", id] as const,
   dailyReward: ["rewards", "daily"] as const,
   ads: ["ads"] as const,
   dashboard: ["dashboard"] as const,
 };
+
+// ===========================================
+// Reward API Response Shapes
+// ===========================================
+
+/** Pagination shape shared by regular/instant reward endpoints */
+interface RewardQuestionPagination {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
+/** GET /api/reward-questions/regular — response.data shape */
+interface RegularRewardQuestionsPayload {
+  rewardQuestions: RewardQuestion[];
+  pagination: RewardQuestionPagination;
+}
+
+/** GET /api/reward-questions/instant — response.data shape */
+interface InstantRewardQuestionsPayload {
+  instantRewardQuestions: RewardQuestion[];
+  pagination: RewardQuestionPagination;
+}
+
+/** GET /api/reward-questions/:id — actual JSON shape (API layer generic mismatches) */
+interface RewardQuestionByIdPayload {
+  rewardQuestion: RewardQuestion;
+}
 
 // ===========================================
 // User Hooks
@@ -1092,17 +1124,59 @@ export function useRewards(): UseQueryResult<Reward[], Error> {
 /**
  * Hook to fetch reward questions
  */
-export function useRewardQuestions(): UseQueryResult<RewardQuestion[], Error> {
-  return useQuery({
+export function useRewardQuestions(enabled = true): UseQueryResult<RewardQuestion[], Error> {
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<{ rewardQuestions: RewardQuestion[] }, Error, RewardQuestion[]>({
     queryKey: queryKeys.rewardQuestions,
     queryFn: async () => {
       const response = await api.rewards.getQuestions();
       if (!response.success) throw new Error(response.error);
-      // Backend wraps array in { rewardQuestions: [...] }
-      const payload = response.data as any;
-      return payload?.rewardQuestions ?? payload ?? [];
+      return response.data as unknown as { rewardQuestions: RewardQuestion[] };
     },
     staleTime: 1000 * 60 * 2,
+    enabled: enabled && isAuthReady,
+    select: (data) => data?.rewardQuestions ?? [],
+  });
+}
+
+/**
+ * Hook to fetch regular (non-instant) reward questions only (paginated).
+ * Uses the dedicated /regular endpoint — no client-side filtering needed.
+ */
+export function useRegularRewardQuestions(page = 1, limit = 20): UseQueryResult<RewardQuestion[], Error> {
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<RegularRewardQuestionsPayload, Error, RewardQuestion[]>({
+    queryKey: [...queryKeys.regularRewardQuestions, page, limit],
+    queryFn: async () => {
+      const response = await api.rewards.getRegularQuestions(page, limit);
+      if (!response.success) throw new Error(response.error);
+      return response.data as unknown as RegularRewardQuestionsPayload;
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: isAuthReady,
+    select: (data) => data.rewardQuestions ?? [],
+  });
+}
+
+/**
+ * Hook to fetch instant reward questions only (paginated).
+ * Uses the dedicated /instant endpoint for server-side filtering + pagination.
+ */
+export function useInstantRewardQuestions(page = 1, limit = 20): UseQueryResult<RewardQuestion[], Error> {
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<InstantRewardQuestionsPayload, Error, RewardQuestion[]>({
+    queryKey: [...queryKeys.instantQuestions, page, limit],
+    queryFn: async () => {
+      const response = await api.rewards.getInstantQuestions(page, limit);
+      if (!response.success) throw new Error(response.error);
+      return response.data as unknown as InstantRewardQuestionsPayload;
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: isAuthReady,
+    select: (data) => data.instantRewardQuestions ?? [],
   });
 }
 
@@ -1110,17 +1184,19 @@ export function useRewardQuestions(): UseQueryResult<RewardQuestion[], Error> {
  * Hook to fetch a single reward question
  */
 export function useRewardQuestion(questionId: string): UseQueryResult<RewardQuestion | null, Error> {
-  return useQuery({
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<RewardQuestionByIdPayload, Error, RewardQuestion | null>({
     queryKey: queryKeys.rewardQuestion(questionId),
     queryFn: async () => {
       const response = await api.rewards.getQuestionById(questionId);
       if (!response.success) throw new Error(response.error);
-      // Backend wraps in { rewardQuestion: {...} }
-      const payload = response.data as any;
-      return payload?.rewardQuestion ?? payload ?? null;
+      // API layer types this as RewardQuestion|null but backend wraps in { rewardQuestion: {...} }
+      return response.data as unknown as RewardQuestionByIdPayload;
     },
-    enabled: Boolean(questionId),
+    enabled: Boolean(questionId) && isAuthReady,
     staleTime: 1000 * 60,
+    select: (data) => data?.rewardQuestion ?? null,
   });
 }
 
@@ -1140,6 +1216,8 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.regularRewardQuestions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestion(variables.questionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
       queryClient.invalidateQueries({ queryKey: queryKeys.user });

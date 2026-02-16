@@ -4,7 +4,7 @@ import { triggerHaptic } from "@/utils/quiz-utils";
 import { RADIUS, SPACING, TYPOGRAPHY, useTheme, withAlpha } from "@/utils/theme";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { Redirect, router, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect } from "react";
 import {
@@ -329,6 +329,19 @@ export default function SplashScreen(): React.ReactElement {
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
   const { isReady: authReady, isAuthenticated } = useAuth();
+  const rootNavigationState = useRootNavigationState();
+  const navigationReady = Boolean(rootNavigationState?.key);
+
+  // All hooks MUST be called before any conditional return (Rules of Hooks)
+  const handleGetStarted = useCallback((): void => {
+    if (!navigationReady) return;
+    router.push("/(auth)/signup");
+  }, [navigationReady]);
+
+  const handleSignIn = useCallback((): void => {
+    if (!navigationReady) return;
+    router.push("/(auth)/login");
+  }, [navigationReady]);
 
   // Announce screen purpose for screen readers
   useEffect(() => {
@@ -338,19 +351,10 @@ export default function SplashScreen(): React.ReactElement {
   }, []);
 
   // Skip landing for users with a valid persisted session
-  useEffect(() => {
-    if (authReady && isAuthenticated) {
-      router.replace("/(tabs)/home-redesigned");
-    }
-  }, [authReady, isAuthenticated]);
-
-  const handleGetStarted = useCallback((): void => {
-    router.push("/(auth)/signup");
-  }, []);
-
-  const handleSignIn = useCallback((): void => {
-    router.push("/(auth)/login");
-  }, []);
+  // Declarative <Redirect> ensures navigation waits for Root Layout to mount
+  if (authReady && isAuthenticated && navigationReady) {
+    return <Redirect href="/(tabs)/home-redesigned" />;
+  }
 
   return (
     <View style={styles.container} accessible accessibilityRole="none">

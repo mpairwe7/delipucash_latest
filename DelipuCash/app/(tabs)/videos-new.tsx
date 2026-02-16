@@ -84,17 +84,16 @@ import {
   RADIUS,
 } from '@/utils/theme';
 import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
+import { useUnreadCount } from '@/services/hooks';
 import {
+  useInfiniteVideos,
   useTrendingVideos,
   useLikeVideo,
-  useUnlikeVideo,
   useBookmarkVideo,
   useShareVideo,
-  useUnreadCount,
-  useAddComment,
-  useVideoComments,
-} from '@/services/hooks';
-import { useInfiniteVideos } from '@/services/videoHooks';
+  useAddVideoComment,
+  useVideoCommentsQuery,
+} from '@/services/videoHooks';
 import {
   VerticalVideoFeed,
   VideoPlayer,
@@ -139,6 +138,9 @@ const AD_INSERTION_CONFIG = {
   interstitialAfter: 5, // Full-screen ad after every 5 completed videos
   maxAdsPerSession: 8,  // Cap ads per session for user retention
 };
+
+const hasPlayableVideoUrl = (url: string | null | undefined): boolean =>
+  typeof url === 'string' && url.trim().length > 0;
 
 // ============================================================================
 // SUB-COMPONENTS - 2026 Design Patterns
@@ -389,12 +391,11 @@ export default function VideosScreen(): React.ReactElement {
   } = useInfiniteVideos({ limit: 15 });
   const { data: trendingVideos } = useTrendingVideos(20);
   const { data: unreadCount } = useUnreadCount();
-  const { mutate: likeVideo } = useLikeVideo();
-  const { mutate: unlikeVideo } = useUnlikeVideo();
-  const { mutate: bookmarkVideo } = useBookmarkVideo();
-  const { mutate: shareVideo } = useShareVideo();
-  const { mutateAsync: addComment } = useAddComment();
-  const { data: commentsData, refetch: refetchComments } = useVideoComments(ui.commentsVideoId || '', 1, 20);
+  const { mutate: likeVideoMutate } = useLikeVideo();
+  const { mutate: bookmarkVideoMutate } = useBookmarkVideo();
+  const { mutate: shareVideoMutate } = useShareVideo();
+  const { mutateAsync: addComment } = useAddVideoComment();
+  const { data: commentsData, refetch: refetchComments } = useVideoCommentsQuery(ui.commentsVideoId || '');
 
   // Ad data using TanStack Query for optimized caching - Industry Standard
   const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
@@ -412,6 +413,16 @@ export default function VideosScreen(): React.ReactElement {
   // LIFECYCLE MANAGEMENT - Industry Standard: TikTok/YouTube/Instagram pattern
   // Videos should pause when screen loses focus or app goes to background
   // ============================================================================
+
+  // Refs for volatile values — keeps handler identities stable
+  const videosWatchedCountRef = useRef(videosWatchedCount);
+  useEffect(() => { videosWatchedCountRef.current = videosWatchedCount; }, [videosWatchedCount]);
+
+  const sessionAdCountRef = useRef(sessionAdCount);
+  useEffect(() => { sessionAdCountRef.current = sessionAdCount; }, [sessionAdCount]);
+
+  const likedVideoIdsRef = useRef(likedVideoIds);
+  useEffect(() => { likedVideoIdsRef.current = likedVideoIds; }, [likedVideoIds]);
 
   // Track AppState changes (foreground/background)
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -458,7 +469,9 @@ export default function VideosScreen(): React.ReactElement {
 
   const allVideos = useMemo(() => {
     if (!videosData?.pages) return [];
-    return videosData.pages.flatMap((page) => page.videos);
+    return videosData.pages
+      .flatMap((page) => page.videos)
+      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
   }, [videosData?.pages]);
 
   // Search hook for video search functionality
@@ -498,15 +511,16 @@ export default function VideosScreen(): React.ReactElement {
   // 2026 Standard: Session-capped ad insertion with engagement awareness
   const videosWithAds = useMemo(() => {
     let baseVideos: Video[] = [];
+    const playableVideoAds = (videoAds || []).filter((ad) => hasPlayableVideoUrl(ad.videoUrl));
 
     // If searching, return filtered results without ads
     if (showSearchResults && searchQuery) {
-      return filteredVideos;
+      return filteredVideos.filter((video) => hasPlayableVideoUrl(video.videoUrl));
     }
 
     switch (activeTab) {
       case 'trending':
-        baseVideos = trendingVideos || [];
+        baseVideos = (trendingVideos || []).filter((video) => hasPlayableVideoUrl(video.videoUrl));
         break;
       case 'following':
         baseVideos = allVideos.filter(v => v.likes > 100);
@@ -517,7 +531,9 @@ export default function VideosScreen(): React.ReactElement {
     }
 
     // 2026 Standard: Session-aware ad insertion with max cap
-    if (!videoAds || videoAds.length === 0 || sessionAdCount >= AD_INSERTION_CONFIG.maxAdsPerSession) {
+    // Read from ref to avoid recomputing videosWithAds on every ad impression
+    const currentAdCount = sessionAdCountRef.current;
+    if (playableVideoAds.length === 0 || currentAdCount >= AD_INSERTION_CONFIG.maxAdsPerSession) {
       return baseVideos;
     }
 
@@ -529,11 +545,11 @@ export default function VideosScreen(): React.ReactElement {
 
       // Insert ad after every N videos, respecting session cap
       if (
-        (index + 1) % AD_INSERTION_CONFIG.interval === 0 && 
-        adIndex < videoAds.length &&
-        sessionAdCount + adIndex < AD_INSERTION_CONFIG.maxAdsPerSession
+        (index + 1) % AD_INSERTION_CONFIG.interval === 0 &&
+        adIndex < playableVideoAds.length &&
+        currentAdCount + adIndex < AD_INSERTION_CONFIG.maxAdsPerSession
       ) {
-        const ad = videoAds[adIndex];
+        const ad = playableVideoAds[adIndex];
         // Convert ad to video-like format for feed display
         // Map Ad properties to Video interface for seamless feed integration
         const ctaLabel = ad.callToAction?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Learn More';
@@ -541,7 +557,7 @@ export default function VideosScreen(): React.ReactElement {
           id: `ad-${ad.id}`,
           title: ad.headline || ad.title,
           description: ad.description,
-          videoUrl: ad.videoUrl || '',
+          videoUrl: ad.videoUrl!.trim(),
           thumbnail: ad.thumbnailUrl || ad.imageUrl || '',
           views: ad.views || 0,
           likes: 0,
@@ -558,7 +574,7 @@ export default function VideosScreen(): React.ReactElement {
     });
 
     return result;
-  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds, sessionAdCount]);
+  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
 
   const videos = videosWithAds;
 
@@ -604,18 +620,26 @@ export default function VideosScreen(): React.ReactElement {
       return;
     }
 
-    const isCurrentlyLiked = likedVideoIds.has(video.id);
+    const isCurrentlyLiked = likedVideoIdsRef.current.has(video.id);
     toggleLike(video.id);
 
+    likeVideoMutate(
+      { videoId: video.id, isLiked: isCurrentlyLiked },
+      {
+        onError: () => {
+          // Rollback Zustand store optimistic state on server failure
+          toggleLike(video.id);
+        },
+      }
+    );
+
     if (isCurrentlyLiked) {
-      unlikeVideo(video.id);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
-      likeVideo(video.id);
       // 2026: Distinct success haptic for positive actions
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [authReady, isAuthenticated, likedVideoIds, toggleLike, likeVideo, unlikeVideo]);
+  }, [authReady, isAuthenticated, toggleLike, likeVideoMutate]);
 
   const handleComment = useCallback((video: Video) => {
     // Guard: don't open comments for sponsored ad items
@@ -645,13 +669,13 @@ export default function VideosScreen(): React.ReactElement {
         else if (activityType.includes('facebook')) platform = 'facebook';
         else if (activityType.includes('whatsapp')) platform = 'whatsapp';
         
-        shareVideo({ videoId: video.id, platform });
+        shareVideoMutate({ videoId: video.id, platform });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
       console.error('Share error:', error);
     }
-  }, [shareVideo]);
+  }, [shareVideoMutate]);
 
   const handleBookmark = useCallback((video: Video) => {
     if (!authReady) return;
@@ -659,11 +683,20 @@ export default function VideosScreen(): React.ReactElement {
       router.push('/(auth)/login' as Href);
       return;
     }
+    const isCurrentlyBookmarked = bookmarkedVideoIdsRef.current?.has(video.id) ?? false;
     toggleBookmark(video.id);
-    bookmarkVideo(video.id);
+    bookmarkVideoMutate(
+      { videoId: video.id, isBookmarked: isCurrentlyBookmarked },
+      {
+        onError: () => {
+          // Rollback Zustand store optimistic state on server failure
+          toggleBookmark(video.id);
+        },
+      }
+    );
     // 2026: Rigid haptic for save/bookmark - distinct tactile confirmation
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-  }, [authReady, isAuthenticated, toggleBookmark, bookmarkVideo]);
+  }, [authReady, isAuthenticated, toggleBookmark, bookmarkVideoMutate]);
 
   const handleExpandPlayer = useCallback((video: Video) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -756,23 +789,23 @@ export default function VideosScreen(): React.ReactElement {
 
   const handleVideoEnd = useCallback((video: Video) => {
     // 2026: Session-aware ad timing with cap enforcement + AdFrequencyManager
-    const newCount = videosWatchedCount + 1;
+    const newCount = videosWatchedCountRef.current + 1;
     setVideosWatchedCount(newCount);
 
     // Gate interstitial behind both local session cap AND AdFrequencyManager cooldowns/fatigue
     const frequencyAllowed = adFrequency.canShowAd('interstitial');
 
     if (
-      newCount >= AD_INSERTION_CONFIG.interstitialAfter && 
+      newCount >= AD_INSERTION_CONFIG.interstitialAfter &&
       videoAds && videoAds.length > 0 &&
-      sessionAdCount < AD_INSERTION_CONFIG.maxAdsPerSession &&
+      sessionAdCountRef.current < AD_INSERTION_CONFIG.maxAdsPerSession &&
       frequencyAllowed
     ) {
       setShowInterstitialAd(true);
       // Record impression in AdFrequencyManager for cooldown tracking
       adFrequency.recordImpression(videoAds[0].id, 'interstitial', true);
     }
-  }, [videosWatchedCount, videoAds, sessionAdCount, adFrequency]);
+  }, [videoAds, adFrequency]);
 
   const handleTabChange = useCallback((tab: FeedTab) => {
     // 2026: Rigid haptic for tab switch - distinct from soft interactions

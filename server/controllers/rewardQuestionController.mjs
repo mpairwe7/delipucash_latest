@@ -3,6 +3,58 @@ import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 
+/**
+ * Format a reward question for public API responses.
+ * SECURITY: Never expose correctAnswer, phoneNumber, or full winner emails publicly.
+ */
+function formatRewardQuestionPublic(rq, { includeAnswer = false } = {}) {
+  const formatted = {
+    id: rq.id,
+    text: rq.text,
+    options: rq.options,
+    rewardAmount: rq.rewardAmount,
+    expiryTime: rq.expiryTime instanceof Date ? rq.expiryTime.toISOString() : (rq.expiryTime || null),
+    isActive: rq.isActive,
+    userId: rq.userId,
+    isInstantReward: rq.isInstantReward,
+    maxWinners: rq.maxWinners,
+    winnersCount: rq.winnersCount,
+    isCompleted: rq.isCompleted,
+    createdAt: rq.createdAt instanceof Date ? rq.createdAt.getTime() : rq.createdAt,
+    updatedAt: rq.updatedAt instanceof Date ? rq.updatedAt.getTime() : rq.updatedAt,
+    user: rq.user ? {
+      id: rq.user.id,
+      firstName: rq.user.firstName || 'Anonymous',
+      lastName: rq.user.lastName || '',
+      avatar: rq.user.avatar,
+    } : null,
+  };
+
+  if (includeAnswer) {
+    formatted.correctAnswer = rq.correctAnswer;
+  }
+
+  if (rq.winners) {
+    formatted.winners = rq.winners.map(w => ({
+      id: w.id,
+      userEmail: maskEmail(w.userEmail),
+      position: w.position,
+      amountAwarded: w.amountAwarded,
+      paymentStatus: w.paymentStatus,
+      createdAt: w.createdAt instanceof Date ? w.createdAt.getTime() : w.createdAt,
+    }));
+  }
+
+  return formatted;
+}
+
+function maskEmail(email) {
+  if (!email) return '***';
+  const [local, domain] = email.split('@');
+  if (!domain) return '***';
+  return `${local[0]}***@${domain}`;
+}
+
 // Create a new reward question
 export const createRewardQuestion = asyncHandler(async (req, res) => {
   try {
@@ -94,10 +146,10 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       }
     });
 
-    console.log("Reward question created successfully:", rewardQuestion);
-    res.status(201).json({ 
-      message: "Reward question created successfully", 
-      rewardQuestion 
+    console.log("Reward question created successfully:", rewardQuestion.id);
+    res.status(201).json({
+      message: "Reward question created successfully",
+      rewardQuestion: formatRewardQuestionPublic(rewardQuestion)
     });
 
   } catch (error) {
@@ -106,81 +158,60 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
   }
 });
 
-// Get all active reward questions
+// Get all active reward questions (with pagination + optional type filter)
 export const getAllRewardQuestions = asyncHandler(async (req, res) => {
   try {
-    console.log('RewardQuestionController: getAllRewardQuestions - Starting to fetch reward questions from database');
-    
     const currentTime = new Date();
-    
-    const rewardQuestions = await prisma.rewardQuestion.findMany(
-      buildOptimizedQuery('RewardQuestion', {
-        where: {
-          isActive: true,
-          OR: [
-            { expiryTime: null },
-            { expiryTime: { gt: currentTime } },
-          ],
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const typeFilter = req.query.type; // 'instant' | 'regular' | undefined (all)
+
+    const where = {
+      isActive: true,
+      ...(typeFilter === 'instant' ? { isInstantReward: true } : {}),
+      ...(typeFilter === 'regular' ? { isInstantReward: false } : {}),
+      OR: [
+        { expiryTime: null },
+        { expiryTime: { gt: currentTime } },
+      ],
+    };
+
+    const [rewardQuestions, totalCount] = await Promise.all([
+      prisma.rewardQuestion.findMany(
+        buildOptimizedQuery('RewardQuestion', {
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
             },
           },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-      }),
-    );
+          orderBy: [{ createdAt: 'desc' }],
+          skip,
+          take: limit,
+        }),
+      ),
+      prisma.rewardQuestion.count({ where }),
+    ]);
 
-    console.log('RewardQuestionController: getAllRewardQuestions - Database query completed:', {
-      rewardQuestionsCount: rewardQuestions.length,
-      rewardQuestions: rewardQuestions.slice(0, 2).map(rq => ({
-        id: rq.id,
-        text: rq.text,
-        rewardAmount: rq.rewardAmount,
-        hasExpiryTime: !!rq.expiryTime,
-        userId: rq.userId,
-        hasUser: !!rq.user
-      }))
-    });
+    const formattedRewardQuestions = rewardQuestions.map(rq => formatRewardQuestionPublic(rq));
+    const totalPages = Math.ceil(totalCount / limit);
 
-    const formattedRewardQuestions = rewardQuestions.map(rq => ({
-      id: rq.id,
-      text: rq.text,
-      options: rq.options,
-      correctAnswer: rq.correctAnswer,
-      rewardAmount: rq.rewardAmount,
-      expiryTime: rq.expiryTime?.toISOString(),
-      isActive: rq.isActive,
-      userId: rq.userId,
-      isInstantReward: rq.isInstantReward,
-      maxWinners: rq.maxWinners,
-      winnersCount: rq.winnersCount,
-      isCompleted: rq.isCompleted,
-      paymentProvider: rq.paymentProvider,
-      phoneNumber: rq.phoneNumber,
-      createdAt: rq.createdAt.getTime(),
-      updatedAt: rq.updatedAt.getTime(),
-      user: rq.user ? {
-        id: rq.user.id,
-        firstName: rq.user.firstName || 'Anonymous',
-        lastName: rq.user.lastName || '',
-        avatar: rq.user.avatar
-      } : null
-    }));
-
-    console.log('RewardQuestionController: getAllRewardQuestions - Sending response:', {
-      rewardQuestionsCount: formattedRewardQuestions.length,
-      message: "All reward questions fetched successfully"
-    });
-
-    res.json({ 
-      message: "All reward questions fetched successfully", 
-      rewardQuestions: formattedRewardQuestions
+    res.json({
+      message: "All reward questions fetched successfully",
+      rewardQuestions: formattedRewardQuestions,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages,
+        hasMore: page < totalPages,
+      },
     });
   } catch (error) {
     console.error("RewardQuestionController: getAllRewardQuestions - Error occurred:", error);
@@ -188,92 +219,140 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
   }
 });
 
-// Get instant reward questions only
+// Get regular (non-instant) reward questions only (with pagination)
+export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
+  try {
+    const currentTime = new Date();
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where = {
+      isActive: true,
+      isInstantReward: false,
+      OR: [
+        { expiryTime: null },
+        { expiryTime: { gt: currentTime } },
+      ],
+    };
+
+    const [rewardQuestions, totalCount] = await Promise.all([
+      prisma.rewardQuestion.findMany(
+        buildOptimizedQuery('RewardQuestion', {
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+            winners: {
+              select: {
+                id: true,
+                userEmail: true,
+                position: true,
+                amountAwarded: true,
+                paymentStatus: true,
+                createdAt: true,
+              },
+              orderBy: { position: 'asc' },
+            },
+          },
+          orderBy: [{ createdAt: 'desc' }],
+          skip,
+          take: limit,
+        }),
+      ),
+      prisma.rewardQuestion.count({ where }),
+    ]);
+
+    const formattedRewardQuestions = rewardQuestions.map(rq => formatRewardQuestionPublic(rq));
+
+    res.json({
+      message: "Regular reward questions fetched successfully",
+      rewardQuestions: formattedRewardQuestions,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasMore: skip + rewardQuestions.length < totalCount,
+      },
+    });
+  } catch (error) {
+    console.error("RewardQuestionController: getRegularRewardQuestions - Error occurred:", error);
+    res.status(500).json({ message: "Failed to fetch regular reward questions" });
+  }
+});
+
+// Get instant reward questions only (with pagination)
 export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
   try {
-    console.log('RewardQuestionController: getInstantRewardQuestions - Starting to fetch instant reward questions');
-    
     const currentTime = new Date();
-    
-    const instantRewardQuestions = await prisma.rewardQuestion.findMany(
-      buildOptimizedQuery('RewardQuestion', {
-        where: {
-          isActive: true,
-          isInstantReward: true,
-          isCompleted: false,
-          OR: [
-            { expiryTime: null },
-            { expiryTime: { gt: currentTime } },
-          ],
-        },
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where = {
+      isActive: true,
+      isInstantReward: true,
+      isCompleted: false,
+      OR: [
+        { expiryTime: null },
+        { expiryTime: { gt: currentTime } },
+      ],
+    };
+
+    const [instantRewardQuestions, totalCount] = await Promise.all([
+      prisma.rewardQuestion.findMany(
+        buildOptimizedQuery('RewardQuestion', {
+          where,
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
+            },
+            winners: {
+              select: {
+                id: true,
+                userEmail: true,
+                position: true,
+                amountAwarded: true,
+                paymentStatus: true,
+                createdAt: true,
+              },
+              orderBy: {
+                position: 'asc',
+              },
             },
           },
-          winners: {
-            select: {
-              id: true,
-              userEmail: true,
-              position: true,
-              amountAwarded: true,
-              paymentStatus: true,
-              createdAt: true,
-            },
-            orderBy: {
-              position: 'asc',
-            },
-          },
-        },
-        orderBy: [{ createdAt: 'desc' }],
-      }),
-    );
+          orderBy: [{ createdAt: 'desc' }],
+          skip,
+          take: limit,
+        }),
+      ),
+      prisma.rewardQuestion.count({ where }),
+    ]);
 
-    const formattedInstantRewardQuestions = instantRewardQuestions.map(rq => ({
-      id: rq.id,
-      text: rq.text,
-      options: rq.options,
-      correctAnswer: rq.correctAnswer,
-      rewardAmount: rq.rewardAmount,
-      expiryTime: rq.expiryTime?.toISOString(),
-      isActive: rq.isActive,
-      userId: rq.userId,
-      isInstantReward: rq.isInstantReward,
-      maxWinners: rq.maxWinners,
-      winnersCount: rq.winnersCount,
-      isCompleted: rq.isCompleted,
-      paymentProvider: rq.paymentProvider,
-      phoneNumber: rq.phoneNumber,
-      createdAt: rq.createdAt.getTime(),
-      updatedAt: rq.updatedAt.getTime(),
-      user: rq.user ? {
-        id: rq.user.id,
-        firstName: rq.user.firstName || 'Anonymous',
-        lastName: rq.user.lastName || '',
-        avatar: rq.user.avatar
-      } : null,
-      winners: rq.winners.map(winner => ({
-        id: winner.id,
-        userEmail: winner.userEmail,
-        position: winner.position,
-        amountAwarded: winner.amountAwarded,
-        paymentStatus: winner.paymentStatus,
-        createdAt: winner.createdAt.getTime()
-      }))
-    }));
+    const formattedInstantRewardQuestions = instantRewardQuestions.map(rq => formatRewardQuestionPublic(rq));
 
-    console.log('RewardQuestionController: getInstantRewardQuestions - Sending response:', {
-      instantRewardQuestionsCount: formattedInstantRewardQuestions.length,
-      message: "Instant reward questions fetched successfully"
-    });
-
-    res.json({ 
-      message: "Instant reward questions fetched successfully", 
-      instantRewardQuestions: formattedInstantRewardQuestions
+    res.json({
+      message: "Instant reward questions fetched successfully",
+      instantRewardQuestions: formattedInstantRewardQuestions,
+      pagination: {
+        page,
+        limit,
+        totalCount,
+        totalPages: Math.ceil(totalCount / limit),
+        hasMore: skip + instantRewardQuestions.length < totalCount,
+      },
     });
   } catch (error) {
     console.error("RewardQuestionController: getInstantRewardQuestions - Error occurred:", error);
@@ -285,8 +364,6 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
 export const getRewardQuestionById = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-
-    console.log('RewardQuestionController: getRewardQuestionById - Fetching question:', id);
 
     const rewardQuestion = await prisma.rewardQuestion.findUnique({
       where: { id },
@@ -319,40 +396,7 @@ export const getRewardQuestionById = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "Reward question not found" });
     }
 
-    const formattedQuestion = {
-      id: rewardQuestion.id,
-      text: rewardQuestion.text,
-      options: rewardQuestion.options,
-      correctAnswer: rewardQuestion.correctAnswer,
-      rewardAmount: rewardQuestion.rewardAmount,
-      expiryTime: rewardQuestion.expiryTime?.toISOString() || null,
-      isActive: rewardQuestion.isActive,
-      userId: rewardQuestion.userId,
-      isInstantReward: rewardQuestion.isInstantReward,
-      maxWinners: rewardQuestion.maxWinners,
-      winnersCount: rewardQuestion.winnersCount,
-      isCompleted: rewardQuestion.isCompleted,
-      paymentProvider: rewardQuestion.paymentProvider,
-      phoneNumber: rewardQuestion.phoneNumber,
-      createdAt: rewardQuestion.createdAt.toISOString(),
-      updatedAt: rewardQuestion.updatedAt.toISOString(),
-      user: rewardQuestion.user ? {
-        id: rewardQuestion.user.id,
-        firstName: rewardQuestion.user.firstName || 'Anonymous',
-        lastName: rewardQuestion.user.lastName || '',
-        avatar: rewardQuestion.user.avatar
-      } : null,
-      winners: rewardQuestion.winners.map(winner => ({
-        id: winner.id,
-        userEmail: winner.userEmail,
-        position: winner.position,
-        amountAwarded: winner.amountAwarded,
-        paymentStatus: winner.paymentStatus,
-        createdAt: winner.createdAt.toISOString()
-      }))
-    };
-
-    console.log('RewardQuestionController: getRewardQuestionById - Question found:', formattedQuestion.id);
+    const formattedQuestion = formatRewardQuestionPublic(rewardQuestion);
 
     res.json({
       message: "Reward question fetched successfully",
@@ -386,7 +430,11 @@ export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
       }),
     );
 
-    res.json(rewardQuestions);
+    const formattedQuestions = rewardQuestions.map(rq => formatRewardQuestionPublic(rq));
+    res.json({
+      message: "User reward questions fetched successfully",
+      rewardQuestions: formattedQuestions,
+    });
   } catch (error) {
     console.error("Error fetching user reward questions:", error);
     res.status(500).json({ message: "Something went wrong" });
@@ -398,6 +446,18 @@ export const updateRewardQuestion = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
+
+    // Ownership check — only the creator can update their reward question
+    const existing = await prisma.rewardQuestion.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: "Reward question not found" });
+    }
+    if (existing.userId !== req.user?.id) {
+      return res.status(403).json({ message: "You can only update your own reward questions" });
+    }
 
     // Handle date fields if present
     if (updateData.expiryTime) {
@@ -419,7 +479,10 @@ export const updateRewardQuestion = asyncHandler(async (req, res) => {
       }
     });
 
-    res.json(updatedRewardQuestion);
+    res.json({
+      message: "Reward question updated successfully",
+      rewardQuestion: formatRewardQuestionPublic(updatedRewardQuestion),
+    });
   } catch (error) {
     console.error("Error updating reward question:", error);
     res.status(500).json({ message: "Something went wrong" });
@@ -430,6 +493,18 @@ export const updateRewardQuestion = asyncHandler(async (req, res) => {
 export const deleteRewardQuestion = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Ownership check — only the creator can delete their reward question
+    const existing = await prisma.rewardQuestion.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ message: "Reward question not found" });
+    }
+    if (existing.userId !== req.user?.id) {
+      return res.status(403).json({ message: "You can only delete your own reward questions" });
+    }
 
     await prisma.rewardQuestion.delete({
       where: { id },
@@ -472,11 +547,20 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
     const userEmail = authenticatedUser.email;
 
-    // SINGLE ATTEMPT ENFORCEMENT: Check if user has already attempted this question
-    const existingAttempt = await prisma.questionAttempt.findFirst({
+    // Fetch the reward question first (needed for correctAnswer in all responses)
+    const rewardQuestion = await prisma.rewardQuestion.findUnique({
+      where: { id: rewardQuestionId }
+    });
+
+    if (!rewardQuestion) {
+      return res.status(404).json({ message: "Reward question not found" });
+    }
+
+    // SINGLE ATTEMPT ENFORCEMENT: Check if user has already attempted this reward question
+    const existingAttempt = await prisma.rewardQuestionAttempt.findFirst({
       where: {
         userEmail,
-        questionId: rewardQuestionId,
+        rewardQuestionId,
       }
     });
 
@@ -486,15 +570,6 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
         isCorrect: existingAttempt.isCorrect,
         alreadyAttempted: true
       });
-    }
-
-    // Get the reward question
-    const rewardQuestion = await prisma.rewardQuestion.findUnique({
-      where: { id: rewardQuestionId }
-    });
-
-    if (!rewardQuestion) {
-      return res.status(404).json({ message: "Reward question not found" });
     }
 
     // Check if question is active and not expired
@@ -534,151 +609,155 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     // Check if answer is correct
     const isCorrect = selectedAnswer === rewardQuestion.correctAnswer;
 
-    // Create question attempt
-    const questionAttempt = await prisma.questionAttempt.create({
+    // Create reward question attempt (dedicated model — no FK to Question table)
+    await prisma.rewardQuestionAttempt.create({
       data: {
         userEmail,
-        questionId: rewardQuestionId,
+        rewardQuestionId,
         selectedAnswer,
         isCorrect,
         attemptedAt: new Date()
       }
     });
 
-    // Create reward question attempt relation
-    await prisma.rewardQuestionOnAttempt.create({
-      data: {
-        rewardQuestionId,
-        questionAttemptId: questionAttempt.id
-      }
-    });
-
     let response = {
       message: isCorrect ? "Correct answer! Points awarded." : "Incorrect answer. This question can only be attempted once.",
       isCorrect,
+      correctAnswer: rewardQuestion.correctAnswer,
       pointsAwarded: 0,
-      rewardEarned: 0, // Frontend compatibility
+      rewardEarned: 0,
       isWinner: false,
       position: null,
       paymentStatus: null,
       remainingSpots: Math.max(rewardQuestion.maxWinners - rewardQuestion.winnersCount, 0)
     };
 
-    // If answer is correct, handle instant reward logic
+    // If answer is correct, handle reward logic
     if (isCorrect) {
-      // Fixed reward amount: 500 UGX (5 points) per correct answer
-      const INSTANT_REWARD_AMOUNT = 500;
+      // Dynamic reward amount from question model (fallback to 500 UGX / 5 points)
+      const rewardAmountUGX = rewardQuestion.rewardAmount || 500;
+      const rewardPoints = Math.round(rewardAmountUGX / 100) || 5;
 
       if (rewardQuestion.isInstantReward) {
-        // Handle instant reward question
-        const currentWinnersCount = rewardQuestion.winnersCount;
-        const maxWinners = rewardQuestion.maxWinners;
+        // Transactional winner allocation with optimistic locking to prevent race conditions
+        const winnerResult = await prisma.$transaction(async (tx) => {
+          // Re-read with fresh data inside transaction
+          const freshQuestion = await tx.rewardQuestion.findUnique({
+            where: { id: rewardQuestionId },
+          });
 
-        if (currentWinnersCount < maxWinners) {
-          // User is a winner!
-          const position = currentWinnersCount + 1;
-          
-          // Create winner record with fixed reward amount
-          const winner = await prisma.instantRewardWinner.create({
+          if (!freshQuestion || freshQuestion.winnersCount >= freshQuestion.maxWinners) {
+            // Question is full — still award points but no winner slot
+            await tx.appUser.update({
+              where: { email: userEmail },
+              data: { points: { increment: rewardPoints } },
+            });
+            return { isWinner: false, reason: 'FULL' };
+          }
+
+          const position = freshQuestion.winnersCount + 1;
+
+          // Create winner record
+          const winner = await tx.instantRewardWinner.create({
             data: {
               rewardQuestionId,
               userEmail,
               position,
-              amountAwarded: INSTANT_REWARD_AMOUNT,
+              amountAwarded: rewardAmountUGX,
               paymentStatus: 'PENDING',
               paymentProvider: rewardQuestion.paymentProvider,
               phoneNumber: phoneNumber || rewardQuestion.phoneNumber,
               createdAt: new Date(),
-              updatedAt: new Date()
-            }
+              updatedAt: new Date(),
+            },
           });
 
-          // Update question winners count
-          await prisma.rewardQuestion.update({
-            where: { id: rewardQuestionId },
+          // Atomic increment with optimistic lock on winnersCount
+          const updated = await tx.rewardQuestion.updateMany({
+            where: {
+              id: rewardQuestionId,
+              winnersCount: freshQuestion.winnersCount,
+            },
             data: {
-              winnersCount: currentWinnersCount + 1,
-              isCompleted: (currentWinnersCount + 1) >= maxWinners
-            }
+              winnersCount: { increment: 1 },
+              isCompleted: position >= freshQuestion.maxWinners,
+            },
           });
 
-          // Update user points
-          await prisma.appUser.update({
-            where: { email: userEmail },
-            data: {
-              points: {
-                increment: 5 // 5 points = 500 UGX
-              }
-            }
-          });
-
-          // Process automatic payment
-          let paymentResult = null;
-          try {
-            paymentResult = await processInstantRewardPayment(winner);
-          } catch (paymentError) {
-            console.error("Payment processing error:", paymentError);
-            // Continue with the response even if payment fails
+          if (updated.count === 0) {
+            throw new Error('CONCURRENT_WINNER_CONFLICT');
           }
 
+          // Award points within transaction
+          await tx.appUser.update({
+            where: { email: userEmail },
+            data: { points: { increment: rewardPoints } },
+          });
+
+          return { isWinner: true, winner, position, maxWinners: freshQuestion.maxWinners };
+        }, {
+          timeout: 10000,
+        });
+
+        if (winnerResult.isWinner) {
+          // Process payment OUTSIDE transaction (async, non-blocking)
+          let paymentResult = null;
+          try {
+            paymentResult = await processInstantRewardPayment(winnerResult.winner);
+          } catch (paymentError) {
+            console.error("Payment processing error:", paymentError);
+          }
+
+          const { position, maxWinners } = winnerResult;
           response = {
-            message: `🎉 Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${INSTANT_REWARD_AMOUNT} UGX (5 points)!`,
+            ...response,
+            message: `Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`,
             isCorrect: true,
-            pointsAwarded: INSTANT_REWARD_AMOUNT,
-            rewardEarned: INSTANT_REWARD_AMOUNT,
+            pointsAwarded: rewardAmountUGX,
+            rewardEarned: rewardAmountUGX,
             isWinner: true,
             position,
             paymentStatus: paymentResult?.status || 'PENDING',
             paymentReference: paymentResult?.reference,
-            remainingSpots: Math.max(maxWinners - (currentWinnersCount + 1), 0)
+            remainingSpots: Math.max(maxWinners - position, 0),
           };
         } else {
-          // Question is full, but answer is correct - still award points but no payment
           response = {
-            message: "Correct answer! However, all winners have already been found for this question. You still earned 5 points!",
+            ...response,
+            message: `Correct answer! However, all winners have already been found for this question. You still earned ${rewardPoints} points!`,
             isCorrect: true,
-            pointsAwarded: INSTANT_REWARD_AMOUNT,
-            rewardEarned: INSTANT_REWARD_AMOUNT,
+            pointsAwarded: rewardAmountUGX,
+            rewardEarned: rewardAmountUGX,
             isWinner: false,
             position: null,
             paymentStatus: null,
             remainingSpots: 0,
-            isCompleted: true
+            isCompleted: true,
           };
-
-          // Still award points for correct answer
-          await prisma.appUser.update({
-            where: { email: userEmail },
-            data: {
-              points: {
-                increment: 5
-              }
-            }
-          });
         }
       } else {
-        // Regular reward question - award fixed points (500 UGX / 5 points)
+        // Regular reward question — award dynamic points
         await prisma.appUser.update({
           where: { email: userEmail },
           data: {
             points: {
-              increment: 5
+              increment: rewardPoints
             }
           }
         });
 
-        // Create reward record
+        // Create reward record (store points, not UGX — consistent with user.points)
         await prisma.reward.create({
           data: {
             userEmail,
-            points: INSTANT_REWARD_AMOUNT,
+            points: rewardPoints,
             description: `Correct answer to reward question: ${rewardQuestion.text.substring(0, 50)}...`
           }
         });
 
-        response.pointsAwarded = INSTANT_REWARD_AMOUNT;
-        response.rewardEarned = INSTANT_REWARD_AMOUNT;
-        response.message = `Correct! You earned ${INSTANT_REWARD_AMOUNT} UGX (5 points)!`;
+        response.pointsAwarded = rewardAmountUGX;
+        response.rewardEarned = rewardAmountUGX;
+        response.message = `Correct! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`;
       }
     }
 

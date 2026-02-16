@@ -6,10 +6,11 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/services";
-import { useRewardQuestions } from "@/services/hooks";
+import { useInstantRewardQuestions } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
+import { useToast } from "@/components/ui/Toast";
 import { InstantRewardListSkeleton } from "@/components/question/QuestionSkeletons";
 import {
     BORDER_WIDTH,
@@ -28,9 +29,9 @@ import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, CheckCircle2, Circle, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+    FlatList,
     Pressable,
     RefreshControl,
-    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -56,17 +57,16 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { data: user } = useUser();
   const { isReady: authReady, isAuthenticated, auth } = useAuth();
+  const { showToast } = useToast();
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'unanswered' | 'completed'>('unanswered');
 
-  const { data: rewardQuestions, isLoading, error: rewardError, refetch, isFetching } = useRewardQuestions();
+  const { data: rewardQuestions, isLoading, error: rewardError, refetch, isFetching } = useInstantRewardQuestions();
 
-  // Access instant reward store for attempt tracking
-  const {
-    initializeAttemptHistory,
-    hasAttemptedQuestion,
-    getAttemptedQuestion,
-  } = useInstantRewardStore();
+  // Access instant reward store for attempt tracking — individual selectors prevent over-subscription
+  const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
+  const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
+  const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
 
   const userEmail = auth?.user?.email || user?.email;
 
@@ -86,7 +86,6 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const activeQuestions = useMemo<RewardListItem[]>(() => {
     const now = new Date();
     return (rewardQuestions || [])
-      .filter((q) => q.isInstantReward)
       .filter((q) => {
         if (!q.expiryTime) return true;
         return new Date(q.expiryTime) > now;
@@ -96,7 +95,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         return {
           id: q.id,
           text: q.text,
-          rewardAmount: REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT, // Fixed reward: 500 shs
+          rewardAmount: q.rewardAmount || REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT,
           expiryTime: q.expiryTime,
           maxWinners: q.maxWinners,
           winnersCount: q.winnersCount,
@@ -149,8 +148,99 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       router.push("/(auth)/login" as Href);
       return;
     }
+    // Early phone number check — prevent entering question without payout info
+    const userPhone = user?.phone ?? auth?.user?.phone;
+    if (!userPhone) {
+      showToast({
+        message: 'Please update your profile with a phone number to receive rewards.',
+        type: 'warning',
+        action: 'Update Profile',
+        onAction: () => router.push('/(tabs)/profile' as Href),
+      });
+      return;
+    }
     router.push(`/instant-reward-answer/${id}` as Href);
-  }, [authReady, isAuthenticated]);
+  }, [authReady, isAuthenticated, user?.phone, auth?.user?.phone, showToast]);
+
+  // Dynamic reward amount from question model, fallback to constant
+  const displayRewardAmount = useMemo(() => {
+    if (activeQuestions.length > 0) return activeQuestions[0].rewardAmount;
+    return REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT;
+  }, [activeQuestions]);
+
+  // Select data based on active tab for FlatList
+  const displayedQuestions = useMemo(() => {
+    return activeTab === 'unanswered' ? unansweredQuestions : completedQuestions;
+  }, [activeTab, unansweredQuestions, completedQuestions]);
+
+  const keyExtractor = useCallback((item: RewardListItem) => item.id, []);
+
+  const renderItem = useCallback(({ item }: { item: RewardListItem }) => {
+    if (activeTab === 'unanswered') {
+      return (
+        <QuestionCard
+          question={{
+            id: item.id,
+            text: item.text,
+            userId: null,
+            createdAt: item.createdAt,
+            updatedAt: item.createdAt,
+            rewardAmount: item.rewardAmount,
+            isInstantReward: true,
+            totalAnswers: item.winnersCount,
+            category: "Rewards",
+          }}
+          variant="default"
+          onPress={() => handleOpenQuestion(item.id)}
+        />
+      );
+    }
+
+    return (
+      <Pressable
+        style={[
+          styles.completedCard,
+          {
+            backgroundColor: colors.card,
+            borderColor: withAlpha(item.isCorrect ? colors.success : colors.error, 0.3),
+          },
+        ]}
+        onPress={() => handleOpenQuestion(item.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`View ${item.isCorrect ? 'correct' : 'incorrect'} answer for: ${item.text}`}
+      >
+        <View style={styles.completedCardHeader}>
+          <View style={[
+            styles.statusBadge,
+            { backgroundColor: withAlpha(item.isCorrect ? colors.success : colors.error, 0.12) }
+          ]}>
+            {item.isCorrect ? (
+              <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={2} />
+            ) : (
+              <Circle size={ICON_SIZE.sm} color={colors.error} strokeWidth={2} />
+            )}
+            <Text style={[
+              styles.statusText,
+              { color: item.isCorrect ? colors.success : colors.error }
+            ]}>
+              {item.isCorrect ? 'Correct' : 'Incorrect'}
+            </Text>
+          </View>
+          {item.isCorrect && (item.rewardEarned ?? 0) > 0 && (
+            <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
+              <Trophy size={ICON_SIZE.xs} color={colors.success} strokeWidth={2} />
+              <Text style={[styles.rewardText, { color: colors.success }]}>
+                +{formatCurrency(item.rewardEarned ?? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}
+              </Text>
+            </View>
+          )}
+        </View>
+        <Text style={[styles.completedCardText, { color: colors.text }]} numberOfLines={2}>
+          {item.text}
+        </Text>
+      </Pressable>
+    );
+  }, [activeTab, handleOpenQuestion, colors]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}> 
@@ -189,8 +279,117 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         </View>
       </View>
 
-      <ScrollView
-        style={styles.scroll}
+      <FlatList
+        style={{ flex: 1 }}
+        data={displayedQuestions}
+        keyExtractor={keyExtractor}
+        renderItem={renderItem}
+        ListHeaderComponent={
+          <>
+            <LinearGradient
+              colors={[withAlpha(colors.primary, 0.08), withAlpha(colors.warning, 0.04)]}
+              style={[styles.hero, { borderColor: colors.border }]}
+            >
+              <View style={[styles.heroIcon, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
+                <Zap size={ICON_SIZE['4xl']} color={colors.primary} strokeWidth={1.5} />
+              </View>
+              <Text style={[styles.heroTitle, { color: colors.text }]}>Answer fast. Earn {formatCurrency(displayRewardAmount)}</Text>
+              <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>Earn {formatCurrency(displayRewardAmount)} ({REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points) per correct answer. One attempt only!</Text>
+              <View style={styles.heroStats}>
+                <StatCard
+                  icon={<Circle size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
+                  title="Unanswered"
+                  value={unansweredQuestions.length}
+                  subtitle="Questions available"
+                />
+                <StatCard
+                  icon={<Trophy size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+                  title="Earned"
+                  value={formatCurrency(totalRewardsEarned)}
+                  subtitle={`${correctAnswersCount} correct`}
+                />
+              </View>
+            </LinearGradient>
+
+            {/* Tab Switcher */}
+            <View style={[styles.tabContainer, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+              <Pressable
+                style={[
+                  styles.tab,
+                  activeTab === 'unanswered' && { backgroundColor: colors.card },
+                ]}
+                onPress={() => { triggerHaptic('selection'); setActiveTab('unanswered'); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === 'unanswered' }}
+              >
+                <Circle size={ICON_SIZE.xs} color={activeTab === 'unanswered' ? colors.primary : colors.textMuted} strokeWidth={2} />
+                <Text style={[
+                  styles.tabText,
+                  { color: activeTab === 'unanswered' ? colors.text : colors.textMuted }
+                ]}>
+                  Unanswered ({unansweredQuestions.length})
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.tab,
+                  activeTab === 'completed' && { backgroundColor: colors.card },
+                ]}
+                onPress={() => { triggerHaptic('selection'); setActiveTab('completed'); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: activeTab === 'completed' }}
+              >
+                <CheckCircle2 size={ICON_SIZE.xs} color={activeTab === 'completed' ? colors.success : colors.textMuted} strokeWidth={2} />
+                <Text style={[
+                  styles.tabText,
+                  { color: activeTab === 'completed' ? colors.text : colors.textMuted }
+                ]}>
+                  Completed ({completedQuestions.length})
+                </Text>
+              </Pressable>
+            </View>
+
+            <SectionHeader
+              title={activeTab === 'unanswered' ? "Answer to earn" : "Your completed questions"}
+              subtitle={activeTab === 'unanswered'
+                ? `${formatCurrency(displayRewardAmount)} per correct answer`
+                : `${correctAnswersCount} correct out of ${completedQuestions.length}`
+              }
+              icon={activeTab === 'unanswered'
+                ? <Zap size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
+                : <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
+              }
+            />
+
+            {isLoading && <InstantRewardListSkeleton count={4} />}
+            {!isLoading && rewardError && (
+              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Zap size={ICON_SIZE['2xl']} color={colors.error} strokeWidth={1.5} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>Failed to load questions</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Please check your connection and try again.</Text>
+                <PrimaryButton title="Retry" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
+              </View>
+            )}
+          </>
+        }
+        ListEmptyComponent={
+          !isLoading && !rewardError ? (
+            activeTab === 'unanswered' ? (
+              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <CheckCircle2 size={ICON_SIZE['2xl']} color={colors.success} strokeWidth={1.5} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>All caught up!</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>You've answered all available questions. Check back soon for new ones!</Text>
+                <PrimaryButton title="Refresh" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
+              </View>
+            ) : (
+              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Circle size={ICON_SIZE['2xl']} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>No completed questions</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Answer some questions to see them here!</Text>
+              </View>
+            )
+          ) : null
+        }
         contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING['2xl'] }}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -201,181 +400,12 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-      >
-        <LinearGradient
-          colors={[withAlpha(colors.primary, 0.08), withAlpha(colors.warning, 0.04)]}
-          style={[styles.hero, { borderColor: colors.border }]}
-        >
-          <View style={[styles.heroIcon, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-            <Zap size={ICON_SIZE['4xl']} color={colors.primary} strokeWidth={1.5} />
-          </View>
-          <Text style={[styles.heroTitle, { color: colors.text }]}>Answer fast. Earn {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}</Text>
-          <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>Earn {formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} ({REWARD_CONSTANTS.INSTANT_REWARD_POINTS} points) per correct answer. One attempt only!</Text>
-          <View style={styles.heroStats}>
-            <StatCard
-              icon={<Circle size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-              title="Unanswered"
-              value={unansweredQuestions.length}
-              subtitle="Questions available"
-            />
-            <StatCard
-              icon={<Trophy size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-              title="Earned"
-              value={formatCurrency(totalRewardsEarned)}
-              subtitle={`${correctAnswersCount} correct`}
-            />
-          </View>
-        </LinearGradient>
-
-        {/* Tab Switcher */}
-        <View style={[styles.tabContainer, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-          <Pressable
-            style={[
-              styles.tab,
-              activeTab === 'unanswered' && { backgroundColor: colors.card },
-            ]}
-            onPress={() => { triggerHaptic('selection'); setActiveTab('unanswered'); }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'unanswered' }}
-          >
-            <Circle size={ICON_SIZE.xs} color={activeTab === 'unanswered' ? colors.primary : colors.textMuted} strokeWidth={2} />
-            <Text style={[
-              styles.tabText,
-              { color: activeTab === 'unanswered' ? colors.text : colors.textMuted }
-            ]}>
-              Unanswered ({unansweredQuestions.length})
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[
-              styles.tab,
-              activeTab === 'completed' && { backgroundColor: colors.card },
-            ]}
-            onPress={() => { triggerHaptic('selection'); setActiveTab('completed'); }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeTab === 'completed' }}
-          >
-            <CheckCircle2 size={ICON_SIZE.xs} color={activeTab === 'completed' ? colors.success : colors.textMuted} strokeWidth={2} />
-            <Text style={[
-              styles.tabText,
-              { color: activeTab === 'completed' ? colors.text : colors.textMuted }
-            ]}>
-              Completed ({completedQuestions.length})
-            </Text>
-          </Pressable>
-        </View>
-
-        <SectionHeader
-          title={activeTab === 'unanswered' ? "Answer to earn" : "Your completed questions"}
-          subtitle={activeTab === 'unanswered'
-            ? `${formatCurrency(REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)} per correct answer`
-            : `${correctAnswersCount} correct out of ${completedQuestions.length}`
-          }
-          icon={activeTab === 'unanswered'
-            ? <Zap size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
-            : <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-          }
-        />
-
-        {isLoading ? (
-          <InstantRewardListSkeleton count={4} />
-        ) : rewardError ? (
-          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Zap size={ICON_SIZE['2xl']} color={colors.error} strokeWidth={1.5} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>Failed to load questions</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Please check your connection and try again.</Text>
-            <PrimaryButton title="Retry" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
-          </View>
-        ) : activeTab === 'unanswered' ? (
-          unansweredQuestions.length === 0 ? (
-            <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <CheckCircle2 size={ICON_SIZE['2xl']} color={colors.success} strokeWidth={1.5} />
-                <Text style={[styles.emptyTitle, { color: colors.text }]}>All caught up! 🎉</Text>
-                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>You&apos;ve answered all available questions. Check back soon for new ones!</Text>
-                <PrimaryButton title="Refresh" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
-              </View>
-            ) : (
-              <View style={styles.list}>
-                  {unansweredQuestions.map((q) => (
-                    <QuestionCard
-                      key={q.id}
-                      question={{
-                        id: q.id,
-                        text: q.text,
-                        userId: null,
-                        createdAt: q.createdAt,
-                        updatedAt: q.createdAt,
-                        rewardAmount: REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT,
-                        isInstantReward: true,
-                        totalAnswers: q.winnersCount,
-                        category: "Rewards",
-                      }}
-                      variant="default"
-                      onPress={() => handleOpenQuestion(q.id)}
-                    />
-                  ))}
-                </View>
-            )
-          ) : (
-            completedQuestions.length === 0 ? (
-              <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Circle size={ICON_SIZE['2xl']} color={colors.textMuted} strokeWidth={1.5} />
-                <Text style={[styles.emptyTitle, { color: colors.text }]}>No completed questions</Text>
-                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Answer some questions to see them here!</Text>
-              </View>
-            ) : (
-              <View style={styles.list}>
-                {completedQuestions.map((q) => (
-                  <Pressable
-                    key={q.id}
-                    style={[
-                      styles.completedCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: withAlpha(q.isCorrect ? colors.success : colors.error, 0.3),
-                      },
-                    ]}
-                    onPress={() => handleOpenQuestion(q.id)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`View ${q.isCorrect ? 'correct' : 'incorrect'} answer for: ${q.text}`}
-                  >
-                    <View style={styles.completedCardHeader}>
-                      <View style={[
-                        styles.statusBadge,
-                        { backgroundColor: withAlpha(q.isCorrect ? colors.success : colors.error, 0.12) }
-                      ]}>
-                        {q.isCorrect ? (
-                          <CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={2} />
-                        ) : (
-                          <Circle size={ICON_SIZE.sm} color={colors.error} strokeWidth={2} />
-                        )}
-                        <Text style={[
-                          styles.statusText,
-                          { color: q.isCorrect ? colors.success : colors.error }
-                        ]}>
-                          {q.isCorrect ? 'Correct' : 'Incorrect'}
-                        </Text>
-                      </View>
-                      {q.isCorrect && (q.rewardEarned ?? 0) > 0 && (
-                        <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
-                          <Trophy size={ICON_SIZE.xs} color={colors.success} strokeWidth={2} />
-                          <Text style={[styles.rewardText, { color: colors.success }]}>
-                            +{formatCurrency(q.rewardEarned ?? REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT)}
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={[styles.completedCardText, { color: colors.text }]} numberOfLines={2}>
-                      {q.text}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            )
-        )}
-
-        <View style={{ height: SPACING.xl }} />
-      </ScrollView>
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews
+        initialNumToRender={6}
+        ItemSeparatorComponent={() => <View style={{ height: SPACING.md }} />}
+      />
 
       <UploadRewardQuestionModal
         visible={showUploadModal}
@@ -406,9 +436,6 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
     alignItems: "center",
     justifyContent: "center",
-  },
-  scroll: {
-    flex: 1,
   },
   hero: {
     borderRadius: RADIUS.lg,

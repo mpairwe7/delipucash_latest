@@ -274,6 +274,7 @@ export const API_ROUTES = {
   rewards: {
     list: "/api/rewards",
     questions: "/api/reward-questions/all",
+    regularQuestions: "/api/reward-questions/regular",
     instantQuestions: "/api/reward-questions/instant",
     question: (id: string) => `/api/reward-questions/${id}`,
     submitAnswer: (id: string) => `/api/reward-questions/${id}/answer`,
@@ -995,6 +996,20 @@ export const rewardsApi = {
    */
   async getQuestions(): Promise<ApiResponse<RewardQuestion[]>> {
     return fetchJson<RewardQuestion[]>(API_ROUTES.rewards.questions);
+  },
+
+  /**
+   * Get regular (non-instant) reward questions (server-side filtered, paginated)
+   */
+  async getRegularQuestions(page = 1, limit = 20): Promise<ApiResponse<{ rewardQuestions: RewardQuestion[]; pagination: { page: number; limit: number; totalCount: number; totalPages: number; hasMore: boolean } }>> {
+    return fetchJson(`${API_ROUTES.rewards.regularQuestions}?page=${page}&limit=${limit}`);
+  },
+
+  /**
+   * Get instant reward questions (server-side filtered, paginated)
+   */
+  async getInstantQuestions(page = 1, limit = 20): Promise<ApiResponse<{ instantRewardQuestions: RewardQuestion[]; pagination: { page: number; limit: number; totalCount: number; totalPages: number; hasMore: boolean } }>> {
+    return fetchJson(`${API_ROUTES.rewards.instantQuestions}?page=${page}&limit=${limit}`);
   },
 
   /**

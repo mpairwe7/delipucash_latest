@@ -10,6 +10,7 @@ import {
   commentPost,
   getVideoComments,
   bookmarkVideo,
+  getVideoStatus,
   incrementVideoViews,
   shareVideo,
   // Video premium & limits endpoints
@@ -25,14 +26,30 @@ import {
   sendLivestreamChat,
 } from '../controllers/videoController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
+import jwt from 'jsonwebtoken';
 
 const router = express.Router();
+
+// Optional auth — verifies token if present, continues anonymously if not
+const optionalAuth = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) return next();
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded;
+    req.userRef = decoded.id;
+  } catch {
+    // Invalid token — continue as anonymous
+  }
+  next();
+};
 
 // ============================================================================
 // PUBLIC ROUTES (read-only)
 // ============================================================================
 
-router.get('/all', getAllVideos);
+router.get('/all', optionalAuth, getAllVideos);
 router.get('/live', getLiveStreams);
 router.get('/user/:userId', getVideosByUser);
 router.get('/:id/comments', getVideoComments);
@@ -48,6 +65,7 @@ router.post('/:id/unlike', verifyToken, unlikeVideo);
 router.post('/:id/comments', verifyToken, commentPost);
 router.post('/:id/share', shareVideo); // share tracking is public
 router.post('/:id/bookmark', verifyToken, bookmarkVideo);
+router.get('/:id/status', verifyToken, getVideoStatus);
 router.post('/:id/views', incrementVideoViews); // view tracking is public
 router.put('/update/:id', verifyToken, updateVideo);
 router.delete('/delete/:id', verifyToken, deleteVideo);

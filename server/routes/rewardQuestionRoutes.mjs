@@ -2,6 +2,7 @@ import express from 'express';
 import {
   createRewardQuestion,
   getAllRewardQuestions,
+  getRegularRewardQuestions,
   getInstantRewardQuestions,
   getRewardQuestionById,
   getRewardQuestionsByUser,
@@ -13,11 +14,12 @@ import { verifyToken } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
 
-// Public routes (read-only)
-router.get('/all', getAllRewardQuestions);
-router.get('/instant', getInstantRewardQuestions);
-router.get('/:id', getRewardQuestionById);
-router.get('/user/:userId', getRewardQuestionsByUser);
+// Protected read routes (require authentication — sensitive data stripped from responses)
+router.get('/all', verifyToken, getAllRewardQuestions);
+router.get('/regular', verifyToken, getRegularRewardQuestions);
+router.get('/instant', verifyToken, getInstantRewardQuestions);
+router.get('/user/:userId', verifyToken, getRewardQuestionsByUser);
+router.get('/:id', verifyToken, getRewardQuestionById);
 
 // Protected routes (require authentication)
 router.post('/create', verifyToken, createRewardQuestion);
