@@ -9,6 +9,7 @@
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { useAuthStore } from '@/utils/auth/store';
+import { silentRefresh } from '@/services/tokenRefresh';
 import type { SSEEventType, SSEConnectionStatus } from './types';
 
 type EventHandler = (data: unknown) => void;
@@ -144,6 +145,21 @@ export class SSEManager {
         }
       } else if (response.status === 404) {
         throw new Error(`SSE endpoint not found at ${endpointUsed}`);
+      }
+
+      // 401 = access token expired → refresh silently and retry on next reconnect
+      if (response.status === 401) {
+        const refreshed = await silentRefresh();
+        if (!refreshed) {
+          // Refresh failed — user is signed out, don't reconnect
+          this.setStatus('disconnected');
+          return;
+        }
+        // Token refreshed — immediate reconnect with fresh token
+        this.setStatus('disconnected');
+        this.reconnectAttempt = 0;
+        this.scheduleReconnect(0);
+        return;
       }
 
       if (!response.ok) {
