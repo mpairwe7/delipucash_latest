@@ -298,8 +298,8 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           markSubmitted(question.id);
           submitDebounceRef.current = false;
 
-          // Scroll to top to see result
-          scrollRef.current?.scrollTo({ y: 0, animated: true });
+          // Scroll to bottom to see the new response
+          scrollRef.current?.scrollToEnd({ animated: true });
 
           triggerHaptic('success');
           showToast({
@@ -474,7 +474,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: SPACING.lg,
-          paddingBottom: insets.bottom + SPACING.xl + 80,
+          paddingBottom: SPACING.lg,
         }}
         refreshControl={
           <RefreshControl
@@ -550,104 +550,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           </View>
         </View>
 
-        {/* Answer input card */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
-            wasSubmitted && styles.cardDisabled,
-          ]}
-        >
-          <View style={styles.inputHeader}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>
-              Your answer
-            </Text>
-            <CharCountIndicator
-              current={draftText.length}
-              max={ANSWER_MAX_LENGTH}
-              colors={colors}
-            />
-          </View>
-          <View
-            style={[
-              styles.inputWrapper,
-              {
-                borderColor: wasSubmitted
-                  ? colors.border
-                  : draftText.length > 0
-                  ? colors.primary
-                  : colors.border,
-                backgroundColor: colors.secondary,
-              },
-            ]}
-          >
-            <TextInput
-              style={[styles.input, { color: colors.text }]}
-              placeholder={
-                wasSubmitted
-                  ? "Your answer has been submitted"
-                  : "Share your knowledge or experience…"
-              }
-              placeholderTextColor={colors.textMuted}
-              multiline
-              value={draftText}
-              onChangeText={handleTextChange}
-              maxLength={ANSWER_MAX_LENGTH}
-              textAlignVertical="top"
-              editable={!isDisabled}
-              returnKeyType="default"
-              blurOnSubmit={false}
-              accessibilityLabel="Answer text input"
-              accessibilityHint={`Maximum ${ANSWER_MAX_LENGTH} characters`}
-            />
-          </View>
-          <PrimaryButton
-            title={
-              submitResponse.isPending
-                ? "Submitting…"
-                : wasSubmitted
-                ? "Submitted ✓"
-                : "Submit answer"
-            }
-            onPress={handleSubmit}
-            disabled={!canSubmit}
-            leftIcon={
-              wasSubmitted ? (
-                <CheckCircle
-                  size={ICON_SIZE.sm}
-                  color={colors.primaryText}
-                  strokeWidth={1.5}
-                />
-              ) : (
-                <Send
-                  size={ICON_SIZE.sm}
-                  color={colors.primaryText}
-                  strokeWidth={1.5}
-                />
-              )
-            }
-            style={{ marginTop: SPACING.md }}
-          />
-          <Pressable
-            style={[styles.discussionButton, { borderColor: colors.border }]}
-            onPress={handleDiscussion}
-            accessibilityRole="button"
-            accessibilityLabel="Open discussion"
-            accessibilityHint="View the full discussion thread"
-            hitSlop={4}
-          >
-            <MessageSquare
-              size={ICON_SIZE.sm}
-              color={colors.text}
-              strokeWidth={1.5}
-            />
-            <Text style={[styles.discussionText, { color: colors.text }]}>
-              View full discussion ({responseCount})
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* Previous responses */}
+        {/* Responses */}
         <View
           style={[
             styles.card,
@@ -684,47 +587,126 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             </View>
           ))}
         </View>
+
+        {/* View full discussion link */}
+        <Pressable
+          style={[styles.discussionButton, { borderColor: colors.border, marginBottom: SPACING.md }]}
+          onPress={handleDiscussion}
+          accessibilityRole="button"
+          accessibilityLabel="Open discussion"
+          accessibilityHint="View the full discussion thread"
+          hitSlop={4}
+        >
+          <MessageSquare
+            size={ICON_SIZE.sm}
+            color={colors.text}
+            strokeWidth={1.5}
+          />
+          <Text style={[styles.discussionText, { color: colors.text }]}>
+            View full discussion ({responseCount})
+          </Text>
+        </Pressable>
       </ScrollView>
 
-      {/* ── FAB ───────────────────────────────────────────────────────── */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.fab,
+      {/* ── Bottom Input Bar ────────────────────────────────────────── */}
+      <View
+        style={[
+          styles.bottomBar,
           {
-            backgroundColor: canSubmit ? colors.primary : withAlpha(colors.primary, 0.4),
-            bottom: insets.bottom + SPACING.lg,
-            opacity: pressed && canSubmit ? 0.85 : 1,
-            transform: [{ scale: pressed && canSubmit ? 0.95 : 1 }],
+            paddingBottom: insets.bottom + SPACING.xs,
+            backgroundColor: colors.card,
+            borderTopColor: colors.border,
           },
         ]}
-        onPress={() => { triggerHaptic('medium'); handleSubmit(); }}
-        disabled={!canSubmit}
-        accessibilityRole="button"
-        accessibilityLabel={
-          wasSubmitted
-            ? "Answer already submitted"
-            : canSubmit
-            ? "Submit answer"
-            : "Write an answer to submit"
-        }
-        accessibilityState={{ disabled: !canSubmit }}
       >
-        {submitResponse.isPending ? (
-          <Send size={ICON_SIZE.md} color={colors.primaryText} strokeWidth={1.5} style={{ opacity: 0.5 }} />
-        ) : wasSubmitted ? (
-          <CheckCircle
-            size={ICON_SIZE.md}
-            color={colors.primaryText}
-            strokeWidth={1.5}
-          />
+        {wasSubmitted ? (
+          <View style={styles.submittedBar}>
+            <CheckCircle
+              size={ICON_SIZE.sm}
+              color={colors.success || "#22c55e"}
+              strokeWidth={1.5}
+            />
+            <Text
+              style={[
+                styles.submittedBarText,
+                { color: colors.success || "#22c55e" },
+              ]}
+            >
+              Answer submitted
+            </Text>
+          </View>
         ) : (
-          <Send
-            size={ICON_SIZE.md}
-            color={colors.primaryText}
-            strokeWidth={1.5}
-          />
+          <View style={styles.bottomBarContent}>
+            <View style={styles.bottomBarInputRow}>
+              <View
+                style={[
+                  styles.bottomInputWrapper,
+                  {
+                    borderColor:
+                      draftText.length > 0 ? colors.primary : colors.border,
+                    backgroundColor: colors.secondary,
+                  },
+                ]}
+              >
+                <TextInput
+                  style={[styles.bottomInput, { color: colors.text }]}
+                  placeholder="Share your knowledge or experience\u2026"
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  value={draftText}
+                  onChangeText={handleTextChange}
+                  maxLength={ANSWER_MAX_LENGTH}
+                  textAlignVertical="top"
+                  editable={!isDisabled}
+                  returnKeyType="default"
+                  blurOnSubmit={false}
+                  accessibilityLabel="Answer text input"
+                  accessibilityHint={`Maximum ${ANSWER_MAX_LENGTH} characters`}
+                />
+              </View>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.sendButton,
+                  {
+                    backgroundColor: canSubmit
+                      ? colors.primary
+                      : withAlpha(colors.primary, 0.4),
+                    opacity: pressed && canSubmit ? 0.85 : 1,
+                    transform: [{ scale: pressed && canSubmit ? 0.95 : 1 }],
+                  },
+                ]}
+                onPress={handleSubmit}
+                disabled={!canSubmit}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  canSubmit ? "Submit answer" : "Write an answer to submit"
+                }
+                accessibilityState={{ disabled: !canSubmit }}
+              >
+                {submitResponse.isPending ? (
+                  <Send
+                    size={ICON_SIZE.sm}
+                    color={colors.primaryText}
+                    strokeWidth={1.5}
+                    style={{ opacity: 0.5 }}
+                  />
+                ) : (
+                  <Send
+                    size={ICON_SIZE.sm}
+                    color={colors.primaryText}
+                    strokeWidth={1.5}
+                  />
+                )}
+              </Pressable>
+            </View>
+            <CharCountIndicator
+              current={draftText.length}
+              max={ANSWER_MAX_LENGTH}
+              colors={colors}
+            />
+          </View>
         )}
-      </Pressable>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -976,18 +958,55 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     lineHeight: TYPOGRAPHY.fontSize.base * 1.5,
   },
-  fab: {
-    position: "absolute",
-    right: SPACING.lg,
-    width: COMPONENT_SIZE.button.large,
-    height: COMPONENT_SIZE.button.large,
-    borderRadius: COMPONENT_SIZE.button.large / 2,
+  bottomBar: {
+    borderTopWidth: BORDER_WIDTH.thin,
+    paddingTop: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+  },
+  bottomBarContent: {
+    gap: SPACING.xxs,
+  },
+  bottomBarInputRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: SPACING.sm,
+  },
+  bottomInputWrapper: {
+    flex: 1,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.lg,
+    maxHeight: 120,
+  },
+  bottomInput: {
+    minHeight: 44,
+    maxHeight: 120,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    lineHeight: TYPOGRAPHY.fontSize.base * 1.5,
+  },
+  sendButton: {
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  submittedBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+  },
+  submittedBarText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

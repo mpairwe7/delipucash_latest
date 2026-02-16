@@ -140,7 +140,8 @@ export default function ForgotPasswordScreen(): React.ReactElement {
     setGeneralError("");
 
     try {
-      await forgotPasswordMutation.mutateAsync({ email });
+      const normalizedEmail = email.toLowerCase().trim();
+      await forgotPasswordMutation.mutateAsync({ email: normalizedEmail });
       setSuccess(true);
     } catch (error) {
       const errorMessage =

@@ -32,13 +32,16 @@ export const resetPasswordRedirect = (req, res) => {
     return res.status(400).send(generateErrorPage('Missing token or email parameter.'));
   }
 
-  // Sanitize inputs for HTML embedding
-  const safeToken = escapeHtml(token);
-  const safeEmail = escapeHtml(email);
+  // URL-encode params for safe embedding in the deep link
+  const encodedToken = encodeURIComponent(token);
   const encodedEmail = encodeURIComponent(email);
 
+  // Sanitize for HTML context (display only)
+  const safeToken = escapeHtml(token);
+  const safeEmail = escapeHtml(email);
+
   // Deep link that Expo Router will handle → navigates to (auth)/reset-password
-  const deepLink = `${APP_SCHEME}://reset-password?token=${safeToken}&email=${encodedEmail}`;
+  const deepLink = `${APP_SCHEME}://reset-password?token=${encodedToken}&email=${encodedEmail}`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(generateRedirectPage(deepLink, safeToken, safeEmail));

@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, memo } from "react";
+import React, { useState, useCallback, useEffect, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
@@ -164,7 +165,13 @@ export default function ResetPasswordScreen(): React.ReactElement {
   const [generalError, setGeneralError] = useState<string>("");
 
   const token = params.token || "";
-  const email = params.email || "";
+  const email = params.email ? decodeURIComponent(params.email).toLowerCase().trim() : "";
+
+  // Track mount state to prevent setting state after unmount
+  const isMounted = useRef(true);
+  useEffect(() => {
+    return () => { isMounted.current = false; };
+  }, []);
 
   // Validate token on mount using TanStack mutation
   useEffect(() => {
@@ -176,13 +183,13 @@ export default function ResetPasswordScreen(): React.ReactElement {
 
     validateTokenMutation.mutateAsync({ token, email })
       .then((data) => {
-        setTokenValid(data.valid === true);
+        if (isMounted.current) setTokenValid(data.valid === true);
       })
       .catch(() => {
-        setTokenValid(false);
+        if (isMounted.current) setTokenValid(false);
       })
       .finally(() => {
-        setValidatingToken(false);
+        if (isMounted.current) setValidatingToken(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, email]);
@@ -270,7 +277,11 @@ export default function ResetPasswordScreen(): React.ReactElement {
   };
 
   const handleBack = (): void => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(auth)/login");
+    }
   };
 
   // Loading state
@@ -279,6 +290,7 @@ export default function ResetPasswordScreen(): React.ReactElement {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <StatusBar style={statusBarStyle} />
         <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} style={{ marginBottom: SPACING.md }} />
           <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
             Validating link...
           </Text>

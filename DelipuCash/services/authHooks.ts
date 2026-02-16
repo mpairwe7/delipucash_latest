@@ -254,7 +254,7 @@ export function useSend2FACodeMutation(): UseMutationResult<
   return useMutation({
     mutationKey: ['auth', '2fa', 'send'],
     mutationFn: ({ email }: { email: string }) =>
-      authFetch<TwoFactorSendResponse>('/api/auth/two-factor/send', {
+      authFetch<TwoFactorSendResponse>(API_ROUTES.auth.twoFactorSend, {
         method: 'POST',
         body: JSON.stringify({ email }),
       }),
@@ -276,7 +276,7 @@ export function useVerify2FALoginMutation(): UseMutationResult<
   return useMutation({
     mutationKey: ['auth', '2fa', 'verifyLogin'],
     mutationFn: ({ email, code }: { email: string; code: string }) =>
-      authFetch<TwoFactorVerifyLoginResponse>('/api/auth/two-factor/verify-login', {
+      authFetch<TwoFactorVerifyLoginResponse>(API_ROUTES.auth.twoFactorVerifyLogin, {
         method: 'POST',
         body: JSON.stringify({ email, code }),
       }),
