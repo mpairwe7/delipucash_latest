@@ -180,8 +180,12 @@ export const useAuthModal = create<AuthModalState>()(
 
 /**
  * Initialize auth state from SecureStore.
- * Reads persisted JWT, checks expiry, and sets useAuthStore state.
- * Safe to call from the root layout without any TanStack Query dependency.
+ *
+ * - If access token is still valid → set auth immediately.
+ * - If access token expired but refresh token exists → set auth (with stale token)
+ *   and mark ready so the UI renders. Then silently refresh in the background.
+ *   The first protected API call will also auto-refresh via the 401 interceptor.
+ * - If no refresh token → clear auth (force re-login).
  */
 export function initializeAuth(): void {
   SecureStore.getItemAsync(authKey)
@@ -195,18 +199,30 @@ export function initializeAuth(): void {
         const parsed = JSON.parse(authString) as AuthData;
 
         // Basic JWT expiry check (decode payload, check exp claim)
+        let accessExpired = false;
         if (parsed.token) {
           try {
             const payload = JSON.parse(atob(parsed.token.split('.')[1]));
             if (payload.exp && payload.exp * 1000 < Date.now()) {
-              // Token expired — clear and treat as anonymous
-              SecureStore.deleteItemAsync(authKey).catch(() => {});
-              useAuthStore.setState({ auth: null, isReady: true });
-              return;
+              accessExpired = true;
             }
           } catch {
-            // Token decode failed — still use it, server will reject if invalid
+            // Token decode failed — treat as expired, let refresh handle it
+            accessExpired = true;
           }
+        }
+
+        if (accessExpired) {
+          if (parsed.refreshToken) {
+            // Set auth with stale access token so UI can render (user data is still valid).
+            // The 401 interceptor in fetchJson will silently refresh on the first API call.
+            useAuthStore.setState({ auth: parsed, isReady: true });
+          } else {
+            // No refresh token — can't recover, force re-login
+            SecureStore.deleteItemAsync(authKey).catch(() => {});
+            useAuthStore.setState({ auth: null, isReady: true });
+          }
+          return;
         }
 
         useAuthStore.setState({ auth: parsed, isReady: true });

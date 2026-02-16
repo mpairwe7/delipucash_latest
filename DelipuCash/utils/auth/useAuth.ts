@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, initializeAuth, useAuthModal, useAuthStore } from "./store";
 import { useLoginMutation, useSignupMutation } from "@/services/authHooks";
+import { API_ROUTES } from "@/services/api";
 
 /**
  * Options for requiring authentication
@@ -96,6 +97,21 @@ export const useAuth = (): UseAuthResult => {
   }, [open]);
 
   const signOut = useCallback((): void => {
+    // Best-effort server-side signout (invalidates refresh token on server)
+    const currentAuth = useAuthStore.getState().auth;
+    if (currentAuth?.token) {
+      const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
+      const apiBase = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
+      fetch(`${apiBase}${API_ROUTES.auth.logout}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${currentAuth.token}`,
+        },
+      }).catch(() => {
+        // Ignore — signout should always succeed locally
+      });
+    }
     setAuth(null);
     close();
   }, [setAuth, close]);
@@ -120,7 +136,7 @@ export const useAuth = (): UseAuthResult => {
 
         return {
           success: true,
-          data: { user: data.user, token: data.token },
+          data: { user: data.user, token: data.token, refreshToken: data.refreshToken },
         };
       } catch (error) {
         return {
@@ -141,7 +157,7 @@ export const useAuth = (): UseAuthResult => {
         const data = await signupMutation.mutateAsync(credentials);
         return {
           success: true,
-          data: { user: data.user, token: data.token },
+          data: { user: data.user, token: data.token, refreshToken: data.refreshToken },
         };
       } catch (error) {
         return {

@@ -46,9 +46,6 @@ export {
     type SharePlatform,
 } from "./hooks";
 
-// Mock auth
-export * from "./mockAuth";
-
 // Support API
 export * from "./supportApi";
 

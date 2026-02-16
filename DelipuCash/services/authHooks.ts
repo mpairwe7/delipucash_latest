@@ -20,8 +20,6 @@ import {
   useAuthStore,
   useAuthModal,
 } from '@/utils/auth/store';
-import { USE_MOCK_AUTH, mockLogin, mockSignup } from '@/services/mockAuth';
-
 // ============================================================================
 // CANONICAL API BASE URL — single source of truth
 // ============================================================================
@@ -72,6 +70,7 @@ async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
 interface LoginResponse {
   success: boolean;
   token: string;
+  refreshToken: string;
   user: AuthData['user'];
   twoFactorRequired?: boolean;
   maskedEmail?: string;
@@ -81,6 +80,7 @@ interface SignupResponse {
   success: boolean;
   message: string;
   token: string;
+  refreshToken: string;
   user: AuthData['user'];
 }
 
@@ -108,6 +108,7 @@ interface TwoFactorSendResponse {
 interface TwoFactorVerifyLoginResponse {
   success: boolean;
   token: string;
+  refreshToken: string;
   user: AuthData['user'];
 }
 
@@ -130,29 +131,18 @@ export function useLoginMutation(): UseMutationResult<
 
   return useMutation({
     mutationKey: ['auth', 'login'],
-    mutationFn: async (credentials: LoginCredentials): Promise<LoginResponse> => {
-      if (USE_MOCK_AUTH) {
-        const mock = await mockLogin(credentials);
-        if (!mock.success) throw new AuthApiError(mock.error || 'Login failed', 401);
-        return {
-          success: true,
-          token: mock.data!.token,
-          user: mock.data!.user,
-        };
-      }
-
-      return authFetch<LoginResponse>(API_ROUTES.auth.login, {
+    mutationFn: (credentials: LoginCredentials): Promise<LoginResponse> =>
+      authFetch<LoginResponse>(API_ROUTES.auth.login, {
         method: 'POST',
         body: JSON.stringify({
           email: credentials.email,
           password: credentials.password,
         }),
-      });
-    },
+      }),
     onSuccess: (data) => {
       // Only persist auth if NOT a 2FA-required response
       if (!data.twoFactorRequired && data.token && data.user) {
-        setAuth({ token: data.token, user: data.user });
+        setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
         close();
       }
     },
@@ -174,20 +164,8 @@ export function useSignupMutation(): UseMutationResult<
 
   return useMutation({
     mutationKey: ['auth', 'signup'],
-    mutationFn: async (credentials: SignupCredentials): Promise<SignupResponse> => {
-      if (USE_MOCK_AUTH) {
-        const mock = await mockSignup(credentials);
-        if (!mock.success) throw new AuthApiError(mock.error || 'Signup failed', 400);
-        return {
-          success: true,
-          message: 'Registered',
-          token: mock.data!.token,
-          user: mock.data!.user,
-        };
-      }
-
-      // Normalize phone field — backend expects `phone`, client sends `phoneNumber`
-      return authFetch<SignupResponse>(API_ROUTES.auth.register, {
+    mutationFn: (credentials: SignupCredentials): Promise<SignupResponse> =>
+      authFetch<SignupResponse>(API_ROUTES.auth.register, {
         method: 'POST',
         body: JSON.stringify({
           email: credentials.email,
@@ -196,11 +174,10 @@ export function useSignupMutation(): UseMutationResult<
           lastName: credentials.lastName || '',
           phone: credentials.phoneNumber || credentials.phone || '',
         }),
-      });
-    },
+      }),
     onSuccess: (data) => {
       if (data.token && data.user) {
-        setAuth({ token: data.token, user: data.user });
+        setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
         close();
       }
     },
@@ -305,7 +282,7 @@ export function useVerify2FALoginMutation(): UseMutationResult<
       }),
     onSuccess: (data) => {
       if (data.token && data.user) {
-        setAuth({ token: data.token, user: data.user });
+        setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
         close();
       }
     },

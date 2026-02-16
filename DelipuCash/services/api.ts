@@ -24,6 +24,7 @@ import {
     Video,
 } from "@/types";
 import { useAuthStore } from '@/utils/auth/store';
+import { silentRefresh, isTokenExpiredResponse } from './tokenRefresh';
 
 /** Get current authenticated user ID from auth store */
 const getCurrentUserId = (): string | null =>
@@ -85,14 +86,25 @@ const getDefaultHeaders = (): Record<string, string> => ({
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
   const url = `${apiBaseUrl}${path}`;
-  try {
-    const response = await fetch(url, {
-      headers: {
-        ...getDefaultHeaders(),
-        ...(init?.headers || {}),
-      },
+
+  const doFetch = async (headers: Record<string, string>) => {
+    return fetch(url, {
+      headers: { ...getDefaultHeaders(), ...headers, ...(init?.headers || {}) },
       ...init,
     });
+  };
+
+  try {
+    let response = await doFetch(getAuthHeaders());
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        // Retry with the fresh access token
+        response = await doFetch({ Authorization: `Bearer ${refreshed.token}` });
+      }
+    }
 
     const json = await response.json();
     if (!response.ok) {

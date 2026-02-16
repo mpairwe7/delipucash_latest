@@ -1,7 +1,6 @@
 import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
-import { testCredentials } from "@/services/mockAuth";
 import { useAuth } from "@/utils/auth";
 import {
     SPACING,
@@ -54,8 +53,8 @@ export default function LoginScreen(): React.ReactElement {
   const { login, isLoading, isReady: authReady, isAuthenticated } = useAuth();
 
   const [formData, setFormData] = useState<FormData>({
-    email: __DEV__ ? testCredentials.email : "",
-    password: __DEV__ ? testCredentials.password : "",
+    email: "",
+    password: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
