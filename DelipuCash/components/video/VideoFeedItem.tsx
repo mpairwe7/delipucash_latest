@@ -375,7 +375,13 @@ function VideoFeedItemComponent({
   // Track whether onVideoEnd has fired for this play session (prevents repeat triggers)
   const hasEndedRef = useRef(false);
 
-  const player = useVideoPlayer(video.videoUrl || '', (playerInstance) => {
+  // 2026: Guard against empty/null sources — expo-video errors on empty string
+  const videoSource = useMemo(() => {
+    const url = (video.videoUrl || '').trim();
+    return url.length > 0 ? url : null;
+  }, [video.videoUrl]);
+
+  const player = useVideoPlayer(videoSource, (playerInstance) => {
     try {
       playerInstance.loop = false; // No auto-loop — feed controls advancement
       playerInstance.muted = isMuted;
@@ -384,6 +390,13 @@ function VideoFeedItemComponent({
       console.warn('[VideoFeedItem] Error configuring player:', error);
     }
   });
+
+  // Track player readiness — prevents play() calls before player is ready
+  const isPlayerReadyRef = useRef(false);
+
+  // Ref to track isActive inside event listeners without stale closures
+  const isActiveRef = useRef(isActive);
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
   // Track mounted state
   useEffect(() => {
@@ -423,17 +436,22 @@ function VideoFeedItemComponent({
   }, [video.thumbnail, video.videoUrl]);
 
   // Handle active state changes (auto-play/pause)
+  // 2026: Readiness-gated playback — only call play() when player reports readyToPlay
   useEffect(() => {
-    if (!player || !isMountedRef.current) return;
+    if (!player || !isMountedRef.current || !videoSource) return;
 
     if (isActive) {
       // Reset end-guard so onVideoEnd can fire once per play session
       hasEndedRef.current = false;
-      // Start playing when active
-      safePlayerCall(() => player.play());
-      setIsPlaying(true);
-      setPlayerStatus('playing');
-      
+
+      // Only play if player is already ready; otherwise the statusChange
+      // listener below will trigger play once readyToPlay fires.
+      if (isPlayerReadyRef.current) {
+        safePlayerCall(() => player.play());
+        setIsPlaying(true);
+        setPlayerStatus('playing');
+      }
+
       // Fade out thumbnail after short delay
       setTimeout(() => {
         if (isMountedRef.current) {
@@ -450,7 +468,7 @@ function VideoFeedItemComponent({
       thumbnailOpacity.value = withTiming(1, { duration: 200 });
       setShowThumbnail(true);
     }
-  }, [isActive, player, thumbnailOpacity, setPlayerStatus, safePlayerCall]);
+  }, [isActive, player, videoSource, thumbnailOpacity, setPlayerStatus, safePlayerCall]);
 
   // Sync mute state
   useEffect(() => {
@@ -474,6 +492,7 @@ function VideoFeedItemComponent({
         if (!isMountedRef.current) return;
 
         if (event.status === 'readyToPlay') {
+          isPlayerReadyRef.current = true;
           setIsBuffering(false);
           setHasError(false);
           try {
@@ -483,11 +502,21 @@ function VideoFeedItemComponent({
           } catch {
             // Player may be released
           }
+          // 2026: Auto-play when player becomes ready and this item is active
+          if (isActiveRef.current) {
+            safePlayerCall(() => player.play());
+            setIsPlaying(true);
+            setPlayerStatus('playing');
+          }
         } else if (event.status === 'loading') {
           setIsBuffering(true);
+        } else if (event.status === 'idle') {
+          isPlayerReadyRef.current = false;
         } else if (event.status === 'error') {
+          isPlayerReadyRef.current = false;
           setHasError(true);
           setIsBuffering(false);
+          console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, (event as any).error || 'Unknown error');
         }
       });
 
@@ -761,7 +790,7 @@ function VideoFeedItemComponent({
         >
           {/* Video Layer */}
           <View style={styles.videoLayer}>
-            {video.videoUrl && (
+            {videoSource && (
               <VideoView
                 player={player}
                 style={styles.video}
@@ -801,9 +830,21 @@ function VideoFeedItemComponent({
               <Text style={styles.errorText}>Failed to load video</Text>
               <Pressable
                 style={styles.retryButton}
-                onPress={() => {
+                onPress={async () => {
                   setHasError(false);
-                  safePlayerCall(() => player?.play());
+                  setIsBuffering(true);
+                  isPlayerReadyRef.current = false;
+                  // 2026: Reload the source with replaceAsync — simply calling
+                  // play() after an error doesn't reload the failed source.
+                  if (player && videoSource) {
+                    try {
+                      await player.replaceAsync(videoSource);
+                      // statusChange → readyToPlay will trigger auto-play
+                    } catch {
+                      setHasError(true);
+                      setIsBuffering(false);
+                    }
+                  }
                 }}
               >
                 <RotateCcw size={20} color="#FFFFFF" />

@@ -317,8 +317,14 @@ function VideoPlayerComponent({
   // VIDEO PLAYER INITIALIZATION
   // ============================================================================
 
+  // 2026: Guard against empty/null sources — expo-video errors on empty string
+  const safeSource = useMemo(() => {
+    const url = (videoSource || '').trim();
+    return url.length > 0 ? url : null;
+  }, [videoSource]);
+
   // Initialize video player with error handling for keep-awake issues in Expo Go
-  const player = useVideoPlayer(videoSource || '', (playerInstance) => {
+  const player = useVideoPlayer(safeSource, (playerInstance) => {
     try {
       playerInstance.loop = loop;
       playerInstance.volume = volume;
@@ -341,56 +347,64 @@ function VideoPlayerComponent({
   // EFFECTS
   // ============================================================================
 
-  // Subscribe to player events
+  // Subscribe to player events — 2026: Event-driven instead of polling
   useEffect(() => {
     if (!player) return;
 
-    const handleTimeUpdate = () => {
-      const current = player.currentTime || 0;
-      const total = player.duration || 0;
-      setCurrentTime(current);
-      setDuration(total);
-
-      if (total > 0) {
-        setProgress(current / total);
-
-        // Check if video ended (within 0.5 seconds of end)
-        if (current >= total - 0.5 && !loop) {
-          setPlaybackState(PlaybackState.Ended);
-          onVideoEnd?.();
-        } else if (player.playing) {
-          setPlaybackState(PlaybackState.Playing);
+    // 2026: Use expo-video event listeners for status awareness
+    const statusSub = player.addListener('statusChange', (event) => {
+      if (event.status === 'readyToPlay') {
+        if (player.duration > 0) {
+          setDuration(player.duration);
         }
-      }
-    };
-
-    // Initial loading complete
-    const checkLoading = () => {
-      if (player.duration > 0) {
         setPlaybackState(autoPlay ? PlaybackState.Playing : PlaybackState.Paused);
+      } else if (event.status === 'loading') {
+        setPlaybackState(PlaybackState.Loading);
+      } else if (event.status === 'error') {
+        setPlaybackState(PlaybackState.Error);
+        console.warn('[VideoPlayer] Playback error:', (event as any).error || 'Unknown');
       }
-    };
+    });
 
-    // Check status periodically
+    const playingSub = player.addListener('playingChange', (event) => {
+      if (event.isPlaying) {
+        setPlaybackState(PlaybackState.Playing);
+      } else if (playbackState !== PlaybackState.Ended && playbackState !== PlaybackState.Error) {
+        setPlaybackState(PlaybackState.Paused);
+      }
+    });
+
+    // Progress tracking via interval (time/progress only — not state management)
     const interval = setInterval(() => {
       if (player) {
-        handleTimeUpdate();
-        checkLoading();
-
-        // Update playback state based on player status
-        if (player.playing && playbackState !== PlaybackState.Playing) {
-          setPlaybackState(PlaybackState.Playing);
-        } else if (!player.playing && playbackState === PlaybackState.Playing) {
-          // Could be buffering or paused
-          if (player.currentTime < player.duration - 0.5) {
-            setPlaybackState(PlaybackState.Paused);
+        try {
+          const current = player.currentTime || 0;
+          const total = player.duration || 0;
+          setCurrentTime(current);
+          if (total > 0) {
+            setDuration(total);
+            setProgress(current / total);
+            // Check if video ended (within 0.5 seconds of end)
+            if (current >= total - 0.5 && !loop) {
+              setPlaybackState(PlaybackState.Ended);
+              onVideoEnd?.();
+            }
           }
+        } catch {
+          // Player may have been released
+          clearInterval(interval);
         }
       }
     }, 250);
 
     return () => {
       clearInterval(interval);
+      try {
+        statusSub.remove();
+        playingSub.remove();
+      } catch {
+        // Listeners may already be removed
+      }
     };
   }, [player, autoPlay, loop, onVideoEnd, playbackState]);
 
@@ -1107,16 +1121,39 @@ function VideoPlayerComponent({
               <Text style={[styles.errorText, { color: colors.error }]}>
                 Failed to load video
               </Text>
-              <TouchableOpacity
-                onPress={handleClose}
-                style={[styles.errorButton, { backgroundColor: colors.primary }]}
-                accessibilityLabel="Close video player"
-                accessibilityRole="button"
-              >
-                <Text style={[styles.errorButtonText, { color: colors.primaryText }]}>
-                  Close
-                </Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', gap: SPACING.md }}>
+                <TouchableOpacity
+                  onPress={async () => {
+                    // 2026: Retry by reloading source with replaceAsync
+                    if (player && safeSource) {
+                      setPlaybackState(PlaybackState.Loading);
+                      try {
+                        await player.replaceAsync(safeSource);
+                        // statusChange → readyToPlay will update state
+                      } catch {
+                        setPlaybackState(PlaybackState.Error);
+                      }
+                    }
+                  }}
+                  style={[styles.errorButton, { backgroundColor: colors.primary }]}
+                  accessibilityLabel="Retry loading video"
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.errorButtonText, { color: colors.primaryText }]}>
+                    Retry
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleClose}
+                  style={[styles.errorButton, { backgroundColor: withAlpha(colors.text, 0.15) }]}
+                  accessibilityLabel="Close video player"
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.errorButtonText, { color: colors.text }]}>
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 

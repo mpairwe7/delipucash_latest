@@ -228,7 +228,7 @@ function VerticalVideoFeedComponent({
       setReducedMotionEnabled(enabled);
     });
     return () => listener.remove();
-  }, []);;
+  }, []);
 
   // Preload videos when active video changes
   useEffect(() => {
