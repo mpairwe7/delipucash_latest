@@ -169,7 +169,11 @@ export class SSEManager {
       }
 
       if (!response.body) {
-        throw new Error('SSE response has no body');
+        // Serverless platforms (e.g. Vercel) buffer the response and return
+        // null body. SSE streaming is unsupported there — stop silently.
+        console.debug('[SSE] Response has no body (serverless environment). SSE disabled.');
+        this.setStatus('disconnected');
+        return;
       }
 
       this.setStatus('connected');
