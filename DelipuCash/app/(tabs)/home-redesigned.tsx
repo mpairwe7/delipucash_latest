@@ -301,7 +301,7 @@ export default function HomePage(): React.ReactElement {
     isError: surveysError,
   } = useRunningSurveys();
   const {
-    data: upcomingSurveys,
+    data: upcomingSurveys = [],
     refetch: refetchUpcomingSurveys,
     isLoading: upcomingSurveysLoading
   } = useUpcomingSurveys();

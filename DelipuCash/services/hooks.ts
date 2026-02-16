@@ -645,7 +645,8 @@ export function useRunningSurveys(): UseQueryResult<Survey[], Error> {
     queryFn: async () => {
       const response = await api.surveys.getRunning();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      const payload = response.data as any;
+      return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 2,
   });
@@ -660,7 +661,8 @@ export function useUpcomingSurveys(): UseQueryResult<Survey[], Error> {
     queryFn: async () => {
       const response = await api.surveys.getUpcoming();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      const payload = response.data as any;
+      return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -675,7 +677,8 @@ export function useCompletedSurveys(): UseQueryResult<Survey[], Error> {
     queryFn: async () => {
       const response = await api.surveys.getCompleted();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      const payload = response.data as any;
+      return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 5,
   });
@@ -690,7 +693,8 @@ export function useSurveys(filters?: { status?: string; search?: string }): UseQ
     queryFn: async () => {
       const response = await api.surveys.getAll(filters);
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      const payload = response.data as any;
+      return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 2,
   });
