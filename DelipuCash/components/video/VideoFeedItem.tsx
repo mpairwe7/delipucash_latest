@@ -135,6 +135,8 @@ export interface VideoFeedItemProps {
   onAdCtaPress?: (video: Video) => void;
   /** 2026: Ad feedback handler ("Why this ad?") */
   onAdFeedback?: (video: Video) => void;
+  /** 2026: Data saver — skip neighbor preloading when true */
+  isDataSaver?: boolean;
   /** Test ID */
   testID?: string;
 }
@@ -309,6 +311,7 @@ function VideoFeedItemComponent({
   screenReaderEnabled = false,
   onAdCtaPress,
   onAdFeedback,
+  isDataSaver = false,
   testID,
 }: VideoFeedItemProps): React.ReactElement {
   const { colors } = useTheme();
@@ -764,13 +767,6 @@ function VideoFeedItemComponent({
                 style={styles.video}
                 contentFit="cover"
                 nativeControls={false}
-                onError={(error) => {
-                  console.warn('[VideoFeedItem] VideoView error:', error);
-                  // Ignore keep-awake related errors in Expo Go
-                  if (error?.message?.includes('keep awake')) {
-                    return;
-                  }
-                }}
               />
             )}
           </View>

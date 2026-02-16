@@ -1016,14 +1016,6 @@ function VideoPlayerComponent({
               allowsPictureInPicture
               contentFit="contain"
               nativeControls={false}
-              onError={(error) => {
-                console.warn('[VideoPlayer] VideoView error:', error);
-                // Ignore keep-awake related errors in Expo Go
-                if (error?.message?.includes('keep awake')) {
-                  return;
-                }
-                setPlaybackState(PlaybackState.Error);
-              }}
             />
           </Pressable>
 

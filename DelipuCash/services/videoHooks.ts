@@ -410,17 +410,38 @@ export function useVideoCommentsQuery(
   limit: number = 20
 ): UseQueryResult<CommentsData> {
   return useQuery({
-    queryKey: videoQueryKeys.comments(videoId),
+    queryKey: [...videoQueryKeys.comments(videoId), { page, limit }],
     queryFn: async () => {
-      const response = await videoApi.getComments(videoId);
+      const response = await videoApi.getComments(videoId, page, limit);
       if (!response.success) throw new Error(response.error || 'Failed to fetch comments');
       return {
         comments: response.data,
-        pagination: { page, limit, total: response.data.length, totalPages: 1 },
+        pagination: response.pagination || { page, limit, total: response.data.length, totalPages: 1 },
       };
     },
     enabled: !!videoId,
     staleTime: 1000 * 30, // 30 seconds - comments change frequently
+  });
+}
+
+/**
+ * Infinite scroll comments — loads pages incrementally on scroll
+ */
+export function useInfiniteVideoComments(videoId: string, limit: number = 20) {
+  return useInfiniteQuery({
+    queryKey: [...videoQueryKeys.comments(videoId), 'infinite'],
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await videoApi.getComments(videoId, pageParam, limit);
+      if (!response.success) throw new Error(response.error || 'Failed to fetch comments');
+      return {
+        comments: response.data,
+        nextPage: response.data.length === limit ? pageParam + 1 : null,
+      };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    initialPageParam: 1,
+    enabled: !!videoId,
+    staleTime: 30_000,
   });
 }
 

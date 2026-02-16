@@ -373,6 +373,7 @@ export function useVideo(videoId: string): UseQueryResult<Video | null, Error> {
 
 /**
  * Hook to like a video
+ * @deprecated Use useLikeVideo from videoHooks.ts instead (has optimistic updates + rollback)
  */
 export function useLikeVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
@@ -439,6 +440,7 @@ export function useRecommendedVideos(limit: number = 10): UseQueryResult<Video[]
 
 /**
  * Hook to bookmark/unbookmark a video
+ * @deprecated Use useBookmarkVideo from videoHooks.ts instead (has optimistic updates + rollback)
  */
 export function useBookmarkVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
@@ -459,6 +461,7 @@ export function useBookmarkVideo(): UseMutationResult<Video, Error, string> {
 
 /**
  * Hook to unlike a video
+ * @deprecated Use useLikeVideo from videoHooks.ts instead (combined like/unlike with rollback)
  */
 export function useUnlikeVideo(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
@@ -485,6 +488,7 @@ export type SharePlatform = 'copy' | 'twitter' | 'facebook' | 'whatsapp' | 'inst
 
 /**
  * Hook to share a video (tracks share for analytics)
+ * @deprecated Use useShareVideo from videoHooks.ts instead
  */
 export function useShareVideo(): UseMutationResult<
   { shared: boolean; platform: SharePlatform },
@@ -503,6 +507,7 @@ export function useShareVideo(): UseMutationResult<
 
 /**
  * Hook to add a comment to a video
+ * @deprecated Use useAddVideoComment from videoHooks.ts instead (has optimistic insert + rollback)
  */
 export function useAddComment(): UseMutationResult<
   Comment,
@@ -527,6 +532,7 @@ export function useAddComment(): UseMutationResult<
 
 /**
  * Hook to fetch video comments
+ * @deprecated Use useVideoCommentsQuery from videoHooks.ts instead
  */
 export function useVideoComments(
   videoId: string,

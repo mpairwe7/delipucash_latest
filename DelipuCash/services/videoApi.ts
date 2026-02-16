@@ -174,9 +174,9 @@ export interface ValidateUploadResponse {
 
 /** Livestream session request */
 export interface StartLivestreamRequest {
-  userId: string;
   title?: string;
   description?: string;
+  type?: 'livestream' | 'recording';
 }
 
 /** Livestream session response */

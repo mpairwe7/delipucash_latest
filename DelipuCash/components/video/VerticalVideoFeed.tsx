@@ -121,6 +121,10 @@ export interface VerticalVideoFeedProps {
   initialIndex?: number;
   /** Header component to render above feed */
   ListHeaderComponent?: React.ReactElement;
+  /** 2026: Called when a sponsored video becomes visible (for ad impression tracking) */
+  onAdImpression?: (video: Video) => void;
+  /** 2026: Data saver mode — skip neighbor preloading */
+  isDataSaver?: boolean;
   /** Test ID for testing */
   testID?: string;
 }
@@ -146,6 +150,8 @@ function VerticalVideoFeedComponent({
   onAdFeedback,
   initialIndex = 0,
   ListHeaderComponent,
+  onAdImpression,
+  isDataSaver = false,
   testID,
 }: VerticalVideoFeedProps): React.ReactElement {
   const { colors } = useTheme();
@@ -246,8 +252,18 @@ function VerticalVideoFeedComponent({
         isViewable: vt.isViewable,
       }));
       handleViewableItemsChanged(mappedItems);
+
+      // Track ad impressions for sponsored videos that become visible
+      if (onAdImpression) {
+        for (const vt of viewableItems) {
+          const video = vt.item as Video;
+          if (vt.isViewable && video.isSponsored) {
+            onAdImpression(video);
+          }
+        }
+      }
     },
-    [handleViewableItemsChanged]
+    [handleViewableItemsChanged, onAdImpression]
   );
 
   // Memoized viewability config ref
@@ -360,6 +376,7 @@ function VerticalVideoFeedComponent({
         onAdCtaPress={onAdCtaPress}
         onAdFeedback={onAdFeedback}
         screenReaderEnabled={screenReaderEnabled}
+        isDataSaver={isDataSaver}
         testID={`video-feed-item-${index}`}
       />
     ),
@@ -377,6 +394,7 @@ function VerticalVideoFeedComponent({
       onAdCtaPress,
       onAdFeedback,
       screenReaderEnabled,
+      isDataSaver,
     ]
   );
 

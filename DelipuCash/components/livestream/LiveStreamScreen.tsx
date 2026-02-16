@@ -47,6 +47,7 @@ import { GradientOverlay } from './GradientOverlay';
 import { PreLiveLobby } from './PreLiveLobby';
 import { StreamHealthBadge } from './StreamHealthBadge';
 import { LiveChat } from './LiveChat';
+import { PostCaptureDraft } from './PostCaptureDraft';
 
 // ============================================================================
 // TYPES
@@ -131,6 +132,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Refs
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const recordingTitleRef = useRef<string>('');
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -142,6 +144,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showLimitWarning, setShowLimitWarning] = useState(false);
   const [showLobby, setShowLobby] = useState(mode === 'live');
+  const [draftState, setDraftState] = useState<{ videoUri: string; duration: number } | null>(null);
   
   // Camera hook - industry standard lazy camera initialization
   // autoRequest: false - Show permission prompt UI first for better UX
@@ -325,11 +328,33 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         'Are you sure you want to stop and discard the current recording?',
         [
           { text: 'Cancel', style: 'cancel' },
-          { 
-            text: 'Stop & Exit', 
+          {
+            text: 'Stop & Exit',
             style: 'destructive',
-            onPress: () => {
+            onPress: async () => {
+              // 1. Stop camera hardware first
+              try {
+                await cameraStopRecording();
+              } catch {
+                // Camera may not be recording — safe to ignore
+              }
+
+              // 2. End server session if one exists
+              if (sessionIdRef.current) {
+                try {
+                  await endLivestreamMutation.mutateAsync({
+                    sessionId: sessionIdRef.current,
+                    duration: recordingTime,
+                  });
+                } catch {
+                  // Best-effort — session will timeout server-side
+                }
+                sessionIdRef.current = null;
+              }
+
+              // 3. Clean up store state
               storeStopRecording();
+              storeEndLivestream();
               onClose?.();
             }
           },
@@ -338,7 +363,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     } else {
       onClose?.();
     }
-  }, [isRecording, onClose]);
+  }, [isRecording, onClose, cameraStopRecording, endLivestreamMutation, recordingTime, storeStopRecording, storeEndLivestream]);
   
   const toggleControls = useCallback(() => {
     if (!showControls) {
@@ -374,14 +399,20 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     // Update store state
     storeStartRecording();
 
-    // Start server-side livestream session (store enters 'connecting')
+    // Determine session type based on screen mode
+    const sessionType = mode === 'live' ? 'livestream' : 'recording';
+    const sessionTitle = recordingTitleRef.current || (sessionType === 'livestream' ? 'Live Stream' : 'Recording');
+
+    // Start server-side session (store enters 'connecting')
     try {
       const response = await startLivestreamMutation.mutateAsync({
-        userId,
-        title: 'Live Recording',
+        title: sessionTitle,
+        type: sessionType,
       });
       sessionIdRef.current = response.sessionId;
-      storeStartLivestream(response.sessionId, response.streamKey);
+      if (sessionType === 'livestream') {
+        storeStartLivestream(response.sessionId, response.streamKey);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to start session';
       Alert.alert('Connection Error', message, [
@@ -402,8 +433,10 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       return;
     }
 
-    // Camera started — transition livestream to 'live'
-    storeSetLivestreamLive();
+    // Camera started — transition livestream to 'live' (only for actual livestreams)
+    if (mode === 'live') {
+      storeSetLivestreamLive();
+    }
     setShowControls(true);
 
     Animated.timing(fadeAnim, {
@@ -411,11 +444,13 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [userId, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
+  }, [userId, mode, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording]);
   
   const stopRecording = useCallback(async () => {
-    // Transition livestream to 'ending'
-    storeSetLivestreamEnding();
+    // Transition livestream to 'ending' (only for actual livestreams)
+    if (mode === 'live') {
+      storeSetLivestreamEnding();
+    }
 
     // Stop actual camera recording first
     let videoUri: string | null = null;
@@ -435,67 +470,29 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
           sessionId: sessionIdRef.current,
           duration: recordingTime,
         });
-        storeEndLivestream();
+        if (mode === 'live') {
+          storeEndLivestream();
+        }
       } catch {
         console.warn('Failed to end server session');
       }
       sessionIdRef.current = null;
     }
 
-    // If we have a recorded video, save to library and upload to R2
+    // If we have a recorded video, save to library and show draft screen
     if (videoUri) {
-      setIsUploading(true);
-
       try {
-        // Save to media library
         await saveToMediaLibrary(videoUri);
-
-        // Upload to R2 with real progress tracking
-        const result = await uploadVideoToR2(
-          videoUri,
-          userId!,
-          {
-            title: 'New Recording',
-            duration: recordingTime,
-          },
-          {
-            onProgress: (event) => setUploadProgress(event.progress),
-          }
-        );
-
-        setIsUploading(false);
-        setUploadProgress(0);
-
-        if (!result.success) {
-          Alert.alert('Upload Error', result.error || 'Failed to upload recording.');
-          return;
-        }
-
-        const videoData: RecordedVideo = {
-          id: result.data?.id || `video_${Date.now()}`,
-          uri: videoUri,
-          duration: recordingTime,
-          title: 'New Recording',
-        };
-
-        onVideoUploaded?.(videoData);
-
-        Alert.alert(
-          'Recording Saved',
-          'Your video has been saved and uploaded successfully!',
-          [{ text: 'OK', onPress: onClose }]
-        );
-      } catch (error) {
-        console.error('Failed to save/upload recording:', error);
-        setIsUploading(false);
-        setUploadProgress(0);
-        Alert.alert('Upload Error', error instanceof Error ? error.message : 'Failed to upload recording.');
+      } catch {
+        console.warn('Failed to save to media library');
       }
+      // Show post-capture draft screen for metadata entry
+      setDraftState({ videoUri, duration: recordingTime });
     } else {
       // No video recorded, just close
       Alert.alert('Recording Error', 'No video was recorded.');
     }
-  }, [userId, recordingTime, onVideoUploaded, onClose, storeStopRecording, storeSetLivestreamEnding, endLivestreamMutation, storeEndLivestream, cameraStopRecording, saveToMediaLibrary]);
+  }, [mode, recordingTime, storeStopRecording, storeSetLivestreamEnding, endLivestreamMutation, storeEndLivestream, cameraStopRecording, saveToMediaLibrary]);
 
   // Update ref when stopRecording changes
   useEffect(() => {
@@ -503,10 +500,69 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [stopRecording]);
   
   const handleGoLiveFromLobby = useCallback((title: string) => {
+    recordingTitleRef.current = title;
     setShowLobby(false);
-    // TODO: Pass title to startRecording when lobby is used
     startRecording();
   }, [startRecording]);
+
+  // Post-capture draft handlers
+  const handlePublish = useCallback(async (metadata: { title: string; description: string }) => {
+    if (!draftState) return;
+    setDraftState(null);
+    setIsUploading(true);
+
+    try {
+      const result = await uploadVideoToR2(
+        draftState.videoUri,
+        userId!,
+        { title: metadata.title, description: metadata.description, duration: draftState.duration },
+        { onProgress: (event) => setUploadProgress(event.progress) }
+      );
+
+      setIsUploading(false);
+      setUploadProgress(0);
+
+      if (!result.success) {
+        // Queue for retry via upload queue processor
+        useVideoStore.getState().enqueuePendingUpload({
+          videoUri: draftState.videoUri,
+          title: metadata.title,
+          description: metadata.description,
+          duration: draftState.duration,
+          userId: userId!,
+        });
+        Alert.alert('Upload Queued', 'Upload will retry when connection improves.');
+        onClose?.();
+        return;
+      }
+
+      onVideoUploaded?.({
+        id: result.data?.id || `video_${Date.now()}`,
+        uri: draftState.videoUri,
+        duration: draftState.duration,
+        title: metadata.title,
+      });
+      Alert.alert('Video Published', 'Your video is live!', [{ text: 'OK', onPress: onClose }]);
+    } catch {
+      setIsUploading(false);
+      setUploadProgress(0);
+      useVideoStore.getState().enqueuePendingUpload({
+        videoUri: draftState.videoUri,
+        title: metadata.title,
+        description: metadata.description,
+        duration: draftState.duration,
+        userId: userId!,
+      });
+      Alert.alert('Upload Queued', 'Upload will retry automatically.');
+      onClose?.();
+    }
+  // TODO: Add persistent upload progress notification visible outside this screen
+  }, [draftState, userId, onVideoUploaded, onClose]);
+
+  const handleDiscard = useCallback(() => {
+    setDraftState(null);
+    onClose?.();
+  }, [onClose]);
 
   const handleRecordPress = useCallback(() => {
     if (isRecording) {
@@ -516,22 +572,23 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     }
   }, [isRecording, startRecording, stopRecording]);
   
+  // Placeholder handlers — implement in future sprint
   const handleMusicPress = useCallback(() => {
     Alert.alert('Music', 'Add music feature coming soon!');
   }, []);
-  
+
   const handleEffectsPress = useCallback(() => {
     Alert.alert('Effects', 'Effects feature coming soon!');
   }, []);
-  
+
   const handleGalleryPress = useCallback(() => {
     Alert.alert('Gallery', 'Import from gallery coming soon!');
   }, []);
-  
+
   const handleFiltersPress = useCallback(() => {
     Alert.alert('Filters', 'Filters feature coming soon!');
   }, []);
-  
+
   const handleSettingsPress = useCallback(() => {
     Alert.alert('Settings', 'Camera settings coming soon!');
   }, []);
@@ -567,6 +624,20 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         onRequestPermissions={requestPermissions}
         title="Permissions Required"
         description={description}
+      />
+    );
+  }
+
+  // Show post-capture draft screen when recording is done
+  if (draftState) {
+    return (
+      <PostCaptureDraft
+        videoUri={draftState.videoUri}
+        duration={draftState.duration}
+        onPublish={handlePublish}
+        onDiscard={handleDiscard}
+        isUploading={isUploading}
+        uploadProgress={uploadProgress}
       />
     );
   }

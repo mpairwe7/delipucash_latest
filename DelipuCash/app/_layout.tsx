@@ -19,6 +19,7 @@ import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
 import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
+import { useUploadQueueProcessor } from '@/hooks/useUploadQueueProcessor';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -112,6 +113,7 @@ const queryClient = new QueryClient({
 /** Invisible component that runs global background tasks inside the provider tree */
 function GlobalProcessors() {
   useOfflineQueueProcessor();
+  useUploadQueueProcessor();
   return null;
 }
 

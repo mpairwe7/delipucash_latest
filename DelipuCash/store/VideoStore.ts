@@ -115,6 +115,19 @@ export interface VideoPlayerState {
   quality: 'auto' | '1080p' | '720p' | '480p' | '360p';
 }
 
+/** Pending upload entry — persisted for retry on reconnect */
+export interface PendingUpload {
+  id: string;
+  videoUri: string;
+  title: string;
+  description: string;
+  duration: number;
+  userId: string;
+  createdAt: string;
+  retryCount: number;
+  lastError?: string;
+}
+
 /** Watch history entry */
 export interface WatchHistoryEntry {
   videoId: string;
@@ -162,6 +175,9 @@ export interface VideoState {
   isUploadModalVisible: boolean;
   isLivestreamModalVisible: boolean;
   
+  // Pending uploads (persisted for retry)
+  pendingUploads: PendingUpload[];
+
   // Error handling
   lastError: string | null;
 }
@@ -240,10 +256,15 @@ export interface VideoActions {
   validateRecordingDuration: (seconds: number) => { valid: boolean; warning?: string; limitReached: boolean };
   validateLivestreamDuration: (seconds: number) => { valid: boolean; warning?: string; limitReached: boolean };
   
+  // Pending upload queue
+  enqueuePendingUpload: (upload: Omit<PendingUpload, 'id' | 'retryCount' | 'createdAt'>) => void;
+  removePendingUpload: (id: string) => void;
+  incrementUploadRetry: (id: string, error?: string) => void;
+
   // Error handling
   setError: (error: string | null) => void;
   clearError: () => void;
-  
+
   // Reset
   reset: () => void;
 }
@@ -287,6 +308,7 @@ const initialState: VideoState = {
   watchHistory: [],
   videoQueue: [],
   likedVideoIds: [],
+  pendingUploads: [],
   activeWarning: null,
   showUpgradePrompt: false,
   isUploadModalVisible: false,
@@ -798,6 +820,29 @@ export const useVideoStore = create<VideoState & VideoActions>()(
         return { valid: true, limitReached: false };
       },
 
+      // Pending upload queue
+      enqueuePendingUpload: (upload) => {
+        const entry: PendingUpload = {
+          ...upload,
+          id: `upload_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          retryCount: 0,
+          createdAt: new Date().toISOString(),
+        };
+        set({ pendingUploads: [...get().pendingUploads, entry] });
+      },
+
+      removePendingUpload: (id) => {
+        set({ pendingUploads: get().pendingUploads.filter(u => u.id !== id) });
+      },
+
+      incrementUploadRetry: (id, error) => {
+        set({
+          pendingUploads: get().pendingUploads.map(u =>
+            u.id === id ? { ...u, retryCount: u.retryCount + 1, lastError: error } : u
+          ),
+        });
+      },
+
       // Error handling
       setError: (error) => set({ lastError: error }),
       clearError: () => set({ lastError: null }),
@@ -816,6 +861,7 @@ export const useVideoStore = create<VideoState & VideoActions>()(
         livestreamHistory: state.livestreamHistory.slice(-10),
         watchHistory: state.watchHistory.slice(-50), // Keep last 50
         likedVideoIds: state.likedVideoIds, // Persist liked videos
+        pendingUploads: state.pendingUploads, // Persist for retry on reconnect
       }),
     }
   ),
@@ -835,6 +881,7 @@ export const selectMaxLivestreamDuration = (state: VideoState) => state.premiumS
 
 export const selectCurrentUpload = (state: VideoState) => state.currentUpload;
 export const selectUploadHistory = (state: VideoState) => state.uploadHistory;
+export const selectPendingUploads = (state: VideoState) => state.pendingUploads;
 export const selectIsUploading = (state: VideoState) => state.currentUpload?.status === 'uploading';
 
 export const selectCurrentRecording = (state: VideoState) => state.currentRecording;

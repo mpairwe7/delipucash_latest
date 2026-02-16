@@ -875,12 +875,12 @@ export const validateUpload = asyncHandler(async (req, res) => {
   }
 });
 
-// Start a livestream session
+// Start a livestream or recording session
 export const startLivestream = asyncHandler(async (req, res) => {
   try {
     // Use authenticated user from verifyToken middleware
     const userId = req.user.id;
-    const { title, description } = req.body;
+    const { title, description, type: sessionType = 'livestream' } = req.body;
 
     if (!userId) {
       return res.status(400).json({ message: 'User ID is required' });
@@ -904,39 +904,50 @@ export const startLivestream = asyncHandler(async (req, res) => {
     const hasVideoPremium = user.subscriptionStatus === 'ACTIVE';
     const limits = hasVideoPremium ? VIDEO_LIMITS.PREMIUM : VIDEO_LIMITS.FREE;
 
+    // Use appropriate duration limit based on session type
+    const maxDuration = sessionType === 'recording'
+      ? limits.maxRecordingDurationSeconds
+      : limits.maxLivestreamDurationSeconds;
+
     // Generate stream key
     const streamKey = `stream_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Persist livestream session to database
+    // Persist session to database
     const livestream = await prisma.livestream.create({
       data: {
         sessionId: streamKey,
         userId,
-        title: title || 'Live Stream',
+        title: title || (sessionType === 'recording' ? 'Recording' : 'Live Stream'),
         description: description || '',
-        status: 'live',
+        status: sessionType === 'recording' ? 'pending' : 'live',
+        type: sessionType === 'recording' ? 'recording' : 'livestream',
         streamKey,
         startedAt: new Date(),
-        maxDurationSeconds: limits.maxLivestreamDurationSeconds,
+        maxDurationSeconds: maxDuration,
         isPremium: hasVideoPremium,
       },
     });
 
-    // Notify via SSE that a new livestream started
-    await publishEvent(userId, 'livestream.started', {
-      sessionId: livestream.sessionId,
-      userId,
-      title: livestream.title,
-    });
+    // Only notify via SSE for actual livestreams (not plain recordings)
+    if (sessionType !== 'recording') {
+      await publishEvent(userId, 'livestream.started', {
+        sessionId: livestream.sessionId,
+        userId,
+        title: livestream.title,
+      });
+    }
 
     res.json({
       success: true,
       data: {
         sessionId: livestream.sessionId,
         streamKey,
-        maxDuration: limits.maxLivestreamDurationSeconds,
-        maxDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
+        maxDuration,
+        maxDurationFormatted: sessionType === 'recording'
+          ? (hasVideoPremium ? '30 minutes' : '5 minutes')
+          : (hasVideoPremium ? '2 hours' : '5 minutes'),
         hasVideoPremium,
+        type: livestream.type,
         streamer: {
           id: user.id,
           name: `${user.firstName} ${user.lastName}`,
@@ -952,7 +963,7 @@ export const startLivestream = asyncHandler(async (req, res) => {
   }
 });
 
-// End a livestream session
+// End a livestream or recording session
 export const endLivestream = asyncHandler(async (req, res) => {
   try {
     const { sessionId, duration, viewerCount, peakViewers } = req.body;
@@ -961,7 +972,7 @@ export const endLivestream = asyncHandler(async (req, res) => {
       return res.status(400).json({ message: 'Session ID is required' });
     }
 
-    // Update livestream record in database
+    // Update session record in database
     const livestream = await prisma.livestream.update({
       where: { sessionId },
       data: {
@@ -973,15 +984,17 @@ export const endLivestream = asyncHandler(async (req, res) => {
       },
     });
 
-    // Notify via SSE that livestream ended
-    await publishEvent(livestream.userId, 'livestream.ended', {
-      sessionId,
-      durationSeconds: livestream.durationSeconds,
-    });
+    // Only notify via SSE for actual livestreams (not plain recordings)
+    if (livestream.type === 'livestream') {
+      await publishEvent(livestream.userId, 'livestream.ended', {
+        sessionId,
+        durationSeconds: livestream.durationSeconds,
+      });
+    }
 
     res.json({
       success: true,
-      message: 'Livestream ended successfully',
+      message: 'Session ended successfully',
       data: {
         sessionId,
         duration: livestream.durationSeconds,
@@ -991,7 +1004,7 @@ export const endLivestream = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error ending livestream:', error);
+    console.error('Error ending session:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 });
@@ -1005,7 +1018,7 @@ export const getLiveStreams = asyncHandler(async (req, res) => {
 
     const [livestreams, total] = await Promise.all([
       prisma.livestream.findMany({
-        where: { status: 'live' },
+        where: { status: 'live', type: 'livestream' },
         include: {
           user: {
             select: {
@@ -1020,7 +1033,7 @@ export const getLiveStreams = asyncHandler(async (req, res) => {
         skip,
         take: limit,
       }),
-      prisma.livestream.count({ where: { status: 'live' } }),
+      prisma.livestream.count({ where: { status: 'live', type: 'livestream' } }),
     ]);
 
     const totalPages = Math.ceil(total / limit);

@@ -140,6 +140,7 @@ model Livestream {
   recordingSizeBytes BigInt?
   
   // Metadata
+  type               String   @default("livestream") // "livestream" | "recording"
   isRecordingEnabled Boolean  @default(true)
   isPremium          Boolean  @default(false)
   

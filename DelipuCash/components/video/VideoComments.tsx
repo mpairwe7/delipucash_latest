@@ -55,7 +55,7 @@ import {
   withAlpha,
 } from '@/utils/theme';
 import { Comment } from '@/types';
-import { useVideoComments, useAddComment } from '@/services/hooks';
+import { useVideoCommentsQuery, useAddVideoComment } from '@/services/videoHooks';
 
 // ============================================================================
 // TYPES
@@ -364,10 +364,10 @@ export const VideoComments = memo<VideoCommentsProps>(({
     isError,
     refetch,
     isFetching,
-  } = useVideoComments(videoId);
+  } = useVideoCommentsQuery(videoId);
 
   // Mutation
-  const addCommentMutation = useAddComment();
+  const addCommentMutation = useAddVideoComment();
 
   // Animation on visibility change
   useEffect(() => {

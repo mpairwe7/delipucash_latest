@@ -110,10 +110,10 @@ import { InterstitialAd, AdFeedbackModal } from '@/components/ads';
 import { Video, Ad } from '@/types';
 import {
   useVideoFeedStore,
-  selectActiveVideo,
   selectFeedMode,
   selectUI,
   selectLikedVideoIds,
+  selectBookmarkedVideoIds,
 } from '@/store/VideoFeedStore';
 import { useSearch } from '@/hooks/useSearch';
 import {
@@ -284,6 +284,45 @@ const AICuratedChip = React.memo(({ visible }: { visible: boolean }) => {
 AICuratedChip.displayName = 'AICuratedChip';
 
 // ============================================================================
+// MINI PLAYER WRAPPER — isolates 250ms progress re-renders from parent
+// ============================================================================
+
+const MiniPlayerWrapper = React.memo(function MiniPlayerWrapper({
+  onClose,
+  onExpand,
+  bottomOffset,
+}: {
+  onClose: () => void;
+  onExpand: () => void;
+  bottomOffset: number;
+}) {
+  const status = useVideoFeedStore(s => s.activeVideo.status);
+  const progress = useVideoFeedStore(s => s.activeVideo.progress);
+  const miniPlayerVideoId = useVideoFeedStore(s => s.ui.miniPlayerVideoId);
+  const setPlayerStatus = useVideoFeedStore(s => s.setPlayerStatus);
+  const getVideoById = useVideoFeedStore(s => s.getVideoById);
+
+  const video = miniPlayerVideoId ? getVideoById(miniPlayerVideoId) : undefined;
+  if (!video) return null;
+
+  return (
+    <EnhancedMiniPlayer
+      video={video}
+      isPlaying={status === 'playing'}
+      progress={progress}
+      onPlayPause={() => {
+        const newStatus = status === 'playing' ? 'paused' : 'playing';
+        setPlayerStatus(newStatus);
+      }}
+      onClose={onClose}
+      onExpand={onExpand}
+      bottomOffset={bottomOffset}
+      testID="mini-player"
+    />
+  );
+});
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -310,12 +349,10 @@ export default function VideosScreen(): React.ReactElement {
   // STORE STATE
   // ============================================================================
 
-  const activeVideo = useVideoFeedStore(selectActiveVideo);
   const feedMode = useVideoFeedStore(selectFeedMode);
   const ui = useVideoFeedStore(selectUI);
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
-  // isPlaybackAllowed is used in VerticalVideoFeed for granular control
-  // bookmarkedVideoIds available via: useVideoFeedStore(selectBookmarkedVideoIds)
+  const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
 
   // Actions — individual selectors (stable references, no full-store subscription)
   const setFeedMode = useVideoFeedStore(s => s.setFeedMode);
@@ -423,6 +460,8 @@ export default function VideosScreen(): React.ReactElement {
 
   const likedVideoIdsRef = useRef(likedVideoIds);
   useEffect(() => { likedVideoIdsRef.current = likedVideoIds; }, [likedVideoIds]);
+  const bookmarkedVideoIdsRef = useRef(bookmarkedVideoIds);
+  useEffect(() => { bookmarkedVideoIdsRef.current = bookmarkedVideoIds; }, [bookmarkedVideoIds]);
 
   // Track AppState changes (foreground/background)
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -523,6 +562,7 @@ export default function VideosScreen(): React.ReactElement {
         baseVideos = (trendingVideos || []).filter((video) => hasPlayableVideoUrl(video.videoUrl));
         break;
       case 'following':
+        // TODO: Replace with social graph API when follow system is implemented
         baseVideos = allVideos.filter(v => v.likes > 100);
         break;
       case 'for-you':
@@ -1049,6 +1089,8 @@ export default function VideosScreen(): React.ReactElement {
         onVideoEnd={handleVideoEnd}
         onAdCtaPress={handleAdCtaPress}
         onAdFeedback={handleAdFeedback}
+        onAdImpression={handleInFeedAdImpression}
+        isDataSaver={isDataSaverMode}
         testID="video-feed"
       />
       </VideoErrorBoundary>
@@ -1068,21 +1110,12 @@ export default function VideosScreen(): React.ReactElement {
         />
       )}
 
-      {/* Mini Player */}
-      {ui.showMiniPlayer && currentVideoData && (
-        <EnhancedMiniPlayer
-          video={currentVideoData}
-          isPlaying={activeVideo.status === 'playing'}
-          progress={activeVideo.progress}
-          onPlayPause={() => {
-            // Toggle play/pause through store
-            const newStatus = activeVideo.status === 'playing' ? 'paused' : 'playing';
-            setPlayerStatus(newStatus);
-          }}
+      {/* Mini Player — isolated from 250ms progress re-renders */}
+      {ui.showMiniPlayer && (
+        <MiniPlayerWrapper
           onClose={closeMiniPlayer}
           onExpand={expandMiniPlayer}
           bottomOffset={insets.bottom + SPACING.xl}
-          testID="mini-player"
         />
       )}
 
