@@ -225,18 +225,17 @@ export const surveyApi = {
 
   /**
    * Submit survey response
-   * Sends userId + answers to the backend for recording
+   * Backend extracts userId from JWT token
    */
   async submitResponse(
     surveyId: string,
     answers: Record<string, any>,
-    userId: string
   ): Promise<ApiResponse<SurveySubmissionResult>> {
     return fetchJson<SurveySubmissionResult>(
       SURVEY_ROUTES.submit(surveyId),
       {
         method: "POST",
-        body: JSON.stringify({ userId, responses: answers }),
+        body: JSON.stringify({ responses: answers }),
       },
       getAuthToken()
     );

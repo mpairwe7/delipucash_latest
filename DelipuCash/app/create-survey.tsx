@@ -25,7 +25,6 @@ import {
   KeyboardAvoidingView,
   useWindowDimensions,
   AccessibilityInfo,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -157,51 +156,8 @@ const CreateSurveyScreen: React.FC = () => {
     return () => subscription.remove();
   }, []);
 
-  // Redirect unauthenticated users
-  useEffect(() => {
-    if (authReady && !isAuthenticated) {
-      Alert.alert(
-        "Login Required",
-        "You need to sign in to create surveys.",
-        [
-          {
-            text: "Go Back",
-            onPress: () => router.back(),
-            style: "cancel",
-          },
-          {
-            text: "Sign In",
-            onPress: () => {
-              router.back();
-              setTimeout(() => openAuth({ mode: "signin" }), 300);
-            },
-          },
-        ]
-      );
-    }
-  }, [authReady, isAuthenticated, router, openAuth]);
-
-  // Check subscription status (admins bypass this check)
-  useEffect(() => {
-    if (authReady && isAuthenticated && !loadingSubscription && !isAdmin && !hasActiveSubscription) {
-      Alert.alert(
-        "Subscription Required",
-        "You need an active subscription to create surveys. Subscribe now to unlock survey creation.",
-        [
-          {
-            text: "Go Back",
-            onPress: () => router.back(),
-            style: "cancel",
-          },
-          {
-            text: "Subscribe",
-            onPress: () => router.replace("/survey-payment" as Href),
-            style: "default",
-          },
-        ]
-      );
-    }
-  }, [authReady, isAuthenticated, loadingSubscription, isAdmin, hasActiveSubscription, router]);
+  // Auth/subscription gating handled via inline renderAccessDenied() states below.
+  // No Alert.alert — cleaner UX, no double-render.
 
   // Entrance animation
   useEffect(() => {
@@ -374,34 +330,45 @@ const CreateSurveyScreen: React.FC = () => {
   /**
    * Render access denied state
    */
-  const renderAccessDenied = () => (
-    <View style={[styles.accessDeniedContainer, { backgroundColor: colors.background }]}>
-      <View style={[styles.accessDeniedIcon, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
-        <Lock size={48} color={colors.warning} strokeWidth={1.5} />
+  const renderAccessDenied = () => {
+    const needsAuth = !isAuthenticated;
+    return (
+      <View style={[styles.accessDeniedContainer, { backgroundColor: colors.background }]}>
+        <View style={[styles.accessDeniedIcon, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+          <Lock size={48} color={colors.warning} strokeWidth={1.5} />
+        </View>
+        <Text style={[styles.accessDeniedTitle, { color: colors.text }]}>
+          {needsAuth ? "Sign In Required" : "Subscription Required"}
+        </Text>
+        <Text style={[styles.accessDeniedSubtitle, { color: colors.textMuted }]}>
+          {needsAuth
+            ? "You need to sign in to create surveys."
+            : "You need an active subscription to create surveys. Subscribe now to unlock this feature."}
+        </Text>
+        <View style={styles.accessDeniedActions}>
+          <PrimaryButton
+            title={needsAuth ? "Sign In" : "Subscribe Now"}
+            onPress={() => {
+              if (needsAuth) {
+                openAuth({ mode: "signin" });
+              } else {
+                router.replace("/survey-payment" as Href);
+              }
+            }}
+            variant="primary"
+            size="large"
+            style={{ marginBottom: SPACING.md }}
+          />
+          <PrimaryButton
+            title="Go Back"
+            onPress={() => router.back()}
+            variant="ghost"
+            size="medium"
+          />
+        </View>
       </View>
-      <Text style={[styles.accessDeniedTitle, { color: colors.text }]}>
-        Subscription Required
-      </Text>
-      <Text style={[styles.accessDeniedSubtitle, { color: colors.textMuted }]}>
-        You need an active subscription to create surveys. Subscribe now to unlock this feature.
-      </Text>
-      <View style={styles.accessDeniedActions}>
-        <PrimaryButton
-          title="Subscribe Now"
-          onPress={() => router.replace("/survey-payment" as Href)}
-          variant="primary"
-          size="large"
-          style={{ marginBottom: SPACING.md }}
-        />
-        <PrimaryButton
-          title="Go Back"
-          onPress={() => router.back()}
-          variant="ghost"
-          size="medium"
-        />
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderTabBar = () => (
     <View

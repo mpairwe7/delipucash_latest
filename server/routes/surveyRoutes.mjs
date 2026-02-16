@@ -8,8 +8,8 @@ const router = express.Router();
 router.get('/all', getAllSurveys);
 router.get('/status/:status', getSurveysByStatus);
 router.get('/:surveyId/attempt', checkSurveyAttempt);
-router.get('/:surveyId/responses', getSurveyResponses);
-router.get('/:surveyId/analytics', getSurveyAnalytics);
+router.get('/:surveyId/responses', verifyToken, getSurveyResponses);
+router.get('/:surveyId/analytics', verifyToken, getSurveyAnalytics);
 router.get('/:surveyId', getSurveyById);
 
 // Protected routes (require authentication)

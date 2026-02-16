@@ -307,12 +307,9 @@ function detectFileTypeFromName(fileName: string): ImportFileType {
     case 'csv':
       return 'csv';
     case 'tsv':
-    case 'xls':
-    case 'xlsx':
-    case 'xlsb':
-      return 'excel';
+      return 'excel'; // TSV parsed as delimited text (same parser)
     default:
-      return 'csv'; // Default to CSV for unknown extensions
+      return 'csv';
   }
 }
 
@@ -576,8 +573,6 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         json: ['application/json'],
         csv: ['text/csv', 'text/comma-separated-values'],
         excel: [
-          'application/vnd.ms-excel',
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'text/tab-separated-values',
           'text/csv',
         ],
@@ -807,6 +802,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         placeholder: q.placeholder || null,
         minValue,
         maxValue,
+        required: q.required,
       };
     });
 
@@ -1319,7 +1315,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         />
       )}
 
-      {/* Import Survey Modal - Enhanced with JSON/CSV/Excel support */}
+      {/* Import Survey Modal - JSON/CSV/TSV support */}
       <Modal
         visible={showImportModal}
         animationType="slide"
@@ -1337,7 +1333,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.modalHeaderText}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>Import Survey</Text>
                   <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
-                    Upload questions via JSON, CSV, or Excel
+                    Upload questions via JSON, CSV, or TSV
                   </Text>
                 </View>
               </View>
@@ -1362,7 +1358,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 {([
                   { type: 'json' as ImportFileType, icon: <FileJson size={24} color={selectedImportType === 'json' ? colors.primaryText : colors.primary} />, label: 'JSON', desc: 'Structured data' },
                   { type: 'csv' as ImportFileType, icon: <FileText size={24} color={selectedImportType === 'csv' ? colors.primaryText : colors.success} />, label: 'CSV', desc: 'Comma-separated' },
-                  { type: 'excel' as ImportFileType, icon: <FileSpreadsheet size={24} color={selectedImportType === 'excel' ? colors.primaryText : colors.info} />, label: 'Excel', desc: 'TSV / Spreadsheet' },
+                  { type: 'excel' as ImportFileType, icon: <FileSpreadsheet size={24} color={selectedImportType === 'excel' ? colors.primaryText : colors.info} />, label: 'TSV', desc: 'Tab-separated values' },
                 ]).map((format) => (
                   <TouchableOpacity
                     key={format.type}
@@ -1494,10 +1490,10 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.tipsList}>
                   {[
                     'JSON files should have { title, description?, questions: [] }',
-                    'CSV/Excel: Use pipe | to separate options (e.g., "Yes|No|Maybe")',
+                    'CSV/TSV: Use pipe | to separate options (e.g., "Yes|No|Maybe")',
                     'Set "required" column to "true" for mandatory questions',
                     'Rating type uses minValue & maxValue (default 1-5)',
-                    'Excel exports as TSV (tab-separated) work best',
+                    'Save spreadsheets as TSV (tab-separated) for best results',
                   ].map((tip, index) => (
                     <View key={index} style={styles.tipRow}>
                       <View style={[styles.tipBullet, { backgroundColor: colors.success }]} />

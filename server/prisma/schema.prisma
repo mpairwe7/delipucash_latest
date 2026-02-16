@@ -148,6 +148,10 @@ model Survey {
   user           AppUser          @relation(fields: [userId], references: [id])
   uploads        UploadSurvey[]
   SurveyResponse SurveyResponse[]
+
+  @@index([userId])
+  @@index([startDate, endDate])
+  @@index([createdAt])
 }
 
 model UploadSurvey {
@@ -158,6 +162,7 @@ model UploadSurvey {
   placeholder String?
   minValue    Int?
   maxValue    Int?
+  required    Boolean  @default(true)
   userId      String   @db.Uuid
   surveyId    String   @db.Uuid
   createdAt   DateTime @default(now())
@@ -240,11 +245,12 @@ model SurveyResponse {
   id        String   @id @default(uuid()) @db.Uuid
   userId    String   @db.Uuid
   surveyId  String   @db.Uuid
-  responses String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  survey    Survey   @relation(fields: [surveyId], references: [id])
-  user      AppUser  @relation(fields: [userId], references: [id])
+  responses   String
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  survey      Survey   @relation(fields: [surveyId], references: [id])
+  user        AppUser  @relation(fields: [userId], references: [id])
 
   // Industry standard: Enforce single attempt per user per survey at database level
   @@unique([userId, surveyId], name: "unique_user_survey_attempt")

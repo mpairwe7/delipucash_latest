@@ -1,7 +1,8 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { ObjectId } from 'mongodb';
 import { publishEvent } from '../lib/eventBus.mjs';
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
@@ -41,14 +42,15 @@ export const createSurvey = asyncHandler(async (req, res) => {
 
     // Format questions with userId and surveyId
     const formattedQuestions = questions.map((q) => ({
-      text: q.question, // Map "question" field to "text"
+      text: q.question,
       type: q.type,
-      options: JSON.stringify(q.options || []), // Convert options array to JSON string
-      placeholder: '', // Placeholder can be added if needed
-      minValue: null, // Add if applicable
-      maxValue: null, // Add if applicable
+      options: JSON.stringify(q.options || []),
+      placeholder: q.placeholder || '',
+      minValue: q.minValue || null,
+      maxValue: q.maxValue || null,
+      required: q.required ?? true,
       userId,
-      surveyId: newSurvey.id, // Associate questions with the survey
+      surveyId: newSurvey.id,
     }));
 
     // Log formatted questions
@@ -94,18 +96,15 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
   console.log('Description:', description);
   console.log('Questions:', JSON.stringify(questions, null, 2));
 
-  // Validate userId format
-  if (!ObjectId.isValid(userId)) {
+  // Validate userId format (PostgreSQL UUID)
+  if (!userId || !UUID_REGEX.test(userId)) {
     console.error('Invalid userId format:', userId);
     return res.status(400).json({ message: 'Invalid userId format' });
   }
 
-  // Convert userId to ObjectID
-  const userIdObjectId = new ObjectId(userId);
-
   // Check if the user exists
   const userExists = await prisma.appUser.findUnique({
-    where: { id: userIdObjectId },
+    where: { id: userId },
   });
 
   if (!userExists) {
@@ -119,7 +118,7 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
       data: {
         title,
         description,
-        userId: userIdObjectId,
+        userId,
         rewardAmount: rewardAmount || 2000,
         maxResponses: maxResponses || null,
         startDate: new Date(startDate), // Ensure startDate is a Date object
@@ -131,12 +130,13 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
     const formattedQuestions = questions.map((q) => ({
       text: q.text,
       type: q.type,
-      options: JSON.stringify(q.options || []), // Convert options array to JSON string
+      options: JSON.stringify(q.options || []),
       placeholder: q.placeholder || '',
       minValue: q.minValue || null,
       maxValue: q.maxValue || null,
-      userId: userIdObjectId,
-      surveyId: newSurvey.id, // Associate questions with the survey
+      required: q.required ?? true,
+      userId,
+      surveyId: newSurvey.id,
     }));
 
     // Log formatted questions
@@ -238,6 +238,7 @@ export const updateSurvey = asyncHandler(async (req, res) => {
                 placeholder: q.placeholder || '',
                 minValue: q.minValue || null,
                 maxValue: q.maxValue || null,
+                required: q.required ?? true,
               },
             });
           } else {
@@ -250,6 +251,7 @@ export const updateSurvey = asyncHandler(async (req, res) => {
                 placeholder: q.placeholder || '',
                 minValue: q.minValue || null,
                 maxValue: q.maxValue || null,
+                required: q.required ?? true,
                 userId: updatedSurvey.userId,
                 surveyId: updatedSurvey.id,
               },
@@ -337,7 +339,8 @@ export const checkSurveyAttempt = asyncHandler(async (req, res) => {
 
 export const submitSurveyResponse = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
-  const { userId, responses, answers } = req.body;
+  const { responses, answers } = req.body;
+  const userId = req.user?.id;
 
   // Accept either "responses" or "answers" key for backward compatibility
   const responseData = responses || answers;
@@ -345,12 +348,11 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
   console.log('Submitting survey response for survey:', surveyId);
   console.log('User ID:', userId);
 
-  // Validate required fields
   if (!userId) {
-    return res.status(400).json({
+    return res.status(401).json({
       success: false,
       submitted: false,
-      message: 'User ID is required to submit a survey response.',
+      message: 'Authentication required to submit a survey response.',
     });
   }
 
@@ -407,7 +409,7 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     }
 
     // Validate that all required questions have answers
-    const requiredQuestions = (survey.uploads || []).filter(q => q.required !== false);
+    const requiredQuestions = (survey.uploads || []).filter(q => q.required === true);
     const answeredIds = Object.keys(responseData);
     const missingRequired = requiredQuestions
       .filter(q => !answeredIds.includes(q.id) || responseData[q.id] === '' || responseData[q.id] === null || responseData[q.id] === undefined)
@@ -428,6 +430,7 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
         userId,
         surveyId,
         responses: JSON.stringify(responseData),
+        completedAt: new Date(),
       },
     });
 
@@ -478,6 +481,15 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       submittedAt: surveyResponse.createdAt,
     });
   } catch (error) {
+    // Handle duplicate submission (race condition hitting DB unique constraint)
+    if (error.code === 'P2002') {
+      return res.status(409).json({
+        success: false,
+        submitted: false,
+        message: 'You have already completed this survey. Only one attempt is allowed per user.',
+        alreadyAttempted: true,
+      });
+    }
     console.error('Error submitting survey response:', error);
     res.status(500).json({
       success: false,
@@ -488,10 +500,31 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
   }
 });
 
-// Get Survey Responses (with pagination)
+// Get Survey Responses (with pagination, owner/admin only)
 export const getSurveyResponses = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
   const { page = 1, limit = 20 } = req.query;
+  const requestingUserId = req.user?.id;
+
+  // Ownership check: only survey owner or admin/moderator can view responses
+  const survey = await prisma.survey.findUnique({
+    where: { id: surveyId },
+    select: { userId: true },
+  });
+
+  if (!survey) {
+    return res.status(404).json({ success: false, message: 'Survey not found' });
+  }
+
+  if (survey.userId !== requestingUserId) {
+    const user = await prisma.appUser.findUnique({
+      where: { id: requestingUserId },
+      select: { role: true },
+    });
+    if (!user || !['ADMIN', 'MODERATOR'].includes(user.role)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+  }
 
   const skip = (Number(page) - 1) * Number(limit);
 
@@ -558,19 +591,40 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
 
   console.log('Where clause for query:', whereClause);
 
-  try {
-    console.log('Fetching surveys from the database...');
-    const surveys = await prisma.survey.findMany({
-      where: whereClause,
-      include: {
-        // Include related questions if needed
-        uploads: true, // Include uploaded questions if needed
-      },
-      // Prisma Accelerate: Cache survey lists for 5 min, serve stale for 1 min
-    });
+  const { page = 1, limit = 20 } = req.query;
+  const skip = (Number(page) - 1) * Number(limit);
 
-    console.log(`Number of surveys found: ${surveys.length}`);
-    res.json(surveys);
+  try {
+    const [surveys, total] = await Promise.all([
+      prisma.survey.findMany({
+        where: whereClause,
+        include: {
+          _count: { select: { uploads: true, SurveyResponse: true } },
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: Number(limit),
+      }),
+      prisma.survey.count({ where: whereClause }),
+    ]);
+
+    console.log(`Surveys fetched: ${surveys.length} of ${total}`);
+    res.json({
+      success: true,
+      data: surveys.map(s => ({
+        ...s,
+        questionsCount: s._count.uploads,
+        responsesCount: s._count.SurveyResponse,
+        _count: undefined,
+      })),
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        totalPages: Math.ceil(total / Number(limit)),
+      },
+    });
   } catch (error) {
     console.error('Error retrieving surveys:', error);
     res.status(500).json({ message: 'Error retrieving surveys', error: error.message });
@@ -609,7 +663,7 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
       prisma.survey.findMany({
         where: whereClause,
         include: {
-          uploads: true,
+          _count: { select: { uploads: true, SurveyResponse: true } },
           user: {
             select: {
               id: true,
@@ -627,10 +681,15 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
     ]);
 
     console.log(`Surveys fetched: ${surveys.length} of ${total}`);
-    
+
     res.json({
       success: true,
-      data: surveys,
+      data: surveys.map(s => ({
+        ...s,
+        questionsCount: s._count.uploads,
+        responsesCount: s._count.SurveyResponse,
+        _count: undefined,
+      })),
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -648,9 +707,10 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
   }
 });
 
-// Get Survey Analytics
+// Get Survey Analytics (owner/admin only, optimized with sampling)
 export const getSurveyAnalytics = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
+  const requestingUserId = req.user?.id;
 
   try {
     const survey = await prisma.survey.findUnique({
@@ -662,41 +722,70 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
       return res.status(404).json({ success: false, message: 'Survey not found' });
     }
 
-    const responses = await prisma.surveyResponse.findMany({
-      where: { surveyId },
-      orderBy: { createdAt: 'desc' },
-    });
+    // Ownership check: only survey owner or admin/moderator
+    if (survey.userId !== requestingUserId) {
+      const user = await prisma.appUser.findUnique({
+        where: { id: requestingUserId },
+        select: { role: true },
+      });
+      if (!user || !['ADMIN', 'MODERATOR'].includes(user.role)) {
+        return res.status(403).json({ success: false, message: 'Access denied' });
+      }
+    }
 
-    const totalResponses = responses.length;
+    // Use count instead of loading all responses
+    const totalResponses = await prisma.surveyResponse.count({ where: { surveyId } });
 
     // Completion rate: responses / maxResponses (or 100% if no cap)
     const completionRate = survey.maxResponses
       ? Math.min((totalResponses / survey.maxResponses) * 100, 100)
       : 100;
 
-    // Average completion time (estimated from response timestamps)
-    const avgTime = totalResponses > 0
-      ? (survey.uploads?.length || 1) * 30 // ~30s per question estimate
+    // Real average completion time from completedAt field (sample last 100)
+    const timedResponses = await prisma.surveyResponse.findMany({
+      where: { surveyId, completedAt: { not: null } },
+      select: { createdAt: true, completedAt: true },
+      take: 100,
+      orderBy: { createdAt: 'desc' },
+    });
+    const avgTime = timedResponses.length > 0
+      ? Math.round(
+          timedResponses.reduce((sum, r) =>
+            sum + (new Date(r.completedAt).getTime() - new Date(r.createdAt).getTime()) / 1000, 0
+          ) / timedResponses.length
+        )
       : 0;
 
-    // Responses grouped by day (last 30 days)
+    // Responses grouped by day (last 30 days) — use DB groupBy
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const recentResponses = responses.filter(r => new Date(r.createdAt) >= thirtyDaysAgo);
-
+    const dailyGroups = await prisma.surveyResponse.groupBy({
+      by: ['createdAt'],
+      where: { surveyId, createdAt: { gte: thirtyDaysAgo } },
+      _count: true,
+    });
+    // Aggregate by date string
     const dayMap = {};
-    recentResponses.forEach(r => {
-      const day = new Date(r.createdAt).toISOString().split('T')[0];
-      dayMap[day] = (dayMap[day] || 0) + 1;
+    dailyGroups.forEach(g => {
+      const day = new Date(g.createdAt).toISOString().split('T')[0];
+      dayMap[day] = (dayMap[day] || 0) + g._count;
     });
     const responsesByDay = Object.entries(dayMap)
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
-    // Per-question response distribution
+    // Sample responses for per-question distribution (max 500)
+    const SAMPLE_SIZE = 500;
+    const sampledResponses = await prisma.surveyResponse.findMany({
+      where: { surveyId },
+      select: { responses: true },
+      take: SAMPLE_SIZE,
+      orderBy: { createdAt: 'desc' },
+    });
+
     const questionStats = (survey.uploads || []).map(q => {
       const dist = {};
-      responses.forEach(r => {
+      sampledResponses.forEach(r => {
         let parsed;
         try { parsed = typeof r.responses === 'string' ? JSON.parse(r.responses) : r.responses; }
         catch { parsed = {}; }
@@ -710,7 +799,7 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
       const total = Object.values(dist).reduce((sum, c) => sum + c, 0);
       return {
         questionId: q.id,
-        questionText: q.question || q.title || `Question ${q.id}`,
+        questionText: q.text || `Question ${q.id}`,
         responseDistribution: Object.entries(dist).map(([option, count]) => ({
           option,
           count,
@@ -723,7 +812,7 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
       success: true,
       data: {
         surveyId,
-        title: survey.surveyTitle || survey.title || '',
+        title: survey.title || '',
         totalResponses,
         completionRate: Math.round(completionRate * 10) / 10,
         averageTime: avgTime,

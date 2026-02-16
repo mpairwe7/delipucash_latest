@@ -165,6 +165,7 @@ export interface UploadSurvey {
   placeholder: string | null;
   minValue: number | null;
   maxValue: number | null;
+  required: boolean;
   userId: string;
   surveyId: string;
   user?: AppUser;

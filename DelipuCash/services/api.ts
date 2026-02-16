@@ -655,22 +655,23 @@ export const surveysApi = {
   },
 
   /**
-   * Submit survey response (alias for submitResponse)
+   * Submit survey response
+   * Backend extracts userId from JWT token (auth header auto-included)
    */
-  async submit(surveyId: string, responses: Record<string, any>, userId?: string): Promise<ApiResponse<{ reward: number; message: string }>> {
+  async submit(surveyId: string, responses: Record<string, any>): Promise<ApiResponse<{ reward: number; message: string }>> {
     return fetchJson<{ reward: number; message: string }>(API_ROUTES.surveys.submit(surveyId), {
       method: 'POST',
-      body: JSON.stringify({ responses, userId }),
+      body: JSON.stringify({ responses }),
     });
   },
 
   /**
-   * Submit survey response
+   * Submit survey response (alias)
    */
   async submitResponse(surveyId: string, answers: Record<string, any>): Promise<ApiResponse<{ submitted: boolean; reward?: number }>> {
     return fetchJson<{ submitted: boolean; reward?: number }>(API_ROUTES.surveys.submit(surveyId), {
       method: 'POST',
-      body: JSON.stringify({ responses: answers, userId: getCurrentUserId() }),
+      body: JSON.stringify({ responses: answers }),
     });
   },
 

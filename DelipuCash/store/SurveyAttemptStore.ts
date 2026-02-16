@@ -111,6 +111,34 @@ const initialState: SurveyAttemptState = {
 };
 
 // ============================================================================
+// Debounced draft persistence — avoids AsyncStorage write per keystroke
+// ============================================================================
+
+let _draftPersistTimeout: ReturnType<typeof setTimeout> | null = null;
+
+/** Flush any pending debounced draft write immediately (call on unmount/abandon) */
+const flushDraftPersist = (set: any, get: any): void => {
+  if (_draftPersistTimeout) {
+    clearTimeout(_draftPersistTimeout);
+    _draftPersistTimeout = null;
+  }
+  const state = get();
+  if (state.activeSurveyId && Object.keys(state.answers).length > 0) {
+    const draft: SurveyAttemptDraft = {
+      surveyId: state.activeSurveyId,
+      answers: state.answers,
+      currentIndex: state.currentQuestionIndex,
+      startedAt: state.startedAt || new Date().toISOString(),
+      lastSavedAt: new Date().toISOString(),
+      totalQuestions: state.totalQuestions,
+    };
+    set((prev: SurveyAttemptState) => ({
+      drafts: { ...prev.drafts, [state.activeSurveyId!]: draft },
+    }));
+  }
+};
+
+// ============================================================================
 // STORE
 // ============================================================================
 
@@ -179,9 +207,12 @@ export const useSurveyAttemptStore = create<
       },
 
       abandonAttempt: () => {
+        // Flush any pending debounced draft write
+        flushDraftPersist(set, get);
+
         const state = get();
         if (state.activeSurveyId && Object.keys(state.answers).length > 0) {
-          // Save draft before abandoning
+          // Save draft before abandoning (flush already did this, but set final state)
           const draft: SurveyAttemptDraft = {
             surveyId: state.activeSurveyId,
             answers: state.answers,
@@ -225,27 +256,28 @@ export const useSurveyAttemptStore = create<
         const newAnswers = { ...state.answers, [questionId]: value };
         const now = new Date().toISOString();
 
-        // Auto-save draft
-        const updatedState: Partial<SurveyAttemptState> = {
-          answers: newAnswers,
-          lastSavedAt: now,
-        };
+        // Immediate in-memory update (zero jank for UI)
+        set({ answers: newAnswers, lastSavedAt: now });
 
+        // Debounced draft persistence (500ms) — avoids AsyncStorage write per keystroke
         if (state.activeSurveyId) {
-          const draft: SurveyAttemptDraft = {
-            surveyId: state.activeSurveyId,
-            answers: newAnswers,
-            currentIndex: state.currentQuestionIndex,
-            startedAt: state.startedAt || now,
-            lastSavedAt: now,
-            totalQuestions: state.totalQuestions,
-          };
-          set((prev) => ({
-            ...updatedState,
-            drafts: { ...prev.drafts, [state.activeSurveyId!]: draft },
-          }));
-        } else {
-          set(updatedState);
+          if (_draftPersistTimeout) clearTimeout(_draftPersistTimeout);
+          _draftPersistTimeout = setTimeout(() => {
+            _draftPersistTimeout = null;
+            const latest = get();
+            if (!latest.activeSurveyId) return;
+            const draft: SurveyAttemptDraft = {
+              surveyId: latest.activeSurveyId,
+              answers: latest.answers,
+              currentIndex: latest.currentQuestionIndex,
+              startedAt: latest.startedAt || new Date().toISOString(),
+              lastSavedAt: new Date().toISOString(),
+              totalQuestions: latest.totalQuestions,
+            };
+            set((prev: SurveyAttemptState) => ({
+              drafts: { ...prev.drafts, [latest.activeSurveyId!]: draft },
+            }));
+          }, 500);
         }
       },
 

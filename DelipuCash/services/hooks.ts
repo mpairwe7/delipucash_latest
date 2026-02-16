@@ -700,16 +700,16 @@ export function useCheckSurveyAttempt(
  * Industry standard: sends userId, invalidates caches, prevents re-submission
  */
 export function useSubmitSurvey(): UseMutationResult<
-  { reward: number; submitted: boolean; responseId?: string; message: string },
+  { reward: number; message: string },
   Error,
-  { surveyId: string; responses: Record<string, unknown>; userId: string }
+  { surveyId: string; responses: Record<string, unknown> }
 > {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationKey: ['surveys', 'submit'],
-    mutationFn: async ({ surveyId, responses, userId }) => {
-      const response = await api.surveys.submit(surveyId, responses, userId);
+    mutationFn: async ({ surveyId, responses }) => {
+      const response = await api.surveys.submit(surveyId, responses);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
@@ -717,23 +717,18 @@ export function useSubmitSurvey(): UseMutationResult<
       // Invalidate surveys list to update response counts
       queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
-      
-      // Optimistic update: mark survey as attempted in cache
-      queryClient.setQueryData(
-        ["surveyAttempt", variables.surveyId, variables.userId],
-        {
-          hasAttempted: true,
-          attemptedAt: new Date().toISOString(),
-          message: 'Survey completed successfully',
-        }
-      );
-      
+
+      // Invalidate attempt check cache for this survey
+      queryClient.invalidateQueries({
+        queryKey: ["surveyAttempt", variables.surveyId]
+      });
+
       // Invalidate survey responses cache
-      queryClient.invalidateQueries({ 
-        queryKey: ["surveyResponses", "list", variables.surveyId] 
+      queryClient.invalidateQueries({
+        queryKey: ["surveyResponses", "list", variables.surveyId]
       });
     },
-    retry: 1, // Retry once on failure (network issues)
+    retry: 1,
     retryDelay: 2000,
   });
 }

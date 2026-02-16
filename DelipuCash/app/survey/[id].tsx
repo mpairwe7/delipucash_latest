@@ -22,20 +22,25 @@ import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   Award,
+  Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
   FileText,
+  Hash,
   ListChecks,
   Lock,
   MessageCircle,
   RefreshCw,
   Shield,
   Star,
+  ToggleLeft,
+  ToggleRight,
   X,
 } from "lucide-react-native";
+import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Haptics from "expo-haptics";
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/services";
@@ -57,13 +62,33 @@ import {
 // Unique ID for InputAccessoryView (iOS keyboard toolbar)
 const INPUT_ACCESSORY_VIEW_ID = "survey-input-accessory";
 
-type QuestionType = "rating" | "checkbox" | "radio" | "text";
+type QuestionType =
+  | "rating"
+  | "checkbox"
+  | "radio"
+  | "text"
+  | "paragraph"
+  | "dropdown"
+  | "boolean"
+  | "date"
+  | "time"
+  | "number";
 
 type AnswerValue = string | number | string[];
 
 interface ParsedOption {
   id: string;
   text: string;
+}
+
+interface BooleanLabels {
+  yesLabel: string;
+  noLabel: string;
+}
+
+interface NumberConstraints {
+  min?: number | null;
+  max?: number | null;
 }
 
 interface SurveyQuestion {
@@ -74,6 +99,8 @@ interface SurveyQuestion {
   options?: ParsedOption[];
   maxRating?: number;
   placeholder?: string | null;
+  booleanLabels?: BooleanLabels;
+  numberConstraints?: NumberConstraints;
 }
 
 interface SurveyDisplay {
@@ -131,6 +158,38 @@ const getMaxRating = (question: UploadSurvey): number => {
   return 5;
 };
 
+const getBooleanLabels = (question: UploadSurvey): BooleanLabels => {
+  try {
+    const parsed = JSON.parse(question.options || "{}");
+    if (parsed && typeof parsed === "object") {
+      return {
+        yesLabel: (parsed as { yesLabel?: string }).yesLabel || "Yes",
+        noLabel: (parsed as { noLabel?: string }).noLabel || "No",
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return { yesLabel: "Yes", noLabel: "No" };
+};
+
+const getNumberConstraints = (question: UploadSurvey): NumberConstraints => {
+  const constraints: NumberConstraints = {
+    min: question.minValue ?? null,
+    max: question.maxValue ?? null,
+  };
+  try {
+    const parsed = JSON.parse(question.options || "{}");
+    if (parsed && typeof parsed === "object") {
+      if ((parsed as { min?: number }).min != null) constraints.min = (parsed as { min: number }).min;
+      if ((parsed as { max?: number }).max != null) constraints.max = (parsed as { max: number }).max;
+    }
+  } catch {
+    // ignore
+  }
+  return constraints;
+};
+
 const SurveyAttemptScreen = (): React.ReactElement => {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -176,6 +235,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Local UI state
   const [showReview, setShowReview] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showDropdownModal, setShowDropdownModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [isReducedMotion, setIsReducedMotion] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   
@@ -256,10 +318,12 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         id: q.id,
         text: q.text,
         type: (q.type as QuestionType) || "text",
-        required: true,
+        required: q.required ?? true,
         options: parseQuestionOptions(q),
         maxRating: getMaxRating(q),
         placeholder: q.placeholder,
+        booleanLabels: q.type === "boolean" ? getBooleanLabels(q) : undefined,
+        numberConstraints: q.type === "number" ? getNumberConstraints(q) : undefined,
       })),
     };
   }, [surveyData]);
@@ -276,6 +340,12 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         return [];
       case "radio":
       case "text":
+      case "paragraph":
+      case "dropdown":
+      case "boolean":
+      case "date":
+      case "time":
+      case "number":
       default:
         return "";
     }
@@ -283,39 +353,38 @@ const SurveyAttemptScreen = (): React.ReactElement => {
 
   const currentAnswer = question ? answers[question.id] ?? getDefaultValue(question.type) : "";
 
-  const isQuestionAnswered = (): boolean => {
-    if (!question) return false;
-    const answer = currentAnswer;
-
-    switch (question.type) {
+  const isAnswerValid = (type: QuestionType, answer: AnswerValue): boolean => {
+    switch (type) {
       case "rating":
         return typeof answer === "number" && answer > 0;
       case "checkbox":
         return Array.isArray(answer) && answer.length > 0;
       case "radio":
+      case "dropdown":
+      case "boolean":
         return typeof answer === "string" && answer.length > 0;
       case "text":
+      case "paragraph":
         return typeof answer === "string" && answer.trim().length > 0;
+      case "date":
+      case "time":
+        return typeof answer === "string" && answer.length > 0;
+      case "number":
+        return typeof answer === "string" && answer.trim().length > 0 && !isNaN(Number(answer));
       default:
         return false;
     }
   };
 
+  const isQuestionAnswered = (): boolean => {
+    if (!question) return false;
+    return isAnswerValid(question.type, currentAnswer);
+  };
+
   const answeredCount = survey?.questions.reduce((count, q) => {
     const value = answers[q.id];
-    if (!value) return count;
-    switch (q.type) {
-      case "rating":
-        return typeof value === "number" && value > 0 ? count + 1 : count;
-      case "checkbox":
-        return Array.isArray(value) && value.length > 0 ? count + 1 : count;
-      case "radio":
-        return typeof value === "string" && value.length > 0 ? count + 1 : count;
-      case "text":
-        return typeof value === "string" && value.trim().length > 0 ? count + 1 : count;
-      default:
-        return count;
-    }
+    if (value === undefined || value === null) return count;
+    return isAnswerValid(q.type, value) ? count + 1 : count;
   }, 0) || 0;
 
   // Use store's setAnswer for auto-save
@@ -360,11 +429,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       if (!q.required) return false;
       const val = answers[q.id];
       if (val === undefined || val === null || val === '') return true;
-      if (q.type === 'rating' && (typeof val !== 'number' || val <= 0)) return true;
-      if (q.type === 'checkbox' && (!Array.isArray(val) || val.length === 0)) return true;
-      if (q.type === 'text' && (typeof val !== 'string' || val.trim().length === 0)) return true;
-      if (q.type === 'radio' && (typeof val !== 'string' || val.length === 0)) return true;
-      return false;
+      return !isAnswerValid(q.type, val);
     });
 
     if (unanswered.length > 0) {
@@ -383,7 +448,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     storeSetSubmitting();
 
     submitSurveyMutation.mutate(
-      { surveyId: survey.id, responses: answers, userId },
+      { surveyId: survey.id, responses: answers },
       {
         onSuccess: (data) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -665,6 +730,290 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             {(question.options || []).map(renderOption)}
           </View>
         );
+
+      case "dropdown": {
+        const selectedOption = (question.options || []).find(o => o.id === currentAnswer);
+        return (
+          <View>
+            <TouchableOpacity
+              style={[
+                styles.dropdownTrigger,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: selectedOption ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setShowDropdownModal(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Select option for: ${question.text}`}
+              accessibilityHint={selectedOption ? `Selected: ${selectedOption.text}` : "Double tap to open options"}
+            >
+              <Text
+                style={[
+                  styles.dropdownText,
+                  { color: selectedOption ? colors.text : colors.textMuted },
+                ]}
+              >
+                {selectedOption ? selectedOption.text : (question.placeholder || "Select an option")}
+              </Text>
+              <ChevronDown size={20} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            <Modal visible={showDropdownModal} transparent animationType="fade">
+              <TouchableOpacity
+                style={styles.dropdownOverlay}
+                activeOpacity={1}
+                onPress={() => setShowDropdownModal(false)}
+              >
+                <View style={[styles.dropdownSheet, { backgroundColor: colors.card }]}>
+                  <View style={styles.dropdownHeader}>
+                    <Text style={[styles.dropdownTitle, { color: colors.text }]}>Select an option</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowDropdownModal(false)}
+                      style={styles.dropdownClose}
+                      accessibilityLabel="Close dropdown"
+                    >
+                      <X size={20} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView style={styles.dropdownList}>
+                    {(question.options || []).map(opt => {
+                      const isSelected = currentAnswer === opt.id;
+                      return (
+                        <TouchableOpacity
+                          key={opt.id}
+                          style={[
+                            styles.dropdownItem,
+                            { borderBottomColor: colors.border },
+                            isSelected && { backgroundColor: withAlpha(colors.primary, 0.1) },
+                          ]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                            setAnswer(opt.id);
+                            setShowDropdownModal(false);
+                          }}
+                          accessibilityRole="radio"
+                          accessibilityState={{ checked: isSelected }}
+                        >
+                          <Text style={[styles.dropdownItemText, { color: colors.text }]}>{opt.text}</Text>
+                          {isSelected && <CheckCircle2 size={18} color={colors.primary} />}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              </TouchableOpacity>
+            </Modal>
+          </View>
+        );
+      }
+
+      case "boolean": {
+        const labels = question.booleanLabels || { yesLabel: "Yes", noLabel: "No" };
+        const value = typeof currentAnswer === "string" ? currentAnswer : "";
+        return (
+          <View style={styles.booleanRow}>
+            <TouchableOpacity
+              style={[
+                styles.booleanButton,
+                {
+                  borderColor: value === "true" ? colors.primary : colors.border,
+                  backgroundColor: value === "true" ? withAlpha(colors.primary, 0.12) : colors.card,
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setAnswer("true");
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: value === "true" }}
+              accessibilityLabel={labels.yesLabel}
+            >
+              <ToggleRight
+                size={24}
+                color={value === "true" ? colors.primary : colors.textMuted}
+              />
+              <Text style={[styles.booleanLabel, { color: value === "true" ? colors.primary : colors.text }]}>
+                {labels.yesLabel}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.booleanButton,
+                {
+                  borderColor: value === "false" ? colors.primary : colors.border,
+                  backgroundColor: value === "false" ? withAlpha(colors.primary, 0.12) : colors.card,
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setAnswer("false");
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: value === "false" }}
+              accessibilityLabel={labels.noLabel}
+            >
+              <ToggleLeft
+                size={24}
+                color={value === "false" ? colors.primary : colors.textMuted}
+              />
+              <Text style={[styles.booleanLabel, { color: value === "false" ? colors.primary : colors.text }]}>
+                {labels.noLabel}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      case "date": {
+        const dateValue = typeof currentAnswer === "string" && currentAnswer ? new Date(currentAnswer) : new Date();
+        const hasValue = typeof currentAnswer === "string" && currentAnswer.length > 0;
+        return (
+          <View>
+            <TouchableOpacity
+              style={[
+                styles.dateTimeTrigger,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: hasValue ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setShowDatePicker(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Pick date for: ${question.text}`}
+              accessibilityHint={hasValue ? `Selected: ${currentAnswer}` : "Double tap to pick a date"}
+            >
+              <Calendar size={20} color={hasValue ? colors.primary : colors.textMuted} />
+              <Text style={[styles.dateTimeText, { color: hasValue ? colors.text : colors.textMuted }]}>
+                {hasValue ? new Date(currentAnswer as string).toLocaleDateString() : (question.placeholder || "Select a date")}
+              </Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={dateValue}
+                mode="date"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_event: DateTimePickerEvent, selectedDate?: Date) => {
+                  setShowDatePicker(Platform.OS === "ios");
+                  if (selectedDate) {
+                    setAnswer(selectedDate.toISOString().split("T")[0]);
+                  }
+                }}
+              />
+            )}
+          </View>
+        );
+      }
+
+      case "time": {
+        const timeValue = typeof currentAnswer === "string" && currentAnswer
+          ? (() => { const [h, m] = currentAnswer.split(":"); const d = new Date(); d.setHours(Number(h), Number(m)); return d; })()
+          : new Date();
+        const hasValue = typeof currentAnswer === "string" && currentAnswer.length > 0;
+        return (
+          <View>
+            <TouchableOpacity
+              style={[
+                styles.dateTimeTrigger,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: hasValue ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                setShowTimePicker(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Pick time for: ${question.text}`}
+              accessibilityHint={hasValue ? `Selected: ${currentAnswer}` : "Double tap to pick a time"}
+            >
+              <Clock size={20} color={hasValue ? colors.primary : colors.textMuted} />
+              <Text style={[styles.dateTimeText, { color: hasValue ? colors.text : colors.textMuted }]}>
+                {hasValue ? (currentAnswer as string) : (question.placeholder || "Select a time")}
+              </Text>
+            </TouchableOpacity>
+            {showTimePicker && (
+              <DateTimePicker
+                value={timeValue}
+                mode="time"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={(_event: DateTimePickerEvent, selectedTime?: Date) => {
+                  setShowTimePicker(Platform.OS === "ios");
+                  if (selectedTime) {
+                    const h = String(selectedTime.getHours()).padStart(2, "0");
+                    const m = String(selectedTime.getMinutes()).padStart(2, "0");
+                    setAnswer(`${h}:${m}`);
+                  }
+                }}
+              />
+            )}
+          </View>
+        );
+      }
+
+      case "number": {
+        const constraints = question.numberConstraints || {};
+        const numValue = typeof currentAnswer === "string" ? currentAnswer : "";
+        return (
+          <View style={styles.textFieldWrapper}>
+            <TextInput
+              ref={textInputRef}
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  minHeight: 52,
+                },
+              ]}
+              placeholder={question.placeholder || "Enter a number"}
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              value={numValue}
+              onChangeText={(text) => {
+                // Allow only numeric input (digits, minus, decimal)
+                const cleaned = text.replace(/[^0-9.\-]/g, "");
+                setAnswer(cleaned);
+              }}
+              accessibilityLabel={`Number input for: ${question.text}`}
+              accessibilityHint={
+                constraints.min != null && constraints.max != null
+                  ? `Enter a number between ${constraints.min} and ${constraints.max}`
+                  : "Enter a numeric value"
+              }
+              inputAccessoryViewID={Platform.OS === "ios" ? INPUT_ACCESSORY_VIEW_ID : undefined}
+              returnKeyType="done"
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: !isReducedMotion });
+                }, 150);
+              }}
+            />
+            {(constraints.min != null || constraints.max != null) && (
+              <View style={styles.helperRow}>
+                <Hash size={16} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                  {constraints.min != null && constraints.max != null
+                    ? `Range: ${constraints.min} – ${constraints.max}`
+                    : constraints.min != null
+                      ? `Minimum: ${constraints.min}`
+                      : `Maximum: ${constraints.max}`}
+                </Text>
+              </View>
+            )}
+          </View>
+        );
+      }
+
       case "rating": {
         const max = question.maxRating || 5;
         const value = typeof currentAnswer === "number" ? currentAnswer : 0;
@@ -698,6 +1047,48 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           </View>
         );
       }
+
+      case "paragraph":
+        return (
+          <View style={styles.textFieldWrapper}>
+            <TextInput
+              ref={textInputRef}
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                  color: colors.text,
+                  minHeight: 160,
+                },
+              ]}
+              placeholder={question.placeholder || "Write your detailed response..."}
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={6}
+              textAlignVertical="top"
+              value={typeof currentAnswer === "string" ? currentAnswer : ""}
+              onChangeText={(text) => setAnswer(text)}
+              accessibilityLabel={`Long answer for: ${question.text}`}
+              accessibilityHint="Enter your detailed text response"
+              inputAccessoryViewID={Platform.OS === "ios" ? INPUT_ACCESSORY_VIEW_ID : undefined}
+              returnKeyType="done"
+              blurOnSubmit={false}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollViewRef.current?.scrollToEnd({ animated: !isReducedMotion });
+                }, 150);
+              }}
+            />
+            <View style={styles.helperRow}>
+              <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
+              <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                Share as much detail as you'd like.
+              </Text>
+            </View>
+          </View>
+        );
+
       case "text":
       default:
         return (
@@ -719,15 +1110,12 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               textAlignVertical="top"
               value={typeof currentAnswer === "string" ? currentAnswer : ""}
               onChangeText={(text) => setAnswer(text)}
-              // Accessibility improvements
               accessibilityLabel={`Answer for: ${question.text}`}
               accessibilityHint="Enter your text response"
-              // Keyboard handling for better scroll accessibility
               inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_VIEW_ID : undefined}
               returnKeyType="done"
               blurOnSubmit={false}
               onFocus={() => {
-                // Scroll to make input visible when keyboard appears
                 setTimeout(() => {
                   scrollViewRef.current?.scrollToEnd({ animated: !isReducedMotion });
                 }, 150);
@@ -887,6 +1275,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           </View>
 
           <Text style={[styles.questionTitle, { color: colors.text }]}>{question?.text}</Text>
+          {question && !question.required && (
+            <Text style={[styles.optionalBadge, { color: colors.textMuted }]}>(Optional)</Text>
+          )}
           <View style={styles.helperRow}>
             <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
             <Text style={[styles.helperText, { color: colors.textMuted }]}>Answer thoughtfully to unlock rewards.</Text>
@@ -1376,6 +1767,109 @@ const styles = StyleSheet.create({
   rewardBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  // Optional badge
+  optionalBadge: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontStyle: "italic",
+    marginBottom: SPACING.xs,
+  },
+  // Dropdown styles
+  dropdownTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: BORDER_WIDTH.thin,
+    minHeight: 52,
+  },
+  dropdownText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    flex: 1,
+  },
+  dropdownOverlay: {
+    flex: 1,
+    backgroundColor: withAlpha("#000000", 0.5),
+    justifyContent: "flex-end",
+  },
+  dropdownSheet: {
+    borderTopLeftRadius: RADIUS["2xl"],
+    borderTopRightRadius: RADIUS["2xl"],
+    maxHeight: "60%",
+    ...SHADOWS.lg,
+  },
+  dropdownHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: SPACING.base,
+    borderBottomWidth: BORDER_WIDTH.hairline,
+  },
+  dropdownTitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+  },
+  dropdownClose: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dropdownList: {
+    paddingHorizontal: SPACING.base,
+  },
+  dropdownItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: SPACING.md,
+    borderBottomWidth: BORDER_WIDTH.hairline,
+    minHeight: 52,
+  },
+  dropdownItemText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    flex: 1,
+  },
+  // Boolean styles
+  booleanRow: {
+    flexDirection: "row",
+    gap: SPACING.md,
+  },
+  booleanButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    borderWidth: BORDER_WIDTH.thin,
+    minHeight: 64,
+  },
+  booleanLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  // Date/Time trigger styles
+  dateTimeTrigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: BORDER_WIDTH.thin,
+    minHeight: 52,
+  },
+  dateTimeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    flex: 1,
   },
   // Keyboard accessory styles for iOS
   keyboardAccessory: {
