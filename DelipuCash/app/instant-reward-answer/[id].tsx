@@ -161,6 +161,7 @@ const OptionItem = memo(function OptionItem({
       ]}
       onPress={handlePress}
       disabled={isDisabled}
+      hitSlop={8}
       accessibilityRole="button"
       accessibilityState={{ selected: isSelected, disabled: isDisabled }}
     >
@@ -393,9 +394,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const executeTransition = useCallback(
     (nextId: string) => {
       goToNextQuestion();
+      // Reset transition values before navigating so the next screen starts clean
+      transitionOpacity.value = 1;
+      transitionTranslateX.value = 0;
+      setIsTransitioning(false);
       router.replace(`/instant-reward-answer/${nextId}` as Href);
     },
-    [goToNextQuestion]
+    [goToNextQuestion, transitionOpacity, transitionTranslateX]
   );
 
   // Auto-transition to next question or show session summary
@@ -733,6 +738,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         <ScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING['2xl'] }}
           refreshControl={
             <RefreshControl

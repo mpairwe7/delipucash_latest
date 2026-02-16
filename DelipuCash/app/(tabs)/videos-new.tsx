@@ -111,9 +111,9 @@ import { Video, Ad } from '@/types';
 import {
   useVideoFeedStore,
   selectFeedMode,
-  selectUI,
   selectLikedVideoIds,
   selectBookmarkedVideoIds,
+  useFeedUI,
 } from '@/store/VideoFeedStore';
 import { useSearch } from '@/hooks/useSearch';
 import {
@@ -241,13 +241,14 @@ const LiveViewerCount = React.memo(({ count }: { count: number }) => {
   const pulse = useSharedValue(1);
 
   useEffect(() => {
+    if (count <= 0) return;
     const interval = setInterval(() => {
       pulse.value = withSpring(1.15, { damping: 10 }, () => {
         pulse.value = withSpring(1, { damping: 15 });
       });
     }, 3000);
     return () => clearInterval(interval);
-  }, [pulse]);
+  }, [pulse, count]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
@@ -350,7 +351,7 @@ export default function VideosScreen(): React.ReactElement {
   // ============================================================================
 
   const feedMode = useVideoFeedStore(selectFeedMode);
-  const ui = useVideoFeedStore(selectUI);
+  const ui = useFeedUI();
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
   const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
 
@@ -394,6 +395,11 @@ export default function VideosScreen(): React.ReactElement {
     (state) => state.currentLivestream?.viewerCount ?? 0
   );
   const [sessionAdCount, setSessionAdCount] = useState(0);
+
+  // Memoized tab icons — prevents AnimatedTabPill re-renders from new JSX refs
+  const followingIcon = useMemo(() => <Users size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
+  const forYouIcon = useMemo(() => <Sparkles size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
+  const trendingIcon = useMemo(() => <TrendingUp size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
 
   // ============================================================================
   // 2026 ACCESSIBILITY - Reduced Motion Detection (WCAG 2.2 AAA)
@@ -1030,21 +1036,21 @@ export default function VideosScreen(): React.ReactElement {
                 isActive={activeTab === 'following'}
                 onPress={() => handleTabChange('following')}
                 label="Following"
-                icon={<Users size={12} color={colors.text} strokeWidth={2} />}
+                icon={followingIcon}
               />
               <AnimatedTabPill
                 tab="for-you"
                 isActive={activeTab === 'for-you'}
                 onPress={() => handleTabChange('for-you')}
                 label="For You"
-                icon={<Sparkles size={12} color={colors.text} strokeWidth={2} />}
+                icon={forYouIcon}
               />
               <AnimatedTabPill
                 tab="trending"
                 isActive={activeTab === 'trending'}
                 onPress={() => handleTabChange('trending')}
                 label="Trending"
-                icon={<TrendingUp size={12} color={colors.text} strokeWidth={2} />}
+                icon={trendingIcon}
               />
             </View>
 

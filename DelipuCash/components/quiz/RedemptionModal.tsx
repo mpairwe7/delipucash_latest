@@ -221,7 +221,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
                   <Banknote size={32} color={colors.success} strokeWidth={1.5} />
                 </View>
                 <Text style={[styles.typeLabel, { color: colors.success }]}>Cash</Text>
-                <Text style={[styles.typeDescription, { color: colors.textMuted }]}>
+                <Text style={[styles.typeDescription, { color: colors.textMuted }]} pointerEvents="none">
                   Receive money directly to your mobile money account
                 </Text>
                 <ChevronRight size={ICON_SIZE.md} color={colors.success} strokeWidth={1.5} />
@@ -239,7 +239,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
                   <Smartphone size={32} color={colors.info} strokeWidth={1.5} />
                 </View>
                 <Text style={[styles.typeLabel, { color: colors.info }]}>Airtime</Text>
-                <Text style={[styles.typeDescription, { color: colors.textMuted }]}>
+                <Text style={[styles.typeDescription, { color: colors.textMuted }]} pointerEvents="none">
                   Get airtime top-up instantly on your phone
                 </Text>
                 <ChevronRight size={ICON_SIZE.md} color={colors.info} strokeWidth={1.5} />

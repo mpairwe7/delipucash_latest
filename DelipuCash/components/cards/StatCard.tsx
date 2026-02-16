@@ -28,23 +28,20 @@ import {
 } from '@/utils/theme';
 import { triggerHaptic } from '@/utils/quiz-utils';
 
-/** Animates toward a target number, returns a formatted display string. */
+/** Lightweight number animation — single runOnJS at animation end (no per-frame churn). */
 function useAnimatedNumber(target: number): string {
   const sv = useSharedValue(target);
   const [display, setDisplay] = React.useState(target.toLocaleString());
-
-  useEffect(() => {
-    sv.value = withTiming(target, { duration: 500, easing: Easing.out(Easing.cubic) });
-  }, [target, sv]);
 
   const update = useCallback((v: number) => {
     setDisplay(Math.round(v).toLocaleString());
   }, []);
 
-  useAnimatedReaction(
-    () => sv.value,
-    (current) => { runOnJS(update)(current); },
-  );
+  useEffect(() => {
+    sv.value = withTiming(target, { duration: 400, easing: Easing.out(Easing.cubic) }, (finished) => {
+      if (finished) runOnJS(update)(target);
+    });
+  }, [target, sv, update]);
 
   return display;
 }

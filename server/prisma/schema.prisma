@@ -377,6 +377,9 @@ model Question {
   attempts        QuestionAttempt[]
   responses       Response[]
   votes           QuestionVote[]
+
+  @@index([createdAt])
+  @@index([isInstantReward])
 }
 
 model QuestionVote {
@@ -409,6 +412,7 @@ model Response {
 
   @@index([userId, questionId])
   @@index([userId, createdAt])
+  @@index([questionId])
 }
 
 model ResponseLike {

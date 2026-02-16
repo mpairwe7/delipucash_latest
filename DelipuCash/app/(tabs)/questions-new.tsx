@@ -492,7 +492,7 @@ export default function QuestionsScreen(): React.ReactElement {
   const { data: leaderboard } = useQuestionsLeaderboard(3, !isFeedLoading);
 
   // Notification count
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadCount(isAuthenticated);
   const { data: rewardQuestions, isLoading: isRewardQuestionsLoading } = useRegularRewardQuestions();
 
   // Consolidated ads — single hook replaces 3 separate ones, deferred until feed loads
@@ -837,10 +837,14 @@ export default function QuestionsScreen(): React.ReactElement {
     [
       isStatsLoading,
       isFeedLoading,
-      userStats,
-      colors,
+      userStats?.totalAnswered,
+      userStats?.questionsAnsweredToday,
+      userStats?.currentStreak,
+      userStats?.totalEarnings,
+      feedStats.totalQuestions,
+      feedStats.unansweredCount,
+      feedStats.rewardsCount,
       selectedTab,
-      feedStats,
       leaderboard,
       bannerAds,
       feedAds,
@@ -856,6 +860,9 @@ export default function QuestionsScreen(): React.ReactElement {
       handleAdImpression,
       handleClearSearch,
       handleOpenCreateWizard,
+      colors.background,
+      colors.text,
+      colors.primary,
     ]
   );
 

@@ -979,7 +979,9 @@ export function useNotifications(): UseQueryResult<Notification[], Error> {
 /**
  * Hook to get unread notification count
  */
-export function useUnreadCount(): UseQueryResult<number, Error> {
+export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error> {
+  const isAuthReady = useAuthStore((s) => s.isReady && !!s.auth?.token);
+
   return useQuery({
     queryKey: queryKeys.unreadCount,
     queryFn: async () => {
@@ -989,6 +991,7 @@ export function useUnreadCount(): UseQueryResult<number, Error> {
       return typeof response.data === 'number' ? response.data : response.data?.count ?? 0;
     },
     staleTime: 1000 * 30, // SSE handles real-time invalidation
+    enabled: (enabled ?? true) && isAuthReady,
   });
 }
 

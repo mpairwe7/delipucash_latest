@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   Animated,
   ScrollView,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -174,19 +175,20 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   if (!visible) return null;
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          opacity: fadeAnim,
-          transform: [
-            { scale: scaleAnim },
-            { translateY: slideAnim },
-          ],
-        },
-      ]}
-    >
-      <ScrollView
+    <Modal visible={visible} transparent animationType="none" onRequestClose={onClose}>
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            opacity: fadeAnim,
+            transform: [
+              { scale: scaleAnim },
+              { translateY: slideAnim },
+            ],
+          },
+        ]}
+      >
+        <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
@@ -359,8 +361,9 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
             variant="secondary"
           />
         </View>
-      </ScrollView>
-    </Animated.View>
+        </ScrollView>
+      </Animated.View>
+    </Modal>
   );
 };
 

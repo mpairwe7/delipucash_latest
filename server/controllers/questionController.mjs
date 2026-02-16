@@ -181,11 +181,15 @@ export const getQuestions = asyncHandler(async (req, res) => {
       take: limit,
     });
 
+    const includeStats = page === 1; // Only compute expensive counts for first page
+
     const [questions, total, unansweredCount, rewardsCount] = await Promise.all([
       resilientQuestionFindMany(queryOptions),
-      prisma.question.count({ where: whereClause }),
-      prisma.question.count({ where: { responses: { none: {} } } }),
-      prisma.question.count({ where: { isInstantReward: true, rewardAmount: { gt: 0 } } }),
+      includeStats ? prisma.question.count({ where: whereClause }) : Promise.resolve(0),
+      includeStats ? prisma.question.count({ where: { responses: { none: {} } } }) : Promise.resolve(0),
+      includeStats
+        ? prisma.question.count({ where: { isInstantReward: true, rewardAmount: { gt: 0 } } })
+        : Promise.resolve(0),
     ]);
 
     // Batch fetch vote counts for all questions in one query
@@ -220,14 +224,16 @@ export const getQuestions = asyncHandler(async (req, res) => {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        hasMore: page * limit < total,
+        totalPages: includeStats ? Math.ceil(total / limit) : undefined,
+        hasMore: includeStats ? page * limit < total : undefined,
       },
-      stats: {
-        totalQuestions: total,
-        unansweredCount,
-        rewardsCount,
-      },
+      stats: includeStats
+        ? {
+            totalQuestions: total,
+            unansweredCount,
+            rewardsCount,
+          }
+        : undefined,
     });
   } catch (error) {
     console.error('Error retrieving questions:', error);
@@ -854,4 +860,3 @@ export const getUserQuestionStats = asyncHandler(async (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to fetch stats', error: error.message });
   }
 });
-

@@ -108,9 +108,7 @@ import {
   useUnreadCount,
 } from "@/services/hooks";
 import {
-  useBannerAds,
-  useAdsForPlacement,
-  useFeaturedAds,
+  useScreenAds,
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
@@ -312,11 +310,15 @@ export default function HomePage(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
-  // Ad hooks - TanStack Query for intelligent ad loading
-  // Following industry best practices: ads are contextually placed and non-intrusive
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(3);
-  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement("home", 4);
-  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(2);
+  // Ad hooks - single consolidated query for all ad placements
+  const { data: screenAds, refetch: refetchAds } = useScreenAds("home", {
+    feedLimit: 4,
+    bannerLimit: 3,
+    featuredLimit: 2,
+  });
+  const bannerAds = screenAds?.bannerAds;
+  const homeAds = screenAds?.feedAds;
+  const featuredAds = screenAds?.featuredAds;
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
@@ -439,9 +441,7 @@ export default function HomePage(): React.ReactElement {
       refetchUpcomingSurveys(),
       refetchDailyReward(),
       refetchStats(),
-      refetchBannerAds(),
-      refetchHomeAds(),
-      refetchFeaturedAds(),
+      refetchAds(),
     ]);
     
     setRefreshing(false);
@@ -451,7 +451,7 @@ export default function HomePage(): React.ReactElement {
   }, [
     refetch, refetchVideos, refetchQuestions, refetchRunningSurveys,
     refetchUpcomingSurveys, refetchDailyReward, refetchStats,
-    refetchBannerAds, refetchHomeAds, refetchFeaturedAds,
+    refetchAds,
   ]);
 
   // Claim daily reward handler — guarded on availability
