@@ -16,8 +16,22 @@
  */
 
 import { ApiResponse } from "@/types";
+import { useAuthStore } from "@/utils/auth/store";
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+
+/** Get current auth token for authenticated upload requests */
+function getAuthToken(): string | null {
+  return useAuthStore.getState().auth?.token || null;
+}
+
+/** Build standard auth headers for JSON requests */
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getAuthToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return headers;
+}
 
 // ============================================================================
 // TYPES
@@ -127,6 +141,10 @@ function createProgressRequest(
     });
     
     xhr.open(method, url);
+    const token = getAuthToken();
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    }
     options.onStart?.();
     xhr.send(formData);
   });
@@ -165,9 +183,7 @@ export async function validateUpload(
   try {
     const response = await fetch(`${API_BASE_URL}/api/r2/upload/validate`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         userId,
         fileSize,
@@ -409,9 +425,7 @@ export async function getPresignedUploadUrl(
   try {
     const response = await fetch(`${API_BASE_URL}/api/r2/presign/upload`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         fileName,
         mimeType,
@@ -535,9 +549,7 @@ export async function finalizeLivestreamRecording(
   try {
     const response = await fetch(`${API_BASE_URL}/api/r2/livestream/finalize`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         sessionId,
         userId,
@@ -587,9 +599,7 @@ export async function getSignedPlaybackUrl(
   try {
     const response = await fetch(`${API_BASE_URL}/api/r2/presign/download`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ key, expiresIn }),
     });
     

@@ -16,6 +16,7 @@
 
 import express from 'express';
 import multer from 'multer';
+import { verifyToken } from '../utils/verifyUser.mjs';
 import {
   uploadVideoToR2,
   uploadThumbnailToR2,
@@ -172,6 +173,7 @@ const handleMulterError = (err, req, res, next) => {
  */
 router.post(
   '/upload/video',
+  verifyToken,
   videoUpload.single('video'),
   handleMulterError,
   uploadVideoToR2
@@ -180,7 +182,7 @@ router.post(
 /**
  * POST /api/r2/upload/thumbnail
  * Upload a thumbnail image to R2
- * 
+ *
  * Body (multipart/form-data):
  * - thumbnail: Image file
  * - userId: User ID
@@ -188,6 +190,7 @@ router.post(
  */
 router.post(
   '/upload/thumbnail',
+  verifyToken,
   thumbnailUpload.single('thumbnail'),
   handleMulterError,
   uploadThumbnailToR2
@@ -196,7 +199,7 @@ router.post(
 /**
  * POST /api/r2/upload/media
  * Upload video + thumbnail together
- * 
+ *
  * Body (multipart/form-data):
  * - video: Video file
  * - thumbnail: Image file
@@ -206,6 +209,7 @@ router.post(
  */
 router.post(
   '/upload/media',
+  verifyToken,
   mediaUpload.fields([
     { name: 'video', maxCount: 1 },
     { name: 'thumbnail', maxCount: 1 },
@@ -219,7 +223,7 @@ router.post(
  * Validate upload request before uploading
  * Check file size against user's limits
  */
-router.post('/upload/validate', validateUploadRequest);
+router.post('/upload/validate', verifyToken, validateUploadRequest);
 
 // ============================================================================
 // AD MEDIA UPLOAD ROUTES
@@ -228,7 +232,7 @@ router.post('/upload/validate', validateUploadRequest);
 /**
  * POST /api/r2/upload/ad-media
  * Upload ad media (image or video) to R2
- * 
+ *
  * Body (multipart/form-data):
  * - media: Image or video file
  * - userId: User ID
@@ -236,6 +240,7 @@ router.post('/upload/validate', validateUploadRequest);
  */
 router.post(
   '/upload/ad-media',
+  verifyToken,
   mediaUpload.single('media'),
   handleMulterError,
   uploadAdMediaToR2
@@ -248,7 +253,7 @@ router.post(
 /**
  * POST /api/r2/presign/upload
  * Get a presigned URL for direct upload from client
- * 
+ *
  * Body:
  * - fileName: Original file name
  * - mimeType: File MIME type

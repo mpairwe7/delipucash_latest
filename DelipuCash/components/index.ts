@@ -109,7 +109,6 @@ export type {
   MiniPlayerProps,
   VideoActionsProps,
   UploadModalProps,
-  UploadFormData,
   SearchResultsProps,
   TrendingVideoSliderProps,
   InlineVideoPlayerProps,

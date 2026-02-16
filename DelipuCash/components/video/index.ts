@@ -69,7 +69,7 @@ export type { VideoCommentsProps } from './VideoComments';
 
 // Modal Components
 export { UploadModal } from './UploadModal';
-export type { UploadModalProps, UploadFormData } from './UploadModal';
+export type { UploadModalProps } from './UploadModal';
 
 // Search Components
 export { SearchResults } from './SearchResults';

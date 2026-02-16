@@ -1,16 +1,14 @@
 /**
  * UploadModal Component
- * A modal for uploading videos with form validation
- * Includes 40MB file size limit for free users with premium upgrade option
- * 
- * @example
- * ```tsx
- * <UploadModal
- *   visible={showUpload}
- *   onClose={() => setShowUpload(false)}
- *   onUpload={handleUpload}
- * />
- * ```
+ * Full-featured video upload modal with R2 cloud storage integration.
+ *
+ * Features:
+ * - Video file picker with client + server validation
+ * - Optional thumbnail/cover image picker
+ * - Real upload progress via XHR (no fake intervals)
+ * - Animated progress bar with percentage
+ * - Premium tier file-size gating with upgrade prompt
+ * - Uploads directly to Cloudflare R2 (server creates DB record atomically)
  */
 
 import React, { memo, useState, useCallback, useEffect } from 'react';
@@ -26,19 +24,19 @@ import {
   Keyboard,
   Platform,
   Alert,
+  Image,
 } from 'react-native';
 import {
   X,
   Film,
   Image as ImageIcon,
-  Smile,
-  MapPin,
   AlertTriangle,
   Crown,
   CheckCircle,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { router, Href } from 'expo-router';
 import {
   useTheme,
@@ -54,21 +52,13 @@ import {
   formatFileSize,
 } from '@/utils/video-utils';
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
-import { useVideoStore, selectUploadProgress, selectCurrentUpload } from '@/store/VideoStore';
-import { useValidateUpload } from '@/services/hooks';
+import { useVideoStore, selectCurrentUpload } from '@/store/VideoStore';
 import { useAuthStore } from '@/utils/auth/store';
-
-/**
- * Upload form data
- */
-export interface UploadFormData {
-  title: string;
-  description: string;
-  isPrivate: boolean;
-  fileUri?: string;
-  fileSize?: number;
-  fileName?: string;
-}
+import {
+  useUploadVideoToR2,
+  useUploadMediaToR2,
+  useValidateR2Upload,
+} from '@/services/r2UploadHooks';
 
 /**
  * Selected file info
@@ -81,6 +71,15 @@ interface SelectedFileInfo {
 }
 
 /**
+ * Selected thumbnail info
+ */
+interface SelectedThumbnail {
+  uri: string;
+  name: string;
+  type: string;
+}
+
+/**
  * Props for the UploadModal component
  */
 export interface UploadModalProps {
@@ -88,8 +87,8 @@ export interface UploadModalProps {
   visible: boolean;
   /** Close handler */
   onClose: () => void;
-  /** Upload handler */
-  onUpload?: (data: UploadFormData) => Promise<void>;
+  /** Called after a successful upload with the created video ID */
+  onUploadComplete?: (videoId: string) => void;
   /** Maximum title length */
   maxTitleLength?: number;
   /** Maximum description length */
@@ -103,7 +102,7 @@ export interface UploadModalProps {
 function UploadModalComponent({
   visible,
   onClose,
-  onUpload,
+  onUploadComplete,
   maxTitleLength = 100,
   maxDescriptionLength = 500,
   onUpgradeRequired,
@@ -111,25 +110,37 @@ function UploadModalComponent({
 }: UploadModalProps): React.ReactElement {
   const { colors } = useTheme();
   const { hasVideoPremium, maxUploadSize } = useVideoPremiumAccess();
-  
-  // Video store for state management (selectors available for UI display if needed)
-  const storeUploadProgress = useVideoStore(selectUploadProgress);
+
+  // Auth
+  const userId = useAuthStore(s => s.auth?.user?.id);
+
+  // Video store actions
   const storeCurrentUpload = useVideoStore(selectCurrentUpload);
-  // Actions — individual selectors (stable references, no full-store subscription)
   const startUpload = useVideoStore(s => s.startUpload);
   const updateUploadProgress = useVideoStore(s => s.updateUploadProgress);
   const cancelUpload = useVideoStore(s => s.cancelUpload);
   const completeUpload = useVideoStore(s => s.completeUpload);
+  const failUpload = useVideoStore(s => s.failUpload);
   const setPremiumStatus = useVideoStore(s => s.setPremiumStatus);
 
-  // Use store progress for display when available (exposed for parent components)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const displayProgress = storeUploadProgress?.progress ?? 0;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const hasActiveUpload = storeCurrentUpload !== null;
+  // R2 upload hooks — real progress via XHR
+  const {
+    mutateAsync: uploadVideoOnly,
+    progress: videoProgress,
+    isUploading: isUploadingVideo,
+  } = useUploadVideoToR2();
 
-  // API validation hook
-  const validateUploadMutation = useValidateUpload();
+  const {
+    mutateAsync: uploadMedia,
+    progress: mediaProgress,
+    isUploading: isUploadingMedia,
+  } = useUploadMediaToR2();
+
+  const validateR2Mutation = useValidateR2Upload();
+
+  // Derived state
+  const isUploading = isUploadingVideo || isUploadingMedia;
+  const uploadProgress = isUploadingMedia ? mediaProgress : videoProgress;
 
   // Sync premium status with store
   useEffect(() => {
@@ -140,12 +151,12 @@ function UploadModalComponent({
       maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
     });
   }, [hasVideoPremium, maxUploadSize, setPremiumStatus]);
-  
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
+  const [selectedThumbnail, setSelectedThumbnail] = useState<SelectedThumbnail | null>(null);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -160,16 +171,15 @@ function UploadModalComponent({
   const resetForm = useCallback(() => {
     setTitle('');
     setDescription('');
-    setIsUploading(false);
     setSelectedFile(null);
+    setSelectedThumbnail(null);
     setFileSizeError(null);
-    // Cancel any active upload
     if (storeCurrentUpload) {
       cancelUpload(storeCurrentUpload.fileId);
     }
   }, [cancelUpload, storeCurrentUpload]);
 
-  // Handle file selection with size validation (client + server)
+  // ── Video file picker ──────────────────────────────────────────────────────
   const handleSelectFile = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -177,16 +187,14 @@ function UploadModalComponent({
         copyToCacheDirectory: true,
       });
 
-      if (result.canceled || !result.assets?.[0]) {
-        return;
-      }
+      if (result.canceled || !result.assets?.[0]) return;
 
       const file = result.assets[0];
       const fileSize = file.size || 0;
       const fileName = file.name || 'video.mp4';
       const mimeType = file.mimeType || 'video/mp4';
 
-      // Client-side validation first (faster UX)
+      // Client-side size check (instant feedback)
       if (fileSize > maxUploadSize) {
         setFileSizeError(
           hasVideoPremium
@@ -197,46 +205,61 @@ function UploadModalComponent({
         return;
       }
 
-      // Server-side validation for additional checks
+      // Server-side validation (tier + type + size)
       try {
-        const validationResult = await validateUploadMutation.mutateAsync({
-          userId: useAuthStore.getState().auth?.user?.id || '',
+        const validation = await validateR2Mutation.mutateAsync({
+          userId: userId || '',
           fileSize,
           mimeType,
           fileName,
+          type: 'video',
         });
 
-        if (!validationResult.valid) {
-          setFileSizeError(validationResult.message || 'File validation failed');
+        if (!validation.success || !validation.data?.valid) {
+          setFileSizeError(validation.data?.message || validation.error || 'File validation failed');
           setSelectedFile(null);
           return;
         }
       } catch {
-        // Continue if server validation fails (offline support)
-        console.warn('Server validation failed, using client-side validation only');
+        // Offline fallback — client validation already passed
+        console.warn('Server validation unavailable, using client-side only');
       }
 
       setFileSizeError(null);
-      
-      // Update store with file info
-      startUpload({
-        uri: file.uri,
-        name: fileName,
-        size: fileSize,
-      });
-
-      setSelectedFile({
-        uri: file.uri,
-        name: fileName,
-        size: fileSize,
-        type: mimeType,
-      });
-
+      setSelectedFile({ uri: file.uri, name: fileName, size: fileSize, type: mimeType });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
       Alert.alert('Error', 'Failed to select video file. Please try again.');
     }
-  }, [maxUploadSize, hasVideoPremium, validateUploadMutation, startUpload]);
+  }, [maxUploadSize, hasVideoPremium, validateR2Mutation, userId]);
+
+  // ── Thumbnail picker ───────────────────────────────────────────────────────
+  const handleSelectThumbnail = useCallback(async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (result.canceled || !result.assets?.[0]) return;
+
+      const asset = result.assets[0];
+      setSelectedThumbnail({
+        uri: asset.uri,
+        name: asset.fileName || asset.uri.split('/').pop() || 'thumbnail.jpg',
+        type: asset.mimeType || 'image/jpeg',
+      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      Alert.alert('Error', 'Failed to select thumbnail. Please try again.');
+    }
+  }, []);
+
+  const handleRemoveThumbnail = useCallback(() => {
+    setSelectedThumbnail(null);
+  }, []);
 
   // Navigate to subscription screen for upgrade
   const handleUpgrade = useCallback(() => {
@@ -246,6 +269,22 @@ function UploadModalComponent({
   }, [onUpgradeRequired]);
 
   const handleClose = useCallback(() => {
+    if (isUploading) {
+      Alert.alert(
+        'Upload in Progress',
+        'An upload is currently in progress. Are you sure you want to cancel?',
+        [
+          { text: 'Continue Upload', style: 'cancel' },
+          {
+            text: 'Cancel Upload',
+            style: 'destructive',
+            onPress: () => { resetForm(); onClose(); },
+          },
+        ]
+      );
+      return;
+    }
+
     if (title || description || selectedFile) {
       Alert.alert(
         'Discard Changes?',
@@ -255,77 +294,102 @@ function UploadModalComponent({
           {
             text: 'Discard',
             style: 'destructive',
-            onPress: () => {
-              resetForm();
-              onClose();
-            },
+            onPress: () => { resetForm(); onClose(); },
           },
         ]
       );
     } else {
       onClose();
     }
-  }, [title, description, selectedFile, resetForm, onClose]);
+  }, [title, description, selectedFile, isUploading, resetForm, onClose]);
 
+  // ── Upload handler — sends actual file to R2 ──────────────────────────────
   const handleUpload = useCallback(async () => {
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter a title');
       return;
     }
-
     if (!selectedFile) {
       Alert.alert('Error', 'Please select a video to upload');
       return;
     }
+    if (!userId) {
+      Alert.alert('Error', 'You must be signed in to upload');
+      return;
+    }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsUploading(true);
 
-    // Start upload tracking in store
+    // Track in VideoStore
     const upload = startUpload({
       name: selectedFile.name,
       size: selectedFile.size,
       uri: selectedFile.uri,
     });
-
     const fileId = upload?.fileId || '';
 
     try {
-      // Simulate progress updates during upload
-      const progressInterval = setInterval(() => {
-        if (fileId) {
-          updateUploadProgress(fileId, {
-            progress: Math.min((storeUploadProgress?.progress ?? 0) + Math.random() * 15, 90),
-          });
-        }
-      }, 300);
+      let result;
 
-      await onUpload?.({
-        title: title.trim(),
-        description: description.trim(),
-        isPrivate: false,
-        fileUri: selectedFile.uri,
-        fileSize: selectedFile.size,
-        fileName: selectedFile.name,
-      });
-
-      clearInterval(progressInterval);
-      if (fileId) {
-        completeUpload(fileId, '');
+      if (selectedThumbnail) {
+        // Upload video + thumbnail together → POST /api/r2/upload/media
+        result = await uploadMedia({
+          videoUri: selectedFile.uri,
+          userId,
+          title: title.trim(),
+          description: description.trim(),
+          fileName: selectedFile.name,
+          mimeType: selectedFile.type,
+          thumbnailUri: selectedThumbnail.uri,
+          thumbnailFileName: selectedThumbnail.name,
+          thumbnailMimeType: selectedThumbnail.type,
+        });
+      } else {
+        // Upload video only → POST /api/r2/upload/video
+        result = await uploadVideoOnly({
+          videoUri: selectedFile.uri,
+          userId,
+          title: title.trim(),
+          description: description.trim(),
+          fileName: selectedFile.name,
+          mimeType: selectedFile.type,
+        });
       }
-      resetForm();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Upload failed');
+      }
+
+      // Success — sync store, reset form, notify parent
+      if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const videoId = result.data?.id || '';
+      setTitle('');
+      setDescription('');
+      setSelectedFile(null);
+      setSelectedThumbnail(null);
+      setFileSizeError(null);
+      onUploadComplete?.(videoId);
       onClose();
-    } catch {
-      if (fileId) {
-        cancelUpload(fileId);
-      }
-      Alert.alert('Error', 'Failed to upload video. Please try again.');
-    } finally {
-      setIsUploading(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Upload failed';
+      if (fileId) failUpload(fileId, message);
+      Alert.alert('Upload Failed', message);
     }
-  }, [title, description, selectedFile, onUpload, resetForm, onClose, startUpload, updateUploadProgress, completeUpload, cancelUpload, storeUploadProgress]);
+  }, [
+    title, description, selectedFile, selectedThumbnail, userId,
+    uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,
+    onUploadComplete, resetForm, onClose,
+  ]);
 
   const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
+
+  // ── Sync R2 hook progress → VideoStore ─────────────────────────────────────
+  useEffect(() => {
+    if (storeCurrentUpload && isUploading) {
+      updateUploadProgress(storeCurrentUpload.fileId, { progress: uploadProgress });
+    }
+  }, [uploadProgress, isUploading, storeCurrentUpload, updateUploadProgress]);
 
   return (
     <Modal
@@ -360,7 +424,7 @@ function UploadModalComponent({
             style={[
               styles.uploadButton,
               {
-                backgroundColor: isValid ? colors.primary : colors.border,
+                backgroundColor: isValid && !isUploading ? colors.primary : colors.border,
                 opacity: isUploading ? 0.7 : 1,
               },
             ]}
@@ -368,16 +432,37 @@ function UploadModalComponent({
             accessibilityRole="button"
             accessibilityState={{ disabled: !isValid || isUploading }}
           >
-            <Text
-              style={[
-                styles.uploadButtonText,
-                { color: isValid ? colors.primaryText : colors.textMuted },
-              ]}
-            >
-              {isUploading ? 'Uploading...' : 'Upload'}
-            </Text>
+            {isUploading ? (
+              <Text style={[styles.uploadButtonText, { color: colors.primaryText }]}>
+                {uploadProgress}%
+              </Text>
+            ) : (
+              <Text
+                style={[
+                  styles.uploadButtonText,
+                  { color: isValid ? colors.primaryText : colors.textMuted },
+                ]}
+              >
+                Upload
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
+
+        {/* Upload progress bar */}
+        {isUploading && (
+          <View style={styles.progressBarContainer}>
+            <View
+              style={[
+                styles.progressBar,
+                {
+                  backgroundColor: colors.primary,
+                  width: `${uploadProgress}%`,
+                },
+              ]}
+            />
+          </View>
+        )}
 
         {/* Content */}
         <ScrollView
@@ -404,6 +489,7 @@ function UploadModalComponent({
               },
             ]}
             onPress={handleSelectFile}
+            disabled={isUploading}
             accessibilityLabel="Select video to upload"
             accessibilityRole="button"
           >
@@ -416,23 +502,71 @@ function UploadModalComponent({
                   {selectedFile.name}
                 </Text>
                 <Text style={[styles.selectorSubtitle, { color: colors.success }]}>
-                  {formatFileSize(selectedFile.size)} • Tap to change
+                  {formatFileSize(selectedFile.size)} {!isUploading && '• Tap to change'}
                 </Text>
               </>
             ) : (
               <>
-                  <View style={[styles.selectorIcon, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-                    <Film size={32} color={colors.primary} strokeWidth={1.5} />
-                  </View>
-                  <Text style={[styles.selectorTitle, { color: colors.text }]}>
-                    Tap to select video
-                  </Text>
-                  <Text style={[styles.selectorSubtitle, { color: colors.textMuted }]}>
-                  MP4, MOV • Max {formatFileSize(maxUploadSize)}
+                <View style={[styles.selectorIcon, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+                  <Film size={32} color={colors.primary} strokeWidth={1.5} />
+                </View>
+                <Text style={[styles.selectorTitle, { color: colors.text }]}>
+                  Tap to select video
+                </Text>
+                <Text style={[styles.selectorSubtitle, { color: colors.textMuted }]}>
+                  MP4, MOV, WebM • Max {formatFileSize(maxUploadSize)}
                 </Text>
               </>
             )}
           </TouchableOpacity>
+
+          {/* Thumbnail selector */}
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>
+              Cover Image
+            </Text>
+            <TouchableOpacity
+              style={[
+                styles.thumbnailSelector,
+                {
+                  borderColor: selectedThumbnail ? colors.success : colors.border,
+                  backgroundColor: selectedThumbnail
+                    ? withAlpha(colors.success, 0.05)
+                    : withAlpha(colors.card, 0.5),
+                },
+              ]}
+              onPress={handleSelectThumbnail}
+              disabled={isUploading}
+              accessibilityLabel="Select cover image"
+              accessibilityRole="button"
+            >
+              {selectedThumbnail ? (
+                <View style={styles.thumbnailPreviewRow}>
+                  <Image
+                    source={{ uri: selectedThumbnail.uri }}
+                    style={styles.thumbnailPreview}
+                  />
+                  <View style={styles.thumbnailInfo}>
+                    <Text style={[styles.thumbnailName, { color: colors.text }]} numberOfLines={1}>
+                      {selectedThumbnail.name}
+                    </Text>
+                    <TouchableOpacity onPress={handleRemoveThumbnail} disabled={isUploading}>
+                      <Text style={[styles.thumbnailRemove, { color: colors.error }]}>
+                        Remove
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.thumbnailPlaceholder}>
+                  <ImageIcon size={20} color={colors.textMuted} strokeWidth={1.5} />
+                  <Text style={[styles.thumbnailPlaceholderText, { color: colors.textMuted }]}>
+                    Add cover image (optional)
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
 
           {/* File Size Error & Upgrade Prompt */}
           {fileSizeError && (
@@ -466,7 +600,7 @@ function UploadModalComponent({
           {!hasVideoPremium && !fileSizeError && (
             <View style={[styles.limitNotice, { backgroundColor: withAlpha(colors.info, 0.1) }]}>
               <Text style={[styles.limitNoticeText, { color: colors.info }]}>
-                📹 Free users can upload videos up to {formatFileSize(MAX_UPLOAD_SIZE_FREE)}.
+                Free users can upload videos up to {formatFileSize(MAX_UPLOAD_SIZE_FREE)}.
                 {' '}
                 <Text
                   style={{ textDecorationLine: 'underline' }}
@@ -489,6 +623,7 @@ function UploadModalComponent({
               placeholder="Add a title that describes your video"
               placeholderTextColor={colors.textMuted}
               maxLength={maxTitleLength}
+              editable={!isUploading}
               style={[
                 styles.textInput,
                 {
@@ -518,6 +653,7 @@ function UploadModalComponent({
               multiline
               numberOfLines={4}
               textAlignVertical="top"
+              editable={!isUploading}
               style={[
                 styles.textAreaInput,
                 {
@@ -536,43 +672,16 @@ function UploadModalComponent({
           {/* Tips section */}
           <View style={[styles.tipsSection, { backgroundColor: withAlpha(colors.info, 0.1) }]}>
             <Text style={[styles.tipsTitle, { color: colors.info }]}>
-              💡 Tips for better videos
+              Tips for better videos
             </Text>
             <Text style={[styles.tipText, { color: colors.textMuted }]}>
-              • Use clear, descriptive titles{'\n'}
-              • Add relevant tags in description{'\n'}
-              • Keep videos under 10 minutes for best engagement{'\n'}
-              • Use good lighting and clear audio
+              {'\u2022'} Use clear, descriptive titles{'\n'}
+              {'\u2022'} Add a cover image for higher engagement{'\n'}
+              {'\u2022'} Keep videos under 10 minutes for best reach{'\n'}
+              {'\u2022'} Use good lighting and clear audio
             </Text>
           </View>
         </ScrollView>
-
-        {/* Bottom toolbar */}
-        {!keyboardVisible && (
-          <View style={[styles.toolbar, { borderTopColor: colors.border }]}>
-            <TouchableOpacity
-              style={styles.toolbarButton}
-              accessibilityLabel="Add image"
-              accessibilityRole="button"
-            >
-              <ImageIcon size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.toolbarButton}
-              accessibilityLabel="Add emoji"
-              accessibilityRole="button"
-            >
-              <Smile size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.toolbarButton}
-              accessibilityLabel="Add location"
-              accessibilityRole="button"
-            >
-              <MapPin size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1.5} />
-            </TouchableOpacity>
-          </View>
-        )}
       </KeyboardAvoidingView>
     </Modal>
   );
@@ -600,10 +709,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.lg,
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
+    minWidth: 72,
+    alignItems: 'center',
   },
   uploadButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  progressBarContainer: {
+    height: 3,
+    backgroundColor: 'transparent',
+  },
+  progressBar: {
+    height: 3,
+    borderRadius: 1.5,
   },
   content: {
     flex: 1,
@@ -632,6 +751,46 @@ const styles = StyleSheet.create({
   selectorSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  thumbnailSelector: {
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    overflow: 'hidden',
+  },
+  thumbnailPlaceholder: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.lg,
+    gap: SPACING.sm,
+  },
+  thumbnailPlaceholderText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  thumbnailPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: SPACING.sm,
+    gap: SPACING.md,
+  },
+  thumbnailPreview: {
+    width: 80,
+    height: 45,
+    borderRadius: RADIUS.sm,
+  },
+  thumbnailInfo: {
+    flex: 1,
+    gap: SPACING.xs,
+  },
+  thumbnailName: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  thumbnailRemove: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   inputGroup: {
     gap: SPACING.sm,
@@ -673,15 +832,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
     lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
-  },
-  toolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    padding: SPACING.md,
-    borderTopWidth: 1,
-  },
-  toolbarButton: {
-    padding: SPACING.md,
   },
   errorContainer: {
     padding: SPACING.lg,

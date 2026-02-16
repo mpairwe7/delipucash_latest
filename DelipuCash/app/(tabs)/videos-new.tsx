@@ -95,7 +95,6 @@ import {
   useVideoComments,
 } from '@/services/hooks';
 import { useInfiniteVideos } from '@/services/videoHooks';
-import videoApi from '@/services/videoApi';
 import {
   VerticalVideoFeed,
   VideoPlayer,
@@ -1087,18 +1086,9 @@ export default function VideosScreen(): React.ReactElement {
       <UploadModal
         visible={uploadModalVisible}
         onClose={() => setUploadModalVisible(false)}
-        onUpload={async (data) => {
-          // onUpload is called by UploadModal after validation passes
-          // The actual upload API call happens through the store + videoApi
-          if (data.fileUri) {
-            await videoApi.upload({
-              title: data.title,
-              description: data.description,
-              videoUrl: data.fileUri,
-              thumbnail: '',
-            });
-            refetch();
-          }
+        onUploadComplete={() => {
+          refetch();
+          refetchVideoAds();
         }}
       />
 
