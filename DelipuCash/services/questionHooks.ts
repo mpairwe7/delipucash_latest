@@ -380,17 +380,17 @@ export function useQuestionDetail(
   return useQuery({
     queryKey: questionQueryKeys.detail(questionId),
     queryFn: async () => {
-      // Parallel fetch: question data + enriched responses
+      // Parallel fetch: question data + enriched responses (1 retry each for network resilience)
       const [questionRes, responsesRes] = await Promise.all([
-        fetchJson<any>(`/api/questions/${questionId}`),
-        fetchJson<any>(`/api/questions/${questionId}/responses`),
+        fetchJson<any>(`/api/questions/${questionId}`, undefined, 1),
+        fetchJson<any>(`/api/questions/${questionId}/responses`, undefined, 1),
       ]);
 
       const questionData = questionRes.data?.data ?? questionRes.data;
       const responsesData = responsesRes.data?.data ?? responsesRes.data ?? [];
 
       if (!questionRes.success || !questionData) {
-        throw new Error(questionRes.error || 'Question not found');
+        throw new Error(questionRes.error || 'Failed to fetch question');
       }
 
       return {
@@ -826,15 +826,15 @@ export function useSuspenseQuestionDetail(questionId: string) {
     queryKey: questionQueryKeys.detail(questionId),
     queryFn: async () => {
       const [questionRes, responsesRes] = await Promise.all([
-        fetchJson<any>(`/api/questions/${questionId}`),
-        fetchJson<any>(`/api/questions/${questionId}/responses`),
+        fetchJson<any>(`/api/questions/${questionId}`, undefined, 1),
+        fetchJson<any>(`/api/questions/${questionId}/responses`, undefined, 1),
       ]);
 
       const questionData = questionRes.data?.data ?? questionRes.data;
       const responsesData = responsesRes.data?.data ?? responsesRes.data ?? [];
 
       if (!questionRes.success || !questionData) {
-        throw new Error(questionRes.error || 'Question not found');
+        throw new Error(questionRes.error || 'Failed to fetch question');
       }
 
       return {

@@ -53,7 +53,6 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -334,19 +333,6 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     markSubmitted,
     showToast,
   ]);
-
-  // ── Render item for FlatList (stable ref) ──
-  const renderResponse = useCallback(
-    ({ item }: { item: any }) => (
-      <ResponseItem
-        item={item}
-        colors={colors}
-        isOptimistic={item.id?.startsWith("optimistic_")}
-      />
-    ),
-    [colors]
-  );
-  const keyExtractor = useCallback((item: any) => item.id, []);
 
   const onRefresh = useCallback(async () => {
     triggerHaptic('light');
@@ -688,13 +674,15 @@ export default function QuestionAnswerScreen(): React.ReactElement {
               </Text>
             </View>
           )}
-          <FlatList
-            data={responses}
-            keyExtractor={keyExtractor}
-            scrollEnabled={false}
-            contentContainerStyle={{ gap: SPACING.md }}
-            renderItem={renderResponse}
-          />
+          {responses.map((item) => (
+            <View key={item.id} style={{ marginBottom: SPACING.md }}>
+              <ResponseItem
+                item={item}
+                colors={colors}
+                isOptimistic={item.id?.startsWith("optimistic_")}
+              />
+            </View>
+          ))}
         </View>
       </ScrollView>
 
