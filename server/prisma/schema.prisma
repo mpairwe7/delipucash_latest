@@ -358,6 +358,7 @@ model Response {
   replies      ResponseReply[]
 
   @@index([userId, questionId])
+  @@index([userId, createdAt])
 }
 
 model ResponseLike {
@@ -425,6 +426,7 @@ model QuestionAttempt {
   rewardQuestions RewardQuestionOnAttempt[]
 
   @@index([userEmail, questionId])
+  @@index([userEmail, attemptedAt])
 }
 
 model Reward {

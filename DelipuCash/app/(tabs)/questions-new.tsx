@@ -203,7 +203,8 @@ const VIEWABILITY_CONFIG: ViewabilityConfig = {
 // ============================================================================
 
 interface FeedHeaderProps {
-  isLoading: boolean;
+  isStatsLoading: boolean;
+  isFeedLoading: boolean;
   userStats: ReturnType<typeof useUserQuestionsStats>["data"];
   colors: ReturnType<typeof useStatusBar>["colors"];
   selectedTab: FeedTabId;
@@ -230,7 +231,8 @@ interface FeedHeaderProps {
 }
 
 const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
-  isLoading,
+  isStatsLoading,
+  isFeedLoading,
   userStats,
   colors,
   selectedTab,
@@ -254,7 +256,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
   return (
     <View>
       {/* Gamification Row */}
-      {!isLoading ? (
+      {!isStatsLoading ? (
         <Animated.View
           entering={FadeIn.duration(300)}
           style={styles.gamificationRow}
@@ -283,7 +285,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       )}
 
       {/* Stats Row */}
-      {!isLoading ? (
+      {!isStatsLoading ? (
         <Animated.View entering={FadeIn.duration(300)} style={styles.statsRow}>
           <StatCard
             icon={<Award size={18} color={colors.primary} strokeWidth={1.5} />}
@@ -386,7 +388,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       )}
 
       {/* Feed Tabs */}
-      {!isLoading ? (
+      {!isFeedLoading ? (
         <FeedTabs
           tabs={FEED_TABS.map((tab) =>
             tab.id === "unanswered"
@@ -437,7 +439,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
 export default function QuestionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar();
-  const { data: user, loading: userLoading } = useUser();
+  const { data: user } = useUser();
   const { isReady: authReady, isAuthenticated } = useAuth();
 
   // Refs
@@ -479,11 +481,14 @@ export default function QuestionsScreen(): React.ReactElement {
     isFetchingNextPage,
   } = useInfiniteQuestionsFeed(selectedTab);
 
-  const { data: userStats, refetch: refetchUserStats } =
-    useUserQuestionsStats();
+  const {
+    data: userStats,
+    isLoading: isUserStatsLoading,
+    refetch: refetchUserStats,
+  } = useUserQuestionsStats();
 
   // Deferred: leaderboard loads after feed is ready
-  const { data: leaderboard } = useQuestionsLeaderboard(3);
+  const { data: leaderboard } = useQuestionsLeaderboard(3, !isFeedLoading);
 
   // Notification count
   const { data: unreadCount } = useUnreadCount();
@@ -510,7 +515,7 @@ export default function QuestionsScreen(): React.ReactElement {
   // User permissions
   const isAdmin =
     user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
-  const isLoading = isFeedLoading || userLoading;
+  const isStatsLoading = isUserStatsLoading && !userStats;
 
   // Flatten infinite pages into a single array
   const allQuestions = useMemo(
@@ -786,7 +791,8 @@ export default function QuestionsScreen(): React.ReactElement {
   const headerElement = useMemo(
     () => (
       <FeedHeader
-        isLoading={isLoading}
+        isStatsLoading={isStatsLoading}
+        isFeedLoading={isFeedLoading}
         userStats={userStats}
         colors={colors}
         selectedTab={selectedTab}
@@ -809,7 +815,8 @@ export default function QuestionsScreen(): React.ReactElement {
       />
     ),
     [
-      isLoading,
+      isStatsLoading,
+      isFeedLoading,
       userStats,
       colors,
       selectedTab,
@@ -869,7 +876,7 @@ export default function QuestionsScreen(): React.ReactElement {
   );
 
   const renderEmptyState = useCallback(() => {
-    if (isLoading) {
+    if (isFeedLoading) {
       return <QuestionFeedSkeleton count={5} />;
     }
 
@@ -910,7 +917,7 @@ export default function QuestionsScreen(): React.ReactElement {
       </View>
     );
   }, [
-    isLoading,
+    isFeedLoading,
     colors,
     hasFeedError,
     feedError,

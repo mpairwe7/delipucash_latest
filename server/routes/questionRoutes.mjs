@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Public routes (read-only)
 router.get('/leaderboard', getLeaderboard);
-router.get('/user-stats', getUserQuestionStats);
+router.get('/user-stats', verifyToken, getUserQuestionStats);
 router.get('/all', getQuestions);
 router.get('/uploaded', getUploadedQuestions);
 router.get("/:questionId/responses", getResponsesForQuestion);

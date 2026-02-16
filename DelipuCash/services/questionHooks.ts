@@ -128,7 +128,7 @@ const getHeaders = (includeAuth = false): Record<string, string> => {
 async function fetchJson<T>(
   path: string,
   init?: RequestInit,
-  retries = 2,
+  retries = 0,
   authenticated = false,
 ): Promise<ApiResponse<T>> {
   const url = `${API_BASE_URL}${path}`;
@@ -187,7 +187,9 @@ export const questionQueryKeys = {
   detail: (id: string) => [...questionQueryKeys.details(), id] as const,
   responses: (id: string) => [...questionQueryKeys.all, 'responses', id] as const,
   leaderboard: ['questions', 'leaderboard'] as const,
-  userStats: ['questions', 'userStats'] as const,
+  userStatsRoot: () => [...questionQueryKeys.all, 'userStats'] as const,
+  userStats: (userId: string | null) =>
+    [...questionQueryKeys.userStatsRoot(), userId ?? 'anonymous'] as const,
 };
 
 // ===========================================
@@ -357,7 +359,7 @@ export function useInfiniteQuestionsFeed(
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
     placeholderData: keepPreviousData,
-    retry: 3,
+    retry: 1,
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10_000),
     refetchOnWindowFocus: false,
   });
@@ -669,7 +671,7 @@ export function useSubmitQuestionResponse(): UseMutationResult<
         queryKey: questionQueryKeys.feeds(),
         refetchType: 'active',
       });
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.userStats });
+      queryClient.invalidateQueries({ queryKey: questionQueryKeys.userStatsRoot() });
     },
   });
 }
@@ -679,7 +681,8 @@ export function useSubmitQuestionResponse(): UseMutationResult<
  * Long staleTime — leaderboard doesn't change frequently.
  */
 export function useQuestionsLeaderboard(
-  limit: number = 10
+  limit: number = 10,
+  enabled = true
 ): UseQueryResult<LeaderboardResult, Error> {
   const userId = getCurrentUserId();
 
@@ -701,7 +704,8 @@ export function useQuestionsLeaderboard(
     },
     staleTime: 1000 * 60 * 5,
     gcTime: 1000 * 60 * 30,
-    retry: 2,
+    retry: 1,
+    enabled,
   });
 }
 
@@ -724,16 +728,19 @@ const DEFAULT_STATS: UserQuestionsStats = {
  * - gcTime 10 min keeps warm cache for fast back-navigation
  */
 export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Error> {
-  const userId = getCurrentUserId();
+  const auth = useAuthStore((s) => s.auth);
+  const isAuthReady = useAuthStore((s) => s.isReady);
+  const userId = auth?.user?.id ?? null;
+  const hasToken = Boolean(auth?.token);
 
   return useQuery({
-    queryKey: questionQueryKeys.userStats,
+    queryKey: questionQueryKeys.userStats(userId),
     queryFn: async () => {
       if (!userId) return DEFAULT_STATS;
       const response = await fetchJson<{ data: UserQuestionsStats }>(
         `/api/questions/user-stats?userId=${userId}`,
         undefined,
-        2,
+        0,
         true, // authenticated — sends Bearer token
       );
       if (!response.success) {
@@ -745,9 +752,9 @@ export function useUserQuestionsStats(): UseQueryResult<UserQuestionsStats, Erro
     },
     staleTime: 1000 * 60 * 2,
     gcTime: 1000 * 60 * 10,
-    retry: 2,
+    retry: 1,
     placeholderData: (prev) => prev, // keep stale data visible during refetch
-    enabled: true,
+    enabled: isAuthReady && hasToken && Boolean(userId),
   });
 }
 

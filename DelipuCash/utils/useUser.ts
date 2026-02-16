@@ -76,6 +76,7 @@ function transformUserProfile(user: AppUser, stats?: UserStats): UserProfile {
  */
 export default function useUser(): UseUserResult {
   const { auth, isReady } = useAuth();
+  const shouldFetchUser = isReady && Boolean(auth?.token) && Boolean(auth?.user?.id);
 
   const { data, isLoading, error, refetch } = useQuery<UserProfile | null, Error>({
     queryKey: ["user", auth?.user?.id],
@@ -93,14 +94,13 @@ export default function useUser(): UseUserResult {
       const stats = statsResponse.success ? statsResponse.data : undefined;
       return transformUserProfile(profileResponse.data, stats);
     },
-    // Enable even without auth for mock data development
-    enabled: true,
+    enabled: shouldFetchUser,
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   return {
     data: data || (auth?.user as UserProfile | null) || null,
-    loading: !isReady || isLoading,
+    loading: !isReady || (shouldFetchUser && isLoading),
     error: error || null,
     refetch,
   };
