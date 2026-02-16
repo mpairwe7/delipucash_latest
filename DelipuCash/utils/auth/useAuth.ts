@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, initializeAuth, useAuthModal, useAuthStore } from "./store";
 import { useLoginMutation, useSignupMutation } from "@/services/authHooks";
+import { useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
 import { API_ROUTES } from "@/services/api";
 
 /**
@@ -78,6 +80,7 @@ export const useAuth = (): UseAuthResult => {
   // TanStack mutations for login/signup
   const loginMutation = useLoginMutation();
   const signupMutation = useSignupMutation();
+  const queryClient = useQueryClient();
 
   /**
    * Delegates to standalone initializeAuth() from store.
@@ -112,9 +115,17 @@ export const useAuth = (): UseAuthResult => {
         // Ignore — signout should always succeed locally
       });
     }
+
+    // Clear auth state (removes tokens from SecureStore)
     setAuth(null);
     close();
-  }, [setAuth, close]);
+
+    // Purge all cached server data to prevent data leaking between users
+    queryClient.clear();
+
+    // Navigate to login screen
+    router.replace('/(auth)/login');
+  }, [setAuth, close, queryClient]);
 
   /**
    * Login via TanStack mutation — handles mock/real auth, 2FA detection.

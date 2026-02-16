@@ -40,7 +40,12 @@ const verifyOTPCode = (inputCode, hashedCode) => {
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
-  const {email, password,firstName,lastName,phone } = req.body;
+  const {email: rawEmail, password,firstName,lastName,phone } = req.body;
+  const email = rawEmail?.toLowerCase().trim();
+
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Email is required" });
+  }
 
   // Check if the user already exists
   const userExists = await prisma.appUser.findUnique({ where: {email } });
@@ -66,13 +71,13 @@ export const signup = asyncHandler(async (req, res, next) => {
   // Issue access + refresh token pair (creates LoginSession)
   const { accessToken, refreshToken } = await issueTokenPair(newUser.id, req);
 
-  res.status(200).send({
+  // Return full user profile (strip password hash)
+  const { password: _pw, ...safeUser } = newUser;
+
+  res.status(201).send({
     message: "Registered successfully",
     success: true,
-    user: {
-      id: newUser.id,
-      email: newUser.email,
-    },
+    user: safeUser,
     token: accessToken,
     refreshToken,
   });
@@ -211,7 +216,12 @@ export const getUserPoints = async (req, res, next) => {
 
 
 export const signin = asyncHandler(async (req, res, next) => {
-  const {email, password } = req.body;
+  const {email: rawEmail, password } = req.body;
+  const email = rawEmail?.toLowerCase().trim();
+
+  if (!email) {
+    return res.status(400).json({ success: false, message: "Email is required" });
+  }
 
   const validUser = await prisma.appUser.findUnique({ where: {email } });
 
@@ -228,7 +238,18 @@ export const signin = asyncHandler(async (req, res, next) => {
     return next(errorHandler(401, 'Wrong credentials!'));
   }
 
-  const { password: pass, ...rest } = validUser;
+  // 2FA gate: if enabled, do NOT issue tokens — require code verification first
+  if (validUser.twoFactorEnabled) {
+    return res.status(200).json({
+      success: true,
+      twoFactorRequired: true,
+      maskedEmail: validUser.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
+    });
+  }
+
+  // Strip sensitive fields before returning user data
+  const { password: _pw, twoFactorCode: _tc, twoFactorCodeExpiry: _te,
+          passwordResetToken: _prt, passwordResetExpiry: _pre, ...safeUser } = validUser;
 
   // Issue access + refresh token pair (creates LoginSession with device metadata)
   const { accessToken, refreshToken } = await issueTokenPair(validUser.id, req);
@@ -237,7 +258,7 @@ export const signin = asyncHandler(async (req, res, next) => {
     success: true,
     token: accessToken,
     refreshToken,
-    user: rest,
+    user: safeUser,
   });
 });
 
@@ -246,27 +267,31 @@ export const signin = asyncHandler(async (req, res, next) => {
 // User SignOut
 export const signOut = asyncHandler(async (req, res, next) => {
   const userId = req.user?.id;
+  const bearerToken = req.headers.authorization?.replace('Bearer ', '');
 
-  // Mark current session as inactive and nullify refresh token
+  // Try to match the exact session first; fall back to revoking all active sessions
+  // for this user. The access token in the DB may have been rotated by a refresh,
+  // making an exact match impossible.
   try {
-    await prisma.loginSession.updateMany({
-      where: {
-        userId: userId,
-        isActive: true,
-        sessionToken: req.headers.authorization?.replace('Bearer ', ''),
-      },
-      data: {
-        isActive: false,
-        logoutTime: new Date(),
-        refreshTokenHash: null,
-        refreshTokenExpiresAt: null,
-      },
-    });
+    const exact = bearerToken
+      ? await prisma.loginSession.updateMany({
+          where: { userId, isActive: true, sessionToken: bearerToken },
+          data: { isActive: false, logoutTime: new Date(), refreshTokenHash: null, refreshTokenExpiresAt: null },
+        })
+      : { count: 0 };
+
+    // If no exact match (e.g. token was rotated), revoke all active sessions
+    if (exact.count === 0) {
+      await prisma.loginSession.updateMany({
+        where: { userId, isActive: true },
+        data: { isActive: false, logoutTime: new Date(), refreshTokenHash: null, refreshTokenExpiresAt: null },
+      });
+    }
   } catch (error) {
     // Non-critical — session cleanup failure shouldn't block signout
   }
 
-  res.status(200).json('User has been logged out!');
+  res.status(200).json({ success: true, message: 'Signed out successfully' });
 });
 
 
@@ -684,8 +709,10 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
     }
 
     // Rate limit: Allow resend only after 1 minute
+    // Code expiry is set to now + 3 min, so sendTime = expiryTime - 3 min
     if (user.twoFactorCodeExpiry) {
-      const timeSinceLastCode = Date.now() - (user.twoFactorCodeExpiry.getTime() - 10 * 60 * 1000);
+      const codeSentAt = user.twoFactorCodeExpiry.getTime() - 3 * 60 * 1000;
+      const timeSinceLastCode = Date.now() - codeSentAt;
       if (timeSinceLastCode < 60 * 1000) {
         const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
         return res.status(429).json({
@@ -974,18 +1001,19 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
 
     console.log('✅ Reset token generated and stored for user:', user.email);
 
-    // Build reset link
-    const baseURL = process.env.MOBILE_APP_SCHEME || 'delipucash';
-    const resetLink = `${baseURL}://reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+    // Build the reset link.
+    // Primary link = HTTPS URL on the backend which serves a smart redirect page.
+    // On Android (App Links) / iOS (Universal Links) the OS intercepts this URL
+    // and opens the app directly. If not verified or app not installed, the
+    // redirect page tries the custom scheme then shows a fallback UI.
+    const serverBase = process.env.FRONTEND_URL || 'https://delipucashserver.vercel.app';
+    const resetLink = `${serverBase}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
 
-    // For web fallback
-    const webResetLink = `${process.env.FRONTEND_URL || 'https://delipucash.com'}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
-
-    // Send email
+    // Send email — single HTTPS link (reliable in all email clients)
     if (isEmailConfigured()) {
       const emailResult = await sendPasswordResetEmail(
         user.email,
-        webResetLink,
+        resetLink,
         user.firstName || ''
       );
 
@@ -1000,7 +1028,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
       // In development, log the token for testing
       if (process.env.NODE_ENV !== 'production') {
         console.log('🔑 Development mode - Reset token:', resetToken);
-        console.log('🔗 Reset link:', webResetLink);
+        console.log('🔗 Reset link:', resetLink);
       }
     }
 

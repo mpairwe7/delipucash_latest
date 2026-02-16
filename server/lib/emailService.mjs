@@ -131,6 +131,15 @@ const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10) => {
 
 /**
  * Generate password reset email HTML template
+ *
+ * The resetLink is always an HTTPS URL on the backend (e.g.
+ * https://delipucashserver.vercel.app/reset-password?token=...&email=...).
+ * On mobile, Android App Links / iOS Universal Links open the app directly.
+ * If the app isn't installed, the URL serves a smart redirect page.
+ *
+ * @param {string} resetLink - HTTPS reset URL (works in all email clients)
+ * @param {string} userName - User's first name
+ * @param {number} expiryMinutes - Token expiry in minutes
  */
 const generatePasswordResetTemplate = (resetLink, userName, expiryMinutes = 30) => {
   return `
@@ -160,7 +169,7 @@ const generatePasswordResetTemplate = (resetLink, userName, expiryMinutes = 30) 
                 Hi ${userName || 'there'},
               </p>
               <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px; line-height: 1.5;">
-                We received a request to reset the password for your ${APP_NAME} account. Click the button below to create a new password:
+                We received a request to reset the password for your ${APP_NAME} account. Tap the button below to reset your password:
               </p>
               
               <!-- Reset Button -->
@@ -180,7 +189,7 @@ const generatePasswordResetTemplate = (resetLink, userName, expiryMinutes = 30) 
               <!-- Link fallback -->
               <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px;">
                 <p style="margin: 0 0 8px; color: #6b7280; font-size: 12px;">
-                  If the button doesn't work, copy and paste this link:
+                  If the button doesn't work, copy and paste this link into your browser:
                 </p>
                 <p style="margin: 0; color: #6366f1; font-size: 12px; word-break: break-all;">
                   ${resetLink}
@@ -255,7 +264,7 @@ export const send2FACode = async (to, code, userName = '') => {
  * Send password reset email
  * 
  * @param {string} to - Recipient email address
- * @param {string} resetLink - Password reset URL
+ * @param {string} resetLink - HTTPS reset URL (will be handled by smart redirect page)
  * @param {string} userName - User's name for personalization
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */

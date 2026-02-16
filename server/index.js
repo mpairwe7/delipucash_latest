@@ -26,6 +26,7 @@ import surveySubscriptionRoutes from './routes/surveySubscriptionRoutes.mjs';
 import surveyPaymentRoutes from './routes/surveyPaymentRoutes.mjs';
 import r2UploadRoutes from './routes/r2UploadRoutes.mjs';
 import sseRoutes from './routes/sseRoutes.mjs';
+import { resetPasswordRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
 
 dotenv.config();
 
@@ -78,6 +79,15 @@ if (process.env.NODE_ENV !== 'production') {
     next();
   });
 }
+
+// =============================================
+// Deep Link & Domain Verification Routes
+// These must be top-level (not under /api) for
+// Android App Links and iOS Universal Links.
+// =============================================
+app.get('/reset-password', resetPasswordRedirect);
+app.get('/.well-known/apple-app-site-association', appleAppSiteAssociation);
+app.get('/.well-known/assetlinks.json', androidAssetLinks);
 
 // API Routes
 app.use('/api/rewards', rewardRoutes);

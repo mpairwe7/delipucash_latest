@@ -12,6 +12,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.arolainc.DelipuCash",
       "buildNumber": "1",
+      "associatedDomains": [
+        "applinks:delipucashserver.vercel.app"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "DelipuCash needs camera access to record videos and take photos for surveys and content creation.",
         "NSMicrophoneUsageDescription": "DelipuCash needs microphone access to record audio for video content.",
@@ -43,7 +46,21 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": true
+      "predictiveBackGestureEnabled": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "delipucashserver.vercel.app",
+              "pathPrefix": "/reset-password"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "output": "static",

@@ -216,7 +216,7 @@ export function useValidateResetTokenMutation(): UseMutationResult<
   return useMutation({
     mutationKey: ['auth', 'validateResetToken'],
     mutationFn: ({ token, email }: { token: string; email: string }) =>
-      authFetch<ValidateTokenResponse>('/api/auth/validate-reset-token', {
+      authFetch<ValidateTokenResponse>(API_ROUTES.auth.validateResetToken, {
         method: 'POST',
         body: JSON.stringify({ token, email }),
       }),
