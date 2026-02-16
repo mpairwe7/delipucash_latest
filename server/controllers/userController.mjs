@@ -114,6 +114,8 @@ export const getUserStats = asyncHandler(async (req, res) => {
 
   try {
     // Aggregate user statistics from various tables
+    // Note: QuestionAttempt and Reward link to AppUser via userEmail (not userId),
+    // so we filter through the relation: { user: { id: userId } }
     const [
       surveysCompleted,
       questionsAnswered,
@@ -121,22 +123,22 @@ export const getUserStats = asyncHandler(async (req, res) => {
       totalEarnings,
       user
     ] = await Promise.all([
-      // Count completed surveys
+      // Count completed surveys (SurveyResponse has userId directly)
       prisma.surveyResponse.count({
         where: { userId },
       }),
-      // Count answered questions
+      // Count answered questions (QuestionAttempt links via userEmail → relation)
       prisma.questionAttempt.count({
-        where: { userId },
+        where: { user: { id: userId } },
       }),
-      // Count rewards earned
+      // Count rewards earned (Reward links via userEmail → relation)
       prisma.reward.count({
-        where: { userId },
+        where: { user: { id: userId } },
       }),
-      // Sum total earnings from rewards
+      // Sum total earnings from rewards (field is "points", not "amount")
       prisma.reward.aggregate({
-        where: { userId },
-        _sum: { amount: true },
+        where: { user: { id: userId } },
+        _sum: { points: true },
       }),
       // Get user points
       prisma.appUser.findUnique({
@@ -149,7 +151,7 @@ export const getUserStats = asyncHandler(async (req, res) => {
       surveysCompleted: surveysCompleted || 0,
       questionsAnswered: questionsAnswered || 0,
       rewardsEarned: rewardsEarned || 0,
-      totalEarnings: totalEarnings._sum.amount || 0,
+      totalEarnings: totalEarnings._sum.points || 0,
       totalRewards: user?.points || 0,
       // Calculated fields
       totalPoints: user?.points || 0,
