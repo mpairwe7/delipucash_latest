@@ -40,8 +40,10 @@ import {
     Users,
     Zap,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FlatList,
+  ListRenderItemInfo,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -214,6 +216,80 @@ const WinnerRow = memo(function WinnerRow({ winner, colors }: WinnerRowProps) {
   );
 });
 
+// ─── Static Trust Card (never re-renders — zero props that change) ───────────
+
+interface TrustCardProps {
+  colors: ThemeColors;
+}
+
+const TrustCard = memo(function TrustCard({ colors }: TrustCardProps) {
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+          <ShieldCheck size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
+          <Text style={[styles.badgeText, { color: colors.primary }]}>Fair play</Text>
+        </View>
+      </View>
+      <View style={styles.trustRules}>
+        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
+          {'\u2022'} One attempt per question — answers are final
+        </Text>
+        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
+          {'\u2022'} Winners are selected in order of correct submissions
+        </Text>
+        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
+          {'\u2022'} Payouts are processed automatically via mobile money
+        </Text>
+        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
+          {'\u2022'} All answers are verified server-side for fairness
+        </Text>
+      </View>
+    </View>
+  );
+});
+
+// ─── Winners Section (memoized — only re-renders when winners change) ────────
+
+interface WinnersSectionProps {
+  winners: Array<{ id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number }>;
+  colors: ThemeColors;
+}
+
+const winnerKeyExtractor = (item: { id: string }) => item.id;
+
+const WinnersSection = memo(function WinnersSection({ winners, colors }: WinnersSectionProps) {
+  if (!winners || winners.length === 0) return null;
+
+  const renderWinner = useCallback(
+    ({ item }: ListRenderItemInfo<WinnersSectionProps['winners'][number]>) => (
+      <WinnerRow winner={item} colors={colors} />
+    ),
+    [colors]
+  );
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.badge, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
+          <PartyPopper size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
+          <Text style={[styles.badgeText, { color: colors.info }]}>Winners</Text>
+        </View>
+        <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
+      </View>
+      <FlatList
+        data={winners}
+        keyExtractor={winnerKeyExtractor}
+        renderItem={renderWinner}
+        scrollEnabled={false}
+        initialNumToRender={5}
+        maxToRenderPerBatch={10}
+        removeClippedSubviews
+      />
+    </View>
+  );
+});
+
 // ─── Main Screen Component ───────────────────────────────────────────────────
 
 export default function InstantRewardAnswerScreen(): React.ReactElement {
@@ -273,19 +349,36 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const isOnline = useInstantRewardStore((s) => s.isOnline);
   const hasPendingSubmission = useInstantRewardStore((s) => s.hasPendingSubmission);
 
-  // ── Zustand: actions (stable references — never cause re-renders) ──
-  const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
-  const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
-  const confirmReward = useInstantRewardStore((s) => s.confirmReward);
-  const startSession = useInstantRewardStore((s) => s.startSession);
-  const endSession = useInstantRewardStore((s) => s.endSession);
-  const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
-  const updateSessionSummary = useInstantRewardStore((s) => s.updateSessionSummary);
-  const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
-  const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
-  const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
-  const addPendingSubmission = useInstantRewardStore((s) => s.addPendingSubmission);
-  const removePendingSubmission = useInstantRewardStore((s) => s.removePendingSubmission);
+  // ── Zustand: actions (single subscription via useShallow — reduces overhead) ──
+  const {
+    initializeAttemptHistory,
+    markQuestionAttempted,
+    confirmReward,
+    startSession,
+    endSession,
+    goToNextQuestion,
+    updateSessionSummary,
+    initiateRedemption,
+    completeRedemption,
+    cancelRedemption,
+    addPendingSubmission,
+    removePendingSubmission,
+  } = useInstantRewardStore(
+    useShallow((s) => ({
+      initializeAttemptHistory: s.initializeAttemptHistory,
+      markQuestionAttempted: s.markQuestionAttempted,
+      confirmReward: s.confirmReward,
+      startSession: s.startSession,
+      endSession: s.endSession,
+      goToNextQuestion: s.goToNextQuestion,
+      updateSessionSummary: s.updateSessionSummary,
+      initiateRedemption: s.initiateRedemption,
+      completeRedemption: s.completeRedemption,
+      cancelRedemption: s.cancelRedemption,
+      addPendingSubmission: s.addPendingSubmission,
+      removePendingSubmission: s.removePendingSubmission,
+    }))
+  );
 
   // ── Soft auth check — user navigated from an auth-guarded screen,
   //    so only show a toast if auth expires mid-session (no hard redirect) ──
@@ -359,6 +452,41 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     if (!question?.options) return [] as { key: string; label: string }[];
     return Object.entries(question.options).map(([key, label]) => ({ key, label: String(label) }));
   }, [question?.options]);
+
+  // ── Pre-computed option display props (avoid recalculating in render loop) ──
+  const optionDisplayProps = useMemo(() => {
+    return options.map((option) => {
+      const isSelected =
+        selectedOption === option.key ||
+        previousAttempt?.selectedAnswer === option.key;
+      const correctKey = revealedCorrectAnswer || previousAttempt?.selectedAnswer;
+      const isCorrectOption = Boolean(
+        (result?.isCorrect || previousAttempt?.isCorrect) &&
+          correctKey &&
+          normalizeText(correctKey) === normalizeText(option.key)
+      );
+      const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
+      const isOptionDisabled = isClosed || hasAlreadyAttempted;
+
+      return {
+        key: option.key,
+        label: option.label,
+        isSelected,
+        isCorrectOption,
+        wasSelectedPreviously,
+        isOptionDisabled,
+      };
+    });
+  }, [
+    options,
+    selectedOption,
+    previousAttempt?.selectedAnswer,
+    previousAttempt?.isCorrect,
+    revealedCorrectAnswer,
+    result?.isCorrect,
+    isClosed,
+    hasAlreadyAttempted,
+  ]);
 
   const spotsLeft = useMemo(() => {
     if (!question) return 0;
@@ -740,6 +868,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING['2xl'] }}
+          removeClippedSubviews
+          scrollEventThrottle={16}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -830,31 +960,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           <Text style={[styles.questionText, { color: colors.text }]}>{question.text}</Text>
 
           <View style={styles.optionsList}>
-            {options.map((option) => {
-              const isSelected = selectedOption === option.key ||
-                (previousAttempt?.selectedAnswer === option.key);
-              const correctKey = revealedCorrectAnswer || previousAttempt?.selectedAnswer;
-              const isCorrectOption = Boolean(
-                (result?.isCorrect || previousAttempt?.isCorrect) &&
-                correctKey && normalizeText(correctKey) === normalizeText(option.key)
-              );
-              const wasSelectedPreviously = previousAttempt?.selectedAnswer === option.key;
-              const isOptionDisabled = isClosed || hasAlreadyAttempted;
-
-              return (
-                <OptionItem
-                  key={option.key}
-                  optionKey={option.key}
-                  label={option.label}
-                  isSelected={isSelected}
-                  isCorrect={isCorrectOption}
-                  wasSelectedPreviously={wasSelectedPreviously}
-                  isDisabled={isOptionDisabled}
-                  onPress={handleSelectOption}
-                  colors={colors}
-                />
-              );
-            })}
+            {optionDisplayProps.map((op) => (
+              <OptionItem
+                key={op.key}
+                optionKey={op.key}
+                label={op.label}
+                isSelected={op.isSelected}
+                isCorrect={op.isCorrectOption}
+                wasSelectedPreviously={op.wasSelectedPreviously}
+                isDisabled={op.isOptionDisabled}
+                onPress={handleSelectOption}
+                colors={colors}
+              />
+            ))}
           </View>
 
           {(result || previousAttempt) && (
@@ -902,45 +1020,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           )}
         </View>
 
-        {Boolean(question.winners && question.winners.length) && (
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.badge, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
-                <PartyPopper size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
-                <Text style={[styles.badgeText, { color: colors.info }]}>Winners</Text>
-              </View>
-              <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
-            </View>
+        {/* Winners — memoized with internal FlatList */}
+        <WinnersSection winners={question.winners || []} colors={colors} />
 
-            {(question.winners || []).map((winner) => (
-              <WinnerRow key={winner.id} winner={winner} colors={colors} />
-            ))}
-          </View>
-        )}
-
-        {/* Trust & Fairness Card */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.cardHeader}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-              <ShieldCheck size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
-              <Text style={[styles.badgeText, { color: colors.primary }]}>Fair play</Text>
-            </View>
-          </View>
-          <View style={styles.trustRules}>
-            <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-              {'\u2022'} One attempt per question — answers are final
-            </Text>
-            <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-              {'\u2022'} Winners are selected in order of correct submissions
-            </Text>
-            <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-              {'\u2022'} Payouts are processed automatically via mobile money
-            </Text>
-            <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-              {'\u2022'} All answers are verified server-side for fairness
-            </Text>
-          </View>
-        </View>
+        {/* Trust & Fairness — static memo, never re-renders */}
+        <TrustCard colors={colors} />
       </ScrollView>
       </Animated.View>
 
