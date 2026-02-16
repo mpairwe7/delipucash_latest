@@ -593,10 +593,13 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     Alert.alert('Settings', 'Camera settings coming soon!');
   }, []);
 
-  // Permission not yet requested - show context prompt (industry best practice)
-  // Users should understand WHY camera access is needed before system dialog
+  // Determine screen content based on permission / draft state
+  let content: React.ReactNode;
+
   if (hasPermission === null) {
-    return (
+    // Permission not yet requested — show context prompt (industry best practice)
+    // Users should understand WHY camera access is needed before system dialog
+    content = (
       <PermissionPrompt
         type="request"
         onRequestPermissions={requestPermissions}
@@ -604,11 +607,8 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         description="To record videos and go live, we need access to your camera, microphone, and media library. Your recordings stay private until you choose to share them."
       />
     );
-  }
-  
-  // Permission denied - show detailed permission status
-  if (hasPermission === false || !hasAllPermissions) {
-    // Build a descriptive message about which permissions are missing
+  } else if (hasPermission === false || !hasAllPermissions) {
+    // Permission denied — show detailed permission status
     const missingPermissions: string[] = [];
     if (!hasPermission) missingPermissions.push('Camera');
     if (!hasMicrophonePermission) missingPermissions.push('Microphone');
@@ -618,19 +618,17 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       ? `The following permissions are required: ${missingPermissions.join(', ')}. Please grant access to continue.`
       : 'Please grant camera, microphone, and media library access to record videos.';
 
-    return (
-      <PermissionPrompt 
-        type="request" 
+    content = (
+      <PermissionPrompt
+        type="request"
         onRequestPermissions={requestPermissions}
         title="Permissions Required"
         description={description}
       />
     );
-  }
-
-  // Show post-capture draft screen when recording is done
-  if (draftState) {
-    return (
+  } else if (draftState) {
+    // Post-capture draft screen when recording is done
+    content = (
       <PostCaptureDraft
         videoUri={draftState.videoUri}
         duration={draftState.duration}
@@ -640,135 +638,137 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         uploadProgress={uploadProgress}
       />
     );
-  }
+  } else {
+    // Camera view — the main recording/live screen
+    content = (
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-  const content = (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      
-      <TouchableOpacity 
-        activeOpacity={1} 
-        style={styles.cameraContainer}
-        onPress={toggleControls}
-      >
-        {/* Real Camera View */}
-        <View style={styles.cameraWrapper}>
-          <CameraView
-            ref={cameraRef}
-            style={StyleSheet.absoluteFill}
-            facing={facing}
-            enableTorch={torchEnabled}
-            zoom={zoom}
-            onCameraReady={markReady}
-            mode="video"
-          />
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.cameraContainer}
+          onPress={toggleControls}
+        >
+          {/* Real Camera View */}
+          <View style={styles.cameraWrapper}>
+            <CameraView
+              ref={cameraRef}
+              style={StyleSheet.absoluteFill}
+              facing={facing}
+              enableTorch={torchEnabled}
+              zoom={zoom}
+              onCameraReady={markReady}
+              mode="video"
+            />
 
-          {/* Loading overlay while camera initializes */}
-          {!isReady && (
-            <View style={styles.cameraLoadingOverlay}>
-              <Text style={styles.cameraLoadingText}>Initializing camera...</Text>
-            </View>
-          )}
+            {/* Loading overlay while camera initializes */}
+            {!isReady && (
+              <View style={styles.cameraLoadingOverlay}>
+                <Text style={styles.cameraLoadingText}>Initializing camera...</Text>
+              </View>
+            )}
 
-          {/* Pre-Live Lobby (shown when mode='live' and not yet recording) */}
-          {showLobby && !isRecording && (
-            <PreLiveLobby
-              onGoLive={handleGoLiveFromLobby}
-              onCancel={onClose || (() => {})}
+            {/* Pre-Live Lobby (shown when mode='live' and not yet recording) */}
+            {showLobby && !isRecording && (
+              <PreLiveLobby
+                onGoLive={handleGoLiveFromLobby}
+                onCancel={onClose || (() => {})}
+                maxDuration={effectiveMaxDuration}
+                hasVideoPremium={hasVideoPremium}
+              />
+            )}
+
+            {/* Stream Health Badge */}
+            {isRecording && (
+              <View style={styles.healthBadgeContainer}>
+                <StreamHealthBadge
+                  status={storeLivestreamStatus.isActive ? 'live' : 'connecting'}
+                  uploadHealth="good"
+                />
+              </View>
+            )}
+
+            {/* Recording Progress Bar */}
+            <RecordingProgressBar
+              isRecording={isRecording}
+              maxDuration={effectiveMaxDuration * 1000}
+            />
+
+            {/* Limit Warning Banner */}
+            {showLimitWarning && !hasVideoPremium && (
+              <View style={[styles.limitWarningBanner, { backgroundColor: withAlpha(colors.warning, 0.95) }]}>
+                <Text style={styles.limitWarningText}>
+                  ⏱️ Recording ends in {formatDuration(effectiveMaxDuration - recordingTime)}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.upgradeBannerButton, { backgroundColor: colors.card }]}
+                  onPress={handleUpgrade}
+                >
+                  <Crown size={14} color={colors.warning} strokeWidth={2} />
+                  <Text style={[styles.upgradeBannerText, { color: colors.warning }]}>
+                    Extend
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Gradient Overlays */}
+            <GradientOverlay position="top" />
+            <GradientOverlay position="bottom" height={200} />
+
+            {/* Top Controls */}
+            <CameraControls
+              isFrontCamera={isFrontCamera}
+              onToggleCamera={toggleCamera}
+              isTorchOn={isTorchOn}
+              onToggleTorch={handleTorchToggle}
+              zoomLevel={zoomLevel}
+              onZoomIn={handleZoomIn}
+              onZoomOut={handleZoomOut}
+              onClose={handleClose}
+              onSettings={handleSettingsPress}
+              fadeAnim={fadeAnim}
+              visible={showControls}
+              isRecording={isRecording}
+            />
+
+            {/* Recording Timer */}
+            <RecordingTimer
+              currentTime={recordingTime}
+              maxDuration={effectiveMaxDuration}
+              isRecording={isRecording}
+            />
+
+            {/* Live Chat Overlay (only in live mode while recording) */}
+            {mode === 'live' && isRecording && storeLivestreamStatus.sessionId && (
+              <LiveChat
+                sessionId={storeLivestreamStatus.sessionId}
+                inputEnabled={true}
+              />
+            )}
+
+            {/* Bottom Controls */}
+            <BottomControls
+              isRecording={isRecording}
+              isUploading={isUploading}
+              onRecordPress={handleRecordPress}
+              onMusicPress={handleMusicPress}
+              onEffectsPress={handleEffectsPress}
+              onGalleryPress={handleGalleryPress}
+              onFiltersPress={handleFiltersPress}
+              fadeAnim={fadeAnim}
+              visible={showControls}
+              uploadProgress={uploadProgress}
               maxDuration={effectiveMaxDuration}
               hasVideoPremium={hasVideoPremium}
             />
-          )}
+          </View>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
-          {/* Stream Health Badge */}
-          {isRecording && (
-            <View style={styles.healthBadgeContainer}>
-              <StreamHealthBadge
-                status={storeLivestreamStatus.isActive ? 'live' : 'connecting'}
-                uploadHealth="good"
-              />
-            </View>
-          )}
-
-          {/* Recording Progress Bar */}
-          <RecordingProgressBar
-            isRecording={isRecording}
-            maxDuration={effectiveMaxDuration * 1000}
-          />
-          
-          {/* Limit Warning Banner */}
-          {showLimitWarning && !hasVideoPremium && (
-            <View style={[styles.limitWarningBanner, { backgroundColor: withAlpha(colors.warning, 0.95) }]}>
-              <Text style={styles.limitWarningText}>
-                ⏱️ Recording ends in {formatDuration(effectiveMaxDuration - recordingTime)}
-              </Text>
-              <TouchableOpacity
-                style={[styles.upgradeBannerButton, { backgroundColor: colors.card }]}
-                onPress={handleUpgrade}
-              >
-                <Crown size={14} color={colors.warning} strokeWidth={2} />
-                <Text style={[styles.upgradeBannerText, { color: colors.warning }]}>
-                  Extend
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {/* Gradient Overlays */}
-          <GradientOverlay position="top" />
-          <GradientOverlay position="bottom" height={200} />
-          
-          {/* Top Controls */}
-          <CameraControls
-            isFrontCamera={isFrontCamera}
-            onToggleCamera={toggleCamera}
-            isTorchOn={isTorchOn}
-            onToggleTorch={handleTorchToggle}
-            zoomLevel={zoomLevel}
-            onZoomIn={handleZoomIn}
-            onZoomOut={handleZoomOut}
-            onClose={handleClose}
-            onSettings={handleSettingsPress}
-            fadeAnim={fadeAnim}
-            visible={showControls}
-            isRecording={isRecording}
-          />
-          
-          {/* Recording Timer */}
-          <RecordingTimer
-            currentTime={recordingTime}
-            maxDuration={effectiveMaxDuration}
-            isRecording={isRecording}
-          />
-          
-          {/* Live Chat Overlay (only in live mode while recording) */}
-          {mode === 'live' && isRecording && storeLivestreamStatus.sessionId && (
-            <LiveChat
-              sessionId={storeLivestreamStatus.sessionId}
-              inputEnabled={true}
-            />
-          )}
-
-          {/* Bottom Controls */}
-          <BottomControls
-            isRecording={isRecording}
-            isUploading={isUploading}
-            onRecordPress={handleRecordPress}
-            onMusicPress={handleMusicPress}
-            onEffectsPress={handleEffectsPress}
-            onGalleryPress={handleGalleryPress}
-            onFiltersPress={handleFiltersPress}
-            fadeAnim={fadeAnim}
-            visible={showControls}
-            uploadProgress={uploadProgress}
-            maxDuration={effectiveMaxDuration}
-            hasVideoPremium={hasVideoPremium}
-          />
-        </View>
-      </TouchableOpacity>
-    </SafeAreaView>
-  );
-
+  // Wrap ALL content in Modal when asModal — not just the camera view
   if (asModal) {
     return (
       <Modal
