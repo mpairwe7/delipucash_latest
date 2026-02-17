@@ -548,8 +548,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
     if (!question) return;
 
-    // Auth validation — uses auth store (instant) with profile fallback
-    if (!userEmail) {
+    // Auth validation — checks Zustand auth state (synchronous, no race with profile fetch).
+    // The server resolves userEmail from the JWT, so we only need auth presence here.
+    if (!isAuthenticated) {
       triggerHaptic("warning");
       showToast({
         message: "Please log in to submit answers and earn rewards.",
@@ -598,7 +599,6 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         questionId: question.id,
         answer,
         phoneNumber: userPhone || undefined,
-        userEmail,
       },
       {
         onSuccess: (payload) => {
@@ -724,7 +724,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   }, [
     question,
     selectedOption,
-    userEmail,
+    isAuthenticated,
     userPhone,
     hasAlreadyAttempted,
     rewardAmount,

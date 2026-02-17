@@ -571,8 +571,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
     if (!question) return;
 
-    // Validate user authentication
-    if (!userEmail) {
+    // Auth validation — checks Zustand auth state (synchronous, no race with profile fetch).
+    // The server resolves userEmail from the JWT, so we only need auth presence here.
+    if (!isAuthenticated) {
       triggerHaptic('warning');
       showToast({
         message: 'Please log in to submit answers and earn rewards.',
@@ -625,7 +626,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         questionId: question.id,
         answer,
         phoneNumber: userPhone || undefined,
-        userEmail: userEmail || undefined,
       });
       showToast({
         message: 'You are offline. Your answer has been queued and will be submitted when you reconnect.',
@@ -639,7 +639,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         questionId: question.id,
         answer,
         phoneNumber: userPhone,
-        userEmail,
       },
       {
         onSuccess: (payload) => {
@@ -743,7 +742,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, userEmail, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
+  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
 
   // Handle redemption
   const handleRedeem = useCallback(async (
