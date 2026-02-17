@@ -105,6 +105,34 @@ export const sseStream = async (req, res) => {
 };
 
 /**
+ * GET /api/sse/poll?lastSeq=0
+ *
+ * Lightweight JSON endpoint for edge function polling.
+ * Returns pending events as JSON array (no streaming required).
+ * Protected by verifyToken middleware (same as /stream).
+ */
+export const ssePoll = async (req, res) => {
+  const userId = req.user?.id || req.userRef;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+
+  let lastSeq = parseInt(req.query.lastSeq, 10) || 0;
+
+  const events = await prisma.sSEEvent.findMany({
+    where: {
+      userId,
+      seq: { gt: lastSeq },
+    },
+    orderBy: { seq: 'asc' },
+    take: MAX_EVENTS_PER_FLUSH,
+    select: { seq: true, type: true, payload: true },
+  });
+
+  return res.json({ events });
+};
+
+/**
  * Flush all events for a user with seq > lastSeq.
  * Returns the updated lastSeq after flushing.
  */

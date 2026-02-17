@@ -2,7 +2,6 @@
   command = "prisma generate && prisma migrate deploy"
   publish = "."
   functions = "netlify/functions"
-  edge_functions = "netlify/edge-functions"
 
 [functions]
   node_bundler = "esbuild"
