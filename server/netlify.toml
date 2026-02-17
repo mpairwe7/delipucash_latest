@@ -1,0 +1,28 @@
+[build]
+  command = "prisma generate && prisma migrate deploy"
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+  included_files = ["prisma/schema.prisma", "prisma/migrations/**"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/.well-known/*"
+  to = "/.netlify/functions/api/.well-known/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/reset-password"
+  to = "/.netlify/functions/api/reset-password"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
