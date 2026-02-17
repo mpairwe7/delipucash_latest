@@ -120,6 +120,11 @@ export function useUserStats(): UseQueryResult<UserStats, Error> {
 
 /**
  * Hook to update user profile
+ * 
+ * After a successful update:
+ * 1. Updates TanStack query cache for immediate UI reflection
+ * 2. Syncs updated user data to auth store → SecureStore for persistence
+ *    across app restarts (prevents "missing personal info" on resume)
  */
 export function useUpdateProfile(): UseMutationResult<AppUser, Error, Partial<AppUser>> {
   const queryClient = useQueryClient();
@@ -131,8 +136,41 @@ export function useUpdateProfile(): UseMutationResult<AppUser, Error, Partial<Ap
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.user, data);
+    onSuccess: (updatedUser) => {
+      // 1. Update TanStack cache so the UI updates immediately
+      queryClient.setQueryData(queryKeys.user, (old: any) => {
+        if (old && typeof old === 'object') {
+          // Merge with existing UserProfile data (preserves computed fields like walletBalance)
+          return {
+            ...old,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
+            phone: updatedUser.phone,
+            telephone: updatedUser.phone,
+            email: updatedUser.email,
+            avatar: updatedUser.avatar,
+            updatedAt: updatedUser.updatedAt,
+          };
+        }
+        return updatedUser;
+      });
+
+      // 2. Sync to auth store → SecureStore for persistence across app restarts
+      const currentAuth = useAuthStore.getState().auth;
+      if (currentAuth) {
+        useAuthStore.getState().setAuth({
+          ...currentAuth,
+          user: {
+            ...currentAuth.user,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
+            phone: updatedUser.phone,
+            email: updatedUser.email,
+            avatar: updatedUser.avatar,
+            updatedAt: updatedUser.updatedAt,
+          },
+        });
+      }
     },
   });
 }
