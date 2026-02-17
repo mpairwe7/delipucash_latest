@@ -52,6 +52,7 @@ export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
   const { login, isLoading, isReady: authReady, isAuthenticated } = useAuth();
+  const isNavigatingRef = React.useRef(false);
 
   const [formData, setFormData] = useState<FormData>({
     email: "",
@@ -61,8 +62,10 @@ export default function LoginScreen(): React.ReactElement {
   const [touched, setTouched] = useState<TouchedFields>({});
   const [generalError, setGeneralError] = useState<string>("");
 
+  // Auto-redirect if user lands on login while already authenticated
+  // (e.g. back-navigation). Skip if handleLogin is driving navigation.
   useEffect(() => {
-    if (authReady && isAuthenticated) {
+    if (authReady && isAuthenticated && !isNavigatingRef.current) {
       router.replace("/(tabs)/home-redesigned");
     }
   }, [authReady, isAuthenticated]);
@@ -122,15 +125,22 @@ export default function LoginScreen(): React.ReactElement {
     });
 
     if (response.success) {
+      // Prevent the useEffect auto-redirect from racing with this navigation
+      isNavigatingRef.current = true;
+
       // Check if user has completed onboarding before
       const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
-      if (!hasOnboarded) {
-        // First login — show welcome/onboarding then mark as complete
-        await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-        router.replace("/welcome");
-      } else {
-        router.replace("/(tabs)/home-redesigned");
-      }
+
+      // Defer navigation by one tick so the root layout can settle
+      // after the auth state change (prevents "navigate before mounting" error)
+      requestAnimationFrame(() => {
+        if (!hasOnboarded) {
+          AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+          router.replace("/welcome");
+        } else {
+          router.replace("/(tabs)/home-redesigned");
+        }
+      });
     } else {
       setGeneralError(response.error || "Login failed. Please try again.");
     }
