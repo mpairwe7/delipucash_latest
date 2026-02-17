@@ -9,6 +9,7 @@ import {
     useTheme
 } from "@/utils/theme";
 import { validateForm, ValidationSchema, validators } from "@/utils/validation";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail } from "lucide-react-native";
@@ -121,7 +122,15 @@ export default function LoginScreen(): React.ReactElement {
     });
 
     if (response.success) {
-      router.replace("/(tabs)/home-redesigned");
+      // Check if user has completed onboarding before
+      const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
+      if (!hasOnboarded) {
+        // First login — show welcome/onboarding then mark as complete
+        await AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+        router.replace("/welcome");
+      } else {
+        router.replace("/(tabs)/home-redesigned");
+      }
     } else {
       setGeneralError(response.error || "Login failed. Please try again.");
     }

@@ -1,5 +1,24 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+
+/**
+ * Replace public R2 URLs with signed URLs for ad media.
+ */
+async function signAdUrls(ad) {
+  const [imageUrl, videoUrl, thumbnailUrl] = await Promise.all([
+    ad.r2ImageKey
+      ? getSignedDownloadUrl(ad.r2ImageKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+      : Promise.resolve(ad.imageUrl),
+    ad.r2VideoKey
+      ? getSignedDownloadUrl(ad.r2VideoKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+      : Promise.resolve(ad.videoUrl),
+    ad.thumbnailUrl && ad.r2ImageKey
+      ? getSignedDownloadUrl(ad.r2ImageKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+      : Promise.resolve(ad.thumbnailUrl),
+  ]);
+  return { imageUrl, videoUrl, thumbnailUrl };
+}
 
 // ============================================================================
 // HELPER: Serialize BigInt values for JSON response
@@ -402,14 +421,16 @@ export const getAllAds = asyncHandler(async (req, res) => {
     const total = await prisma.ad.count({ where });
 
     // Format the data to match frontend expectations
-    const formattedAds = ads.map(ad => ({
+    const formattedAds = await Promise.all(ads.map(async (ad) => {
+      const signed = await signAdUrls(ad);
+      return {
       id: ad.id,
       title: ad.title,
       description: ad.description,
       headline: ad.headline,
-      imageUrl: ad.imageUrl,
-      videoUrl: ad.videoUrl,
-      thumbnailUrl: ad.thumbnailUrl,
+      imageUrl: signed.imageUrl,
+      videoUrl: signed.videoUrl,
+      thumbnailUrl: signed.thumbnailUrl,
       targetUrl: ad.targetUrl,
       type: ad.type,
       placement: ad.placement,
@@ -447,6 +468,7 @@ export const getAllAds = asyncHandler(async (req, res) => {
       ctr: ad.impressions > 0 ? ((ad.clicks / ad.impressions) * 100).toFixed(2) : 0,
       // Calculate spend efficiency
       costPerClick: ad.clicks > 0 ? (ad.amountSpent / ad.clicks).toFixed(2) : 0,
+    };
     }));
 
     // Separate ads by type for backward compatibility

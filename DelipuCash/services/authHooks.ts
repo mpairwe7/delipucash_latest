@@ -10,7 +10,7 @@
  * Uses the canonical API_BASE_URL from api.ts — no env drift.
  */
 
-import { useMutation, UseMutationResult } from '@tanstack/react-query';
+import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
 import { API_ROUTES } from './api';
 import {
   AuthData,
@@ -128,6 +128,7 @@ export function useLoginMutation(): UseMutationResult<
 > {
   const setAuth = useAuthStore(s => s.setAuth);
   const close = useAuthModal(s => s.close);
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ['auth', 'login'],
@@ -144,6 +145,10 @@ export function useLoginMutation(): UseMutationResult<
       if (!data.twoFactorRequired && data.token && data.user) {
         setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
         close();
+
+        // Invalidate all cached queries so every screen fetches fresh data
+        // for the newly authenticated user (profile, surveys, rewards, etc.)
+        queryClient.invalidateQueries();
       }
     },
     retry: false, // Don't auto-retry auth
@@ -153,13 +158,18 @@ export function useLoginMutation(): UseMutationResult<
 /**
  * Signup mutation.
  * Normalizes phone → backend expects `phone` field.
+ *
+ * 2026 best practice: Signup does NOT auto-login. The user is redirected to
+ * the login screen so they explicitly authenticate. This ensures:
+ * - Email verification flow can be added without breaking UX
+ * - Users confirm their credentials immediately
+ * - Cleaner session lifecycle (all sessions start from login)
  */
 export function useSignupMutation(): UseMutationResult<
   SignupResponse,
   AuthApiError,
   SignupCredentials
 > {
-  const setAuth = useAuthStore(s => s.setAuth);
   const close = useAuthModal(s => s.close);
 
   return useMutation({
@@ -175,11 +185,9 @@ export function useSignupMutation(): UseMutationResult<
           phone: credentials.phoneNumber || credentials.phone || '',
         }),
       }),
-    onSuccess: (data) => {
-      if (data.token && data.user) {
-        setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
-        close();
-      }
+    onSuccess: () => {
+      // Do NOT auto-login: close modal and let the caller redirect to login
+      close();
     },
     retry: false,
   });

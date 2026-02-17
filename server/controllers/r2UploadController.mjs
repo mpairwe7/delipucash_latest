@@ -194,6 +194,16 @@ export const uploadVideoToR2 = asyncHandler(async (req, res) => {
     const uploadTime = Date.now() - startTime;
     console.log(`[R2Controller] Video upload complete in ${uploadTime}ms`);
     
+    // Return signed URLs instead of public URLs
+    const [signedVideoUrl, signedThumbnailUrl] = await Promise.all([
+      video.r2VideoKey
+        ? getSignedDownloadUrl(video.r2VideoKey)
+        : Promise.resolve(video.videoUrl),
+      video.r2ThumbnailKey
+        ? getSignedDownloadUrl(video.r2ThumbnailKey)
+        : Promise.resolve(video.thumbnail),
+    ]);
+
     res.status(201).json({
       success: true,
       message: 'Video uploaded successfully',
@@ -201,8 +211,8 @@ export const uploadVideoToR2 = asyncHandler(async (req, res) => {
         id: video.id,
         title: video.title,
         description: video.description,
-        videoUrl: video.videoUrl,
-        thumbnail: video.thumbnail,
+        videoUrl: signedVideoUrl,
+        thumbnail: signedThumbnailUrl,
         duration: video.duration,
         r2VideoKey: video.r2VideoKey,
         r2ThumbnailKey: video.r2ThumbnailKey,
@@ -632,6 +642,10 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
       },
     });
     
+    const signedRecordingUrl = video.r2VideoKey
+      ? await getSignedDownloadUrl(video.r2VideoKey)
+      : video.videoUrl;
+
     res.json({
       success: true,
       message: 'Livestream recording finalized',
@@ -643,7 +657,7 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
       video: {
         id: video.id,
         title: video.title,
-        videoUrl: video.videoUrl,
+        videoUrl: signedRecordingUrl,
       },
     });
   } catch (error) {

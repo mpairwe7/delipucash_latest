@@ -12,11 +12,12 @@ import {
   checkPaymentStatus,
   getPaymentHistory,
 } from '../controllers/surveyPaymentController.mjs';
+import { verifyToken } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
 
 // ============================================================================
-// PAYMENT ROUTES
+// PAYMENT ROUTES (all protected)
 // ============================================================================
 
 /**
@@ -24,20 +25,20 @@ const router = express.Router();
  * @desc    Initiate a new payment for survey subscription
  * @access  Private
  */
-router.post('/initiate', initiatePayment);
+router.post('/initiate', verifyToken, initiatePayment);
 
 /**
  * @route   GET /api/survey-payments/history
  * @desc    Get payment history for current user
  * @access  Private
  */
-router.get('/history', getPaymentHistory);
+router.get('/history', verifyToken, getPaymentHistory);
 
 /**
  * @route   GET /api/survey-payments/:paymentId/status
  * @desc    Check specific payment status
  * @access  Private
  */
-router.get('/:paymentId/status', checkPaymentStatus);
+router.get('/:paymentId/status', verifyToken, checkPaymentStatus);
 
 export default router;

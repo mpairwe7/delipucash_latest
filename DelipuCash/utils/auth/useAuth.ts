@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
+import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthData, AuthMode, AuthResponse, LoginCredentials, SignupCredentials, initializeAuth, useAuthModal, useAuthStore } from "./store";
 import { useLoginMutation, useSignupMutation } from "@/services/authHooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { API_ROUTES } from "@/services/api";
+import { purchasesService } from "@/services/purchasesService";
 
 /**
  * Options for requiring authentication
@@ -116,14 +119,42 @@ export const useAuth = (): UseAuthResult => {
       });
     }
 
-    // Clear auth state (removes tokens from SecureStore)
+    // 1. Clear auth state (removes tokens from SecureStore)
     setAuth(null);
     close();
 
-    // Purge all cached server data to prevent data leaking between users
+    // 2. Purge all cached server data to prevent data leaking between users
     queryClient.clear();
 
-    // Navigate to login screen
+    // 3. Clear onboarding flag so a different user gets fresh onboarding
+    AsyncStorage.removeItem('hasCompletedOnboarding').catch(() => {});
+
+    // 4. Reset RevenueCat identity so purchase state doesn't leak
+    if (Platform.OS !== 'web') {
+      purchasesService.logout().catch(() => {
+        // Non-critical — ignore if RevenueCat logout fails
+      });
+    }
+
+    // 5. Reset all Zustand stores to initial state (lazy-imported to avoid cycles)
+    try {
+      // Dynamic requires to avoid circular dependency issues
+      const { useAdStore } = require('@/store/AdStore');
+      const { useAdUIStore } = require('@/store/AdUIStore');
+      const { useHomeUIStore } = require('@/store/HomeUIStore');
+      const { useQuizStore } = require('@/store/QuizStore');
+      const { useVideoFeedStore } = require('@/store/VideoFeedStore');
+
+      useAdStore.getState().reset?.();
+      useAdUIStore.getState().reset?.();
+      useHomeUIStore.getState().reset?.();
+      useQuizStore.getState().resetSession?.();
+      useVideoFeedStore.getState().reset?.();
+    } catch {
+      // Ignore — store reset is best-effort
+    }
+
+    // 6. Navigate to login screen
     router.replace('/(auth)/login');
   }, [setAuth, close, queryClient]);
 

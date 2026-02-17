@@ -85,6 +85,7 @@ export interface InitiatePaymentRequest {
   phoneNumber: string;
   provider: PaymentProvider;
   planType: SurveySubscriptionType;
+  userId?: string;
 }
 
 /**
@@ -204,16 +205,20 @@ export const surveyPaymentApi = {
    * Get subscription status for current user
    */
   async getSubscriptionStatus(): Promise<ApiResponse<SubscriptionStatusResponse>> {
-    return fetchJson<SubscriptionStatusResponse>(SURVEY_PAYMENT_ROUTES.status);
+    const userId = useAuthStore.getState().auth?.user?.id;
+    const query = userId ? `?userId=${userId}` : '';
+    return fetchJson<SubscriptionStatusResponse>(`${SURVEY_PAYMENT_ROUTES.status}${query}`);
   },
 
   /**
    * Initiate a payment for subscription
    */
   async initiatePayment(request: InitiatePaymentRequest): Promise<ApiResponse<InitiatePaymentResponse>> {
+    // Include userId from auth store if not already provided
+    const userId = request.userId || useAuthStore.getState().auth?.user?.id;
     return fetchJson<InitiatePaymentResponse>(SURVEY_PAYMENT_ROUTES.initiate, {
       method: "POST",
-      body: JSON.stringify(request),
+      body: JSON.stringify({ ...request, userId }),
     });
   },
 

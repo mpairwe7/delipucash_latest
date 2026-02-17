@@ -303,6 +303,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [isExpired, setIsExpired] = useState(false);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
+  const [quickRedeemProvider, setQuickRedeemProvider] = useState<'MTN' | 'AIRTEL' | undefined>(undefined);
+  const [quickRedeemPhone, setQuickRedeemPhone] = useState<string | undefined>(undefined);
+  const [quickRedeemType, setQuickRedeemType] = useState<'CASH' | 'AIRTIME' | undefined>(undefined);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
@@ -344,6 +347,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Zustand: reactive selector for redemption eligibility ──
   const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
+
+  // ── Last successful redemption for quick-redeem shortcut ──
+  const redemptionHistory = useInstantRewardStore((s) => s.redemptionHistory);
+  const lastRedemption = useMemo(() => {
+    const last = [...redemptionHistory].reverse().find((r) => r.status === 'SUCCESSFUL');
+    return last ? { provider: last.provider, phoneNumber: last.phoneNumber } : null;
+  }, [redemptionHistory]);
 
   // ── Zustand: offline queue state ──
   const isOnline = useInstantRewardStore((s) => s.isOnline);
@@ -767,11 +777,25 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   }, [refetch]);
 
   const handleRedeemCash = useCallback(() => {
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
     setShowSessionSummary(false);
     setShowRedemptionModal(true);
   }, []);
 
   const handleRedeemAirtime = useCallback(() => {
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleQuickRedeem = useCallback((provider: 'MTN' | 'AIRTEL', phoneNumber: string) => {
+    setQuickRedeemType('CASH');
+    setQuickRedeemProvider(provider);
+    setQuickRedeemPhone(phoneNumber);
     setShowSessionSummary(false);
     setShowRedemptionModal(true);
   }, []);
@@ -1079,6 +1103,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         onRedeemAirtime={handleRedeemAirtime}
         onContinue={handleContinue}
         onClose={handleCloseSession}
+        lastRedemption={lastRedemption}
+        onQuickRedeem={handleQuickRedeem}
       />
 
       {/* Redemption Modal */}
@@ -1087,6 +1113,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         availableAmount={walletBalance}
         onClose={handleCloseRedemption}
         onRedeem={handleRedeem}
+        initialType={quickRedeemType}
+        initialProvider={quickRedeemProvider}
+        initialPhone={quickRedeemPhone}
       />
     </View>
   );

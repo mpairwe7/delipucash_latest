@@ -91,6 +91,12 @@ export interface RedemptionModalProps {
     phoneNumber: string,
   ) => Promise<{ success: boolean; message?: string }>;
   isLoading?: boolean;
+  /** Pre-fill type and skip to CONFIRM for quick-redeem flow */
+  initialType?: RewardRedemptionType;
+  /** Pre-fill provider for quick-redeem */
+  initialProvider?: PaymentProvider;
+  /** Pre-fill phone for quick-redeem */
+  initialPhone?: string;
 }
 
 type RedemptionStep =
@@ -269,6 +275,9 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   onClose,
   onRedeem,
   isLoading = false,
+  initialType,
+  initialProvider,
+  initialPhone,
 }) => {
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
@@ -282,17 +291,27 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Reset on open
+  // Reset on open — if quick-redeem props provided, skip to SELECT_AMOUNT with pre-fills
   useEffect(() => {
     if (visible) {
-      setStep('SELECT_TYPE');
-      setSelectedType(null);
-      setSelectedAmount(0);
-      setPhoneNumber('');
       setError(null);
       setSuccessMessage(null);
+
+      if (initialType && initialProvider && initialPhone) {
+        // Quick-redeem flow: pre-fill and start at amount selection
+        setSelectedType(initialType);
+        setSelectedProvider(initialProvider);
+        setPhoneNumber(initialPhone);
+        setSelectedAmount(0);
+        setStep('SELECT_AMOUNT');
+      } else {
+        setStep('SELECT_TYPE');
+        setSelectedType(null);
+        setSelectedAmount(0);
+        setPhoneNumber('');
+      }
     }
-  }, [visible]);
+  }, [visible, initialType, initialProvider, initialPhone]);
 
   const availablePoints = Math.floor(availableAmount / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
   const redemptionOptions = REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(
@@ -310,8 +329,13 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   const handleSelectAmount = useCallback((points: number) => {
     triggerHaptic('selection');
     setSelectedAmount(points);
-    setStep('ENTER_DETAILS');
-  }, []);
+    // Quick-redeem: if phone already filled, skip to confirm
+    if (initialPhone && phoneNumber) {
+      setStep('CONFIRM');
+    } else {
+      setStep('ENTER_DETAILS');
+    }
+  }, [initialPhone, phoneNumber]);
 
   const handleConfirm = useCallback(async () => {
     if (!selectedType || !selectedAmount || !phoneNumber) {

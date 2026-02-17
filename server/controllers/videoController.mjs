@@ -1,6 +1,23 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
+import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+
+/**
+ * Replace public R2 URLs with signed download URLs.
+ * Falls back to the stored URL if no R2 key exists (e.g. legacy videos).
+ */
+async function signVideoUrls(video) {
+  const [videoUrl, thumbnail] = await Promise.all([
+    video.r2VideoKey
+      ? getSignedDownloadUrl(video.r2VideoKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+      : Promise.resolve(video.videoUrl),
+    video.r2ThumbnailKey
+      ? getSignedDownloadUrl(video.r2ThumbnailKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+      : Promise.resolve(video.thumbnail),
+  ]);
+  return { videoUrl, thumbnail };
+}
 
 // Create a Video
 export const createVideo = asyncHandler(async (req, res) => {
@@ -197,17 +214,24 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
       // Prisma Accelerate: Long-lived cache for user videos (1 hour TTL, 10 min SWR)
     });
 
-    res.json({ 
-      message: 'Videos fetched successfully', 
-      videos: videos.map(video => ({
+    const signedVideos = await Promise.all(videos.map(async (video) => {
+      const signed = await signVideoUrls(video);
+      return {
         ...video,
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
         user: {
           id: video.user.id,
           firstName: video.user.firstName,
           lastName: video.user.lastName,
           avatar: video.user.avatar
         }
-      }))
+      };
+    }));
+
+    res.json({
+      message: 'Videos fetched successfully',
+      videos: signedVideos,
     });
   } catch (error) {
     console.error('Error fetching user videos:', error);
@@ -279,30 +303,33 @@ export const getAllVideos = asyncHandler(async (req, res) => {
     const likedSet = new Set(userLikes.map(l => l.videoId));
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
 
-    const formattedVideos = videos.map(video => ({
-      id: video.id,
-      title: video.title || 'Untitled Video',
-      description: video.description || '',
-      videoUrl: video.videoUrl,
-      thumbnail: video.thumbnail,
-      userId: video.userId,
-      likes: video.likes || 0,
-      views: video.views || 0,
-      isLiked: likedSet.has(video.id),
-      isBookmarked: bookmarkedSet.has(video.id),
-      commentsCount: video.commentsCount || 0,
-      createdAt: video.createdAt.toISOString(),
-      updatedAt: video.updatedAt.toISOString(),
-      duration: video.duration || 0,
-      comments: [],
-      isLive: liveUserMap.has(video.userId),
-      livestreamSessionId: liveUserMap.get(video.userId) || null,
-      user: video.user ? {
-        id: video.user.id,
-        firstName: video.user.firstName || 'Anonymous',
-        lastName: video.user.lastName || '',
-        avatar: video.user.avatar,
-      } : null,
+    const formattedVideos = await Promise.all(videos.map(async (video) => {
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id,
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
+        userId: video.userId,
+        likes: video.likes || 0,
+        views: video.views || 0,
+        isLiked: likedSet.has(video.id),
+        isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0,
+        createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(),
+        duration: video.duration || 0,
+        comments: [],
+        isLive: liveUserMap.has(video.userId),
+        livestreamSessionId: liveUserMap.get(video.userId) || null,
+        user: video.user ? {
+          id: video.user.id,
+          firstName: video.user.firstName || 'Anonymous',
+          lastName: video.user.lastName || '',
+          avatar: video.user.avatar,
+        } : null,
+      };
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -346,10 +373,13 @@ export const updateVideo = asyncHandler(async (req, res) => {
       }
     });
 
-    res.json({ 
-      message: 'Video updated successfully', 
+    const signed = await signVideoUrls(updatedVideo);
+    res.json({
+      message: 'Video updated successfully',
       video: {
         ...updatedVideo,
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
         user: {
           id: updatedVideo.user.id,
           firstName: updatedVideo.user.firstName,
@@ -429,9 +459,10 @@ export const likeVideo = asyncHandler(async (req, res) => {
       }).catch(() => {});
     }
 
+    const signed = await signVideoUrls(updatedVideo);
     res.json({
       message: 'Video liked successfully',
-      video: { ...updatedVideo, isLiked: true },
+      video: { ...updatedVideo, videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, isLiked: true },
     });
   } catch (error) {
     console.error('Error liking video:', error);
@@ -539,10 +570,13 @@ export const incrementVideoViews = asyncHandler(async (req, res) => {
       }
     });
 
-    res.json({ 
-      message: 'Video view incremented successfully', 
+    const signed = await signVideoUrls(updatedVideo);
+    res.json({
+      message: 'Video view incremented successfully',
       video: {
         ...updatedVideo,
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
         user: {
           id: updatedVideo.user.id,
           firstName: updatedVideo.user.firstName,
@@ -723,9 +757,10 @@ export const unlikeVideo = asyncHandler(async (req, res) => {
       }),
     ]);
 
+    const signed = await signVideoUrls(updatedVideo);
     res.json({
       message: 'Video unliked successfully',
-      video: { ...updatedVideo, isLiked: false },
+      video: { ...updatedVideo, videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, isLiked: false },
     });
   } catch (error) {
     console.error('Error unliking video:', error);

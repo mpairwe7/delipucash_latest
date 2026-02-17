@@ -178,13 +178,14 @@ export default function SignupScreen(): React.ReactElement {
       // Haptic celebration + toast on successful signup
       triggerHaptic("success");
       showToast({
-        message: "Account created! Welcome aboard 🎉",
+        message: "Account created successfully! Please sign in to continue.",
         type: "success",
-        duration: 2500,
+        duration: 3000,
       });
 
-      // Navigate to welcome/onboarding (not directly to home)
-      router.replace("/welcome");
+      // Redirect to login so user explicitly authenticates
+      // (2026 best practice: signup ≠ auto-login)
+      router.replace("/(auth)/login");
     } else {
       triggerHaptic("error");
       setGeneralError(response.error || "Registration failed. Please try again.");

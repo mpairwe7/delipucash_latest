@@ -1,15 +1,15 @@
 /**
- * Reward Session Summary Component — 2026 Redesign
+ * Reward Session Summary Component — 2026 Enhanced
  *
- * Premium session summary inspired by Duolingo, Kahoot & HQ Trivia.
- * - Animated SVG accuracy ring (Reanimated 4 + react-native-svg)
- * - Confetti burst on high scores (pure Reanimated particles)
- * - Performance-tier badge system (Bronze → Diamond)
- * - Staggered FadeInDown stat card reveals
- * - Full WCAG 2.2 AA accessibility (roles, labels, hints, live regions)
+ * Premium session summary inspired by Duolingo, Kahoot, Cash App & HQ Trivia.
+ * Enhancements over previous version:
+ * - Animated count-up numbers (accuracy %, earnings, stat values)
+ * - Streak celebration card when maxStreak >= 3
+ * - Animated redemption progress bar with milestone markers
+ * - Next-milestone indicator to keep users earning
+ * - Quick-redeem shortcut for repeat redeemers
+ * - Full WCAG 2.2 AA accessibility
  * - Haptic punctuation per tier
- * - BlurView backdrop, bottom-sheet presentation
- * - Share-results action
  */
 
 import React, { useEffect, useMemo, useCallback } from 'react';
@@ -37,6 +37,8 @@ import Animated, {
   FadeInUp,
   SlideInDown,
   useDerivedValue,
+  runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { BlurView } from 'expo-blur';
@@ -53,6 +55,9 @@ import {
   TrendingUp,
   Share2,
   Sparkles,
+  Flame,
+  Timer,
+  Trophy,
 } from 'lucide-react-native';
 import {
   useTheme,
@@ -67,39 +72,38 @@ import {
 } from '@/utils/theme';
 import { formatCurrency } from '@/services';
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { REWARD_CONSTANTS } from '@/store/InstantRewardStore';
+import { REWARD_CONSTANTS, type PaymentProvider } from '@/store/InstantRewardStore';
 import { triggerHaptic } from '@/utils/quiz-utils';
 
 // ─── Reanimated SVG wrapper ──────────────────────────────────────────────────
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedText = Animated.createAnimatedComponent(Text);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface RewardSessionSummaryProps {
-  /** Whether the modal is visible */
   visible: boolean;
-  /** Total number of questions in session */
   totalQuestions: number;
-  /** Number of correct answers */
   correctAnswers: number;
-  /** Number of incorrect answers */
   incorrectAnswers: number;
-  /** Total amount earned in session (UGX) */
   totalEarned: number;
-  /** Session-specific earnings breakdown (UGX) */
   sessionEarnings: number;
-  /** Total wallet balance (UGX) */
   totalBalance: number;
-  /** Whether user can redeem rewards */
   canRedeemRewards: boolean;
-  /** Callback when user wants to redeem cash */
   onRedeemCash?: () => void;
-  /** Callback when user wants to redeem airtime */
   onRedeemAirtime?: () => void;
-  /** Callback when user wants to continue answering */
   onContinue?: () => void;
-  /** Callback when user wants to close */
   onClose?: () => void;
+  /** Best streak in this session (shows streak card when >= 3) */
+  maxStreak?: number;
+  /** Bonus points earned from streaks */
+  bonusPoints?: number;
+  /** Average time per question in seconds */
+  averageTime?: number;
+  /** Last successful redemption for quick-redeem shortcut */
+  lastRedemption?: { provider: PaymentProvider; phoneNumber: string } | null;
+  /** Quick-redeem handler — bypasses the full wizard */
+  onQuickRedeem?: (provider: PaymentProvider, phoneNumber: string) => void;
 }
 
 // ─── Performance-tier system ─────────────────────────────────────────────────
@@ -149,6 +153,22 @@ function getPerformanceTier(accuracy: number, isDark: boolean): PerformanceTier 
   };
 }
 
+// ─── useCountUp — Animated number hook ───────────────────────────────────────
+
+function useCountUp(target: number, delay: number = 0, duration: number = 900) {
+  const value = useSharedValue(0);
+
+  useEffect(() => {
+    value.value = withDelay(
+      delay,
+      withTiming(target, { duration, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [target, delay, duration]);
+
+  const display = useDerivedValue(() => Math.round(value.value));
+  return display;
+}
+
 // ─── Animated Accuracy Ring ──────────────────────────────────────────────────
 
 interface AccuracyRingProps {
@@ -165,16 +185,28 @@ const AccuracyRing: React.FC<AccuracyRingProps> = ({ accuracy, tier, size = 140 
   const circumference = 2 * Math.PI * radius;
 
   const progress = useSharedValue(0);
+  const displayValue = useSharedValue(0);
 
   useEffect(() => {
     progress.value = withDelay(
       400,
       withTiming(accuracy / 100, { duration: 1200, easing: Easing.out(Easing.cubic) }),
     );
+    displayValue.value = withDelay(
+      400,
+      withTiming(accuracy, { duration: 1200, easing: Easing.out(Easing.cubic) }),
+    );
   }, [accuracy]);
 
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: circumference * (1 - progress.value),
+  }));
+
+  const percentText = useDerivedValue(() => `${Math.round(displayValue.value)}%`);
+
+  const percentStyle = useAnimatedStyle(() => ({
+    // Force re-render as value changes
+    opacity: 1,
   }));
 
   return (
@@ -208,13 +240,36 @@ const AccuracyRing: React.FC<AccuracyRingProps> = ({ accuracy, tier, size = 140 
         />
       </Svg>
       <View style={ringStyles.center}>
-        <Text style={[ringStyles.percentage, { color: tier.iconColor }]}>
-          {accuracy}%
-        </Text>
+        <AnimatedCountDisplay
+          value={displayValue}
+          suffix="%"
+          style={[ringStyles.percentage, { color: tier.iconColor }]}
+        />
         <Text style={[ringStyles.label, { color: colors.textMuted }]}>Accuracy</Text>
       </View>
     </View>
   );
+};
+
+// ─── AnimatedCountDisplay — renders a count-up number ────────────────────────
+
+const AnimatedCountDisplay: React.FC<{
+  value: SharedValue<number>;
+  suffix?: string;
+  prefix?: string;
+  style?: any;
+  formatFn?: (n: number) => string;
+}> = ({ value, suffix = '', prefix = '', style, formatFn }) => {
+  const [displayText, setDisplayText] = React.useState(`${prefix}0${suffix}`);
+
+  useDerivedValue(() => {
+    const rounded = Math.round(value.value);
+    const formatted = formatFn ? formatFn(rounded) : `${rounded}`;
+    runOnJS(setDisplayText)(`${prefix}${formatted}${suffix}`);
+    return rounded;
+  });
+
+  return <Text style={style}>{displayText}</Text>;
 };
 
 const ringStyles = StyleSheet.create({
@@ -317,18 +372,29 @@ const confettiStyles = StyleSheet.create({
   },
 });
 
-// ─── Stat Card ───────────────────────────────────────────────────────────────
+// ─── Stat Card with Count-Up ─────────────────────────────────────────────────
 
 interface StatCardProps {
   icon: React.ReactNode;
-  value: string | number;
+  value: number;
   label: string;
   color: string;
   delay: number;
+  suffix?: string;
+  formatFn?: (n: number) => string;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ icon, value, label, color, delay }) => {
+const StatCard: React.FC<StatCardProps> = ({ icon, value, label, color, delay, suffix, formatFn }) => {
   const { colors } = useTheme();
+  const animatedValue = useSharedValue(0);
+
+  useEffect(() => {
+    animatedValue.value = withDelay(
+      delay,
+      withTiming(value, { duration: 800, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [value, delay]);
+
   return (
     <Animated.View
       entering={FadeInDown.delay(delay).springify().damping(14)}
@@ -342,12 +408,17 @@ const StatCard: React.FC<StatCardProps> = ({ icon, value, label, color, delay })
       ]}
       accessible
       accessibilityRole="text"
-      accessibilityLabel={`${label}: ${value}`}
+      accessibilityLabel={`${label}: ${formatFn ? formatFn(value) : value}${suffix || ''}`}
     >
       <View style={[statStyles.iconWrap, { backgroundColor: withAlpha(color, 0.12) }]}>
         {icon}
       </View>
-      <Text style={[statStyles.value, { color: colors.text }]}>{value}</Text>
+      <AnimatedCountDisplay
+        value={animatedValue}
+        suffix={suffix}
+        style={[statStyles.value, { color: colors.text }]}
+        formatFn={formatFn}
+      />
       <Text style={[statStyles.label, { color: colors.textMuted }]}>{label}</Text>
     </Animated.View>
   );
@@ -380,6 +451,354 @@ const statStyles = StyleSheet.create({
   },
 });
 
+// ─── Streak Celebration Card ─────────────────────────────────────────────────
+
+interface StreakCardProps {
+  streak: number;
+  bonusPoints: number;
+  tierColor: string;
+  delay: number;
+}
+
+const StreakCard: React.FC<StreakCardProps> = ({ streak, bonusPoints, tierColor, delay }) => {
+  const { colors } = useTheme();
+
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(delay).springify().damping(14)}
+      style={[
+        streakStyles.card,
+        {
+          backgroundColor: withAlpha(tierColor, 0.08),
+          borderColor: withAlpha(tierColor, 0.25),
+        },
+      ]}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${streak} answer streak! Bonus ${bonusPoints} points earned`}
+    >
+      <View style={[streakStyles.iconWrap, { backgroundColor: withAlpha(tierColor, 0.15) }]}>
+        <Flame size={ICON_SIZE.xl} color={tierColor} strokeWidth={1.5} />
+      </View>
+      <View style={streakStyles.content}>
+        <View style={streakStyles.row}>
+          <Text style={[streakStyles.streakCount, { color: tierColor }]}>
+            {streak}x Streak!
+          </Text>
+          {bonusPoints > 0 && (
+            <View style={[streakStyles.bonusBadge, { backgroundColor: withAlpha(tierColor, 0.15) }]}>
+              <Text style={[streakStyles.bonusText, { color: tierColor }]}>
+                +{bonusPoints} bonus pts
+              </Text>
+            </View>
+          )}
+        </View>
+        <Text style={[streakStyles.subtext, { color: colors.textMuted }]}>
+          {streak >= 10
+            ? 'Incredible focus!'
+            : streak >= 5
+              ? 'You were on fire!'
+              : 'Nice streak going!'}
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
+
+const streakStyles = StyleSheet.create({
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  iconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  content: { flex: 1, gap: SPACING.xxs },
+  row: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  streakCount: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  bonusBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+  },
+  bonusText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  subtext: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+});
+
+// ─── Redemption Progress Bar ─────────────────────────────────────────────────
+
+interface RedemptionProgressBarProps {
+  currentBalance: number;
+  delay: number;
+}
+
+const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBalance, delay }) => {
+  const { colors } = useTheme();
+  const minCash = REWARD_CONSTANTS.MIN_REDEMPTION_POINTS * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  const progress = Math.min(currentBalance / minCash, 1);
+  const currentPts = Math.floor(currentBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+
+  const barWidth = useSharedValue(0);
+  useEffect(() => {
+    barWidth.value = withDelay(
+      delay + 200,
+      withTiming(progress, { duration: 1000, easing: Easing.out(Easing.cubic) }),
+    );
+  }, [progress, delay]);
+
+  const barStyle = useAnimatedStyle(() => ({
+    width: `${barWidth.value * 100}%` as any,
+  }));
+
+  return (
+    <Animated.View
+      entering={FadeInDown.delay(delay).springify().damping(14)}
+      style={[
+        progressStyles.card,
+        {
+          backgroundColor: withAlpha(colors.warning, 0.08),
+          borderColor: withAlpha(colors.warning, 0.25),
+        },
+      ]}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={`${currentPts} of ${REWARD_CONSTANTS.MIN_REDEMPTION_POINTS} points toward redemption`}
+      accessibilityValue={{ min: 0, max: REWARD_CONSTANTS.MIN_REDEMPTION_POINTS, now: currentPts }}
+    >
+      <View style={progressStyles.header}>
+        <TrendingUp size={ICON_SIZE.base} color={colors.warning} strokeWidth={1.8} />
+        <Text style={[progressStyles.title, { color: colors.warning }]}>
+          Keep Earning!
+        </Text>
+      </View>
+
+      <Text style={[progressStyles.subtitle, { color: colors.textMuted }]}>
+        {formatCurrency(minCash - currentBalance)} more to unlock redemption
+      </Text>
+
+      {/* Progress track */}
+      <View style={[progressStyles.track, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+        <Animated.View
+          style={[
+            progressStyles.fill,
+            { backgroundColor: colors.warning },
+            barStyle,
+          ]}
+        />
+        {/* Milestone markers */}
+        {REWARD_CONSTANTS.REDEMPTION_OPTIONS.map((opt) => {
+          const pos = (opt.points / REWARD_CONSTANTS.REDEMPTION_OPTIONS[REWARD_CONSTANTS.REDEMPTION_OPTIONS.length - 1].points) * 100;
+          return (
+            <View
+              key={opt.points}
+              style={[
+                progressStyles.marker,
+                {
+                  left: `${pos}%` as any,
+                  backgroundColor: currentPts >= opt.points ? colors.warning : withAlpha(colors.warning, 0.3),
+                },
+              ]}
+            />
+          );
+        })}
+      </View>
+
+      <View style={progressStyles.progressLabels}>
+        <Text style={[progressStyles.progressPts, { color: colors.text }]}>
+          {currentPts} pts
+        </Text>
+        <Text style={[progressStyles.progressTarget, { color: colors.textMuted }]}>
+          {REWARD_CONSTANTS.MIN_REDEMPTION_POINTS} pts
+        </Text>
+      </View>
+    </Animated.View>
+  );
+};
+
+const progressStyles = StyleSheet.create({
+  card: {
+    padding: SPACING.lg,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.sm,
+  },
+  header: { flexDirection: 'row', alignItems: 'center', gap: SPACING.sm },
+  title: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  subtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: -SPACING.xxs,
+  },
+  track: {
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginTop: SPACING.xs,
+  },
+  fill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  marker: {
+    position: 'absolute',
+    top: -2,
+    width: 4,
+    height: 12,
+    borderRadius: 2,
+    marginLeft: -2,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  progressPts: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  progressTarget: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+});
+
+// ─── Next Milestone Indicator ────────────────────────────────────────────────
+
+interface NextMilestoneProps {
+  currentBalance: number;
+}
+
+const NextMilestone: React.FC<NextMilestoneProps> = ({ currentBalance }) => {
+  const { colors } = useTheme();
+  const currentPts = Math.floor(currentBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+
+  const nextTier = REWARD_CONSTANTS.REDEMPTION_OPTIONS.find((opt) => opt.points > currentPts);
+  if (!nextTier) return null; // Already at max tier
+
+  const remaining = nextTier.points - currentPts;
+
+  return (
+    <View
+      style={[
+        milestoneStyles.container,
+        { backgroundColor: withAlpha(colors.primary, 0.06), borderColor: withAlpha(colors.primary, 0.2) },
+      ]}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`Next milestone: ${nextTier.points} points for ${formatCurrency(nextTier.cashValue)}`}
+    >
+      <Trophy size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.8} />
+      <Text style={[milestoneStyles.text, { color: colors.textMuted }]}>
+        <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.bold, color: colors.primary }}>
+          {remaining} more pts{' '}
+        </Text>
+        to unlock {formatCurrency(nextTier.cashValue)} redemption
+      </Text>
+    </View>
+  );
+};
+
+const milestoneStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.base,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  text: {
+    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
+  },
+});
+
+// ─── Quick Redeem Pill ───────────────────────────────────────────────────────
+
+interface QuickRedeemProps {
+  provider: PaymentProvider;
+  phoneNumber: string;
+  onPress: () => void;
+}
+
+const QuickRedeem: React.FC<QuickRedeemProps> = ({ provider, phoneNumber, onPress }) => {
+  const { colors } = useTheme();
+  const masked = phoneNumber.length > 4
+    ? `${phoneNumber.slice(0, 3)}...${phoneNumber.slice(-2)}`
+    : phoneNumber;
+  const providerColor = provider === 'MTN' ? '#FFCC00' : '#FF0000';
+
+  return (
+    <TouchableOpacity
+      style={[
+        quickRedeemStyles.pill,
+        {
+          backgroundColor: withAlpha(providerColor, 0.1),
+          borderColor: withAlpha(providerColor, 0.3),
+        },
+      ]}
+      onPress={() => {
+        triggerHaptic('selection');
+        onPress();
+      }}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`Quick redeem to ${provider} ${phoneNumber}`}
+      accessibilityHint="Redeem instantly using your last payment details"
+    >
+      <Zap size={ICON_SIZE.sm} color={providerColor} strokeWidth={2} />
+      <Text style={[quickRedeemStyles.text, { color: colors.text }]}>
+        Quick Redeem to{' '}
+        <Text style={{ fontFamily: TYPOGRAPHY.fontFamily.bold, color: providerColor }}>
+          {provider}
+        </Text>{' '}
+        {masked}
+      </Text>
+      <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
+    </TouchableOpacity>
+  );
+};
+
+const quickRedeemStyles = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.full,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  text: {
+    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+});
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
@@ -395,6 +814,11 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   onRedeemAirtime,
   onContinue,
   onClose,
+  maxStreak,
+  bonusPoints,
+  averageTime,
+  lastRedemption,
+  onQuickRedeem,
 }) => {
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
@@ -404,12 +828,16 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
 
   const tier = useMemo(() => getPerformanceTier(accuracy, isDark), [accuracy, isDark]);
   const showConfetti = accuracy >= 75;
+  const showStreak = (maxStreak ?? 0) >= 3;
 
   // Announce results to screen readers
   useEffect(() => {
     if (visible) {
       triggerHaptic(accuracy >= 75 ? 'success' : 'medium');
-      const msg = `Session complete. ${correctAnswers} out of ${totalQuestions} correct, ${accuracy} percent accuracy. ${tier.label} tier. You earned ${totalEarned} Ugandan shillings.`;
+      let msg = `Session complete. ${correctAnswers} out of ${totalQuestions} correct, ${accuracy} percent accuracy. ${tier.label} tier. You earned ${totalEarned} Ugandan shillings.`;
+      if (showStreak) {
+        msg += ` Best streak: ${maxStreak} in a row.`;
+      }
       setTimeout(() => AccessibilityInfo.announceForAccessibility(msg), 600);
     }
   }, [visible]);
@@ -417,13 +845,22 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   const handleShare = useCallback(async () => {
     triggerHaptic('selection');
     try {
-      await Share.share({
-        message: `🏆 I scored ${accuracy}% (${tier.label} tier) on DelipuCash and earned ${formatCurrency(totalEarned)}! Download the app and start earning too!`,
-      });
+      let shareMsg = `🏆 I scored ${accuracy}% (${tier.label} tier) on DelipuCash and earned ${formatCurrency(totalEarned)}!`;
+      if (showStreak) {
+        shareMsg += ` 🔥 ${maxStreak}x streak!`;
+      }
+      shareMsg += ' Download the app and start earning too!';
+      await Share.share({ message: shareMsg });
     } catch {
       // user cancelled
     }
-  }, [accuracy, tier.label, totalEarned]);
+  }, [accuracy, tier.label, totalEarned, maxStreak, showStreak]);
+
+  const handleQuickRedeem = useCallback(() => {
+    if (lastRedemption && onQuickRedeem) {
+      onQuickRedeem(lastRedemption.provider, lastRedemption.phoneNumber);
+    }
+  }, [lastRedemption, onQuickRedeem]);
 
   if (!visible) return null;
 
@@ -526,19 +963,31 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
               />
               <StatCard
                 icon={<Target size={ICON_SIZE.lg} color={colors.info} strokeWidth={1.8} />}
-                value={`${correctAnswers + incorrectAnswers}/${totalQuestions}`}
+                value={correctAnswers + incorrectAnswers}
                 label="Attempted"
                 color={colors.info}
                 delay={800}
+                suffix={`/${totalQuestions}`}
               />
               <StatCard
                 icon={<Zap size={ICON_SIZE.lg} color={colors.warning} strokeWidth={1.8} />}
-                value={formatCurrency(totalEarned)}
+                value={totalEarned}
                 label="Earned"
                 color={colors.warning}
                 delay={900}
+                formatFn={(n) => formatCurrency(n)}
               />
             </View>
+
+            {/* ── Streak Celebration ──────────────────────────── */}
+            {showStreak && (
+              <StreakCard
+                streak={maxStreak!}
+                bonusPoints={bonusPoints ?? 0}
+                tierColor={tier.iconColor}
+                delay={950}
+              />
+            )}
 
             {/* ── Earnings Breakdown ──────────────────────────── */}
             <Animated.View
@@ -565,6 +1014,37 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                     +{formatCurrency(sessionEarnings)}
                   </Text>
                 </View>
+
+                {(bonusPoints ?? 0) > 0 && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    <View style={styles.earningsRow}>
+                      <Text style={[styles.earningsLabel, { color: colors.textMuted }]}>
+                        Streak Bonus
+                      </Text>
+                      <Text style={[styles.earningsValuePositive, { color: tier.iconColor }]}>
+                        +{bonusPoints} pts
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {averageTime != null && averageTime > 0 && (
+                  <>
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    <View style={styles.earningsRow}>
+                      <Text style={[styles.earningsLabel, { color: colors.textMuted }]}>
+                        Avg. Time
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                        <Timer size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />
+                        <Text style={[styles.earningsLabel, { color: colors.text, fontFamily: TYPOGRAPHY.fontFamily.bold }]}>
+                          {averageTime}s
+                        </Text>
+                      </View>
+                    </View>
+                  </>
+                )}
 
                 <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
@@ -600,6 +1080,15 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                 <Text style={[styles.redeemSubtitle, { color: colors.textMuted }]}>
                   Convert your earnings to cash or airtime
                 </Text>
+
+                {/* Quick Redeem shortcut */}
+                {lastRedemption && onQuickRedeem && (
+                  <QuickRedeem
+                    provider={lastRedemption.provider}
+                    phoneNumber={lastRedemption.phoneNumber}
+                    onPress={handleQuickRedeem}
+                  />
+                )}
 
                 <View style={styles.redeemOptions}>
                   <TouchableOpacity
@@ -674,37 +1163,12 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                     <ChevronRight size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
                   </TouchableOpacity>
                 </View>
+
+                {/* Next milestone motivator */}
+                <NextMilestone currentBalance={totalBalance} />
               </Animated.View>
             ) : (
-              <Animated.View
-                entering={FadeInDown.delay(1100).springify().damping(14)}
-                style={[
-                  styles.keepEarningCard,
-                  {
-                    backgroundColor: withAlpha(colors.warning, 0.08),
-                    borderColor: withAlpha(colors.warning, 0.25),
-                  },
-                ]}
-                accessible
-                accessibilityRole="text"
-                accessibilityLabel={`You need at least ${formatCurrency(
-                  REWARD_CONSTANTS.MIN_REDEMPTION_POINTS * REWARD_CONSTANTS.POINTS_TO_UGX_RATE,
-                )} to redeem`}
-              >
-                <TrendingUp size={ICON_SIZE.xl} color={colors.warning} strokeWidth={1.5} />
-                <View style={styles.keepEarningContent}>
-                  <Text style={[styles.keepEarningTitle, { color: colors.warning }]}>
-                    Keep Earning!
-                  </Text>
-                  <Text style={[styles.keepEarningText, { color: colors.textMuted }]}>
-                    Earn at least{' '}
-                    {formatCurrency(
-                      REWARD_CONSTANTS.MIN_REDEMPTION_POINTS * REWARD_CONSTANTS.POINTS_TO_UGX_RATE,
-                    )}{' '}
-                    to unlock redemption.
-                  </Text>
-                </View>
-              </Animated.View>
+              <RedemptionProgressBar currentBalance={totalBalance} delay={1100} />
             )}
 
             {/* ── Actions ─────────────────────────────────────── */}
@@ -907,26 +1371,6 @@ const styles = StyleSheet.create({
   redeemOptionDesc: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-
-  // Keep earning
-  keepEarningCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    padding: SPACING.lg,
-    borderRadius: RADIUS.lg,
-    borderWidth: BORDER_WIDTH.thin,
-  },
-  keepEarningContent: { flex: 1, gap: SPACING.xxs },
-  keepEarningTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  keepEarningText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
   },
 
   // Actions

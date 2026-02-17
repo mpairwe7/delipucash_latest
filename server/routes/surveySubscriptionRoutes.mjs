@@ -15,6 +15,7 @@ import {
   getPaymentHistory,
   cancelSubscription,
 } from '../controllers/surveyPaymentController.mjs';
+import { verifyToken } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
 
@@ -32,15 +33,15 @@ router.get('/plans', getPlans);
 /**
  * @route   GET /api/survey-subscriptions/status
  * @desc    Get current user's subscription status
- * @access  Public (userId via query or auth token)
+ * @access  Private
  */
-router.get('/status', getSubscriptionStatus);
+router.get('/status', verifyToken, getSubscriptionStatus);
 
 /**
  * @route   POST /api/survey-subscriptions/:subscriptionId/cancel
  * @desc    Cancel subscription auto-renewal
  * @access  Private
  */
-router.post('/:subscriptionId/cancel', cancelSubscription);
+router.post('/:subscriptionId/cancel', verifyToken, cancelSubscription);
 
 export default router;
