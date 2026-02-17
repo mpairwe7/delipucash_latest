@@ -2,7 +2,8 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { Platform, ErrorUtils } from 'react-native';
+import { AppState, Platform, ErrorUtils } from 'react-native';
+import type { AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
@@ -11,7 +12,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
 import { ToastProvider } from '@/components/ui/Toast';
-import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -83,6 +84,18 @@ if (Platform.OS !== 'web') {
   });
 }
 
+// Wire TanStack Query focusManager to AppState so stale queries
+// automatically refetch when the app returns from background.
+// This ensures user profile data is fresh after resume.
+if (Platform.OS !== 'web') {
+  focusManager.setEventListener((handleFocus) => {
+    const subscription = AppState.addEventListener('change', (status: AppStateStatus) => {
+      handleFocus(status === 'active');
+    });
+    return () => subscription.remove();
+  });
+}
+
 // Create QueryClient at module level to avoid timing issues with expo-router
 // This ensures the QueryClient is always available when components mount
 const queryClient = new QueryClient({
@@ -95,8 +108,8 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 60 * 2, // 2 minutes
       // Cache time (garbage collection)
       gcTime: 1000 * 60 * 30, // 30 minutes
-      // Refetch settings
-      refetchOnWindowFocus: false,
+      // Refetch settings — refetch stale queries when app returns to foreground
+      refetchOnWindowFocus: true,
       refetchOnReconnect: true,
       // Network mode - fetch when online, use cache when offline
       networkMode: 'offlineFirst',

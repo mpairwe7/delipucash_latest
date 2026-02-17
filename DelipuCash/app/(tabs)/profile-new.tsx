@@ -544,7 +544,12 @@ export default function ProfileScreen(): React.ReactElement {
 
   const handleSaveProfile = useCallback(async (data: EditProfileData) => {
     try {
-      await updateProfileMutation.mutateAsync(data);
+      // Map telephone (UI field name) to phone (API/Prisma field name)
+      await updateProfileMutation.mutateAsync({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        phone: data.telephone,
+      } as any);
       await refetchUser();
       setShowEditProfileModal(false);
       Alert.alert('Success', 'Your profile has been updated!');
@@ -982,7 +987,7 @@ export default function ProfileScreen(): React.ReactElement {
           lastName: profile.lastName,
           email: profile.email,
           telephone: profile.telephone,
-          avatarUri: undefined,
+          avatarUri: user?.avatar || undefined,
         }}
         onSave={handleSaveProfile}
         onClose={() => setShowEditProfileModal(false)}

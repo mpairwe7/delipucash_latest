@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import { useAuth } from "@/utils/auth/useAuth";
 import { useAuthStore } from "@/utils/auth/store";
