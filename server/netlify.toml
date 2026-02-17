@@ -2,11 +2,18 @@
   command = "prisma generate && prisma migrate deploy"
   publish = "."
   functions = "netlify/functions"
+  edge_functions = "netlify/edge-functions"
 
 [functions]
   node_bundler = "esbuild"
   included_files = ["prisma/schema.prisma", "prisma/migrations/**"]
 
+# Edge Function — SSE streaming (runs BEFORE redirects)
+[[edge_functions]]
+  path = "/api/sse/stream"
+  function = "sse-stream"
+
+# Regular Function redirects (everything else)
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/api/:splat"
