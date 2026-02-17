@@ -26,13 +26,16 @@ import type { SSEEventType, LivestreamViewerCountPayload } from './types';
  */
 export function useSSEConnection(): void {
   const queryClient = useQueryClient();
+  const isReady = useAuthStore((state) => state.isReady);
   const auth = useAuthStore((state) => state.auth);
   const isEnabled = useSSEStore((state) => state.isEnabled);
   const setStatus = useSSEStore((state) => state.setStatus);
   const cleanupRef = useRef<Array<() => void>>([]);
 
   useEffect(() => {
-    if (!auth?.token || !isEnabled) {
+    // Gate on auth readiness — prevents a wasted connect attempt with a null
+    // token before SecureStore has been read on cold start.
+    if (!isReady || !auth?.token || !isEnabled) {
       getSSEManager().disconnect();
       setStatus('disconnected');
       return;
@@ -211,7 +214,7 @@ export function useSSEConnection(): void {
       cleanupRef.current = [];
       manager.disconnect();
     };
-  }, [auth?.token, isEnabled, queryClient, setStatus]);
+  }, [isReady, auth?.token, isEnabled, queryClient, setStatus]);
 }
 
 /**

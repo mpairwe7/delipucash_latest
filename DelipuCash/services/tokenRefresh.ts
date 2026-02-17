@@ -54,10 +54,12 @@ async function doRefresh(): Promise<AuthData | null> {
 
     const data = await res.json();
 
+    // Prefer fresh user data from refresh response if the server provides it;
+    // otherwise preserve the persisted user snapshot (tokens-only refresh).
     const newAuth: AuthData = {
       token: data.token,
       refreshToken: data.refreshToken,
-      user: auth.user, // user data unchanged
+      user: data.user ?? auth.user,
     };
 
     useAuthStore.getState().setAuth(newAuth);

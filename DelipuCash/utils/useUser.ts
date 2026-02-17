@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef } from "react";
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
 import { useAuth } from "@/utils/auth/useAuth";
 import { useAuthStore } from "@/utils/auth/store";
@@ -127,10 +128,7 @@ export default function useUser(): UseUserResult {
   const { auth, isReady } = useAuth();
   const shouldFetchUser = isReady && Boolean(auth?.token) && Boolean(auth?.user?.id);
 
-  // Track whether we've synced auth store to avoid redundant writes
-  const lastSyncedId = useRef<string | null>(null);
-
-  const { data, isLoading, error, refetch } = useQuery<UserProfile | null, Error>({
+  const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery<UserProfile | null, Error>({
     // Use canonical queryKeys.user so cache is shared with useUpdateProfile
     queryKey: queryKeys.user,
     queryFn: async (): Promise<UserProfile | null> => {
@@ -138,14 +136,11 @@ export default function useUser(): UseUserResult {
         userApi.getProfile(),
         userApi.getStats(),
       ]);
-      
+
       if (!profileResponse.success) {
         throw new Error("Failed to fetch user profile");
       }
 
-      // Sync fresh profile data to SecureStore for persistence
-      syncAuthStoreUser(profileResponse.data);
-      
       const stats = statsResponse.success ? statsResponse.data : undefined;
       return transformUserProfile(profileResponse.data, stats);
     },
@@ -155,29 +150,54 @@ export default function useUser(): UseUserResult {
     refetchOnWindowFocus: true,
   });
 
-  // Build a fallback from the persisted auth user when query data isn't ready yet.
-  // This ensures personal info is visible immediately on app resume.
-  const fallbackProfile: UserProfile | null = auth?.user
-    ? {
-        id: auth.user.id,
-        email: auth.user.email,
-        firstName: auth.user.firstName,
-        lastName: auth.user.lastName,
-        phone: auth.user.phone,
-        telephone: auth.user.phone,
-        points: auth.user.points,
-        avatar: auth.user.avatar,
-        role: auth.user.role,
-        subscriptionStatus: auth.user.subscriptionStatus,
-        surveysubscriptionStatus: auth.user.surveysubscriptionStatus,
-        walletBalance: 0,
-        totalEarnings: 0,
-        totalRewards: 0,
-        twoFactorEnabled: false,
-        createdAt: auth.user.createdAt,
-        updatedAt: auth.user.updatedAt,
-      }
-    : null;
+  // Sync fresh profile data to SecureStore OUTSIDE queryFn (pure side-effect).
+  // Runs only when dataUpdatedAt changes (fresh fetch completed), not on cache restores.
+  const lastSyncedAt = useRef(0);
+  useEffect(() => {
+    if (data && dataUpdatedAt > 0 && dataUpdatedAt !== lastSyncedAt.current) {
+      lastSyncedAt.current = dataUpdatedAt;
+      syncAuthStoreUser({
+        firstName: data.firstName ?? '',
+        lastName: data.lastName ?? '',
+        phone: data.phone ?? '',
+        email: data.email,
+        avatar: data.avatar ?? null,
+        points: data.points ?? 0,
+        role: data.role!,
+        subscriptionStatus: data.subscriptionStatus!,
+        surveysubscriptionStatus: data.surveysubscriptionStatus!,
+        updatedAt: data.updatedAt ?? '',
+      } as AppUser);
+    }
+  }, [data, dataUpdatedAt]);
+
+  // Memoized fallback from persisted auth user — avoids new object reference
+  // every render, preventing unnecessary downstream re-renders in React.memo
+  // consumers (ProfileUserCard, HeaderSection, etc.).
+  // Keyed on auth.user.id so it only recomputes when the user identity changes.
+  const fallbackProfile = useMemo<UserProfile | null>(() => {
+    const u = auth?.user;
+    if (!u) return null;
+    return {
+      id: u.id,
+      email: u.email,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      phone: u.phone,
+      telephone: u.phone,
+      points: u.points,
+      avatar: u.avatar,
+      role: u.role,
+      subscriptionStatus: u.subscriptionStatus,
+      surveysubscriptionStatus: u.surveysubscriptionStatus,
+      walletBalance: 0,
+      totalEarnings: 0,
+      totalRewards: 0,
+      twoFactorEnabled: false,
+      createdAt: u.createdAt,
+      updatedAt: u.updatedAt,
+    };
+  }, [auth?.user?.id, auth?.user?.updatedAt]);
 
   return {
     // Prefer fresh API data, fall back to persisted auth store data

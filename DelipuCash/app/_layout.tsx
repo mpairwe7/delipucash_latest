@@ -12,7 +12,10 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
 import { ToastProvider } from '@/components/ui/Toast';
-import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
+import { QueryClient, focusManager, onlineManager } from '@tanstack/react-query';
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -106,8 +109,9 @@ const queryClient = new QueryClient({
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       // Stale time defaults
       staleTime: 1000 * 60 * 2, // 2 minutes
-      // Cache time (garbage collection)
-      gcTime: 1000 * 60 * 30, // 30 minutes
+      // gcTime must be ≥ persister maxAge so cached data survives to be restored.
+      // 24 hours: Instagram/TikTok-style "instant open" even after hours away.
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours
       // Refetch settings — refetch stale queries when app returns to foreground
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
@@ -122,6 +126,16 @@ const queryClient = new QueryClient({
       networkMode: 'offlineFirst',
     },
   },
+});
+
+// AsyncStorage persister — survives cold restarts.
+// On next app open the cache is restored BEFORE any network request,
+// giving every screen instant data (stale-while-revalidate).
+// Throttle writes to 2 s to avoid excessive I/O during rapid cache updates.
+const asyncStoragePersister = createAsyncStoragePersister({
+  storage: AsyncStorage,
+  key: 'REACT_QUERY_OFFLINE_CACHE',
+  throttleTime: 2000,
 });
 
 /** Invisible component that runs global background tasks inside the provider tree */
@@ -175,7 +189,10 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <QueryClientProvider client={queryClient}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister: asyncStoragePersister, maxAge: 1000 * 60 * 60 * 24 }}
+      >
         <SSEProvider>
         <NotificationProvider>
           <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
@@ -206,7 +223,7 @@ export default function RootLayout() {
           </ThemeProvider>
         </NotificationProvider>
         </SSEProvider>
-      </QueryClientProvider>
+      </PersistQueryClientProvider>
     </GestureHandlerRootView>
   );
 }

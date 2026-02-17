@@ -26,8 +26,9 @@
  * - Reduced motion support via system settings
  */
 
-import React, { useCallback, useState, useMemo, useRef, memo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef, memo } from "react";
 import {
+  InteractionManager,
   View,
   Text,
   FlatList,
@@ -75,6 +76,7 @@ import {
 } from "@/utils/theme";
 import { triggerHaptic } from '@/utils/quiz-utils';
 import { useToast } from '@/components/ui/Toast';
+import { useQueryClient } from "@tanstack/react-query";
 import useUser from "@/utils/useUser";
 import {
   StatCard,
@@ -106,6 +108,7 @@ import {
   useDashboardStats,
   useClaimDailyReward,
   useUnreadCount,
+  queryKeys,
 } from "@/services/hooks";
 import {
   useScreenAds,
@@ -322,6 +325,20 @@ export default function HomePage(): React.ReactElement {
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
+  // Prefetch adjacent tab data after initial render settles (Spotify/Instagram pattern).
+  // Uses InteractionManager to defer until animations complete, then warms
+  // the query cache for Profile and Questions so tab switches are instant.
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (!user) return; // Wait until user data is available
+      queryClient.prefetchQuery({ queryKey: queryKeys.userStats, staleTime: 1000 * 60 * 2 });
+      queryClient.prefetchQuery({ queryKey: queryKeys.transactions, staleTime: 1000 * 60 * 5 });
+      queryClient.prefetchQuery({ queryKey: queryKeys.notifications, staleTime: 1000 * 30 });
+    });
+    return () => task.cancel();
+  }, [user, queryClient]);
+
   // Responsive padding
   const horizontalPadding = useMemo(() => {
     if (isTablet) return SPACING["2xl"];
@@ -329,10 +346,15 @@ export default function HomePage(): React.ReactElement {
     return SPACING.lg;
   }, []);
 
-  // Check if initial data is loading
+  // Progressive loading: only block the entire screen when we have absolutely
+  // nothing to show (no cached user, no persisted query cache).
+  // With query cache persistence, this is nearly instant on repeat opens.
   const isInitialLoading = userLoading && !user;
 
-  // Build sections array for FlatList
+  // Build sections array for FlatList.
+  // All sections are always included — each section's renderItem handles its
+  // own loading/empty state (progressive rendering, Instagram/TikTok pattern).
+  // This prevents layout jumps when data arrives asynchronously.
   const sections: DashboardSection[] = useMemo(() => {
     const sectionsList: DashboardSection[] = [
       { id: "header", type: "header" },
@@ -346,35 +368,27 @@ export default function HomePage(): React.ReactElement {
       sectionsList.push({ id: "ad-banner", type: "ad-banner", data: bannerAds[0] });
     }
 
-    // Trending videos — show section even on error for retry
-    if (!videosLoading && ((trendingVideos && trendingVideos.length > 0) || videosError)) {
-      sectionsList.push({ id: "trending-videos", type: "trending-videos" });
-    }
+    // Trending videos — always present; renderItem shows inline skeleton while loading
+    sectionsList.push({ id: "trending-videos", type: "trending-videos" });
 
-    // Earning opportunities (questions transformed)
-    if (!questionsLoading && ((recentQuestions && recentQuestions.length > 0) || questionsError)) {
-      sectionsList.push({ id: "earning-opportunities", type: "earning-opportunities" });
-    }
+    // Earning opportunities — always present; renderItem shows inline skeleton
+    sectionsList.push({ id: "earning-opportunities", type: "earning-opportunities" });
 
     // In-Feed Native Ad - Blends with content between sections (Industry Standard)
     if (homeAds && homeAds.length > 0) {
       sectionsList.push({ id: "ad-native", type: "ad-native", data: homeAds[0] });
     }
 
-    // Running surveys
-    if (!runningSurveysLoading) {
-      sectionsList.push({ id: "running-surveys", type: "running-surveys" });
-    }
+    // Running surveys — always present
+    sectionsList.push({ id: "running-surveys", type: "running-surveys" });
 
     // Featured Ad - Premium placement for high-value ads (Industry Standard)
     if (featuredAds && featuredAds.length > 0) {
       sectionsList.push({ id: "ad-featured", type: "ad-featured", data: featuredAds[0] });
     }
 
-    // Upcoming surveys
-    if (!upcomingSurveysLoading) {
-      sectionsList.push({ id: "upcoming-surveys", type: "upcoming-surveys" });
-    }
+    // Upcoming surveys — always present
+    sectionsList.push({ id: "upcoming-surveys", type: "upcoming-surveys" });
 
     // Compact In-Feed Ad - Minimal footprint before statistics (Industry Standard)
     if (bannerAds && bannerAds.length > 1) {
@@ -400,14 +414,6 @@ export default function HomePage(): React.ReactElement {
     bannerAds,
     homeAds,
     featuredAds,
-    trendingVideos,
-    videosLoading,
-    recentQuestions,
-    questionsLoading,
-    runningSurveysLoading,
-    upcomingSurveysLoading,
-    videosError,
-    questionsError,
   ]);
 
   // Scroll handler for animations
@@ -970,7 +976,8 @@ export default function HomePage(): React.ReactElement {
           );
 
         case "upcoming-surveys":
-          if (!upcomingSurveys || upcomingSurveys.length === 0) return null;
+          // Hide section only if data loaded and is genuinely empty
+          if (!upcomingSurveysLoading && (!upcomingSurveys || upcomingSurveys.length === 0)) return null;
           return (
             <View style={styles.sectionContainer}>
               <Section

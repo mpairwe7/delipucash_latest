@@ -20,7 +20,7 @@ import {
     UserStats,
     Video,
 } from "@/types";
-import { useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
 import { useAuthStore } from '@/utils/auth/store';
 import { questionQueryKeys } from "./questionHooks";
@@ -442,7 +442,8 @@ export function useTrendingVideos(limit: number = 10): UseQueryResult<Video[], E
       if (!response.success) throw new Error(response.error || "Failed to fetch trending videos");
       return response.data;
     },
-    staleTime: 1000 * 60 * 2, // 2 minutes
+    staleTime: 1000 * 60 * 2,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -687,6 +688,7 @@ export function useRunningSurveys(): UseQueryResult<Survey[], Error> {
       return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 2,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -703,6 +705,7 @@ export function useUpcomingSurveys(): UseQueryResult<Survey[], Error> {
       return Array.isArray(payload) ? payload : (payload?.data ?? []);
     },
     staleTime: 1000 * 60 * 5,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -880,6 +883,7 @@ export function useRecentQuestions(limit: number = 5): UseQueryResult<Question[]
       return response.data.slice(0, limit);
     },
     staleTime: 1000 * 60 * 2,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -1034,6 +1038,7 @@ export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error>
     },
     staleTime: 1000 * 30, // SSE handles real-time invalidation
     enabled: (enabled ?? true) && isAuthReady,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -1438,6 +1443,7 @@ export function useDashboardStats(): UseQueryResult<DashboardStats, Error> {
       return dashboardStats;
     },
     staleTime: 1000 * 60 * 2,
+    placeholderData: keepPreviousData,
   });
 }
 

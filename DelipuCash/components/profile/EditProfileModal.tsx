@@ -391,9 +391,12 @@ export function EditProfileModal({
   const saveScale = useSharedValue(1);
   const headerOpacity = useSharedValue(0);
 
-  // Initialize form when user changes or modal opens
+  // Populate form when modal opens or when user data arrives while open.
+  // Deps use individual primitives (not the object ref) so the effect only
+  // fires when actual values change.  Skip if the user has already started
+  // editing (`isDirty`) to avoid overwriting in-flight input.
   useEffect(() => {
-    if (visible && user) {
+    if (visible && user && !isDirty) {
       setFormData({
         firstName: user.firstName || '',
         lastName: user.lastName || '',
@@ -402,7 +405,6 @@ export function EditProfileModal({
         avatarUri: user.avatarUri,
       });
       setErrors({});
-      setIsDirty(false);
       setShowSuccessCheck(false);
       headerOpacity.value = withTiming(1, { duration: 300 });
 
@@ -410,10 +412,13 @@ export function EditProfileModal({
       setTimeout(() => {
         firstNameRef.current?.focus();
       }, 500);
-    } else {
+    }
+    if (!visible) {
+      // Reset dirty flag on close so next open gets fresh data
+      setIsDirty(false);
       headerOpacity.value = 0;
     }
-  }, [visible, user, headerOpacity]);
+  }, [visible, user?.firstName, user?.lastName, user?.email, user?.telephone, user?.avatarUri, isDirty, headerOpacity]);
 
   // Check if form has changes
   const hasChanges = useMemo(() => {
@@ -856,14 +861,12 @@ export function EditProfileModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   keyboardView: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
   container: {
-    maxHeight: '95%',
+    flex: 1,
     borderTopLeftRadius: RADIUS['2xl'],
     borderTopRightRadius: RADIUS['2xl'],
     paddingHorizontal: SPACING.lg,

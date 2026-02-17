@@ -1,7 +1,8 @@
 import {
   useTheme
 } from "@/utils/theme";
-import { Tabs } from "expo-router";
+import { useAuthStore } from "@/utils/auth/store";
+import { Redirect, Tabs } from "expo-router";
 import {
   BarChart2,
   Home,
@@ -48,6 +49,15 @@ const tabs: TabConfig[] = [
 export default function TabLayout(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
+  const isReady = useAuthStore(s => s.isReady);
+  const auth = useAuthStore(s => s.auth);
+
+  // Auth guard — redirect to login if session is lost mid-use
+  // (e.g. refresh token rejected by server, SecureStore cleared).
+  // Uses Zustand directly (no TanStack dependency) for instant reactivity.
+  if (isReady && !auth) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   // Lock to portrait for main tab navigation
   // Individual screens can unlock for specific features (video player, camera, etc.)

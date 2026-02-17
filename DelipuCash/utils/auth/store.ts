@@ -214,9 +214,11 @@ export function initializeAuth(): void {
 
         if (accessExpired) {
           if (parsed.refreshToken) {
-            // Set auth with stale access token so UI can render (user data is still valid).
-            // The 401 interceptor in fetchJson will silently refresh on the first API call.
+            // Set stale auth immediately so UI renders with cached user data,
+            // then proactively refresh the token in the background.
+            // This saves one round-trip vs waiting for the first 401.
             useAuthStore.setState({ auth: parsed, isReady: true });
+            proactiveRefresh(parsed.refreshToken);
           } else {
             // No refresh token — can't recover, force re-login
             SecureStore.deleteItemAsync(authKey).catch(() => {});
@@ -236,6 +238,44 @@ export function initializeAuth(): void {
       // SecureStore read failed — set as anonymous
       console.error('[Auth] Init error:', err instanceof Error ? err.message : 'SecureStore read failed');
       useAuthStore.setState({ auth: null, isReady: true });
+    });
+}
+
+/**
+ * Proactively refresh an expired access token in the background.
+ * Called during initializeAuth() when we detect the JWT has expired but a
+ * refresh token exists.  The UI is already rendering with stale user data;
+ * this just swaps in a fresh access token so the first API call succeeds
+ * without the extra 401 → refresh → retry round-trip.
+ */
+function proactiveRefresh(refreshToken: string): void {
+  const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
+  const apiBase = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
+
+  fetch(`${apiBase}/api/auth/refresh-token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        // Refresh rejected — clear auth, user must re-login
+        useAuthStore.getState().setAuth(null);
+        return;
+      }
+      const data = await res.json();
+      const currentAuth = useAuthStore.getState().auth;
+      if (currentAuth) {
+        useAuthStore.getState().setAuth({
+          token: data.token,
+          refreshToken: data.refreshToken,
+          user: data.user ?? currentAuth.user,
+        });
+      }
+    })
+    .catch(() => {
+      // Network failure on startup — keep stale auth, the 401 interceptor
+      // will retry later when connectivity returns.
     });
 }
 

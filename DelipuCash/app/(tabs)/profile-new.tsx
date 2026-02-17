@@ -537,6 +537,17 @@ export default function ProfileScreen(): React.ReactElement {
     );
   }, []);
 
+  // Memoize the user object passed to EditProfileModal so it only changes
+  // when actual field values change — prevents the modal's useEffect from
+  // re-firing on every parent re-render due to a new object reference.
+  const editProfileUser = useMemo(() => ({
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    email: profile.email,
+    telephone: profile.telephone,
+    avatarUri: user?.avatar || undefined,
+  }), [profile.firstName, profile.lastName, profile.email, profile.telephone, user?.avatar]);
+
   const handleEditProfile = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setShowEditProfileModal(true);
@@ -982,13 +993,7 @@ export default function ProfileScreen(): React.ReactElement {
       {/* Edit Profile Modal */}
       <EditProfileModal
         visible={showEditProfileModal}
-        user={{
-          firstName: profile.firstName,
-          lastName: profile.lastName,
-          email: profile.email,
-          telephone: profile.telephone,
-          avatarUri: user?.avatar || undefined,
-        }}
+        user={editProfileUser}
         onSave={handleSaveProfile}
         onClose={() => setShowEditProfileModal(false)}
         isSaving={updateProfileMutation.isPending}
