@@ -213,19 +213,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       router.push("/(auth)/login" as Href);
       return;
     }
-    // Early phone number check — prevent entering question without payout info
-    const userPhone = user?.phone ?? auth?.user?.phone;
-    if (!userPhone) {
-      showToast({
-        message: 'Please update your profile with a phone number to receive rewards.',
-        type: 'warning',
-        action: 'Update Profile',
-        onAction: () => router.push('/(tabs)/profile' as Href),
-      });
-      return;
-    }
+    // Phone validation moved to the answer screen's submit handler.
+    // The backend also resolves phone from the user's DB profile via JWT,
+    // so blocking navigation here caused false positives during profile loading.
     router.push(`/instant-reward-answer/${id}` as Href);
-  }, [authReady, isAuthenticated, user?.phone, auth?.user?.phone, showToast]);
+  }, [authReady, isAuthenticated]);
 
   // Dynamic reward amount from question model, fallback to constant
   const displayRewardAmount = useMemo(() => {

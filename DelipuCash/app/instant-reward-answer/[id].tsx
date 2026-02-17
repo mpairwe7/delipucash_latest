@@ -584,14 +584,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       return;
     }
 
-    // Validate phone number is available for reward payout
-    if (!userPhone) {
-      triggerHaptic('warning');
+    // Warn about missing phone — but don't block submission.
+    // The backend resolves phone from the user's DB profile via JWT as fallback.
+    // Only warn when profile has definitively loaded (user !== undefined) with no phone.
+    if (user && !userPhone) {
       showToast({
-        message: 'Please update your profile with a phone number to receive reward payouts.',
-        type: 'warning',
+        message: 'Tip: update your profile with a phone number to receive reward payouts.',
+        type: 'info',
+        action: 'Update Profile',
+        onAction: () => router.push('/(tabs)/profile-new' as Href),
       });
-      return;
     }
 
     // Prevent re-attempts

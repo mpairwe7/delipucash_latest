@@ -561,15 +561,15 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       return;
     }
 
-    // Phone number validation — only needed for instant reward payouts (not regular quiz points)
-    if (question?.isInstantReward && !userPhone) {
-      triggerHaptic("warning");
+    // Warn about missing phone for instant reward payouts (not regular quiz points).
+    // Non-blocking — the backend resolves phone from the user's DB profile via JWT.
+    if (question?.isInstantReward && user && !userPhone) {
       showToast({
-        message:
-          "Please update your profile with a phone number to receive reward payouts.",
-        type: "warning",
+        message: "Tip: update your profile with a phone number to receive reward payouts.",
+        type: "info",
+        action: "Update Profile",
+        onAction: () => router.push("/(tabs)/profile-new" as Href),
       });
-      return;
     }
 
     // Prevent re-attempts

@@ -538,7 +538,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
     const authenticatedUser = await prisma.appUser.findUnique({
       where: { id: req.user.id },
-      select: { id: true, email: true },
+      select: { id: true, email: true, phone: true },
     });
 
     if (!authenticatedUser?.email) {
@@ -546,6 +546,8 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     }
 
     const userEmail = authenticatedUser.email;
+    // Resolve phone: prefer client-supplied (may be fresher), then DB profile
+    const resolvedPhone = phoneNumber || authenticatedUser.phone || null;
 
     // Fetch the reward question first (needed for correctAnswer in all responses)
     const rewardQuestion = await prisma.rewardQuestion.findUnique({
@@ -666,7 +668,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
               amountAwarded: rewardAmountUGX,
               paymentStatus: 'PENDING',
               paymentProvider: rewardQuestion.paymentProvider,
-              phoneNumber: phoneNumber || rewardQuestion.phoneNumber,
+              phoneNumber: resolvedPhone || rewardQuestion.phoneNumber,
               createdAt: new Date(),
               updatedAt: new Date(),
             },
