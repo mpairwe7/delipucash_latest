@@ -272,8 +272,9 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       }
 
       // Check frequency cap
-      const frequencyAllowed = await AdFrequencyManager.canShowAd(placementType);
+      const frequencyAllowed = AdFrequencyManager.canShowAd(placementType);
       if (!frequencyAllowed) {
+        if (__DEV__) console.log(`[SmartAd] Blocked: frequency_cap for ${placementType}/${adId}`);
         setCanShowAd(false);
         setBlockedReason('frequency_cap');
         setIsReady(true);
@@ -283,6 +284,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       // Check user fatigue
       const isFatigued = AdFrequencyManager.checkUserFatigue();
       if (isFatigued) {
+        if (__DEV__) console.log(`[SmartAd] Blocked: user_fatigue for ${placementType}/${adId}`);
         setCanShowAd(false);
         setBlockedReason('user_fatigue');
         setIsReady(true);
@@ -291,8 +293,9 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
 
       // Check context limits
       const { adsInContext, lastAdTime } = contextStateRef.current;
-      
+
       if (adsInContext >= contextConfig.maxAds) {
+        if (__DEV__) console.log(`[SmartAd] Blocked: context_limit (${adsInContext}/${contextConfig.maxAds}) for ${placementType}`);
         setCanShowAd(false);
         setBlockedReason('context_limit');
         setIsReady(true);
@@ -301,6 +304,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
 
       const timeSinceLastAd = Date.now() - lastAdTime;
       if (lastAdTime > 0 && timeSinceLastAd < contextConfig.minInterval) {
+        if (__DEV__) console.log(`[SmartAd] Blocked: context_interval (${timeSinceLastAd}ms < ${contextConfig.minInterval}ms) for ${placementType}`);
         setCanShowAd(false);
         setBlockedReason('context_interval');
         setIsReady(true);
@@ -308,6 +312,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       }
 
       // All checks passed
+      if (__DEV__) console.log(`[SmartAd] Allowed: ${placementType}/${adId}`);
       setCanShowAd(true);
       setBlockedReason(null);
       setIsReady(true);

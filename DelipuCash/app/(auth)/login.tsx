@@ -119,18 +119,21 @@ export default function LoginScreen(): React.ReactElement {
 
     setGeneralError("");
 
+    // Pre-read onboarding flag BEFORE login so we know the destination
+    // without any async gap after auth state changes
+    const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
+
+    // Set navigation guard BEFORE login() — the mutation's onSuccess will
+    // call setAuth() which triggers a re-render with isAuthenticated=true.
+    // Without this, the useEffect auto-redirect races and wins.
+    isNavigatingRef.current = true;
+
     const response = await login({
       email: formData.email,
       password: formData.password,
     });
 
     if (response.success) {
-      // Prevent the useEffect auto-redirect from racing with this navigation
-      isNavigatingRef.current = true;
-
-      // Check if user has completed onboarding before
-      const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
-
       // Defer navigation by one tick so the root layout can settle
       // after the auth state change (prevents "navigate before mounting" error)
       requestAnimationFrame(() => {
@@ -142,6 +145,9 @@ export default function LoginScreen(): React.ReactElement {
         }
       });
     } else {
+      // Login failed — release the navigation guard so useEffect can
+      // handle future auth changes (e.g. back-navigation while authed)
+      isNavigatingRef.current = false;
       setGeneralError(response.error || "Login failed. Please try again.");
     }
   };

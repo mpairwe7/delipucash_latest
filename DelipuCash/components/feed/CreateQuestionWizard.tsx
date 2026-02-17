@@ -4,16 +4,14 @@
  * Multi-step modal wizard for creating questions, inspired by:
  * - Quora: Simple question input with topic selection
  * - Stack Overflow: Title + body + tags + preview
- * - Brainly: Quick question with reward option
- * - JustAnswer: Expert selection + urgency + reward setting
+ * - Brainly: Quick question with fast answers
+ * - JustAnswer: Expert selection + urgency settings
  * 
  * Features:
  * - Step-by-step wizard flow with progress indicator
  * - Question title with character counter
  * - Rich body input with markdown support hints
  * - Category/tag selection with AI suggestions
- * - Reward toggle with amount slider/presets
- * - Max winners and expiry configuration (for reward questions)
  * - Preview before submission
  * - Real-time validation
  * - Full accessibility support
@@ -24,8 +22,6 @@
  *   visible={showWizard}
  *   onClose={() => setShowWizard(false)}
  *   onSubmit={handleSubmitQuestion}
- *   isAdmin={true}
- *   userPoints={1500}
  * />
  * ```
  */
@@ -56,10 +52,6 @@ import {
   Check,
   HelpCircle,
   Tag,
-  Zap,
-  Clock,
-  Users,
-  Star,
   AlertCircle,
   Sparkles,
   Eye,
@@ -99,10 +91,6 @@ export interface CreateQuestionWizardProps {
   onClose: () => void;
   /** Submit handler with form data */
   onSubmit: (data: QuestionFormData) => Promise<void>;
-  /** Whether user is admin (can create reward questions) */
-  isAdmin?: boolean;
-  /** User's current points (for reward questions) */
-  userPoints?: number;
   /** Available categories */
   categories?: string[];
   /** Suggested tags based on content */
@@ -118,7 +106,6 @@ export interface CreateQuestionWizardProps {
 const STEPS = [
   { id: "question", title: "Question", icon: HelpCircle },
   { id: "details", title: "Details", icon: Tag },
-  { id: "reward", title: "Reward", icon: Zap },
   { id: "preview", title: "Preview", icon: Eye },
 ];
 
@@ -133,23 +120,6 @@ const DEFAULT_CATEGORIES = [
   "Entertainment",
   "Sports",
   "General",
-];
-
-const REWARD_PRESETS = [
-  { points: 50, label: "50 pts" },
-  { points: 100, label: "100 pts" },
-  { points: 250, label: "250 pts" },
-  { points: 500, label: "500 pts" },
-  { points: 1000, label: "1K pts" },
-];
-
-const EXPIRY_OPTIONS = [
-  { hours: 1, label: "1 hour" },
-  { hours: 6, label: "6 hours" },
-  { hours: 12, label: "12 hours" },
-  { hours: 24, label: "1 day" },
-  { hours: 72, label: "3 days" },
-  { hours: 168, label: "1 week" },
 ];
 
 const MAX_TITLE_LENGTH = 200;
@@ -623,282 +593,6 @@ const DetailsStep = memo(function DetailsStep({
 });
 
 /**
- * Step 3: Reward settings (admin only)
- */
-const RewardStep = memo(function RewardStep({
-  formData,
-  updateFormData,
-  isAdmin,
-  userPoints,
-  errors,
-  colors,
-}: {
-  formData: QuestionFormData;
-  updateFormData: (updates: Partial<QuestionFormData>) => void;
-  isAdmin: boolean;
-  userPoints: number;
-  errors: Record<string, string>;
-  colors: ReturnType<typeof useTheme>["colors"];
-}) {
-  if (!isAdmin) {
-    return (
-      <Animated.View
-        entering={SlideInRight.duration(300)}
-        exiting={SlideOutLeft.duration(300)}
-        style={styles.stepContent}
-      >
-        <View style={[styles.noRewardContainer, { backgroundColor: withAlpha(colors.info, 0.1) }]}>
-          <Zap size={32} color={colors.info} />
-          <Text style={[styles.noRewardTitle, { color: colors.text }]}>
-            Reward Questions
-          </Text>
-          <Text style={[styles.noRewardText, { color: colors.textMuted }]}>
-            Reward questions are currently available for administrators only. 
-            Your question will be posted as a regular community question.
-          </Text>
-        </View>
-      </Animated.View>
-    );
-  }
-
-  return (
-    <Animated.View
-      entering={SlideInRight.duration(300)}
-      exiting={SlideOutLeft.duration(300)}
-      style={styles.stepContent}
-    >
-      <Text style={[styles.stepTitle, { color: colors.text }]}>
-        Add a reward (Optional)
-      </Text>
-      <Text style={[styles.stepSubtitle, { color: colors.textMuted }]}>
-        Incentivize quality answers by offering points as a reward.
-      </Text>
-
-      {/* Toggle reward */}
-      <Pressable
-        onPress={() => {
-          updateFormData({ isRewardQuestion: !formData.isRewardQuestion });
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        }}
-        style={[
-          styles.rewardToggle,
-          {
-            backgroundColor: formData.isRewardQuestion 
-              ? withAlpha(colors.warning, 0.15) 
-              : colors.background,
-            borderColor: formData.isRewardQuestion 
-              ? colors.warning 
-              : colors.border,
-          },
-        ]}
-        accessibilityRole="switch"
-        accessibilityState={{ checked: formData.isRewardQuestion }}
-        accessibilityLabel="Enable reward for this question"
-      >
-        <View 
-          style={[
-            styles.rewardToggleIcon,
-            { backgroundColor: withAlpha(colors.warning, 0.15) },
-          ]}
-        >
-          <Zap 
-            size={20} 
-            color={colors.warning} 
-            fill={formData.isRewardQuestion ? colors.warning : "transparent"}
-          />
-        </View>
-        <View style={styles.rewardToggleContent}>
-          <Text style={[styles.rewardToggleTitle, { color: colors.text }]}>
-            Instant Reward Question
-          </Text>
-          <Text style={[styles.rewardToggleSubtitle, { color: colors.textMuted }]}>
-            Offer points for correct answers
-          </Text>
-        </View>
-        <View 
-          style={[
-            styles.toggleSwitch,
-            {
-              backgroundColor: formData.isRewardQuestion 
-                ? colors.warning 
-                : withAlpha(colors.textMuted, 0.3),
-            },
-          ]}
-        >
-          <View 
-            style={[
-              styles.toggleKnob,
-              {
-                backgroundColor: colors.primaryText,
-                transform: [{ translateX: formData.isRewardQuestion ? 18 : 2 }],
-              },
-            ]}
-          />
-        </View>
-      </Pressable>
-
-      {formData.isRewardQuestion && (
-        <Animated.View entering={FadeIn.duration(300)}>
-          {/* Reward amount presets */}
-          <View style={styles.sectionContainer}>
-            <Text style={[styles.sectionLabel, { color: colors.text }]}>
-              Reward Amount
-            </Text>
-            <View style={styles.presetsContainer}>
-              {REWARD_PRESETS.map((preset) => (
-                <Pressable
-                  key={preset.points}
-                  onPress={() => {
-                    updateFormData({ rewardAmount: preset.points });
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  disabled={preset.points > userPoints}
-                  style={[
-                    styles.presetButton,
-                    {
-                      backgroundColor: formData.rewardAmount === preset.points 
-                        ? colors.warning 
-                        : withAlpha(colors.warning, 0.1),
-                      opacity: preset.points > userPoints ? 0.5 : 1,
-                    },
-                  ]}
-                >
-                  <Star 
-                    size={14} 
-                    color={formData.rewardAmount === preset.points 
-                      ? colors.primaryText 
-                      : colors.warning
-                    } 
-                    fill={formData.rewardAmount === preset.points 
-                      ? colors.primaryText 
-                      : "transparent"
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.presetText,
-                      {
-                        color: formData.rewardAmount === preset.points 
-                          ? colors.primaryText 
-                          : colors.warning,
-                      },
-                    ]}
-                  >
-                    {preset.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-            <Text style={[styles.pointsBalance, { color: colors.textMuted }]}>
-              Your balance: {userPoints.toLocaleString()} points
-            </Text>
-          </View>
-
-          {/* Max winners */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Users size={16} color={colors.text} />
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>
-                Max Winners
-              </Text>
-            </View>
-            <View style={styles.winnersContainer}>
-              {[1, 3, 5, 10].map((count) => (
-                <Pressable
-                  key={count}
-                  onPress={() => {
-                    updateFormData({ maxWinners: count });
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  style={[
-                    styles.winnerButton,
-                    {
-                      backgroundColor: formData.maxWinners === count 
-                        ? colors.primary 
-                        : withAlpha(colors.primary, 0.1),
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.winnerText,
-                      {
-                        color: formData.maxWinners === count 
-                          ? colors.primaryText 
-                          : colors.primary,
-                      },
-                    ]}
-                  >
-                    {count}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* Expiry */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeader}>
-              <Clock size={16} color={colors.text} />
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>
-                Expires In
-              </Text>
-            </View>
-            <View style={styles.expiryContainer}>
-              {EXPIRY_OPTIONS.map((option) => (
-                <Pressable
-                  key={option.hours}
-                  onPress={() => {
-                    updateFormData({ expiryHours: option.hours });
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  style={[
-                    styles.expiryButton,
-                    {
-                      backgroundColor: formData.expiryHours === option.hours 
-                        ? colors.info 
-                        : withAlpha(colors.info, 0.1),
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.expiryText,
-                      {
-                        color: formData.expiryHours === option.hours 
-                          ? colors.primaryText 
-                          : colors.info,
-                      },
-                    ]}
-                  >
-                    {option.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* Cost summary */}
-          <View 
-            style={[
-              styles.costSummary,
-              { backgroundColor: withAlpha(colors.warning, 0.1) },
-            ]}
-          >
-            <Text style={[styles.costLabel, { color: colors.text }]}>
-              Total Cost:
-            </Text>
-            <Text style={[styles.costValue, { color: colors.warning }]}>
-              {(formData.rewardAmount * formData.maxWinners).toLocaleString()} points
-            </Text>
-          </View>
-        </Animated.View>
-      )}
-    </Animated.View>
-  );
-});
-
-/**
  * Step 4: Preview
  */
 const PreviewStep = memo(function PreviewStep({
@@ -940,19 +634,6 @@ const PreviewStep = memo(function PreviewStep({
               {formData.category || "Uncategorized"}
             </Text>
           </View>
-          {formData.isRewardQuestion && (
-            <View 
-              style={[
-                styles.previewRewardBadge,
-                { backgroundColor: withAlpha(colors.warning, 0.12) },
-              ]}
-            >
-              <Zap size={10} color={colors.warning} fill={colors.warning} />
-              <Text style={[styles.previewRewardText, { color: colors.warning }]}>
-                {formData.rewardAmount} pts
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Question title */}
@@ -989,34 +670,7 @@ const PreviewStep = memo(function PreviewStep({
           </View>
         )}
 
-        {/* Reward details */}
-        {formData.isRewardQuestion && (
-          <View 
-            style={[
-              styles.previewRewardDetails,
-              { borderTopColor: colors.border },
-            ]}
-          >
-            <View style={styles.previewRewardItem}>
-              <Star size={14} color={colors.warning} />
-              <Text style={[styles.previewRewardItemText, { color: colors.text }]}>
-                {formData.rewardAmount} points per winner
-              </Text>
-            </View>
-            <View style={styles.previewRewardItem}>
-              <Users size={14} color={colors.info} />
-              <Text style={[styles.previewRewardItemText, { color: colors.text }]}>
-                Up to {formData.maxWinners} winner{formData.maxWinners > 1 ? "s" : ""}
-              </Text>
-            </View>
-            <View style={styles.previewRewardItem}>
-              <Clock size={14} color={colors.success} />
-              <Text style={[styles.previewRewardItemText, { color: colors.text }]}>
-                Expires in {EXPIRY_OPTIONS.find(e => e.hours === formData.expiryHours)?.label}
-              </Text>
-            </View>
-          </View>
-        )}
+        {/* Reward details removed for simplified ask flow */}
       </View>
     </Animated.View>
   );
@@ -1030,8 +684,6 @@ function CreateQuestionWizardComponent({
   visible,
   onClose,
   onSubmit,
-  isAdmin = false,
-  userPoints = 0,
   categories = DEFAULT_CATEGORIES,
   suggestedTags = [],
   isSubmitting = false,
@@ -1047,7 +699,7 @@ function CreateQuestionWizardComponent({
     category: "",
     tags: [],
     isRewardQuestion: false,
-    rewardAmount: 100,
+    rewardAmount: 0,
     maxWinners: 1,
     expiryHours: 24,
   });
@@ -1063,7 +715,7 @@ function CreateQuestionWizardComponent({
         category: "",
         tags: [],
         isRewardQuestion: false,
-        rewardAmount: 100,
+        rewardAmount: 0,
         maxWinners: 1,
         expiryHours: 24,
       });
@@ -1100,15 +752,6 @@ function CreateQuestionWizardComponent({
           newErrors.category = "Please select a category";
         }
         break;
-
-      case 2: // Reward step
-        if (formData.isRewardQuestion) {
-          const totalCost = formData.rewardAmount * formData.maxWinners;
-          if (totalCost > userPoints) {
-            newErrors.rewardAmount = "Insufficient points balance";
-          }
-        }
-        break;
     }
 
     setErrors(newErrors);
@@ -1119,7 +762,7 @@ function CreateQuestionWizardComponent({
     }
     
     return true;
-  }, [formData, userPoints]);
+  }, [formData]);
 
   // Navigation handlers
   const handleNext = useCallback(() => {
@@ -1173,17 +816,6 @@ function CreateQuestionWizardComponent({
         );
       case 2:
         return (
-          <RewardStep
-            formData={formData}
-            updateFormData={updateFormData}
-            isAdmin={isAdmin}
-            userPoints={userPoints}
-            errors={errors}
-            colors={colors}
-          />
-        );
-      case 3:
-        return (
           <PreviewStep
             formData={formData}
             colors={colors}
@@ -1192,7 +824,7 @@ function CreateQuestionWizardComponent({
       default:
         return null;
     }
-  }, [currentStep, formData, updateFormData, errors, colors, categories, suggestedTags, isAdmin, userPoints]);
+  }, [currentStep, formData, updateFormData, errors, colors, categories, suggestedTags]);
 
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === STEPS.length - 1;
@@ -1502,128 +1134,6 @@ const styles = StyleSheet.create({
   suggestedTagsLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-
-  // Reward step
-  noRewardContainer: {
-    alignItems: "center",
-    padding: SPACING.xl,
-    borderRadius: RADIUS.lg,
-    gap: SPACING.md,
-  },
-  noRewardTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.lg,
-  },
-  noRewardText: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    textAlign: "center",
-    lineHeight: TYPOGRAPHY.fontSize.sm * TYPOGRAPHY.lineHeight.relaxed,
-  },
-  rewardToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: SPACING.base,
-    borderRadius: RADIUS.lg,
-    borderWidth: 2,
-    gap: SPACING.md,
-  },
-  rewardToggleIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rewardToggleContent: {
-    flex: 1,
-  },
-  rewardToggleTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  rewardToggleSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-  toggleSwitch: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
-    justifyContent: "center",
-  },
-  toggleKnob: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-  },
-  presetsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  presetButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  presetText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  pointsBalance: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    marginTop: SPACING.xs,
-  },
-  winnersContainer: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  winnerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: RADIUS.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  winnerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  expiryContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: SPACING.sm,
-  },
-  expiryButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  expiryText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  costSummary: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: SPACING.md,
-    borderRadius: RADIUS.md,
-    marginTop: SPACING.md,
-  },
-  costLabel: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  costValue: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.lg,
   },
 
   // Preview

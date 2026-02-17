@@ -28,6 +28,7 @@ export const getUserProfile = asyncHandler(async (req, res) => {
         points: true,
         avatar: true,
         role: true,
+        twoFactorEnabled: true,
         subscriptionStatus: true,
         surveysubscriptionStatus: true,
         privacySettings: true,

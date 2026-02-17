@@ -185,6 +185,7 @@ interface HeaderSectionProps {
     lastName: string;
     email: string;
     telephone: string;
+    avatarUri?: string;
     walletBalance: number;
     totalEarnings: number;
     totalRewards: number;
@@ -204,12 +205,13 @@ const HeaderSection = memo(function HeaderSection({ profile, onEditPress }: Head
         email={profile.email}
         phone={profile.telephone}
         isVerified={profile.isVerified}
+        avatarUri={profile.avatarUri}
         totalEarnings={profile.totalEarnings}
         walletBalance={profile.walletBalance}
         streakDays={profile.streakDays}
         maxStreak={30}
         onEditPress={onEditPress}
-        onAvatarPress={() => Alert.alert('Change Photo', 'Photo picker coming soon!')}
+        onAvatarPress={onEditPress}
         onEarningsPress={() => router.push('/(tabs)/transactions')}
         onWalletPress={() => router.push('/(tabs)/withdraw' as Href)}
         onStreakPress={() => Alert.alert('Streak Bonus', `Keep your ${profile.streakDays}-day streak going to earn bonus rewards!`)}
@@ -390,11 +392,14 @@ export default function ProfileScreen(): React.ReactElement {
     lastName: user?.lastName || '',
     email: user?.email || '',
     telephone: user?.telephone || '',
+    avatarUri: user?.avatar || undefined,
     walletBalance: user?.walletBalance ?? 0,
     totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
     totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
     streakDays: userStats?.currentStreak || 0,
-    isVerified: Boolean(user?.email),
+    // Verification must come from an authoritative backend flag;
+    // the mere existence of an email string is not proof of verification.
+    isVerified: Boolean(user?.emailVerified),
     activeSessions: sessions.filter(s => s.isActive).length,
   }), [user, userStats, sessions]);
 
@@ -556,10 +561,12 @@ export default function ProfileScreen(): React.ReactElement {
   const handleSaveProfile = useCallback(async (data: EditProfileData) => {
     try {
       // Map telephone (UI field name) to phone (API/Prisma field name)
+      // Include avatar so photo changes are persisted to the backend
       await updateProfileMutation.mutateAsync({
         firstName: data.firstName,
         lastName: data.lastName,
         phone: data.telephone,
+        avatar: data.avatarUri ?? null,
       } as any);
       await refetchUser();
       setShowEditProfileModal(false);

@@ -327,6 +327,16 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         onPress={onAnswerEarnPress}
       />
 
+      {/* Between-CTA Ad — question placement */}
+      {feedAds && feedAds.length > 0 && (
+        <BetweenContentAd
+          ad={feedAds[0]}
+          onAdClick={onAdClick}
+          variant="compact"
+          style={styles.betweenCtaAd}
+        />
+      )}
+
       {/* Answer Instant Reward Questions Card */}
       <InstantRewardCTA
         colors={colors}
@@ -339,10 +349,10 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
         onPress={onOpenCreateWizard}
       />
 
-      {/* In-Feed Native Ad — placed after CTAs to avoid overlapping */}
-      {feedAds && feedAds.length > 0 && (
+      {/* In-Feed Native Ad — placed after CTAs */}
+      {feedAds && feedAds.length > 1 && (
         <BetweenContentAd
-          ad={feedAds[0]}
+          ad={feedAds[1]}
           onAdClick={onAdClick}
           variant="native"
           style={styles.betweenContentAd}
@@ -497,7 +507,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Consolidated ads — single hook replaces 3 separate ones, deferred until feed loads
   const { data: screenAds } = useScreenAds("question", {
-    feedLimit: 5,
+    feedLimit: 6,
     bannerLimit: 3,
     featuredLimit: 2,
     enabled: !isFeedLoading,
@@ -729,8 +739,8 @@ export default function QuestionsScreen(): React.ReactElement {
         await createMutateAsync({
           text: data.title,
           category: data.category,
-          rewardAmount: data.rewardAmount,
-          isInstantReward: data.isRewardQuestion,
+          rewardAmount: 0,
+          isInstantReward: false,
         });
         setShowCreateWizard(false);
         triggerHaptic("success");
@@ -1094,8 +1104,6 @@ export default function QuestionsScreen(): React.ReactElement {
         visible={showCreateWizard}
         onClose={() => setShowCreateWizard(false)}
         onSubmit={handleQuestionSubmit}
-        isAdmin={isAdmin}
-        userPoints={userStats?.totalEarnings || 0}
       />
     </View>
   );
@@ -1214,6 +1222,12 @@ const styles = StyleSheet.create({
   // In-feed Ad
   inFeedAd: {
     marginVertical: SPACING.sm,
+  },
+
+  // Between CTA Ad (between AnswerEarn and InstantReward)
+  betweenCtaAd: {
+    marginTop: SPACING.sm,
+    marginBottom: SPACING.sm,
   },
 
   // Between content Ad

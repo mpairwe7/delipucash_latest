@@ -6,7 +6,8 @@ import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, router, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useCallback, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   AccessibilityInfo,
   Pressable,
@@ -332,6 +333,10 @@ export default function SplashScreen(): React.ReactElement {
   const rootNavigationState = useRootNavigationState();
   const navigationReady = Boolean(rootNavigationState?.key);
 
+  // Track onboarding status for authenticated redirect destination
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [hasOnboarded, setHasOnboarded] = useState(false);
+
   // All hooks MUST be called before any conditional return (Rules of Hooks)
   const handleGetStarted = useCallback((): void => {
     if (!navigationReady) return;
@@ -350,9 +355,26 @@ export default function SplashScreen(): React.ReactElement {
     );
   }, []);
 
+  // Check onboarding status when user is authenticated so we redirect
+  // to the correct destination (welcome vs home) without flashing
+  useEffect(() => {
+    if (!authReady || !isAuthenticated) return;
+    let cancelled = false;
+    AsyncStorage.getItem('hasCompletedOnboarding').then((value) => {
+      if (!cancelled) {
+        setHasOnboarded(!!value);
+        setOnboardingChecked(true);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [authReady, isAuthenticated]);
+
   // Skip landing for users with a valid persisted session
-  // Declarative <Redirect> ensures navigation waits for Root Layout to mount
-  if (authReady && isAuthenticated && navigationReady) {
+  // Wait for onboarding check so we route to the correct screen
+  if (authReady && isAuthenticated && navigationReady && onboardingChecked) {
+    if (!hasOnboarded) {
+      return <Redirect href="/welcome" />;
+    }
     return <Redirect href="/(tabs)/home-redesigned" />;
   }
 

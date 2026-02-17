@@ -10,10 +10,11 @@
  */
 
 import { useAuthStore, type AuthData } from '@/utils/auth/store';
-import { API_ROUTES } from './api';
 
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
 const apiBase = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
+// Inlined to break the api.ts ↔ tokenRefresh.ts require cycle.
+const REFRESH_TOKEN_PATH = '/api/auth/refresh-token';
 
 // Module-level coalescing state
 let refreshPromise: Promise<AuthData | null> | null = null;
@@ -40,7 +41,7 @@ async function doRefresh(): Promise<AuthData | null> {
   }
 
   try {
-    const res = await fetch(`${apiBase}${API_ROUTES.auth.refreshToken}`, {
+    const res = await fetch(`${apiBase}${REFRESH_TOKEN_PATH}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: auth.refreshToken }),

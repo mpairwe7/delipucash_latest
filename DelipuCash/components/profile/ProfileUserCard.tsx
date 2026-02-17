@@ -32,6 +32,8 @@ import {
   Shield,
   Zap,
   ChevronRight,
+  Mail,
+  Phone,
 } from 'lucide-react-native';
 import Animated, {
   FadeIn,
@@ -46,6 +48,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { Image as ExpoImage } from 'expo-image';
 import {
   useTheme,
   SPACING,
@@ -115,15 +118,18 @@ function getGreeting(): string {
 
 /**
  * Format currency in Ugandan Shillings (UGX)
+ * Formatter is created once (module-level) to avoid >16ms frame drops
+ * from re-creating Intl.NumberFormat on every render.
  */
+const ugxFormatter = new Intl.NumberFormat('en-UG', {
+  style: 'currency',
+  currency: 'UGX',
+  currencyDisplay: 'code',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
 function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-UG', {
-    style: 'currency',
-    currency: 'UGX',
-    currencyDisplay: 'code',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return ugxFormatter.format(amount);
 }
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -194,8 +200,31 @@ export function ProfileUserCard({
     onAvatarPress?.();
   };
 
-  const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-  const fullName = `${firstName} ${lastName}`;
+  // Deterministic initials: prefer name chars, fall back to email initial or 'U'
+  const initials = useMemo(() => {
+    const fi = firstName?.charAt(0) || '';
+    const li = lastName?.charAt(0) || '';
+    if (fi || li) return `${fi}${li}`.toUpperCase();
+    if (email) return email.charAt(0).toUpperCase();
+    return 'U';
+  }, [firstName, lastName, email]);
+  const fullName = `${firstName} ${lastName}`.trim() || 'User';
+
+  // Mask email for display: jo***@example.com
+  const maskedEmail = useMemo(() => {
+    if (!email) return '';
+    const [local, domain] = email.split('@');
+    if (!domain) return email;
+    const visible = local.slice(0, 2);
+    return `${visible}***@${domain}`;
+  }, [email]);
+
+  // Mask phone for display: +256 7** *** **0
+  const maskedPhone = useMemo(() => {
+    if (!phone) return '';
+    if (phone.length <= 4) return phone;
+    return phone.slice(0, 4) + ' *** ' + phone.slice(-2);
+  }, [phone]);
 
   return (
     <Animated.View
@@ -261,10 +290,14 @@ export function ProfileUserCard({
           >
             <View style={[styles.avatarInner, { backgroundColor: colors.card }]}>
               {avatarUri ? (
-                <Animated.Image
+                <ExpoImage
                   source={{ uri: avatarUri }}
                   style={styles.avatarImage}
-                  entering={FadeIn.duration(300).reduceMotion(ReduceMotion.System)}
+                  cachePolicy="memory-disk"
+                  contentFit="cover"
+                  transition={300}
+                  recyclingKey={avatarUri}
+                  accessibilityLabel={`Profile photo for ${fullName}`}
                 />
               ) : (
                 <LinearGradient
@@ -311,6 +344,24 @@ export function ProfileUserCard({
                 <Text style={[styles.verifiedText, { color: colors.success }]}>Verified Account</Text>
               </View>
             )}
+
+            {/* Contact details — masked for privacy */}
+            {maskedEmail ? (
+              <View style={styles.contactRow}>
+                <Mail size={12} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.contactText, { color: colors.textMuted }]} numberOfLines={1}>
+                  {maskedEmail}
+                </Text>
+              </View>
+            ) : null}
+            {maskedPhone ? (
+              <View style={styles.contactRow}>
+                <Phone size={12} color={colors.textMuted} strokeWidth={1.5} />
+                <Text style={[styles.contactText, { color: colors.textMuted }]} numberOfLines={1}>
+                  {maskedPhone}
+                </Text>
+              </View>
+            ) : null}
           </Animated.View>
         </View>
       </View>
@@ -541,6 +592,16 @@ const styles = StyleSheet.create({
   verifiedText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+  },
+  contactText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
 
   // Stats Container

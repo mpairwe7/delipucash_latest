@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery, UseQueryResult } from "@tanstack/react-query";
-import { useAuth } from "@/utils/auth/useAuth";
 import { useAuthStore } from "@/utils/auth/store";
 import { userApi } from "@/services/api";
 import { queryKeys } from "@/services/hooks";
@@ -25,6 +24,7 @@ export interface UserProfile {
   totalEarnings?: number;
   totalRewards?: number;
   twoFactorEnabled?: boolean;
+  emailVerified?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -56,10 +56,12 @@ function transformUserProfile(user: AppUser, stats?: UserStats): UserProfile {
     subscriptionStatus: user.subscriptionStatus,
     surveysubscriptionStatus: user.surveysubscriptionStatus,
     // Use real backend values — avoid synthetic calculations that diverge from truth
-    walletBalance: stats?.totalEarnings ?? 0,
+    // walletBalance: user.points (available balance), distinct from lifetime totalEarnings
+    walletBalance: user.points ?? 0,
     totalEarnings: stats?.totalEarnings ?? 0,
     totalRewards: stats?.totalRewards ?? 0,
-    twoFactorEnabled: false,
+    twoFactorEnabled: user.twoFactorEnabled ?? false,
+    emailVerified: user.emailVerified ?? false,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
@@ -125,7 +127,11 @@ function syncAuthStoreUser(freshProfile: AppUser): void {
  * ```
  */
 export default function useUser(): UseUserResult {
-  const { auth, isReady } = useAuth();
+  // Read directly from Zustand — avoids the heavyweight useAuth() hook which
+  // internally creates useLoginMutation()/useSignupMutation() hooks that are
+  // never needed here. Direct selectors are faster and avoid extra re-renders.
+  const isReady = useAuthStore(s => s.isReady);
+  const auth = useAuthStore(s => s.auth);
   const shouldFetchUser = isReady && Boolean(auth?.token) && Boolean(auth?.user?.id);
 
   const { data, isLoading, error, refetch, dataUpdatedAt } = useQuery<UserProfile | null, Error>({
@@ -174,7 +180,9 @@ export default function useUser(): UseUserResult {
   // Memoized fallback from persisted auth user — avoids new object reference
   // every render, preventing unnecessary downstream re-renders in React.memo
   // consumers (ProfileUserCard, HeaderSection, etc.).
-  // Keyed on auth.user.id so it only recomputes when the user identity changes.
+  // Deps include id (identity), updatedAt (profile edits), and firstName
+  // (captures the null→populated transition after login, where id alone
+  // wouldn't trigger if updatedAt equals createdAt on fresh accounts).
   const fallbackProfile = useMemo<UserProfile | null>(() => {
     const u = auth?.user;
     if (!u) return null;
@@ -193,11 +201,12 @@ export default function useUser(): UseUserResult {
       walletBalance: 0,
       totalEarnings: 0,
       totalRewards: 0,
-      twoFactorEnabled: false,
+      twoFactorEnabled: u.twoFactorEnabled ?? false,
+      emailVerified: u.emailVerified ?? false,
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
     };
-  }, [auth?.user?.id, auth?.user?.updatedAt]);
+  }, [auth?.user?.id, auth?.user?.updatedAt, auth?.user?.firstName, auth?.user?.lastName]);
 
   return {
     // Prefer fresh API data, fall back to persisted auth store data

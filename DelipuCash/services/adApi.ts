@@ -265,8 +265,8 @@ export const fetchAds = async (filters?: AdFilters): Promise<AdsListResponse> =>
     
     const response = await api.get(url);
     return response.data;
-  } catch {
-    // Non-critical — return empty response on failure
+  } catch (error) {
+    console.warn('[AdAPI] fetchAds failed:', error instanceof Error ? error.message : error);
     return { success: false, data: { ads: [], featuredAd: null, bannerAd: null, all: [] }, pagination: { total: 0, limit: 0, offset: 0, hasMore: false } } as any;
   }
 };
@@ -284,10 +284,13 @@ export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
     // Return featured ads from the response
     if (response.data.success && response.data.data) {
       // Return featuredAd if available, otherwise return all featured type ads
-      const featuredAds = response.data.data.featuredAd ? [response.data.data.featuredAd] : 
+      const featuredAds = response.data.data.featuredAd ? [response.data.data.featuredAd] :
                          Array.isArray(response.data.data.all)
                            ? response.data.data.all.filter((ad: Ad) => ad.type === 'featured')
                            : [];
+      if (__DEV__ && featuredAds.length === 0) {
+        console.warn('[AdAPI] fetchFeaturedAds: API returned 0 featured ads');
+      }
       return featuredAds;
     }
 
@@ -295,10 +298,11 @@ export const fetchFeaturedAds = async (limit?: number): Promise<Ad[]> => {
     if (Array.isArray(response.data)) {
       return response.data;
     }
-    
+
+    console.warn('[AdAPI] fetchFeaturedAds: unexpected response shape', JSON.stringify(response.data).slice(0, 200));
     return [];
-  } catch {
-    // Ads are non-critical UI — silently return empty on failure
+  } catch (error) {
+    console.warn('[AdAPI] fetchFeaturedAds failed:', error instanceof Error ? error.message : error);
     return [];
   }
 };
@@ -315,19 +319,24 @@ export const fetchBannerAds = async (limit?: number): Promise<Ad[]> => {
     // Return banner ads from the response
     if (response.data.success && response.data.data) {
       // Return bannerAd if available, otherwise return all banner type ads
-      const bannerAds = response.data.data.bannerAd ? [response.data.data.bannerAd] : 
+      const bannerAds = response.data.data.bannerAd ? [response.data.data.bannerAd] :
                        Array.isArray(response.data.data.all)
                          ? response.data.data.all.filter((ad: Ad) => ad.type === 'banner')
                          : [];
+      if (__DEV__ && bannerAds.length === 0) {
+        console.warn('[AdAPI] fetchBannerAds: API returned 0 banner ads');
+      }
       return bannerAds;
     }
 
     if (Array.isArray(response.data)) {
       return response.data;
     }
-    
+
+    console.warn('[AdAPI] fetchBannerAds: unexpected response shape', JSON.stringify(response.data).slice(0, 200));
     return [];
-  } catch {
+  } catch (error) {
+    console.warn('[AdAPI] fetchBannerAds failed:', error instanceof Error ? error.message : error);
     return [];
   }
 };
@@ -346,15 +355,20 @@ export const fetchVideoAds = async (limit?: number): Promise<Ad[]> => {
       const videoAds = Array.isArray(response.data.data.all)
         ? response.data.data.all.filter((ad: Ad) => ad.type === 'video')
         : [];
+      if (__DEV__ && videoAds.length === 0) {
+        console.warn('[AdAPI] fetchVideoAds: API returned 0 video ads');
+      }
       return videoAds;
     }
 
     if (Array.isArray(response.data)) {
       return response.data;
     }
-    
+
+    console.warn('[AdAPI] fetchVideoAds: unexpected response shape', JSON.stringify(response.data).slice(0, 200));
     return [];
-  } catch {
+  } catch (error) {
+    console.warn('[AdAPI] fetchVideoAds failed:', error instanceof Error ? error.message : error);
     return [];
   }
 };
@@ -372,9 +386,10 @@ export const fetchAdById = async (adId: string): Promise<Ad | null> => {
       const ad = response.data.data.all.find((ad: Ad) => ad.id === adId);
       return ad || null;
     }
-    
+
     return null;
-  } catch {
+  } catch (error) {
+    console.warn('[AdAPI] fetchAdById failed:', error instanceof Error ? error.message : error);
     return null;
   }
 };
@@ -395,15 +410,21 @@ export const fetchAdsForPlacement = async (
     
     // Return ads from the response
     if (response.data.success && response.data.data) {
-      return Array.isArray(response.data.data.all) ? response.data.data.all : [];
+      const ads = Array.isArray(response.data.data.all) ? response.data.data.all : [];
+      if (__DEV__ && ads.length === 0) {
+        console.warn(`[AdAPI] fetchAdsForPlacement("${placement}"): API returned 0 ads`);
+      }
+      return ads;
     }
 
     if (Array.isArray(response.data)) {
       return response.data;
     }
-    
+
+    console.warn(`[AdAPI] fetchAdsForPlacement("${placement}"): unexpected response shape`, JSON.stringify(response.data).slice(0, 200));
     return [];
-  } catch {
+  } catch (error) {
+    console.warn(`[AdAPI] fetchAdsForPlacement("${placement}") failed:`, error instanceof Error ? error.message : error);
     return [];
   }
 };
@@ -423,9 +444,13 @@ export const fetchRandomAd = async (type?: AdType): Promise<Ad | null> => {
       const randomIndex = Math.floor(Math.random() * ads.length);
       return ads[randomIndex];
     }
-    
+
+    if (__DEV__) {
+      console.warn('[AdAPI] fetchRandomAd: API returned 0 ads');
+    }
     return null;
-  } catch {
+  } catch (error) {
+    console.warn('[AdAPI] fetchRandomAd failed:', error instanceof Error ? error.message : error);
     return null;
   }
 };

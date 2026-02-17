@@ -83,6 +83,8 @@ export interface AppUser {
   points: number;
   avatar: string | null;
   role: UserRole;
+  twoFactorEnabled?: boolean;
+  emailVerified?: boolean;
   subscriptionStatus: SubscriptionStatus;
   surveysubscriptionStatus: SubscriptionStatus;
   currentSubscriptionId: string | null;

@@ -52,13 +52,6 @@ export default function TabLayout(): React.ReactElement {
   const isReady = useAuthStore(s => s.isReady);
   const auth = useAuthStore(s => s.auth);
 
-  // Auth guard — redirect to login if session is lost mid-use
-  // (e.g. refresh token rejected by server, SecureStore cleared).
-  // Uses Zustand directly (no TanStack dependency) for instant reactivity.
-  if (isReady && !auth) {
-    return <Redirect href="/(auth)/login" />;
-  }
-
   // Lock to portrait for main tab navigation
   // Individual screens can unlock for specific features (video player, camera, etc.)
   useEffect(() => {
@@ -67,6 +60,14 @@ export default function TabLayout(): React.ReactElement {
         .catch((err) => console.warn('Failed to lock portrait in tabs:', err));
     }
   }, []);
+
+  // Auth guard — redirect to login if session is lost mid-use
+  // (e.g. refresh token rejected by server, SecureStore cleared).
+  // Uses Zustand directly (no TanStack dependency) for instant reactivity.
+  // MUST be after all hooks to satisfy React's rules of hooks.
+  if (isReady && !auth) {
+    return <Redirect href="/(auth)/login" />;
+  }
 
   return (
     <Tabs

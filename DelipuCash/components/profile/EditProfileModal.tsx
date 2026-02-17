@@ -65,6 +65,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
+import { Image as ExpoImage } from 'expo-image';
 import {
   useTheme,
   SPACING,
@@ -484,6 +486,24 @@ export function EditProfileModal({
   const handlePickAvatar = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+    /**
+     * Compress and resize picked image to ≤400×400 JPEG at 70% quality.
+     * This keeps uploads under ~200 KB for faster saves and lower bandwidth.
+     */
+    const compressAvatar = async (uri: string): Promise<string> => {
+      try {
+        const manipulated = await manipulateAsync(
+          uri,
+          [{ resize: { width: 400, height: 400 } }],
+          { compress: 0.7, format: SaveFormat.JPEG }
+        );
+        return manipulated.uri;
+      } catch {
+        // If manipulation fails, fall back to the original URI
+        return uri;
+      }
+    };
+
     Alert.alert('Change Photo', 'Choose how you want to update your profile photo', [
       {
         text: 'Take Photo',
@@ -500,7 +520,8 @@ export function EditProfileModal({
             quality: 0.8,
           });
           if (!result.canceled && result.assets[0]) {
-            setFormData(prev => ({ ...prev, avatarUri: result.assets[0].uri }));
+            const compressed = await compressAvatar(result.assets[0].uri);
+            setFormData(prev => ({ ...prev, avatarUri: compressed }));
             setIsDirty(true);
           }
         },
@@ -520,7 +541,8 @@ export function EditProfileModal({
             quality: 0.8,
           });
           if (!result.canceled && result.assets[0]) {
-            setFormData(prev => ({ ...prev, avatarUri: result.assets[0].uri }));
+            const compressed = await compressAvatar(result.assets[0].uri);
+            setFormData(prev => ({ ...prev, avatarUri: compressed }));
             setIsDirty(true);
           }
         },
@@ -594,7 +616,13 @@ export function EditProfileModal({
     saveScale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
-  const initials = `${formData.firstName.charAt(0)}${formData.lastName.charAt(0)}`.toUpperCase() || 'U';
+  const initials = useMemo(() => {
+    const fi = formData.firstName?.charAt(0) || '';
+    const li = formData.lastName?.charAt(0) || '';
+    if (fi || li) return `${fi}${li}`.toUpperCase();
+    if (formData.email) return formData.email.charAt(0).toUpperCase();
+    return 'U';
+  }, [formData.firstName, formData.lastName, formData.email]);
 
   // Count dirty fields for save button context
   const changedFieldCount = useMemo(() => {
@@ -733,10 +761,13 @@ export function EditProfileModal({
                   >
                     <View style={[styles.avatarInner, { backgroundColor: colors.background }]}>
                       {formData.avatarUri ? (
-                        <Animated.Image
+                        <ExpoImage
                           source={{ uri: formData.avatarUri }}
                           style={styles.avatarImage}
-                          entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+                          cachePolicy="memory-disk"
+                          contentFit="cover"
+                          transition={200}
+                          recyclingKey={formData.avatarUri}
                         />
                       ) : (
                         <LinearGradient

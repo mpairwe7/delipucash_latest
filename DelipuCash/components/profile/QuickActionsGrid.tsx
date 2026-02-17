@@ -1,20 +1,21 @@
 /**
  * QuickActionsGrid Component
  * Grid of quick action cards for primary profile actions
- * 
+ *
  * Design: Instagram + Cash App + TikTok quick actions (2025-2026 style)
  * Features:
- * - Responsive 2-column grid with proper gutters
+ * - Responsive 2-column grid measured via onLayout (not screen width)
+ * - 3-tier responsive scaling: compact / normal / spacious
  * - Spring press animations with haptic feedback
  * - Badge support for notifications
  * - Admin-only item filtering
  * - Subscription gating for premium features
- * 
+ *
  * Accessibility: WCAG 2.2 AA compliant
  * - 44x44dp minimum touch targets
  * - Clear accessibilityLabel and accessibilityHint
  * - Proper focus order
- * 
+ *
  * @example
  * ```tsx
  * <QuickActionsGrid
@@ -26,15 +27,14 @@
  * ```
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
   Pressable,
   StyleSheet,
-  useWindowDimensions,
   ViewStyle,
-  Platform,
+  LayoutChangeEvent,
 } from 'react-native';
 import { Href, router } from 'expo-router';
 import { LucideIcon, Lock } from 'lucide-react-native';
@@ -58,8 +58,7 @@ import {
 } from '@/utils/theme';
 import { AccessibleText } from './AccessibleText';
 
-const GRID_GAP = SPACING.sm;
-const GRID_PADDING = SPACING.base;
+const GRID_GAP = SPACING.sm; // 8px between cards
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -103,11 +102,71 @@ export interface QuickActionsGridProps {
   onSubscriptionRequired?: () => void;
   /** Container style */
   style?: ViewStyle;
-  /** Number of columns (2 or 3) */
-  columns?: 2 | 3;
+  /** Number of columns (always 2) */
+  columns?: 2;
   /** Test ID prefix */
   testID?: string;
 }
+
+// ============================================================================
+// RESPONSIVE SIZING — 3-tier scale based on measured card width
+// ============================================================================
+
+/** Responsive dimensions derived from the actual card width */
+interface CardDimensions {
+  iconBoxSize: number;
+  iconSize: number;
+  cardPadding: number;
+  minHeight: number;
+  titleFontSize: number;
+  showDescription: boolean;
+}
+
+/**
+ * Compute card inner dimensions from measured card width.
+ * Three tiers ensure graceful scaling from 320px phones to 768px+ tablets.
+ *
+ *   compact  (cardWidth < 140)  — 320px SE-class phones
+ *   normal   (140 ≤ cw < 190)  — 375-428px standard phones
+ *   spacious (cw ≥ 190)        — large phones & tablets
+ */
+function getCardDimensions(cardWidth: number): CardDimensions {
+  if (cardWidth < 140) {
+    // Compact — squeeze everything while keeping 44dp touch target
+    return {
+      iconBoxSize: 40,
+      iconSize: ICON_SIZE.base,    // 18
+      cardPadding: SPACING.sm,     // 8
+      minHeight: 88,
+      titleFontSize: TYPOGRAPHY.fontSize.xs, // 10
+      showDescription: false,
+    };
+  }
+  if (cardWidth < 190) {
+    // Normal — standard phone layout
+    return {
+      iconBoxSize: 46,
+      iconSize: ICON_SIZE.lg,      // 20
+      cardPadding: SPACING.md,     // 12
+      minHeight: 100,
+      titleFontSize: TYPOGRAPHY.fontSize.sm, // 12
+      showDescription: false,
+    };
+  }
+  // Spacious — large phones & tablets
+  return {
+    iconBoxSize: 52,
+    iconSize: ICON_SIZE.xl,        // 24
+    cardPadding: SPACING.base,     // 16
+    minHeight: 112,
+    titleFontSize: TYPOGRAPHY.fontSize.base, // 14
+    showDescription: true,
+  };
+}
+
+// ============================================================================
+// QUICK ACTION CARD
+// ============================================================================
 
 interface QuickActionCardProps {
   item: ProfileQuickAction;
@@ -116,7 +175,7 @@ interface QuickActionCardProps {
   hasSubscription: boolean;
   onSubscriptionRequired?: () => void;
   cardWidth: number;
-  isCompact: boolean;
+  dims: CardDimensions;
 }
 
 const SPRING_CONFIG = {
@@ -132,7 +191,7 @@ function QuickActionCard({
   hasSubscription,
   onSubscriptionRequired,
   cardWidth,
-  isCompact,
+  dims,
 }: QuickActionCardProps): React.ReactElement | null {
   const { colors } = useTheme();
   const scale = useSharedValue(1);
@@ -185,13 +244,10 @@ function QuickActionCard({
   // Skip rendering if admin only and not admin
   if (isHidden) return null;
 
-  // Scale inner elements on narrow screens
-  const iconBoxSize = isCompact ? 44 : 52;
-  const iconSize = isCompact ? ICON_SIZE.base : ICON_SIZE.lg;
-  const cardPadding = isCompact ? SPACING.sm : SPACING.md;
+  const { iconBoxSize, iconSize, cardPadding, minHeight, titleFontSize, showDescription } = dims;
 
-  // Stagger animation delay
-  const animationDelay = 100 + index * 50;
+  // Stagger animation delay — cap at 8 items to avoid long delays
+  const animationDelay = 100 + Math.min(index, 7) * 50;
 
   return (
     <Animated.View
@@ -205,6 +261,7 @@ function QuickActionCard({
             backgroundColor: colors.card,
             borderColor: withAlpha(colors.border, 0.6),
             padding: cardPadding,
+            minHeight,
           },
           item.disabled && styles.cardDisabled,
           animatedStyle,
@@ -258,20 +315,26 @@ function QuickActionCard({
           )}
         </View>
 
-        {/* Title */}
-        <AccessibleText
-          variant="bodySmall"
-          medium
-          center
-          color={isLocked ? 'textMuted' : 'text'}
+        {/* Title — font size scales with card width */}
+        <Text
+          style={[
+            styles.title,
+            {
+              fontSize: titleFontSize,
+              fontFamily: TYPOGRAPHY.fontFamily.medium,
+              color: isLocked ? colors.textMuted : colors.text,
+              lineHeight: titleFontSize * 1.3,
+            },
+          ]}
           numberOfLines={2}
-          style={styles.title}
+          allowFontScaling
+          maxFontSizeMultiplier={1.3}
         >
           {item.title}
-        </AccessibleText>
+        </Text>
 
-        {/* Description (optional — hidden on compact to prevent overflow) */}
-        {item.description && !isCompact && (
+        {/* Description (only on spacious layouts to prevent overflow) */}
+        {item.description && showDescription && (
           <AccessibleText
             variant="caption"
             center
@@ -296,6 +359,10 @@ function QuickActionCard({
   );
 }
 
+// ============================================================================
+// GRID COMPONENT
+// ============================================================================
+
 export function QuickActionsGrid({
   items,
   isAdmin = false,
@@ -305,16 +372,26 @@ export function QuickActionsGrid({
   columns = 2,
   testID,
 }: QuickActionsGridProps): React.ReactElement {
-  const { width: screenWidth } = useWindowDimensions();
+  // Measure actual container width via onLayout — this accounts for ALL
+  // parent padding (FlatList paddingHorizontal, sectionContainer margins, etc.)
+  // instead of guessing from screen width with phantom GRID_PADDING offsets.
+  const [containerWidth, setContainerWidth] = useState(0);
 
-  // Responsive card width — always maintains the requested column count
+  const handleLayout = useCallback((e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    // Only update if the width actually changed (avoids layout loops)
+    setContainerWidth((prev) => (Math.abs(prev - w) > 1 ? w : prev));
+  }, []);
+
+  // Card width from measured container — always a clean 2-column fit
   const cardWidth = useMemo(() => {
+    if (containerWidth === 0) return 0; // Not measured yet
     const totalGaps = GRID_GAP * (columns - 1);
-    return Math.floor((screenWidth - GRID_PADDING * 2 - totalGaps) / columns);
-  }, [screenWidth, columns]);
+    return Math.floor((containerWidth - totalGaps) / columns);
+  }, [containerWidth, columns]);
 
-  // Compact mode on narrow screens (< 340 effective card area)
-  const isCompact = cardWidth < 150;
+  // Responsive dimensions derived from actual card width
+  const dims = useMemo(() => getCardDimensions(cardWidth), [cardWidth]);
 
   // Filter visible items for rendering
   const visibleItems = useMemo(() => {
@@ -326,40 +403,43 @@ export function QuickActionsGrid({
       style={[styles.container, style]}
       testID={testID}
       accessibilityRole="grid"
+      onLayout={handleLayout}
     >
-      <View style={styles.grid}>
-        {visibleItems.map((item, index) => (
-          <QuickActionCard
-            key={item.id}
-            item={item}
-            index={index}
-            isAdmin={isAdmin}
-            hasSubscription={hasSubscription}
-            onSubscriptionRequired={onSubscriptionRequired}
-            cardWidth={cardWidth}
-            isCompact={isCompact}
-          />
-        ))}
-      </View>
+      {containerWidth > 0 && (
+        <View style={styles.grid}>
+          {visibleItems.map((item, index) => (
+            <QuickActionCard
+              key={item.id}
+              item={item}
+              index={index}
+              isAdmin={isAdmin}
+              hasSubscription={hasSubscription}
+              onSubscriptionRequired={onSubscriptionRequired}
+              cardWidth={cardWidth}
+              dims={dims}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {},
+  container: {
+    // Width determined by parent — onLayout measures the actual available space
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: GRID_GAP,
   },
   cardWrapper: {
-    // Width set dynamically
+    // Width set dynamically from measured container
   },
   card: {
-    minHeight: 100,
     borderRadius: RADIUS.xl,
     borderWidth: 1,
-    padding: SPACING.md,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
@@ -369,7 +449,6 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   iconContainer: {
-    // width/height/borderRadius set inline for responsive sizing
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: SPACING.sm,
@@ -395,6 +474,7 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   title: {
+    textAlign: 'center',
     paddingHorizontal: SPACING.xs,
   },
   lockedOverlay: {

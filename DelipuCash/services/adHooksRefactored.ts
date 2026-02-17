@@ -225,16 +225,20 @@ export function useScreenAds(
         adApi.fetchBannerAds(bannerLimit).catch(() => []),
         adApi.fetchFeaturedAds(featuredLimit).catch(() => []),
       ]);
-      return {
+      const result = {
         feedAds: feedAds ?? [],
         bannerAds: bannerAds ?? [],
         featuredAds: featuredAds ?? [],
       };
+      if (__DEV__) {
+        console.log(`[useScreenAds] ${placement}: feed=${result.feedAds.length}, banner=${result.bannerAds.length}, featured=${result.featuredAds.length}`);
+      }
+      return result;
     },
     enabled,
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
-    retry: false, // Ad fetches return [] on failure; no need to retry
+    retry: 1, // Retry once for transient network errors
   });
 }
 
