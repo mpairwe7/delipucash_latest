@@ -45,7 +45,7 @@ const getAuthHeaders = (): Record<string, string> => {
 // ===========================================
 
 // Base API URL (host only). Request paths already include /api/*
-const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://sensational-semifreddo-166028.netlify.app";
 const apiBaseUrl = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // Validate that API URL is configured
