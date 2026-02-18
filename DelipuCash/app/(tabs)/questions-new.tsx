@@ -100,7 +100,7 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
-import { useRegularRewardQuestions, useUnreadCount } from "@/services/hooks";
+import { useUnreadCount } from "@/services/hooks";
 import {
   useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
@@ -503,7 +503,6 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Notification count
   const { data: unreadCount } = useUnreadCount(isAuthenticated);
-  const { data: rewardQuestions, isLoading: isRewardQuestionsLoading } = useRegularRewardQuestions();
 
   // Consolidated ads — single hook replaces 3 separate ones, deferred until feed loads
   const { data: screenAds } = useScreenAds("question", {
@@ -533,12 +532,6 @@ export default function QuestionsScreen(): React.ReactElement {
   const allQuestions = useMemo(
     () => infiniteData?.pages.flatMap((p) => p.questions) ?? [],
     [infiniteData]
-  );
-
-  // Regular reward questions for "Answer Questions & Earn" flow (server already excludes instant)
-  const rewardQuestionsOnly = useMemo(
-    () => (rewardQuestions ?? []).filter((q) => !q.isCompleted),
-    [rewardQuestions]
   );
 
   const feedStats = useMemo(
@@ -773,28 +766,16 @@ export default function QuestionsScreen(): React.ReactElement {
     [authReady, isAuthenticated]
   );
 
-  // Navigate to reward-question flow using reward questions (not instant rewards)
+  // Navigate to reward questions listing — shows available vs attempted
   const handleAnswerEarnPress = useCallback(() => {
     if (!authReady) return;
     if (!isAuthenticated) {
       router.push("/(auth)/login" as Href);
       return;
     }
-    if (isRewardQuestionsLoading) {
-      // Data still loading — silently ignore tap to prevent false "No questions" alert
-      return;
-    }
     triggerHaptic("light");
-    const firstReward = rewardQuestionsOnly[0];
-    if (firstReward) {
-      router.push(`/reward-question/${firstReward.id}` as Href);
-    } else {
-      Alert.alert(
-        "No reward questions available",
-        "Please check back soon for new reward questions."
-      );
-    }
-  }, [authReady, isAuthenticated, isRewardQuestionsLoading, rewardQuestionsOnly]);
+    router.push("/reward-questions" as Href);
+  }, [authReady, isAuthenticated]);
 
   // FAB animation styles — includes auto-hide translateY
   const fabAnimatedStyle = useAnimatedStyle(() => ({

@@ -203,6 +203,7 @@ export default function RootLayout() {
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="reward-question/[id]" options={{ headerShown: false }} />
+              <Stack.Screen name="reward-questions" options={{ headerShown: false }} />
               <Stack.Screen name="instant-reward-questions" options={{ headerShown: false }} />
               <Stack.Screen name="instant-reward-answer/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="question-answer/[id]" options={{ headerShown: false }} />

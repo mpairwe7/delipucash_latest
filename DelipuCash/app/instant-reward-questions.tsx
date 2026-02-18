@@ -26,10 +26,11 @@ import useUser from "@/utils/useUser";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ArrowLeft, CheckCircle2, Circle, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
+import { ArrowLeft, CheckCircle2, Circle, Clock3, Lock, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList,
+    Alert,
     Pressable,
     RefreshControl,
     StyleSheet,
@@ -50,9 +51,120 @@ interface RewardListItem {
   isAnswered?: boolean;
   isCorrect?: boolean;
   rewardEarned?: number;
+  spotsLeft: number;
+  isFull: boolean;
+  isExpiringSoon: boolean;
 }
 
-const ItemSeparator = memo(() => <View style={{ height: SPACING.md }} />);
+const ItemSeparator = memo(function ItemSeparator() {
+  return <View style={{ height: SPACING.md }} />;
+});
+
+// ─── Urgency helpers ─────────────────────────────────────────────────────────
+
+/** Return true when the question expires within 1 hour */
+function checkExpiringSoon(expiryTime: string | null): boolean {
+  if (!expiryTime) return false;
+  const diff = new Date(expiryTime).getTime() - Date.now();
+  return diff > 0 && diff < 3600_000; // <1 hour
+}
+
+/** Sort: open first (fewer spots = higher urgency), then expiring soon, then full */
+function sortByOpportunity(a: RewardListItem, b: RewardListItem): number {
+  // Answered items go last (shouldn't be in available, but safety net)
+  if (a.isAnswered !== b.isAnswered) return a.isAnswered ? 1 : -1;
+  // Full items sink to bottom
+  if (a.isFull !== b.isFull) return a.isFull ? 1 : -1;
+  // Expiring soon rises to top
+  if (a.isExpiringSoon !== b.isExpiringSoon) return a.isExpiringSoon ? -1 : 1;
+  // Fewer spots = more urgent  
+  return a.spotsLeft - b.spotsLeft;
+}
+
+// ─── Spots Progress Indicator ────────────────────────────────────────────────
+
+interface SpotsIndicatorProps {
+  spotsLeft: number;
+  maxWinners: number;
+  winnersCount: number;
+  isFull: boolean;
+  isExpiringSoon: boolean;
+  colors: {
+    success: string;
+    warning: string;
+    error: string;
+    textMuted: string;
+    border: string;
+  };
+}
+
+const SpotsIndicator = memo(function SpotsIndicator({
+  spotsLeft,
+  maxWinners,
+  winnersCount,
+  isFull,
+  isExpiringSoon,
+  colors,
+}: SpotsIndicatorProps) {
+  const fillPercent = maxWinners > 0 ? Math.min(winnersCount / maxWinners, 1) : 0;
+  const barColor = isFull
+    ? colors.error
+    : spotsLeft <= 2
+      ? colors.warning
+      : colors.success;
+
+  return (
+    <View style={spotsStyles.container}>
+      {/* Progress bar */}
+      <View style={[spotsStyles.track, { backgroundColor: withAlpha(colors.border, 0.5) }]}>
+        <View style={[spotsStyles.fill, { width: `${fillPercent * 100}%`, backgroundColor: barColor }]} />
+      </View>
+      {/* Labels row */}
+      <View style={spotsStyles.labels}>
+        {isFull ? (
+          <View style={[spotsStyles.badge, { backgroundColor: withAlpha(colors.error, 0.12) }]}>
+            <Lock size={10} color={colors.error} strokeWidth={2} />
+            <Text style={[spotsStyles.badgeText, { color: colors.error }]}>Sold out</Text>
+          </View>
+        ) : spotsLeft <= 2 ? (
+          <View style={[spotsStyles.badge, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+            <Zap size={10} color={colors.warning} strokeWidth={2} />
+            <Text style={[spotsStyles.badgeText, { color: colors.warning }]}>
+              {spotsLeft === 1 ? "Last spot!" : `${spotsLeft} spots left`}
+            </Text>
+          </View>
+        ) : (
+          <Text style={[spotsStyles.spotsText, { color: colors.textMuted }]}>
+            {spotsLeft} of {maxWinners} spots left
+          </Text>
+        )}
+        {isExpiringSoon && !isFull && (
+          <View style={[spotsStyles.badge, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+            <Clock3 size={10} color={colors.warning} strokeWidth={2} />
+            <Text style={[spotsStyles.badgeText, { color: colors.warning }]}>Expiring soon</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+});
+
+const spotsStyles = StyleSheet.create({
+  container: { gap: SPACING.xs, marginTop: SPACING.sm },
+  track: { height: 4, borderRadius: 2, overflow: "hidden" as const },
+  fill: { height: "100%" as unknown as number, borderRadius: 2 },
+  labels: { flexDirection: "row" as const, alignItems: "center" as const, justifyContent: "space-between" as const },
+  badge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 3,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: RADIUS.full,
+  },
+  badgeText: { fontFamily: TYPOGRAPHY.fontFamily.bold, fontSize: TYPOGRAPHY.fontSize.xs - 1 },
+  spotsText: { fontFamily: TYPOGRAPHY.fontFamily.medium, fontSize: TYPOGRAPHY.fontSize.xs - 1 },
+});
 
 // ─── Memoized Completed Question Card ────────────────────────────────────────
 // Extracted from renderItem to prevent re-creation on every render cycle.
@@ -157,6 +269,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       })
       .map((q) => {
         const attemptedQuestion = getAttemptedQuestion(q.id);
+        const spots = Math.max(q.maxWinners - q.winnersCount, 0);
         return {
           id: q.id,
           text: q.text,
@@ -169,18 +282,25 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           isAnswered: hasAttemptedQuestion(q.id),
           isCorrect: attemptedQuestion?.isCorrect ?? false,
           rewardEarned: attemptedQuestion?.rewardEarned ?? 0,
+          spotsLeft: spots,
+          isFull: spots <= 0 || q.isCompleted,
+          isExpiringSoon: checkExpiringSoon(q.expiryTime),
         };
       });
   }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion]);
 
-  // Separate questions into unanswered and completed
+  // Separate questions into unanswered (sorted by opportunity) and completed
   const unansweredQuestions = useMemo(() => {
-    return activeQuestions.filter(q => !q.isAnswered);
+    return activeQuestions.filter(q => !q.isAnswered).sort(sortByOpportunity);
   }, [activeQuestions]);
 
   const completedQuestions = useMemo(() => {
     return activeQuestions.filter(q => q.isAnswered);
   }, [activeQuestions]);
+
+  // Derived counts for smart stats display
+  const openQuestions = useMemo(() => unansweredQuestions.filter(q => !q.isFull), [unansweredQuestions]);
+  const closedQuestions = useMemo(() => unansweredQuestions.filter(q => q.isFull), [unansweredQuestions]);
 
   // Stats
   const totalRewardsEarned = useMemo(() => {
@@ -213,11 +333,28 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       router.push("/(auth)/login" as Href);
       return;
     }
-    // Phone validation moved to the answer screen's submit handler.
-    // The backend also resolves phone from the user's DB profile via JWT,
-    // so blocking navigation here caused false positives during profile loading.
+    // Check if question is full before navigating
+    const item = activeQuestions.find(q => q.id === id);
+    if (item?.isFull && !item.isAnswered) {
+      triggerHaptic('warning');
+      const nextOpen = openQuestions.find(q => q.id !== id);
+      Alert.alert(
+        'No Spots Left',
+        'All winner spots have been filled for this question.',
+        nextOpen
+          ? [
+              { text: 'OK', style: 'cancel' },
+              {
+                text: 'Try Another',
+                onPress: () => router.push(`/instant-reward-answer/${nextOpen.id}` as Href),
+              },
+            ]
+          : [{ text: 'OK' }]
+      );
+      return;
+    }
     router.push(`/instant-reward-answer/${id}` as Href);
-  }, [authReady, isAuthenticated]);
+  }, [authReady, isAuthenticated, activeQuestions, openQuestions]);
 
   // Dynamic reward amount from question model, fallback to constant
   const displayRewardAmount = useMemo(() => {
@@ -235,21 +372,31 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const renderItem = useCallback(({ item }: { item: RewardListItem }) => {
     if (activeTab === 'unanswered') {
       return (
-        <QuestionCard
-          question={{
-            id: item.id,
-            text: item.text,
-            userId: null,
-            createdAt: item.createdAt,
-            updatedAt: item.createdAt,
-            rewardAmount: item.rewardAmount,
-            isInstantReward: true,
-            totalAnswers: item.winnersCount,
-            category: "Rewards",
-          }}
-          variant="default"
-          onPress={() => handleOpenQuestion(item.id)}
-        />
+        <View style={{ opacity: item.isFull ? 0.55 : 1 }}>
+          <QuestionCard
+            question={{
+              id: item.id,
+              text: item.text,
+              userId: null,
+              createdAt: item.createdAt,
+              updatedAt: item.createdAt,
+              rewardAmount: item.rewardAmount,
+              isInstantReward: true,
+              totalAnswers: item.winnersCount,
+              category: "Rewards",
+            }}
+            variant="default"
+            onPress={() => handleOpenQuestion(item.id)}
+          />
+          <SpotsIndicator
+            spotsLeft={item.spotsLeft}
+            maxWinners={item.maxWinners}
+            winnersCount={item.winnersCount}
+            isFull={item.isFull}
+            isExpiringSoon={item.isExpiringSoon}
+            colors={colors}
+          />
+        </View>
       );
     }
 
@@ -288,9 +435,15 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         <View style={styles.heroStats}>
           <StatCard
             icon={<Circle size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-            title="Unanswered"
-            value={unansweredQuestions.length}
-            subtitle="Questions available"
+            title="Open"
+            value={openQuestions.length}
+            subtitle="Spots available"
+          />
+          <StatCard
+            icon={<Lock size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={1.5} />}
+            title="Closed"
+            value={closedQuestions.length}
+            subtitle="Spots filled"
           />
           <StatCard
             icon={<Trophy size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
@@ -339,9 +492,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       </View>
 
       <SectionHeader
-        title={activeTab === 'unanswered' ? "Answer to earn" : "Your completed questions"}
+        title={activeTab === 'unanswered'
+          ? (closedQuestions.length > 0 ? `Answer to earn (${closedQuestions.length} closed)` : "Answer to earn")
+          : "Your completed questions"}
         subtitle={activeTab === 'unanswered'
-          ? `${formatCurrency(displayRewardAmount)} per correct answer`
+          ? `${openQuestions.length} open \u00B7 ${formatCurrency(displayRewardAmount)} per correct answer`
           : `${correctAnswersCount} correct out of ${completedQuestions.length}`
         }
         icon={activeTab === 'unanswered'
@@ -361,7 +516,8 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       )}
     </>
   ), [
-    colors, displayRewardAmount, unansweredQuestions.length, completedQuestions.length,
+    colors, displayRewardAmount, openQuestions.length, closedQuestions.length,
+    unansweredQuestions.length, completedQuestions.length,
     totalRewardsEarned, correctAnswersCount, activeTab, isLoading, rewardError,
     isFetching, handleRefresh, handleSelectUnanswered, handleSelectCompleted,
   ]);

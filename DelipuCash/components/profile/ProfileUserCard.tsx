@@ -210,15 +210,6 @@ export function ProfileUserCard({
   }, [firstName, lastName, email]);
   const fullName = `${firstName} ${lastName}`.trim() || 'User';
 
-  // Mask email for display: jo***@example.com
-  const maskedEmail = useMemo(() => {
-    if (!email) return '';
-    const [local, domain] = email.split('@');
-    if (!domain) return email;
-    const visible = local.slice(0, 2);
-    return `${visible}***@${domain}`;
-  }, [email]);
-
   // Mask phone for display: +256 7** *** **0
   const maskedPhone = useMemo(() => {
     if (!phone) return '';
@@ -338,22 +329,18 @@ export function ProfileUserCard({
             <Text style={[styles.userName, { color: colors.text }]} numberOfLines={1}>
               {fullName}
             </Text>
-            {isVerified && (
-              <View style={[styles.verifiedRow, { backgroundColor: withAlpha(colors.success, 0.1) }]}>
-                <Shield size={12} color={colors.success} strokeWidth={2} />
-                <Text style={[styles.verifiedText, { color: colors.success }]}>Verified Account</Text>
-              </View>
-            )}
 
-            {/* Contact details — masked for privacy */}
-            {maskedEmail ? (
+            {/* Email — always visible for quick identification */}
+            {email ? (
               <View style={styles.contactRow}>
                 <Mail size={12} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={[styles.contactText, { color: colors.textMuted }]} numberOfLines={1}>
-                  {maskedEmail}
+                  {email}
                 </Text>
               </View>
             ) : null}
+
+            {/* Phone — masked for on-screen privacy */}
             {maskedPhone ? (
               <View style={styles.contactRow}>
                 <Phone size={12} color={colors.textMuted} strokeWidth={1.5} />
@@ -362,6 +349,13 @@ export function ProfileUserCard({
                 </Text>
               </View>
             ) : null}
+
+            {isVerified && (
+              <View style={[styles.verifiedRow, { backgroundColor: withAlpha(colors.success, 0.1) }]}>
+                <Shield size={12} color={colors.success} strokeWidth={2} />
+                <Text style={[styles.verifiedText, { color: colors.success }]}>Verified Account</Text>
+              </View>
+            )}
           </Animated.View>
         </View>
       </View>

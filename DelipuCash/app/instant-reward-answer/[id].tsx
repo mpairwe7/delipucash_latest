@@ -909,9 +909,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           style={[styles.hero, { borderColor: colors.border }]}
         >
           <View style={styles.heroTop}>
-            <View style={[styles.badge, { backgroundColor: withAlpha(colors.success, 0.12) }]}> 
-              <Zap size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />
-              <Text style={[styles.badgeText, { color: colors.success }]}>Live</Text>
+            <View style={[styles.badge, { backgroundColor: withAlpha(isClosed ? colors.error : colors.success, 0.12) }]}> 
+              <Zap size={ICON_SIZE.sm} color={isClosed ? colors.error : colors.success} strokeWidth={1.5} />
+              <Text style={[styles.badgeText, { color: isClosed ? colors.error : colors.success }]}>{isClosed ? "Closed" : "Live"}</Text>
             </View>
             {!!question.expiryTime && (
               <CountdownTimer
@@ -942,6 +942,34 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             />
           </View>
         </LinearGradient>
+
+        {/* No Spots Left Banner (full but not attempted) */}
+        {isClosed && !hasAlreadyAttempted && spotsLeft <= 0 && !result && (
+          <Animated.View
+            entering={FadeIn.duration(300)}
+            style={[
+              styles.attemptedBanner,
+              {
+                backgroundColor: withAlpha(colors.error, 0.12),
+                borderColor: withAlpha(colors.error, 0.5),
+              },
+            ]}
+          >
+            <Lock
+              size={ICON_SIZE.sm}
+              color={colors.error}
+              strokeWidth={2}
+            />
+            <View style={styles.attemptedBannerContent}>
+              <Text style={[styles.attemptedBannerTitle, { color: colors.error }]}>
+                No Spots Left
+              </Text>
+              <Text style={[styles.attemptedBannerSubtitle, { color: colors.textMuted }]}>
+                All {question.maxWinners} winner spots have been filled.
+              </Text>
+            </View>
+          </Animated.View>
+        )}
 
         {/* Already Attempted Warning */}
         {hasAlreadyAttempted && previousAttempt && (
