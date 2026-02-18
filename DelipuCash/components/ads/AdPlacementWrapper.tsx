@@ -239,7 +239,7 @@ function useViewabilityTracking(
 
   return {
     isViewable,
-    viewabilityPercent,
+    viewabilityPercent: viewabilityPercentRef.current,
     updateVisibility,
     startTracking,
     stopTracking,
