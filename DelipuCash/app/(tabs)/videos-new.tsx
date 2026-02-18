@@ -94,16 +94,24 @@ import {
   useShareVideo,
   useAddVideoComment,
   useVideoCommentsQuery,
+  usePersonalizedFeed,
+  useInfiniteTrendingVideos,
+  useVideoSearchInfinite,
+  useExploreVideos,
+  useVideoFeedback,
+  useRecordVideoCompletion,
 } from '@/services/videoHooks';
 import {
   VerticalVideoFeed,
   VideoPlayer,
   EnhancedMiniPlayer,
   VideoCommentsSheet,
+  VideoOptionsSheet,
   UploadModal,
   VideoErrorBoundary,
   CollapsibleSearchBar,
 } from '@/components/video';
+import type { VideoOptionsAction } from '@/components/video';
 import { LiveStreamScreen } from '@/components/livestream';
 import { useVideoStore } from '@/store/VideoStore';
 import { FloatingActionButton } from '@/components/ui/FloatingActionButton';
@@ -115,8 +123,10 @@ import {
   selectFeedMode,
   selectLikedVideoIds,
   selectBookmarkedVideoIds,
+  selectSeenVideoIds,
   useFeedUI,
 } from '@/store/VideoFeedStore';
+import { useHiddenContentStore } from '@/store/HiddenContentStore';
 import { useSearch } from '@/hooks/useSearch';
 import {
   useAdsForPlacement,
@@ -126,6 +136,8 @@ import {
 import { useAdFrequency } from '@/services/adFrequencyManager';
 import { useAuth } from '@/utils/auth/useAuth';
 import { generateVideoShareUrl } from '@/utils/share';
+import { blendFeed } from '@/utils/feedBlender';
+import { insertAdsIntoFeed, DEFAULT_AD_CONFIG, type FeedItem } from '@/utils/feedAdEngine';
 
 // ============================================================================
 // CONSTANTS & 2026 CONFIGURATION
@@ -357,6 +369,15 @@ export default function VideosScreen(): React.ReactElement {
   const ui = useFeedUI();
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
   const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
+  const seenVideoIds = useVideoFeedStore(selectSeenVideoIds);
+  const clearSeen = useVideoFeedStore(s => s.clearSeen);
+
+  // Hidden content store (persisted)
+  const hiddenVideoIds = useHiddenContentStore(s => s.hiddenVideoIds);
+  const hiddenCreatorIds = useHiddenContentStore(s => s.hiddenCreatorIds);
+  const hideVideo = useHiddenContentStore(s => s.hideVideo);
+  const hideCreator = useHiddenContentStore(s => s.hideCreator);
+  const markNotInterested = useHiddenContentStore(s => s.markNotInterested);
 
   // Actions — individual selectors (stable references, no full-store subscription)
   const setFeedMode = useVideoFeedStore(s => s.setFeedMode);
@@ -399,6 +420,7 @@ export default function VideosScreen(): React.ReactElement {
   );
   const [sessionAdCount, setSessionAdCount] = useState(0);
   const [headerHeight, setHeaderHeight] = useState(0);
+  const [moreOptionsVideo, setMoreOptionsVideo] = useState<Video | null>(null);
 
   // Memoized tab icons — prevents AnimatedTabPill re-renders from new JSX refs
   const followingIcon = useMemo(() => <Users size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
@@ -450,6 +472,9 @@ export default function VideosScreen(): React.ReactElement {
   // ============================================================================
 
   // Per-tab data sources — each tab gets its own query for proper scroll/pagination isolation
+
+  // For You: personalized feed with server-side ML-lite scoring + dedupe via seenVideoIds
+  const seenIdsArray = useMemo(() => [...seenVideoIds], [seenVideoIds]);
   const {
     data: videosData,
     isLoading: isForYouLoading,
@@ -458,7 +483,7 @@ export default function VideosScreen(): React.ReactElement {
     fetchNextPage: fetchNextForYou,
     hasNextPage: hasNextForYou,
     isFetchingNextPage: isFetchingNextForYou,
-  } = useInfiniteVideos({ limit: 15 });
+  } = usePersonalizedFeed({ limit: 15, excludeIds: seenIdsArray });
 
   const {
     data: followingData,
@@ -470,12 +495,34 @@ export default function VideosScreen(): React.ReactElement {
     isFetchingNextPage: isFetchingNextFollowing,
   } = useInfiniteFollowingVideos({ limit: 15, enabled: isAuthenticated });
 
+  // Trending: infinite scroll with pagination + localization
   const {
-    data: trendingVideos,
+    data: trendingData,
     isLoading: isTrendingLoading,
     refetch: refetchTrending,
     isFetching: isTrendingFetching,
-  } = useTrendingVideos(20);
+    fetchNextPage: fetchNextTrending,
+    hasNextPage: hasNextTrending,
+    isFetchingNextPage: isFetchingNextTrending,
+  } = useInfiniteTrendingVideos({ limit: 20 });
+
+  // Explore: random diverse videos for feed blending
+  const { data: exploreVideos } = useExploreVideos({
+    limit: 10,
+    enabled: activeTab === 'for-you',
+  });
+
+  // Server-side search with infinite scroll
+  const {
+    data: searchData,
+    fetchNextPage: fetchNextSearch,
+    hasNextPage: hasNextSearch,
+    isFetchingNextPage: isFetchingNextSearch,
+  } = useVideoSearchInfinite(searchQuery, 15);
+
+  // User controls + completion tracking
+  const { mutate: submitFeedback } = useVideoFeedback();
+  const { mutate: recordCompletion } = useRecordVideoCompletion();
 
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideoMutate } = useLikeVideo();
@@ -560,7 +607,7 @@ export default function VideosScreen(): React.ReactElement {
   // COMPUTED DATA — Per-tab data isolation
   // ============================================================================
 
-  // For You: flatten infinite pages
+  // For You: flatten infinite pages (personalized feed)
   const forYouVideos = useMemo(() => {
     if (!videosData?.pages) return [];
     return videosData.pages
@@ -576,8 +623,21 @@ export default function VideosScreen(): React.ReactElement {
       .filter((video) => hasPlayableVideoUrl(video.videoUrl));
   }, [followingData?.pages]);
 
-  // Unified allVideos for search (searches across For You feed)
-  const allVideos = forYouVideos;
+  // Trending: flatten infinite pages
+  const trendingVideos = useMemo(() => {
+    if (!trendingData?.pages) return [];
+    return trendingData.pages
+      .flatMap((page) => page.videos)
+      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
+  }, [trendingData?.pages]);
+
+  // Server-side search results: flatten infinite pages
+  const searchResultVideos = useMemo(() => {
+    if (!searchData?.pages) return [];
+    return searchData.pages
+      .flatMap((page) => page.videos)
+      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
+  }, [searchData?.pages]);
 
   // Tab-aware derived state — avoids if/else chains in handlers
   const isLoading = activeTab === 'for-you' ? isForYouLoading
@@ -590,107 +650,110 @@ export default function VideosScreen(): React.ReactElement {
 
   const isFetchingNextPage = activeTab === 'for-you' ? isFetchingNextForYou
     : activeTab === 'following' ? isFetchingNextFollowing
-    : false; // Trending is a finite ranked list — no infinite scroll
+    : isFetchingNextTrending;
 
-  // Search hook for video search functionality
+  // Search hook — still uses useSearch for recent history + suggestions, but
+  // actual results now come from server-side useVideoSearchInfinite
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
-    filteredResults: filteredVideos,
     recentSearches,
     removeFromHistory,
     clearHistory,
     submitSearch,
   } = useSearch({
-    data: allVideos,
+    data: forYouVideos,
     searchFields: ['title', 'description'],
     storageKey: '@videos_search_history',
     debounceMs: 250,
-    customFilter: (video: Video, query: string) => {
-      const lower = query.toLowerCase();
-      return (
-        (video.title || '').toLowerCase().includes(lower) ||
-        (video.description || '').toLowerCase().includes(lower)
-      );
-    },
   });
 
-  // Generate search suggestions from video titles
+  // Generate search suggestions from local data (instant) while server search is loading
   const searchSuggestions = useMemo(() => {
     if (!searchQuery) return recentSearches.slice(0, 5);
     const lowerQuery = searchQuery.toLowerCase();
-    return allVideos
+    return forYouVideos
       .filter((v: Video) => (v.title || '').toLowerCase().includes(lowerQuery))
       .map((v: Video) => v.title || '')
       .filter(Boolean)
       .slice(0, 5);
-  }, [searchQuery, allVideos, recentSearches]);
+  }, [searchQuery, forYouVideos, recentSearches]);
 
-  // 2026 Standard: Session-capped ad insertion with per-tab data sources
+  // 2026 Standard: blended feed + smart ad insertion + hidden content filtering
   const videosWithAds = useMemo(() => {
     const playableVideoAds = (videoAds || []).filter((ad) => hasPlayableVideoUrl(ad.videoUrl));
 
-    // If searching, return filtered results without ads
+    // If searching, return server-side search results (no ads)
     if (showSearchResults && searchQuery) {
-      return filteredVideos.filter((video) => hasPlayableVideoUrl(video.videoUrl));
+      return searchResultVideos;
     }
 
-    // Select base videos per tab — each from its own dedicated data source
+    // Select base videos per tab
     let baseVideos: Video[];
     switch (activeTab) {
+      case 'for-you':
+        // Blend personalized + explore + trending for diversity
+        baseVideos = blendFeed(
+          forYouVideos,
+          exploreVideos || [],
+          trendingVideos,
+          seenVideoIds,
+          videosWatchedCount,
+        );
+        break;
       case 'trending':
-        baseVideos = (trendingVideos || []).filter((video) => hasPlayableVideoUrl(video.videoUrl));
+        baseVideos = trendingVideos;
         break;
       case 'following':
         baseVideos = followingVideos;
         break;
-      case 'for-you':
       default:
         baseVideos = forYouVideos;
     }
 
-    // Session-aware ad insertion with max cap
-    const currentAdCount = sessionAdCountRef.current;
-    if (playableVideoAds.length === 0 || currentAdCount >= AD_INSERTION_CONFIG.maxAdsPerSession) {
+    // Filter hidden content (videos + creators)
+    const hiddenVidSet = new Set(hiddenVideoIds);
+    const hiddenCreatorSet = new Set(hiddenCreatorIds);
+    baseVideos = baseVideos.filter((v) => {
+      if (hiddenVidSet.has(v.id)) return false;
+      if (v.userId && hiddenCreatorSet.has(v.userId)) return false;
+      return true;
+    });
+
+    // Smart ad insertion with spacing, caps, and content safety
+    if (playableVideoAds.length === 0 || sessionAdCountRef.current >= AD_INSERTION_CONFIG.maxAdsPerSession) {
       return baseVideos;
     }
 
-    const result: Video[] = [];
-    let adIndex = 0;
+    const adContext = {
+      sessionExposure: {},
+      crossSessionExposure: {},
+      sessionAdCount: sessionAdCountRef.current,
+    };
+    const feedItems = insertAdsIntoFeed(baseVideos, playableVideoAds, DEFAULT_AD_CONFIG, adContext);
 
-    baseVideos.forEach((video, index) => {
-      result.push(video);
-
-      // Insert ad after every N videos, respecting session cap
-      if (
-        (index + 1) % AD_INSERTION_CONFIG.interval === 0 &&
-        adIndex < playableVideoAds.length &&
-        currentAdCount + adIndex < AD_INSERTION_CONFIG.maxAdsPerSession
-      ) {
-        const ad = playableVideoAds[adIndex];
-        const ctaLabel = ad.callToAction?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Learn More';
-        const adAsVideo: Video = {
-          id: `ad-${ad.id}`,
-          title: ad.headline || ad.title,
-          description: ad.description,
-          videoUrl: ad.videoUrl!.trim(),
-          thumbnail: ad.thumbnailUrl || ad.imageUrl || '',
-          views: ad.views || 0,
-          likes: 0,
-          commentsCount: 0,
-          createdAt: ad.createdAt || new Date().toISOString(),
-          isSponsored: true,
-          sponsorName: ad.user?.firstName || 'Sponsored',
-          ctaUrl: ad.targetUrl || undefined,
-          ctaText: ctaLabel,
-        };
-        result.push(adAsVideo);
-        adIndex++;
-      }
+    // Convert FeedItems back to Video[] (ads become synthetic Video entries)
+    return feedItems.map((item) => {
+      if (item.type === 'video') return item.data;
+      const ad = item.data;
+      const ctaLabel = ad.callToAction?.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Learn More';
+      return {
+        id: `ad-${ad.id}`,
+        title: ad.headline || ad.title,
+        description: ad.description,
+        videoUrl: ad.videoUrl!.trim(),
+        thumbnail: ad.thumbnailUrl || ad.imageUrl || '',
+        views: ad.views || 0,
+        likes: 0,
+        commentsCount: 0,
+        createdAt: ad.createdAt || new Date().toISOString(),
+        isSponsored: true,
+        sponsorName: ad.user?.firstName || 'Sponsored',
+        ctaUrl: ad.targetUrl || undefined,
+        ctaText: ctaLabel,
+      } as Video;
     });
-
-    return result;
-  }, [forYouVideos, followingVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
+  }, [forYouVideos, followingVideos, trendingVideos, exploreVideos, activeTab, showSearchResults, searchQuery, searchResultVideos, videoAds, seenVideoIds, videosWatchedCount, hiddenVideoIds, hiddenCreatorIds]);
 
   const videos = videosWithAds;
 
@@ -734,6 +797,8 @@ export default function VideosScreen(): React.ReactElement {
   const handleRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     setRefreshing(true);
+    // Clear seen video IDs on pull-to-refresh for fresh personalization
+    clearSeen();
     // Refresh only the active tab's data source
     switch (activeTab) {
       case 'following': await refetchFollowing(); break;
@@ -743,18 +808,28 @@ export default function VideosScreen(): React.ReactElement {
     }
     setRefreshing(false);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [activeTab, refetchForYou, refetchFollowing, refetchTrending, setRefreshing]);
+  }, [activeTab, refetchForYou, refetchFollowing, refetchTrending, setRefreshing, clearSeen]);
 
   const handleEndReached = useCallback(() => {
-    // Only For You and Following support infinite scroll (trending is a finite ranked list)
+    if (showSearchResults && searchQuery) {
+      // Server-side search pagination
+      if (hasNextSearch && !isFetchingNextSearch) {
+        setLoadingMore(true);
+        fetchNextSearch().finally(() => setLoadingMore(false));
+      }
+      return;
+    }
     if (activeTab === 'for-you' && hasNextForYou && !isFetchingNextForYou) {
       setLoadingMore(true);
       fetchNextForYou().finally(() => setLoadingMore(false));
     } else if (activeTab === 'following' && hasNextFollowing && !isFetchingNextFollowing) {
       setLoadingMore(true);
       fetchNextFollowing().finally(() => setLoadingMore(false));
+    } else if (activeTab === 'trending' && hasNextTrending && !isFetchingNextTrending) {
+      setLoadingMore(true);
+      fetchNextTrending().finally(() => setLoadingMore(false));
     }
-  }, [activeTab, hasNextForYou, isFetchingNextForYou, fetchNextForYou, hasNextFollowing, isFetchingNextFollowing, fetchNextFollowing, setLoadingMore]);
+  }, [activeTab, showSearchResults, searchQuery, hasNextForYou, isFetchingNextForYou, fetchNextForYou, hasNextFollowing, isFetchingNextFollowing, fetchNextFollowing, hasNextTrending, isFetchingNextTrending, fetchNextTrending, hasNextSearch, isFetchingNextSearch, fetchNextSearch, setLoadingMore]);
 
   const handleLike = useCallback((video: Video) => {
     // Guard: don't call video APIs for sponsored ad items
@@ -942,7 +1017,34 @@ export default function VideosScreen(): React.ReactElement {
     setSessionAdCount(prev => prev + 1);
   }, [recordAdImpression]);
 
+  // 2026: More options handler for VideoOptionsSheet
+  const handleMoreOptions = useCallback((video: Video) => {
+    if (video.isSponsored || video.id.startsWith('ad-')) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setMoreOptionsVideo(video);
+  }, []);
+
+  const handleOptionsAction = useCallback((action: VideoOptionsAction, video: Video) => {
+    switch (action) {
+      case 'not_interested':
+        markNotInterested(video.id);
+        submitFeedback({ videoId: video.id, action: 'not_interested' });
+        break;
+      case 'hide_creator':
+        if (video.userId) hideCreator(video.userId);
+        submitFeedback({ videoId: video.id, action: 'hide_creator' });
+        break;
+      case 'report':
+        submitFeedback({ videoId: video.id, action: 'report' });
+        break;
+    }
+  }, [markNotInterested, hideCreator, submitFeedback]);
+
   const handleVideoEnd = useCallback((video: Video) => {
+    // 2026: Record completion for trending score
+    if (!video.isSponsored && !video.id.startsWith('ad-')) {
+      recordCompletion(video.id);
+    }
     // 2026: Session-aware ad timing with cap enforcement + AdFrequencyManager
     const newCount = videosWatchedCountRef.current + 1;
     setVideosWatchedCount(newCount);
@@ -1069,7 +1171,7 @@ export default function VideosScreen(): React.ReactElement {
             onComment={handleComment}
             onShare={handleShare}
             onBookmark={handleBookmark}
-            onExpandPlayer={handleExpandPlayer}
+            onExpandPlayer={handleMoreOptions}
             onVideoEnd={handleVideoEnd}
             onAdCtaPress={handleAdCtaPress}
             onAdFeedback={handleAdFeedback}
@@ -1264,6 +1366,15 @@ export default function VideosScreen(): React.ReactElement {
           }
         }}
         testID="comments-sheet"
+      />
+
+      {/* Video Options Sheet — Not Interested, Hide Creator, Report */}
+      <VideoOptionsSheet
+        visible={!!moreOptionsVideo}
+        video={moreOptionsVideo}
+        onClose={() => setMoreOptionsVideo(null)}
+        onAction={handleOptionsAction}
+        testID="video-options-sheet"
       />
 
       {/* Floating Action Button */}

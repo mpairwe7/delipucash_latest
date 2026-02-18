@@ -172,6 +172,9 @@ function VerticalVideoFeedComponent({
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<Video>>(null);
 
+  // Scroll speed tracking — classify as fast/normal/slow for telemetry context
+  const scrollTrackRef = useRef({ prevY: 0, prevTime: 0, speed: 'normal' as 'fast' | 'normal' | 'slow' });
+
   // Store state — granular field selectors (primitives) to avoid re-render from setProgress every 250ms
   const activeVideoId = useVideoFeedStore(state => state.activeVideo.videoId);
   const activeVideoIndex = useVideoFeedStore(state => state.activeVideo.index);
@@ -259,10 +262,23 @@ function VerticalVideoFeedComponent({
   // CALLBACKS
   // ============================================================================
 
-  // Handle scroll - for header collapse animations
+  // Handle scroll — header collapse animations + scroll speed classification
   const handleScroll = useCallback(
     (event: { nativeEvent: { contentOffset: { y: number } } }) => {
       const offsetY = event.nativeEvent.contentOffset.y;
+      const now = Date.now();
+      const track = scrollTrackRef.current;
+
+      if (track.prevTime > 0) {
+        const dt = now - track.prevTime;
+        if (dt > 0) {
+          const velocity = Math.abs(offsetY - track.prevY) / dt; // px/ms
+          track.speed = velocity > 3 ? 'fast' : velocity > 0.5 ? 'normal' : 'slow';
+        }
+      }
+      track.prevY = offsetY;
+      track.prevTime = now;
+
       onScroll?.(offsetY);
     },
     [onScroll]

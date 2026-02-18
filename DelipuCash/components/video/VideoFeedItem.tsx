@@ -91,6 +91,7 @@ import {
 import { Video } from '@/types';
 import { useVideoFeedStore } from '@/store/VideoFeedStore';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
+import { telemetry } from '@/services/telemetryApi';
 
 // ============================================================================
 // CONSTANTS
@@ -361,6 +362,16 @@ function VideoFeedItemComponent({
   const accumulatedSeekRef = useRef(0);
   const isMountedRef = useRef(true);
 
+  // Telemetry refs — all tracking state in refs to avoid re-renders at 250ms
+  const telemetryRef = useRef({
+    impressionSent: false,
+    milestones: { '3s': false, '25pct': false, '50pct': false, '75pct': false, '100pct': false },
+    viewportEnterTime: 0,
+    playStartTime: 0,
+    totalPlayTime: 0,
+    lastProgressPct: 0,
+  });
+
   // Animation values
   const scale = useSharedValue(1);
   const thumbnailOpacity = useSharedValue(1);
@@ -444,6 +455,18 @@ function VideoFeedItemComponent({
       // Reset end-guard so onVideoEnd can fire once per play session
       hasEndedRef.current = false;
 
+      // Telemetry: track impression + reset milestones
+      const t = telemetryRef.current;
+      if (!t.impressionSent) {
+        t.impressionSent = true;
+        telemetry.track({ videoId: video.id, eventType: 'impression', videoIndex: index });
+      }
+      t.viewportEnterTime = Date.now();
+      t.playStartTime = Date.now();
+      t.milestones = { '3s': false, '25pct': false, '50pct': false, '75pct': false, '100pct': false };
+      t.totalPlayTime = 0;
+      t.lastProgressPct = 0;
+
       // Only play if player is already ready; otherwise the statusChange
       // listener below will trigger play once readyToPlay fires.
       if (isPlayerReadyRef.current) {
@@ -460,10 +483,23 @@ function VideoFeedItemComponent({
         }
       }, 200);
     } else {
+      // Telemetry: track skip (if < 3s watched) and dwell time
+      const t = telemetryRef.current;
+      if (t.viewportEnterTime > 0) {
+        const dwellMs = Date.now() - t.viewportEnterTime;
+        telemetry.track({ videoId: video.id, eventType: 'dwell', videoIndex: index, payload: { dwellMs } });
+
+        if (!t.milestones['3s']) {
+          telemetry.track({ videoId: video.id, eventType: 'skip', videoIndex: index, payload: { dwellMs } });
+        }
+        t.viewportEnterTime = 0;
+        t.impressionSent = false;
+      }
+
       // Pause when not active — only update local state, not global player status
       safePlayerCall(() => player.pause());
       setIsPlaying(false);
-      
+
       // Show thumbnail again
       thumbnailOpacity.value = withTiming(1, { duration: 200 });
       setShowThumbnail(true);
@@ -557,7 +593,33 @@ function VideoFeedItemComponent({
           const prog = currentTime / duration;
           setProgress(prog, duration);
 
-      // Check if video ended — fire once per play session
+          // Telemetry: milestone tracking
+          const t = telemetryRef.current;
+          const pct = prog * 100;
+          t.lastProgressPct = pct;
+
+          if (currentTime >= 3 && !t.milestones['3s']) {
+            t.milestones['3s'] = true;
+            telemetry.track({ videoId: video.id, eventType: 'play_3s', videoIndex: index, payload: { duration } });
+          }
+          if (pct >= 25 && !t.milestones['25pct']) {
+            t.milestones['25pct'] = true;
+            telemetry.track({ videoId: video.id, eventType: 'play_25pct', videoIndex: index, payload: { duration } });
+          }
+          if (pct >= 50 && !t.milestones['50pct']) {
+            t.milestones['50pct'] = true;
+            telemetry.track({ videoId: video.id, eventType: 'play_50pct', videoIndex: index, payload: { duration } });
+          }
+          if (pct >= 75 && !t.milestones['75pct']) {
+            t.milestones['75pct'] = true;
+            telemetry.track({ videoId: video.id, eventType: 'play_75pct', videoIndex: index, payload: { duration } });
+          }
+          if (pct >= 98 && !t.milestones['100pct']) {
+            t.milestones['100pct'] = true;
+            telemetry.track({ videoId: video.id, eventType: 'play_100pct', videoIndex: index, payload: { duration } });
+          }
+
+          // Check if video ended — fire once per play session
           if (currentTime >= duration - 0.5 && !hasEndedRef.current) {
             hasEndedRef.current = true;
             onVideoEnd?.(video);

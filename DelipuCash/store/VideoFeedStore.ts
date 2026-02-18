@@ -121,6 +121,9 @@ export interface VideoFeedState {
   // Watch history
   watchedVideoIds: string[];
 
+  // Seen video IDs — session-only dedupe for personalized feed
+  seenVideoIds: Set<string>;
+
   // Lifecycle state (Industry Standard: TikTok/YouTube/Instagram pattern)
   // Track screen focus and app state to properly pause/resume video playback
   isScreenFocused: boolean;
@@ -183,6 +186,10 @@ export interface VideoFeedActions {
   resumePlayback: () => void; // Called when screen regains focus or app foregrounds
   setScreenFocused: (focused: boolean) => void; // Track screen focus state
   setAppActive: (active: boolean) => void; // Track app foreground/background state
+
+  // Seen video tracking (for personalized feed dedupe)
+  markSeen: (videoIds: string[]) => void;
+  clearSeen: () => void;
 
   // Utilities
   getVideoById: (videoId: string) => Video | undefined;
@@ -250,6 +257,7 @@ const initialState: VideoFeedState = {
   isAppActive: true,
   previousPlayerStatus: null,
   watchedVideoIds: [],
+  seenVideoIds: new Set<string>(),
 };
 
 // ============================================================================
@@ -350,9 +358,10 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
         },
       });
 
-      // Add to watch history
+      // Add to watch history and mark as seen
       if (videoId) {
         get().addToWatchHistory(videoId);
+        get().markSeen([videoId]);
       }
     },
 
@@ -435,6 +444,12 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
       // Auto-play the most visible video
       if (mostVisible && mostVisible.videoId !== activeVideo.videoId) {
         get().setActiveVideo(mostVisible.videoId, mostVisible.index);
+      }
+
+      // Mark visible videos as seen for personalized feed dedupe
+      const visibleIds = visibleVideos.map((v) => v.videoId);
+      if (visibleIds.length > 0) {
+        get().markSeen(visibleIds);
       }
 
       set({
@@ -825,6 +840,21 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     // ========================================================================
+    // SEEN VIDEO TRACKING
+    // ========================================================================
+
+    markSeen: (videoIds) => {
+      const { seenVideoIds } = get();
+      const updated = new Set(seenVideoIds);
+      videoIds.forEach((id) => updated.add(id));
+      set({ seenVideoIds: updated });
+    },
+
+    clearSeen: () => {
+      set({ seenVideoIds: new Set<string>() });
+    },
+
+    // ========================================================================
     // UTILITIES
     // ========================================================================
 
@@ -882,6 +912,8 @@ export const selectUI = (state: VideoFeedState) => state.ui;
 export const selectGesture = (state: VideoFeedState) => state.gesture;
 export const selectLikedVideoIds = (state: VideoFeedState) => state.likedVideoIds;
 export const selectBookmarkedVideoIds = (state: VideoFeedState) => state.bookmarkedVideoIds;
+
+export const selectSeenVideoIds = (state: VideoFeedState) => state.seenVideoIds;
 
 // Derived selectors
 export const selectIsVideoLiked = (videoId: string) => (state: VideoFeedState) =>

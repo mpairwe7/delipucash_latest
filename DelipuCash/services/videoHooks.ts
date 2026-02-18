@@ -53,6 +53,11 @@ export const videoQueryKeys = {
   // Livestream keys
   livestreams: () => [...videoQueryKeys.all, 'livestreams'] as const,
   livestreamSession: (sessionId: string) => [...videoQueryKeys.all, 'livestream', sessionId] as const,
+  // 2026 Feed enhancement keys
+  personalized: (filters: Record<string, unknown>) => [...videoQueryKeys.all, 'personalized', filters] as const,
+  trendingInfinite: (filters: Record<string, unknown>) => [...videoQueryKeys.all, 'trending-infinite', filters] as const,
+  searchInfinite: (query: string) => [...videoQueryKeys.all, 'search-infinite', query] as const,
+  explore: () => [...videoQueryKeys.all, 'explore'] as const,
 } as const;
 
 // ============================================================================
@@ -572,7 +577,7 @@ export function useTrendingVideos(limit: number = 20): UseQueryResult<Video[]> {
   return useQuery({
     queryKey: videoQueryKeys.trending(),
     queryFn: async () => {
-      const response = await videoApi.getTrending(limit);
+      const response = await videoApi.getTrending({ limit });
       if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
       return response.data;
     },
@@ -909,11 +914,191 @@ export function useSuspenseTrendingVideos(limit: number = 10) {
   return useSuspenseQuery({
     queryKey: videoQueryKeys.trending(),
     queryFn: async () => {
-      const response = await videoApi.getTrending(limit);
+      const response = await videoApi.getTrending({ limit });
       if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
       return response.data;
     },
     staleTime: 1000 * 60 * 5,
+  });
+}
+
+// ============================================================================
+// 2026 FEED ENHANCEMENT HOOKS
+// ============================================================================
+
+/**
+ * Personalized feed with infinite scroll — replaces useInfiniteVideos for "For You" tab.
+ * Uses server-side ML-lite scoring based on telemetry signals.
+ * Falls back to recency-sorted for anonymous/cold-start users.
+ */
+export function usePersonalizedFeed(params: {
+  limit?: number;
+  excludeIds?: string[];
+  enabled?: boolean;
+} = {}): UseInfiniteQueryResult<{
+  pages: { videos: Video[]; nextPage: number | null }[];
+  pageParams: number[];
+}> {
+  const { limit = 15, excludeIds = [], enabled = true } = params;
+
+  return useInfiniteQuery({
+    queryKey: videoQueryKeys.personalized({ limit, excludeCount: excludeIds.length }),
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await videoApi.getPersonalized({ page: pageParam, limit, excludeIds });
+      if (!response.success) throw new Error(response.error || 'Failed to fetch personalized feed');
+
+      const pagination = response.pagination;
+      const hasMore = pagination
+        ? pageParam < pagination.totalPages
+        : response.data.length === limit;
+
+      return {
+        videos: response.data,
+        nextPage: hasMore ? pageParam + 1 : null,
+      };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    initialPageParam: 1,
+    enabled,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/**
+ * Infinite scroll trending videos with pagination + localization.
+ * Replaces the old single-page useTrendingVideos for the Trending tab.
+ * Auto-refreshes hourly.
+ */
+export function useInfiniteTrendingVideos(params: {
+  limit?: number;
+  country?: string;
+  language?: string;
+  enabled?: boolean;
+} = {}): UseInfiniteQueryResult<{
+  pages: { videos: Video[]; nextPage: number | null }[];
+  pageParams: number[];
+}> {
+  const { limit = 20, country, language, enabled = true } = params;
+
+  return useInfiniteQuery({
+    queryKey: videoQueryKeys.trendingInfinite({ limit, country, language }),
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await videoApi.getTrending({ page: pageParam, limit, country, language });
+      if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
+
+      const pagination = response.pagination;
+      const hasMore = pagination
+        ? pageParam < pagination.totalPages
+        : response.data.length === limit;
+
+      return {
+        videos: response.data,
+        nextPage: hasMore ? pageParam + 1 : null,
+      };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    initialPageParam: 1,
+    enabled,
+    staleTime: 1000 * 60 * 60, // 1 hour — trending is hourly
+    refetchInterval: 1000 * 60 * 60, // Auto-refresh hourly
+  });
+}
+
+/**
+ * Server-side search with infinite scroll and relevance scoring.
+ * Replaces client-side filtering via useVideoSearch.
+ * Enabled when query is >= 2 chars.
+ */
+export function useVideoSearchInfinite(query: string, limit: number = 15): UseInfiniteQueryResult<{
+  pages: { videos: Video[]; nextPage: number | null }[];
+  pageParams: number[];
+}> {
+  return useInfiniteQuery({
+    queryKey: videoQueryKeys.searchInfinite(query),
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await videoApi.searchServerSide({ query, page: pageParam, limit });
+      if (!response.success) throw new Error(response.error || 'Search failed');
+
+      const pagination = response.pagination;
+      const hasMore = pagination
+        ? pageParam < pagination.totalPages
+        : response.data.length === limit;
+
+      return {
+        videos: response.data,
+        nextPage: hasMore ? pageParam + 1 : null,
+      };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    initialPageParam: 1,
+    enabled: query.length >= 2,
+    staleTime: 1000 * 60 * 2,
+  });
+}
+
+/**
+ * Video feedback mutation — not interested, hide creator, report.
+ * Returns creatorId so frontend can hide all content from that creator.
+ */
+export function useVideoFeedback(): UseMutationResult<
+  { feedbackId: string; action: string; creatorId?: string },
+  Error,
+  { videoId: string; action: 'not_interested' | 'hide_creator' | 'hide_sound' | 'report'; reason?: string }
+> {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationKey: ['videos', 'feedback'],
+    mutationFn: async (params) => {
+      const response = await videoApi.submitFeedback(params);
+      if (!response.success) throw new Error(response.error || 'Failed to submit feedback');
+      return response.data;
+    },
+    onSettled: () => {
+      // Invalidate all feed queries so hidden content is filtered out
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.trending() });
+    },
+  });
+}
+
+/**
+ * Record video completion — fire-and-forget mutation for completionsCount.
+ */
+export function useRecordVideoCompletion(): UseMutationResult<
+  { completionsCount: number },
+  Error,
+  string
+> {
+  return useMutation({
+    mutationKey: ['videos', 'completion'],
+    mutationFn: async (videoId: string) => {
+      const response = await videoApi.recordCompletion(videoId);
+      if (!response.success) throw new Error(response.error || 'Failed to record completion');
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Explore videos — random diverse videos for feed blending.
+ * Used to inject diversity into the personalized "For You" feed.
+ */
+export function useExploreVideos(params: {
+  limit?: number;
+  enabled?: boolean;
+} = {}): UseQueryResult<Video[]> {
+  const { limit = 10, enabled = true } = params;
+
+  return useQuery({
+    queryKey: videoQueryKeys.explore(),
+    queryFn: async () => {
+      const response = await videoApi.getExplore({ limit });
+      if (!response.success) throw new Error(response.error || 'Failed to fetch explore videos');
+      return response.data;
+    },
+    enabled,
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 
@@ -950,4 +1135,11 @@ export default {
   useSuspenseVideoDetails,
   useSuspenseVideoComments,
   useSuspenseTrendingVideos,
+  // 2026 Feed enhancement hooks
+  usePersonalizedFeed,
+  useInfiniteTrendingVideos,
+  useVideoSearchInfinite,
+  useVideoFeedback,
+  useRecordVideoCompletion,
+  useExploreVideos,
 };

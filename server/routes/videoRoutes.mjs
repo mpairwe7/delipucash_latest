@@ -26,6 +26,13 @@ import {
   joinLivestream,
   leaveLivestream,
   sendLivestreamChat,
+  // 2026 Feed enhancement endpoints
+  ingestVideoEvents,
+  getPersonalizedVideos,
+  searchVideos,
+  submitVideoFeedback,
+  recordVideoCompletion,
+  getExploreVideos,
 } from '../controllers/videoController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 import jwt from 'jsonwebtoken';
@@ -48,29 +55,35 @@ const optionalAuth = (req, res, next) => {
 };
 
 // ============================================================================
-// PUBLIC ROUTES (read-only)
+// PUBLIC ROUTES (read-only) — IMPORTANT: named routes BEFORE /:id parameterized routes
 // ============================================================================
 
 router.get('/all', optionalAuth, getAllVideos);
 router.get('/trending', optionalAuth, getTrendingVideos);
 router.get('/following', verifyToken, getFollowingVideos);
+router.get('/personalized', optionalAuth, getPersonalizedVideos);
+router.get('/search', optionalAuth, searchVideos);
+router.get('/explore', optionalAuth, getExploreVideos);
 router.get('/live', getLiveStreams);
 router.get('/user/:userId', getVideosByUser);
 router.get('/:id/comments', getVideoComments);
 router.get('/limits/:userId', getVideoLimits);
 
 // ============================================================================
-// PROTECTED ROUTES (require authentication)
+// PROTECTED / PUBLIC MUTATION ROUTES
 // ============================================================================
 
+router.post('/events', optionalAuth, ingestVideoEvents);       // telemetry (public)
+router.post('/feedback', verifyToken, submitVideoFeedback);     // user controls (auth)
 router.post('/create', verifyToken, createVideo);
 router.post('/:id/like', verifyToken, likeVideo);
 router.post('/:id/unlike', verifyToken, unlikeVideo);
 router.post('/:id/comments', verifyToken, commentPost);
-router.post('/:id/share', shareVideo); // share tracking is public
+router.post('/:id/share', shareVideo);
 router.post('/:id/bookmark', verifyToken, bookmarkVideo);
 router.get('/:id/status', verifyToken, getVideoStatus);
-router.post('/:id/views', incrementVideoViews); // view tracking is public
+router.post('/:id/views', incrementVideoViews);
+router.post('/:id/completion', recordVideoCompletion);          // completion tracking (public)
 router.put('/update/:id', verifyToken, updateVideo);
 router.delete('/delete/:id', verifyToken, deleteVideo);
 

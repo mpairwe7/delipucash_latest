@@ -83,6 +83,12 @@ const VIDEO_ROUTES = {
   following: "/api/videos/following",
   live: "/api/videos/live",
   validateSession: "/api/videos/validate-session",
+  // 2026 Feed enhancement routes
+  personalized: "/api/videos/personalized",
+  searchDedicated: "/api/videos/search",
+  feedback: "/api/videos/feedback",
+  completion: (id: string) => `/api/videos/${id}/completion`,
+  explore: "/api/videos/explore",
 } as const;
 
 // Helper to fetch JSON with optional auth
@@ -353,12 +359,24 @@ export const videoApi = {
 
   /**
    * Get trending videos — dedicated /trending endpoint with time-decay scoring
+   * Now supports pagination + localization
    */
-  async getTrending(limit: number = 20): Promise<ApiResponse<Video[]>> {
-    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.trending}?limit=${limit}`);
+  async getTrending(params: {
+    page?: number;
+    limit?: number;
+    country?: string;
+    language?: string;
+  } = {}): Promise<ApiResponse<Video[]> & { pagination?: { page: number; limit: number; total: number; totalPages: number } }> {
+    const { page = 1, limit = 20, country, language } = params;
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (country) qs.append('country', country);
+    if (language) qs.append('language', language);
+
+    const response = await fetchJson<{ data: Video[]; pagination?: any }>(`${VIDEO_ROUTES.trending}?${qs.toString()}`);
     return {
       success: response.success,
       data: getPlayableVideos(extractVideos(response.data)),
+      pagination: response.data?.pagination,
       error: response.error,
     };
   },
@@ -367,7 +385,7 @@ export const videoApi = {
    * Get popular videos — alias for trending
    */
   async getPopular(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    return videoApi.getTrending(limit);
+    return videoApi.getTrending({ limit });
   },
 
   /**
@@ -667,6 +685,123 @@ export const videoApi = {
       method: "POST",
       body: JSON.stringify(request),
     });
+  },
+
+  // ============================================================================
+  // 2026 FEED ENHANCEMENT METHODS
+  // ============================================================================
+
+  /**
+   * Get personalized feed — ML-lite scoring based on user's telemetry signals
+   * Falls back to recency-sorted for anonymous/cold-start users
+   */
+  async getPersonalized(params: {
+    page?: number;
+    limit?: number;
+    excludeIds?: string[];
+  } = {}): Promise<ApiResponse<Video[]> & { pagination?: { page: number; limit: number; total: number; totalPages: number } }> {
+    const { page = 1, limit = 15, excludeIds = [] } = params;
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    if (excludeIds.length > 0) {
+      qs.append('exclude', JSON.stringify(excludeIds.slice(0, 200)));
+    }
+
+    const token = getAuthToken();
+    const response = await fetchJson<{ data: Video[]; pagination?: any }>(
+      `${VIDEO_ROUTES.personalized}?${qs.toString()}`,
+      undefined,
+      token,
+    );
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      pagination: response.data?.pagination,
+      error: response.error,
+    };
+  },
+
+  /**
+   * Search videos — dedicated server-side search with relevance scoring
+   */
+  async searchServerSide(params: {
+    query: string;
+    page?: number;
+    limit?: number;
+  }): Promise<ApiResponse<Video[]> & { pagination?: { page: number; limit: number; total: number; totalPages: number } }> {
+    const { query, page = 1, limit = 15 } = params;
+    const qs = new URLSearchParams({ q: query, page: String(page), limit: String(limit) });
+    const token = getAuthToken();
+
+    const response = await fetchJson<{ data: Video[]; pagination?: any }>(
+      `${VIDEO_ROUTES.searchDedicated}?${qs.toString()}`,
+      undefined,
+      token,
+    );
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      pagination: response.data?.pagination,
+      error: response.error,
+    };
+  },
+
+  /**
+   * Submit video feedback — not interested, hide creator, report
+   */
+  async submitFeedback(params: {
+    videoId: string;
+    action: 'not_interested' | 'hide_creator' | 'hide_sound' | 'report';
+    reason?: string;
+  }): Promise<ApiResponse<{ feedbackId: string; action: string; creatorId?: string }>> {
+    const token = getAuthToken();
+    const response = await fetchJson<{ feedbackId: string; action: string; creatorId?: string }>(
+      VIDEO_ROUTES.feedback,
+      { method: 'POST', body: JSON.stringify(params) },
+      token,
+    );
+    return {
+      success: response.success,
+      data: response.data,
+      error: response.error,
+    };
+  },
+
+  /**
+   * Record video completion — increments completionsCount
+   */
+  async recordCompletion(videoId: string): Promise<ApiResponse<{ completionsCount: number }>> {
+    const response = await fetchJson<{ completionsCount: number }>(
+      VIDEO_ROUTES.completion(videoId),
+      { method: 'POST' },
+    );
+    return {
+      success: response.success,
+      data: response.data,
+      error: response.error,
+    };
+  },
+
+  /**
+   * Get explore videos — random diverse videos for feed blending
+   */
+  async getExplore(params: {
+    page?: number;
+    limit?: number;
+  } = {}): Promise<ApiResponse<Video[]>> {
+    const { page = 1, limit = 10 } = params;
+    const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
+    const token = getAuthToken();
+
+    const response = await fetchJson<{ data: Video[] }>(
+      `${VIDEO_ROUTES.explore}?${qs.toString()}`,
+      undefined,
+      token,
+    );
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      error: response.error,
+    };
   },
 
   // ============================================================================

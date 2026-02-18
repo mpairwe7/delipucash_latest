@@ -36,6 +36,7 @@ import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
 import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
 import { useUploadQueueProcessor } from '@/hooks/useUploadQueueProcessor';
+import { telemetry } from '@/services/telemetryApi';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -209,6 +210,12 @@ export default function RootLayout() {
     AdFrequencyManager.initialize().catch((err) =>
       console.warn('Failed to initialize AdFrequencyManager:', err)
     );
+  }, []);
+
+  // Initialize telemetry session (batch event buffer for video feed)
+  useEffect(() => {
+    telemetry.init();
+    return () => telemetry.destroy();
   }, []);
 
   // Set default orientation to portrait on app start

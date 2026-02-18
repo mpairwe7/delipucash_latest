@@ -43,6 +43,8 @@ export {
   selectDismissedAdIds,
   selectIsAdModalVisible,
   selectCurrentModalAd,
+  selectCreativeExposureCounts,
+  selectCrossSessionExposure,
 } from './AdUIStore';
 
 // ============================================================================
@@ -440,6 +442,7 @@ export {
   selectGesture,
   selectLikedVideoIds,
   selectBookmarkedVideoIds,
+  selectSeenVideoIds,
   // Derived Selectors
   selectIsVideoLiked,
   selectIsVideoBookmarked,
@@ -466,6 +469,26 @@ export type {
   VideoFeedState,
   VideoFeedActions,
 } from './VideoFeedStore';
+
+// ============================================================================
+// Hidden Content Store (2026 Feed Enhancement)
+// User-controlled content hiding: Not Interested, Hide Creator, Hide Sound
+// ============================================================================
+export {
+  useHiddenContentStore,
+  // Selectors
+  selectHiddenVideoIds,
+  selectHiddenCreatorIds,
+  selectHiddenSoundIds,
+  selectNotInterestedVideoIds,
+  // Convenience hooks
+  useHiddenVideoIds,
+  useHiddenCreatorIds,
+} from './HiddenContentStore';
+export type {
+  HiddenContentState,
+  HiddenContentActions,
+} from './HiddenContentStore';
 
 // ============================================================================
 // SSE Connection Store — Real-time event connection state

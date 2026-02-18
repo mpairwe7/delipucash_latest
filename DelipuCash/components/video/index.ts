@@ -42,6 +42,10 @@ export type { EnhancedMiniPlayerProps } from './EnhancedMiniPlayer';
 export { VideoCommentsSheet } from './VideoCommentsSheet';
 export type { VideoCommentsSheetProps } from './VideoCommentsSheet';
 
+// Video Options Sheet (More menu — Not Interested, Hide Creator, Report)
+export { VideoOptionsSheet } from './VideoOptionsSheet';
+export type { VideoOptionsSheetProps, VideoOptionsAction } from './VideoOptionsSheet';
+
 // Video Error Boundary (Crash isolation for video components)
 export { VideoErrorBoundary } from './VideoErrorBoundary';
 

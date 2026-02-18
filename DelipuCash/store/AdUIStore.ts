@@ -84,9 +84,13 @@ export interface AdUIState {
   // UI state
   isAdModalVisible: boolean;
   currentModalAd: Ad | null;
-  
+
   // Last sync timestamps
   lastMetricsSyncAt: string | null;
+
+  // Creative exposure tracking (2026 Feed Enhancement)
+  creativeExposureCounts: Record<string, number>;     // session only
+  crossSessionExposure: Record<string, number>;       // persisted
 }
 
 export interface AdUIActions {
@@ -124,6 +128,12 @@ export interface AdUIActions {
   showAdModal: (ad: Ad) => void;
   hideAdModal: () => void;
   
+  // Creative exposure tracking (2026 Feed Enhancement)
+  recordCreativeExposure: (adId: string) => void;
+  resetSessionExposure: () => void;
+  getCreativeSessionCount: (adId: string) => number;
+  getCreativeCrossSessionCount: (adId: string) => number;
+
   // Reset
   reset: () => void;
 }
@@ -150,6 +160,8 @@ const initialState: AdUIState = {
   isAdModalVisible: false,
   currentModalAd: null,
   lastMetricsSyncAt: null,
+  creativeExposureCounts: {},
+  crossSessionExposure: {},
 };
 
 // ============================================================================
@@ -508,6 +520,35 @@ export const useAdUIStore = create<AdUIState & AdUIActions>()(
       },
 
       // ========================================
+      // CREATIVE EXPOSURE TRACKING (2026 Feed Enhancement)
+      // ========================================
+
+      recordCreativeExposure: (adId) => {
+        set((state) => ({
+          creativeExposureCounts: {
+            ...state.creativeExposureCounts,
+            [adId]: (state.creativeExposureCounts[adId] || 0) + 1,
+          },
+          crossSessionExposure: {
+            ...state.crossSessionExposure,
+            [adId]: (state.crossSessionExposure[adId] || 0) + 1,
+          },
+        }));
+      },
+
+      resetSessionExposure: () => {
+        set({ creativeExposureCounts: {} });
+      },
+
+      getCreativeSessionCount: (adId) => {
+        return get().creativeExposureCounts[adId] || 0;
+      },
+
+      getCreativeCrossSessionCount: (adId) => {
+        return get().crossSessionExposure[adId] || 0;
+      },
+
+      // ========================================
       // RESET
       // ========================================
 
@@ -517,10 +558,11 @@ export const useAdUIStore = create<AdUIState & AdUIActions>()(
       name: 'ad-ui-storage',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
-        // Only persist preferences and local metrics
+        // Only persist preferences, local metrics, and cross-session exposure
         preferences: state.preferences,
         localMetrics: state.localMetrics,
-        // Don't persist session state (queue, dismissedAds, modal)
+        crossSessionExposure: state.crossSessionExposure,
+        // Don't persist session state (queue, dismissedAds, modal, session exposure)
       }),
     }
   ),
@@ -543,6 +585,8 @@ export const selectCurrentQueueIndex = (state: AdUIState) => state.currentQueueI
 export const selectDismissedAdIds = (state: AdUIState) => state.dismissedAdIds;
 export const selectIsAdModalVisible = (state: AdUIState) => state.isAdModalVisible;
 export const selectCurrentModalAd = (state: AdUIState) => state.currentModalAd;
+export const selectCreativeExposureCounts = (state: AdUIState) => state.creativeExposureCounts;
+export const selectCrossSessionExposure = (state: AdUIState) => state.crossSessionExposure;
 
 // ============================================================================
 // CONVENIENCE HOOKS (pre-wrapped with useShallow for object selectors)

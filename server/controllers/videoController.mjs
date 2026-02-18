@@ -353,28 +353,42 @@ export const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 // ============================================================================
-// TRENDING — Engagement-velocity scoring with time-decay
-// Score = (likes×2 + views + commentsCount×3) / (hours_since_creation + 2)^1.5
-// Only considers videos from the last 7 days to surface genuinely viral content
+// TRENDING — Enhanced engagement-velocity scoring with time-decay
+// Score includes share rate and completion rate for 2026 quality signals
+// Supports pagination and locale filtering (country/language)
 // ============================================================================
+
+const MIN_TRENDING_VIEWS = 10; // Quality gate: minimum views to be trending-eligible
 
 export const getTrendingVideos = asyncHandler(async (req, res) => {
   try {
+    const page = Math.max(1, Number(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const country = req.query.country || null;
+    const language = req.query.language || null;
     const authUserId = req.user?.id;
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-    const [videos, userLikes, userBookmarks] = await Promise.all([
+    // Build where clause with optional locale filters + quality gate
+    const where = {
+      createdAt: { gte: sevenDaysAgo },
+      views: { gte: MIN_TRENDING_VIEWS },
+      ...(country && { country }),
+      ...(language && { language }),
+    };
+
+    const [videos, total, userLikes, userBookmarks] = await Promise.all([
       prisma.video.findMany({
-        where: { createdAt: { gte: sevenDaysAgo } },
+        where,
         include: {
           user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         },
-        // Fetch more than needed — we'll rank and trim in JS
-        take: Math.min(limit * 3, 100),
+        take: Math.min(limit * 3, 150),
         orderBy: { createdAt: 'desc' },
       }),
+      prisma.video.count({ where }),
       authUserId
         ? prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } })
         : Promise.resolve([]),
@@ -387,10 +401,18 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
     const now = Date.now();
 
-    // Score and rank
+    // Enhanced score formula including share rate + completion rate
     const scored = await Promise.all(videos.map(async (video) => {
       const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
-      const engagementScore = (video.likes * 2) + video.views + (video.commentsCount * 3);
+      const shareRate = video.views > 0 ? (video.sharesCount || 0) / video.views : 0;
+      const completionRate = video.views > 0 ? (video.completionsCount || 0) / video.views : 0;
+
+      const engagementScore =
+        (video.likes * 2) +
+        video.views +
+        (video.commentsCount * 3) +
+        (shareRate * 50) +
+        (completionRate * 40);
       const trendingScore = engagementScore / Math.pow(hoursAge + 2, 1.5);
 
       const signed = await signVideoUrls(video);
@@ -420,14 +442,15 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
       };
     }));
 
-    // Sort by trending score descending, take limit
     scored.sort((a, b) => b.trendingScore - a.trendingScore);
-    const trending = scored.slice(0, limit);
+    const paged = scored.slice(skip, skip + limit);
+    const totalPages = Math.ceil(Math.min(scored.length, total) / limit);
 
     res.json({
       success: true,
       message: 'Trending videos fetched successfully',
-      data: trending,
+      data: paged,
+      pagination: { page, limit, total: scored.length, totalPages, hasMore: page < totalPages },
     });
   } catch (error) {
     console.error('VideoController: getTrendingVideos - Error:', error);
@@ -818,15 +841,15 @@ export const shareVideo = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Log share event for analytics (in a real app, this would be stored in an analytics table)
+    // Log share event and increment denormalized counter
     console.log(`Video ${id} shared via ${platform} by user ${userId || 'anonymous'}`);
 
-    // Optionally track in a VideoShare table if needed for analytics
-    // await prisma.videoShare.create({
-    //   data: { videoId: id, userId, platform, sharedAt: new Date() }
-    // });
+    await prisma.video.update({
+      where: { id },
+      data: { sharesCount: { increment: 1 } },
+    });
 
-    res.json({ 
+    res.json({
       success: true,
       message: `Video shared successfully via ${platform}`,
       data: {
@@ -1410,6 +1433,395 @@ export const sendLivestreamChat = asyncHandler(async (req, res) => {
   } catch (error) {
     console.error('Error sending livestream chat:', error);
     res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+// ============================================================================
+// TELEMETRY — Batch event ingestion for feed personalization
+// POST /api/videos/events — Accepts up to 100 events per batch
+// Always returns 200 (telemetry should never fail the client)
+// ============================================================================
+
+export const ingestVideoEvents = asyncHandler(async (req, res) => {
+  try {
+    const { events, sessionId } = req.body;
+    const userId = req.user?.id || null;
+
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.json({ success: true, ingested: 0 });
+    }
+
+    const capped = events.slice(0, 100);
+
+    const validEventTypes = [
+      'impression', 'play_3s', 'play_25pct', 'play_50pct', 'play_75pct',
+      'play_100pct', 'skip', 'rewatch', 'dwell', 'like', 'bookmark', 'share', 'comment',
+    ];
+
+    const records = capped
+      .filter(e => e.videoId && validEventTypes.includes(e.eventType))
+      .map(e => ({
+        userId,
+        videoId: e.videoId,
+        eventType: e.eventType,
+        payload: e.payload || {},
+        sessionId: sessionId || e.sessionId || 'unknown',
+        createdAt: e.timestamp ? new Date(e.timestamp) : new Date(),
+      }));
+
+    if (records.length > 0) {
+      await prisma.videoEvent.createMany({ data: records, skipDuplicates: true });
+    }
+
+    res.json({ success: true, ingested: records.length });
+  } catch (error) {
+    console.error('VideoController: ingestVideoEvents - Error:', error);
+    res.json({ success: false, ingested: 0 });
+  }
+});
+
+// ============================================================================
+// PERSONALIZED FEED — ML-lite scoring based on telemetry signals
+// GET /api/videos/personalized — Falls back to recency for cold start / anon
+// ============================================================================
+
+export const getPersonalizedVideos = asyncHandler(async (req, res) => {
+  try {
+    const authUserId = req.user?.id;
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    // Parse excluded IDs (seen videos this session)
+    let excludeIds = [];
+    if (req.query.exclude) {
+      try {
+        excludeIds = JSON.parse(req.query.exclude);
+        if (!Array.isArray(excludeIds)) excludeIds = [];
+        excludeIds = excludeIds.slice(0, 200);
+      } catch { excludeIds = []; }
+    }
+
+    const baseWhere = excludeIds.length > 0 ? { id: { notIn: excludeIds } } : undefined;
+
+    // Cold start / anonymous: fall back to recency-sorted feed
+    if (!authUserId) {
+      const [videos, total, activeLivestreams] = await Promise.all([
+        prisma.video.findMany({
+          where: baseWhere,
+          include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        prisma.video.count(baseWhere ? { where: baseWhere } : undefined),
+        prisma.livestream.findMany({ where: { status: 'live' }, select: { userId: true, sessionId: true } }),
+      ]);
+
+      const liveUserMap = new Map(activeLivestreams.map(ls => [ls.userId, ls.sessionId]));
+
+      const formattedVideos = await Promise.all(videos.map(async (video) => {
+        const signed = await signVideoUrls(video);
+        return {
+          id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
+          videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
+          likes: video.likes || 0, views: video.views || 0, isLiked: false, isBookmarked: false,
+          commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
+          updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
+          isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
+          user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+        };
+      }));
+      const totalPages = Math.ceil(total / limit);
+      return res.json({ success: true, data: formattedVideos, pagination: { page, limit, total, totalPages, hasMore: page < totalPages } });
+    }
+
+    // Warm start: score based on user's telemetry event history
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const recentEvents = await prisma.videoEvent.groupBy({
+      by: ['videoId', 'eventType'],
+      where: { userId: authUserId, createdAt: { gte: fourteenDaysAgo } },
+      _count: true,
+    });
+
+    // Build per-video signal map
+    const videoSignals = new Map();
+    for (const event of recentEvents) {
+      const sig = videoSignals.get(event.videoId) || { watchPct: 0, liked: false, skipped: false };
+      if (event.eventType === 'play_100pct') sig.watchPct = 100;
+      else if (event.eventType === 'play_75pct') sig.watchPct = Math.max(sig.watchPct, 75);
+      else if (event.eventType === 'play_50pct') sig.watchPct = Math.max(sig.watchPct, 50);
+      else if (event.eventType === 'play_25pct') sig.watchPct = Math.max(sig.watchPct, 25);
+      else if (event.eventType === 'like') sig.liked = true;
+      else if (event.eventType === 'skip') sig.skipped = true;
+      videoSignals.set(event.videoId, sig);
+    }
+
+    // Identify preferred creators (creators of videos the user watched 50%+)
+    const watchedVideoIds = [...videoSignals.entries()]
+      .filter(([, s]) => s.watchPct >= 50)
+      .map(([id]) => id);
+    const watchedVideos = watchedVideoIds.length > 0
+      ? await prisma.video.findMany({ where: { id: { in: watchedVideoIds } }, select: { userId: true } })
+      : [];
+    const preferredCreators = new Set(watchedVideos.map(v => v.userId));
+
+    // Fetch candidates (3x limit for scoring headroom)
+    const [candidates, total, activeLivestreams, userLikes, userBookmarks] = await Promise.all([
+      prisma.video.findMany({
+        where: baseWhere,
+        include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: limit * 3,
+      }),
+      prisma.video.count(baseWhere ? { where: baseWhere } : undefined),
+      prisma.livestream.findMany({ where: { status: 'live' }, select: { userId: true, sessionId: true } }),
+      prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
+      prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
+    ]);
+
+    const liveUserMap = new Map(activeLivestreams.map(ls => [ls.userId, ls.sessionId]));
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+    const now = Date.now();
+
+    // Score each candidate
+    const scored = candidates.map(video => {
+      const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
+      const recencyBoost = Math.max(0, 10 - hoursAge / 24);
+      const creatorBoost = preferredCreators.has(video.userId) ? 5 : 0;
+      const engagementScore = (video.likes * 2) + video.views + (video.commentsCount * 3);
+      const normalizedEngagement = Math.log10(engagementScore + 1) * 3;
+      const userSig = videoSignals.get(video.id);
+      const skipPenalty = userSig?.skipped ? -8 : 0;
+      const likeBoost = userSig?.liked ? 3 : 0;
+      const avgWatchWeight = preferredCreators.has(video.userId) ? 4 : 0;
+      const score = avgWatchWeight + normalizedEngagement + likeBoost + skipPenalty + recencyBoost + creatorBoost;
+      return { video, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const topVideos = scored.slice(skip, skip + limit);
+
+    const formattedVideos = await Promise.all(topVideos.map(async ({ video }) => {
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
+        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
+        likes: video.likes || 0, views: video.views || 0,
+        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
+        isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
+        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+      };
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+    res.json({
+      success: true,
+      data: formattedVideos,
+      pagination: { page, limit, total, totalPages, hasMore: scored.length > skip + limit },
+    });
+  } catch (error) {
+    console.error('VideoController: getPersonalizedVideos - Error:', error);
+    res.status(500).json({ message: 'Failed to fetch personalized videos' });
+  }
+});
+
+// ============================================================================
+// SEARCH — Dedicated server-side search with relevance scoring
+// GET /api/videos/search?q=&page=&limit=
+// ============================================================================
+
+export const searchVideos = asyncHandler(async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const authUserId = req.user?.id;
+
+    if (!q || q.length < 2) {
+      return res.json({ success: true, data: [], pagination: { page, limit, total: 0, totalPages: 0, hasMore: false } });
+    }
+
+    const searchWhere = {
+      OR: [
+        { title: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ],
+    };
+
+    const [videos, total, userLikes, userBookmarks] = await Promise.all([
+      prisma.video.findMany({
+        where: searchWhere,
+        include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit * 2, // Over-fetch for relevance re-ranking
+      }),
+      prisma.video.count({ where: searchWhere }),
+      authUserId
+        ? prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+      authUserId
+        ? prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+    const qLower = q.toLowerCase();
+
+    // Client-side relevance scoring (avoids raw SQL portability issues)
+    const scored = await Promise.all(videos.map(async (video) => {
+      const title = (video.title || '').toLowerCase();
+      const desc = (video.description || '').toLowerCase();
+      let relevance = 0;
+      if (title === qLower) relevance = 100;
+      else if (title.startsWith(qLower)) relevance = 90;
+      else if (title.includes(qLower)) relevance = 70;
+      else if (desc.startsWith(qLower)) relevance = 50;
+      else if (desc.includes(qLower)) relevance = 30;
+
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
+        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
+        likes: video.likes || 0, views: video.views || 0,
+        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0,
+        createdAt: video.createdAt.toISOString(), updatedAt: video.updatedAt.toISOString(),
+        duration: video.duration || 0, comments: [],
+        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+        relevance,
+      };
+    }));
+
+    scored.sort((a, b) => b.relevance - a.relevance || 0);
+    const paged = scored.slice(0, limit);
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      success: true,
+      message: `Search results for "${q}"`,
+      data: paged,
+      pagination: { page, limit, total, totalPages, hasMore: page < totalPages },
+    });
+  } catch (error) {
+    console.error('VideoController: searchVideos - Error:', error);
+    res.status(500).json({ message: 'Failed to search videos' });
+  }
+});
+
+// ============================================================================
+// USER FEEDBACK — Not Interested / Hide Creator / Report
+// POST /api/videos/feedback — Requires auth
+// ============================================================================
+
+export const submitVideoFeedback = asyncHandler(async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { videoId, action, reason } = req.body;
+
+    const validActions = ['not_interested', 'hide_creator', 'hide_sound', 'report'];
+    if (!videoId || !action || !validActions.includes(action)) {
+      return res.status(400).json({ message: `Invalid. action must be one of: ${validActions.join(', ')}` });
+    }
+
+    const video = await prisma.video.findUnique({ where: { id: videoId } });
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    const feedback = await prisma.videoFeedback.upsert({
+      where: { userId_videoId_action: { userId, videoId, action } },
+      create: { userId, videoId, action, reason },
+      update: { reason, createdAt: new Date() },
+    });
+
+    res.json({
+      success: true,
+      message: 'Feedback recorded',
+      data: { feedbackId: feedback.id, action, videoId, creatorId: video.userId },
+    });
+  } catch (error) {
+    console.error('VideoController: submitVideoFeedback - Error:', error);
+    res.status(500).json({ message: 'Failed to record feedback' });
+  }
+});
+
+// ============================================================================
+// COMPLETION TRACKING — Increment denormalized completionsCount
+// POST /api/videos/:id/completion — Public endpoint
+// ============================================================================
+
+export const recordVideoCompletion = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const video = await prisma.video.findUnique({ where: { id } });
+    if (!video) return res.status(404).json({ message: 'Video not found' });
+
+    await prisma.video.update({
+      where: { id },
+      data: { completionsCount: { increment: 1 } },
+    });
+
+    res.json({ success: true, message: 'Completion recorded' });
+  } catch (error) {
+    console.error('VideoController: recordVideoCompletion - Error:', error);
+    res.status(500).json({ message: 'Failed to record completion' });
+  }
+});
+
+// ============================================================================
+// EXPLORE — Random videos for feed diversity
+// GET /api/videos/explore?limit= — Public endpoint
+// ============================================================================
+
+export const getExploreVideos = asyncHandler(async (req, res) => {
+  try {
+    const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
+    const authUserId = req.user?.id;
+
+    const total = await prisma.video.count();
+    const maxSkip = Math.max(0, total - limit);
+    const randomSkip = Math.floor(Math.random() * maxSkip);
+
+    const [videos, userLikes, userBookmarks] = await Promise.all([
+      prisma.video.findMany({
+        include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
+        skip: randomSkip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      authUserId
+        ? prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+      authUserId
+        ? prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+
+    const formattedVideos = await Promise.all(videos.map(async (video) => {
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
+        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
+        likes: video.likes || 0, views: video.views || 0,
+        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
+        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+      };
+    }));
+
+    res.json({ success: true, data: formattedVideos });
+  } catch (error) {
+    console.error('VideoController: getExploreVideos - Error:', error);
+    res.status(500).json({ message: 'Failed to fetch explore videos' });
   }
 });
 

@@ -53,6 +53,8 @@ model AppUser {
   videos                   Video[]
   videoLikes               VideoLike[]
   videoBookmarks           VideoBookmark[]
+  videoEvents              VideoEvent[]
+  videoFeedback            VideoFeedback[]
   SurveyResponse           SurveyResponse[]
   rewardRedemptions        RewardRedemption[]
 }
@@ -84,13 +86,24 @@ model Video {
   isProcessed      Boolean   @default(false) // Whether video has been processed (transcoding, etc.)
   processingStatus String?   // Processing status: pending, processing, completed, failed
   
+  // Denormalized counters for trending score
+  sharesCount      Int       @default(0)
+  completionsCount Int       @default(0)
+
+  // Locale metadata for localized trending
+  country          String?   // ISO 3166-1 alpha-2 (e.g., "US", "NG")
+  language         String?   // ISO 639-1 (e.g., "en", "yo")
+
   comments       Comment[]
   videoLikes     VideoLike[]
   videoBookmarks VideoBookmark[]
+  events         VideoEvent[]
+  feedback       VideoFeedback[]
   user           AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([r2VideoKey])
+  @@index([createdAt])
 }
 
 model VideoLike {
@@ -652,6 +665,44 @@ enum NotificationPriority {
   MEDIUM
   HIGH
   URGENT
+}
+
+// VideoEvent — Telemetry events for feed personalization and analytics.
+// Stores impressions, play milestones, skips, rewatches, dwell time per video.
+model VideoEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  videoId   String   @db.Uuid
+  eventType String   // impression, play_3s, play_25pct, play_50pct, play_75pct, play_100pct, skip, rewatch, dwell
+  payload   Json     @default("{}")
+  sessionId String
+  createdAt DateTime @default(now())
+
+  video Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user  AppUser? @relation(fields: [userId], references: [id])
+
+  @@index([videoId, eventType])
+  @@index([userId])
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+// VideoFeedback — User controls: "Not Interested", "Hide Creator", "Report".
+// Powers feed filtering and signals for ranking down-weight.
+model VideoFeedback {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  videoId   String   @db.Uuid
+  action    String   // not_interested, hide_creator, hide_sound, report
+  reason    String?
+  createdAt DateTime @default(now())
+
+  user  AppUser @relation(fields: [userId], references: [id])
+  video Video   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId, action])
+  @@index([userId])
+  @@index([videoId])
 }
 
 // SSE Event Log — stores events for Server-Sent Events delivery.
