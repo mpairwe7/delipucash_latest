@@ -168,8 +168,8 @@ const AnimatedTabPill = React.memo(({
     bgOpacity.value = withSpring(isActive ? 1 : 0, { damping: 20, stiffness: 300 });
   }, [isActive, bgOpacity]);
 
-  const activeColor = isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)';
-  const inactiveColor = 'transparent';
+  const activeColor = isDark ? 'rgba(255, 255, 255, 0.22)' : 'rgba(0, 0, 0, 0.15)';
+  const inactiveColor = isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)';
 
   const pillStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -177,7 +177,7 @@ const AnimatedTabPill = React.memo(({
   }));
 
   const textStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(bgOpacity.value, [0, 1], [0.6, 1]),
+    opacity: interpolate(bgOpacity.value, [0, 1], [0.75, 1]),
   }));
 
   const indicatorStyle = useAnimatedStyle(() => ({
@@ -198,7 +198,7 @@ const AnimatedTabPill = React.memo(({
       accessibilityState={{ selected: isActive }}
       accessibilityLabel={`${label} tab`}
     >
-      <Animated.View style={[styles.tabPill, { borderColor: withAlpha(colors.text, 0.08) }, pillStyle]}>
+      <Animated.View style={[styles.tabPill, { borderColor: withAlpha(colors.text, 0.15) }, pillStyle]}>
         {icon && <View style={styles.tabPillIcon}>{icon}</View>}
         <Animated.Text style={[styles.tabPillText, { color: colors.tabInactive }, textStyle, isActive && { ...styles.tabPillTextActive, color: colors.tabActive }]}>
           {label}
@@ -1001,15 +1001,15 @@ export default function VideosScreen(): React.ReactElement {
           {/* Search Bar Row - 2026: Voice search affordance + data saver */}
           <View style={styles.searchRow}>
             <Pressable
-              style={[styles.searchContainer, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.08) }]}
+              style={[styles.searchContainer, { backgroundColor: withAlpha(colors.text, 0.18), borderColor: withAlpha(colors.text, 0.15) }]}
               onPress={() => setSearchOverlayVisible(true)}
               accessibilityRole="search"
               accessibilityLabel="Search videos"
               accessibilityHint="Opens search overlay with voice and text search"
             >
-              <Search size={ICON_SIZE.sm} color={withAlpha(colors.text, 0.7)} strokeWidth={2} />
+              <Search size={ICON_SIZE.sm} color={withAlpha(colors.text, 0.85)} strokeWidth={2} />
               <Text
-                style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : withAlpha(colors.text, 0.5) }]}
+                style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : withAlpha(colors.text, 0.65) }]}
                 numberOfLines={1}
               >
                 {searchQuery || 'Search videos, creators...'}
@@ -1020,8 +1020,8 @@ export default function VideosScreen(): React.ReactElement {
                 </Pressable>
               ) : (
                 /* 2026: Voice search affordance */
-                <View style={[styles.voiceSearchBtn, { backgroundColor: withAlpha(colors.text, 0.1) }]}>
-                  <Mic size={14} color={withAlpha(colors.text, 0.6)} strokeWidth={2} />
+                <View style={[styles.voiceSearchBtn, { backgroundColor: withAlpha(colors.text, 0.15) }]}>
+                  <Mic size={14} color={withAlpha(colors.text, 0.75)} strokeWidth={2} />
                 </View>
               )}
             </Pressable>
@@ -1032,7 +1032,7 @@ export default function VideosScreen(): React.ReactElement {
               <NetworkBadge isDataSaver={isDataSaverMode} onToggle={toggleDataSaver} />
 
               <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.06) }]}
+                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.18), borderColor: withAlpha(colors.text, 0.15) }]}
                 onPress={toggleViewMode}
                 accessibilityRole="button"
                 accessibilityLabel={feedMode === 'vertical' ? 'Switch to grid view' : 'Switch to vertical feed'}
@@ -1045,7 +1045,7 @@ export default function VideosScreen(): React.ReactElement {
               </Pressable>
 
               <Pressable
-                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.1), borderColor: withAlpha(colors.text, 0.06) }]}
+                style={[styles.headerButton, { backgroundColor: withAlpha(colors.text, 0.18), borderColor: withAlpha(colors.text, 0.15) }]}
                 onPress={() => router.push('/notifications' as Href)}
                 accessibilityRole="button"
                 accessibilityLabel={`Notifications, ${unreadCount || 0} unread`}
