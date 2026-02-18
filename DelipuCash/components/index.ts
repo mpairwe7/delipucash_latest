@@ -57,6 +57,7 @@ export {
   Section,
   RecentQuestionCard,
   ExploreModal,
+  LeaderboardCard,
 } from './cards';
 export type {
   StatCardProps,
@@ -73,6 +74,7 @@ export type {
   RecentQuestionCardProps,
   ExploreModalProps,
   ExploreFeature,
+  LeaderboardCardProps,
 } from './cards';
 
 // UI Components

@@ -88,6 +88,7 @@ import {
   Section,
   ExploreModal,
   ExploreFeature,
+  LeaderboardCard,
 } from "@/components";
 import {
   // Home-specific components
@@ -115,6 +116,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
+import { useQuestionsLeaderboard } from "@/services/questionHooks";
 import {
   BannerAd,
   NativeAd,
@@ -197,20 +199,6 @@ const EXPLORE_ITEMS = [
     ],
     actionText: "Explore Trends",
     route: "/(tabs)/videos-new",
-  },
-  {
-    id: "leaderboard",
-    icon: "trophy" as const,
-    title: "Leaderboard",
-    description: "See rankings",
-    colors: ["#f093fb", "#f5576c"] as const,
-    features: [
-      { icon: "medal" as const, title: "Top Rankings", description: "See who's leading in earnings and activities" },
-      { icon: "crown" as const, title: "Achievements", description: "Unlock badges and special recognition" },
-      { icon: "gift" as const, title: "Rewards", description: "Get exclusive prizes for top performers" },
-    ],
-    actionText: "View Rankings",
-    route: "/(tabs)/profile",
   },
 ] as const;
 
@@ -324,6 +312,9 @@ export default function HomePage(): React.ReactElement {
   const featuredAds = screenAds?.featuredAds;
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
+
+  // Leaderboard — deferred until user data is available
+  const { data: leaderboard, isLoading: leaderboardLoading, refetch: refetchLeaderboard } = useQuestionsLeaderboard(5, !userLoading);
 
   // Prefetch adjacent tab data after initial render settles (Spotify/Instagram pattern).
   // Uses InteractionManager to defer until animations complete, then warms
@@ -448,16 +439,17 @@ export default function HomePage(): React.ReactElement {
       refetchDailyReward(),
       refetchStats(),
       refetchAds(),
+      refetchLeaderboard(),
     ]);
-    
+
     setRefreshing(false);
-    
+
     // Announce refresh completion for screen readers
     AccessibilityInfo.announceForAccessibility("Dashboard refreshed");
   }, [
     refetch, refetchVideos, refetchQuestions, refetchRunningSurveys,
     refetchUpcomingSurveys, refetchDailyReward, refetchStats,
-    refetchAds,
+    refetchAds, refetchLeaderboard,
   ]);
 
   // Claim daily reward handler — guarded on availability
@@ -543,6 +535,11 @@ export default function HomePage(): React.ReactElement {
   const handleModalAction = useCallback((route: string) => {
     setActiveModal(null);
     router.push(route as Href);
+  }, []);
+
+  const handleViewLeaderboard = useCallback(() => {
+    triggerHaptic('medium');
+    router.push('/leaderboard' as Href);
   }, []);
 
   // Transform data for earning opportunities
@@ -1076,6 +1073,17 @@ export default function HomePage(): React.ReactElement {
         case "explore":
           return (
             <View style={styles.sectionContainer}>
+              {/* Leaderboard widget — live data */}
+              <LeaderboardCard
+                users={leaderboard?.users ?? []}
+                currentUserRank={leaderboard?.currentUserRank}
+                totalUsers={leaderboard?.totalUsers}
+                onViewAll={handleViewLeaderboard}
+                isLoading={leaderboardLoading}
+                style={styles.leaderboardWidget}
+              />
+
+              {/* Explore cards */}
               <Section title="Explore" icon="compass">
                 <View style={styles.exploreGrid}>
                   {EXPLORE_ITEMS.map((item, idx) => (
@@ -1083,7 +1091,7 @@ export default function HomePage(): React.ReactElement {
                       key={item.id}
                       style={[
                         styles.exploreItemWrapper,
-                        { width: isTablet ? "23%" : "48%" },
+                        { width: isTablet ? "31%" : "48%" },
                       ]}
                     >
                       <ExploreCard
@@ -1131,7 +1139,10 @@ export default function HomePage(): React.ReactElement {
       handleAdClick,
       handleAdImpression,
       handleExplorePress,
+      handleViewLeaderboard,
       handleOpportunityPress,
+      leaderboard,
+      leaderboardLoading,
       videosError,
       questionsError,
       insets.bottom,
@@ -1367,6 +1378,11 @@ const styles = StyleSheet.create({
   },
   engagementCard: {
     flex: 1,
+  },
+
+  // Leaderboard widget
+  leaderboardWidget: {
+    marginBottom: SPACING.md,
   },
 
   // Explore

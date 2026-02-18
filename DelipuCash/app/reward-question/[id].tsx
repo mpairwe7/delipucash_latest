@@ -19,8 +19,8 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons";
 import { useToast } from "@/components/ui/Toast";
-import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
-import { formatCurrency } from "@/services/api";
+import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay } from "@/components/quiz";
+import { formatCurrency, rewardsApi } from "@/services/api";
 import {
   useRewardQuestion,
   useRegularRewardQuestions,
@@ -298,6 +298,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const [quickRedeemType, setQuickRedeemType] = useState<'CASH' | 'AIRTIME' | undefined>(undefined);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showResultOverlay, setShowResultOverlay] = useState(false);
+  const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
+  const [overlayEarned, setOverlayEarned] = useState(0);
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
@@ -367,6 +370,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const startSession = useInstantRewardStore((s) => s.startSession);
   const endSession = useInstantRewardStore((s) => s.endSession);
   const goToNextQuestion = useInstantRewardStore((s) => s.goToNextQuestion);
+  const recordQuestionStart = useInstantRewardStore((s) => s.recordQuestionStart);
   const updateSessionSummary = useInstantRewardStore(
     (s) => s.updateSessionSummary
   );
@@ -377,6 +381,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     (s) => s.completeRedemption
   );
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
+
+  // ── Zustand: current streak for overlay ──
+  const currentStreak = useInstantRewardStore((s) => s.sessionSummary.currentStreak);
 
   // ── Soft auth check — user navigated from an auth-guarded screen,
   //    so only show a toast if auth expires mid-session (no hard redirect) ──
@@ -413,9 +420,11 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     setRevealedCorrectAnswer(null);
     setIsExpired(false);
     setIsTransitioning(false);
+    setShowResultOverlay(false);
     transitionOpacity.value = 1;
     transitionTranslateX.value = 0;
-  }, [questionId, transitionOpacity, transitionTranslateX]);
+    recordQuestionStart();
+  }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
 
   // ── Unanswered reward questions for auto-transition (excludes instant rewards) ──
   const unansweredQuestions = useMemo(() => {
@@ -623,6 +632,11 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           // Update session statistics
           updateSessionSummary(payload.isCorrect, earnedAmount);
 
+          // Show animated result overlay
+          setOverlayIsCorrect(payload.isCorrect);
+          setOverlayEarned(earnedAmount);
+          setShowResultOverlay(true);
+
           if (payload.isCorrect) {
             triggerHaptic("success");
 
@@ -763,15 +777,24 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         phoneNumber,
       });
 
-      // TODO: Call actual redemption API
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      const transactionRef = `TXN-${Date.now()}`;
-      completeRedemption(transactionRef, true);
-      return {
-        success: true,
-        message: `${formatCurrency(amount)} has been sent to your ${provider} number!`,
-      };
+      try {
+        const response = await rewardsApi.redeem(amount, provider, phoneNumber, type);
+        if (response.data?.success) {
+          completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+          return {
+            success: true,
+            message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
+          };
+        } else {
+          const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
+          completeRedemption('', false, errorMsg);
+          return { success: false, message: `${errorMsg} Points refunded.` };
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message ?? 'Something went wrong. Please try again.';
+        completeRedemption('', false, errorMsg);
+        return { success: false, message: errorMsg };
+      }
     },
     [initiateRedemption, completeRedemption]
   );
@@ -818,10 +841,20 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     router.back();
   }, []);
 
+  const handleOverlayDismiss = useCallback(() => {
+    setShowResultOverlay(false);
+  }, []);
+
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
     cancelRedemption();
   }, [cancelRedemption]);
+
+  const averageTimeSeconds = useMemo(() => {
+    const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
+    if (questionsAnswered === 0) return 0;
+    return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
+  }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
 
   const handleFooterPress = useMemo(
     () =>
@@ -1362,6 +1395,15 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         />
       </View>
 
+      {/* Answer Result Overlay */}
+      <AnswerResultOverlay
+        visible={showResultOverlay}
+        isCorrect={overlayIsCorrect}
+        earnedAmount={overlayEarned}
+        streakCount={currentStreak}
+        onDismiss={handleOverlayDismiss}
+      />
+
       {/* Session Summary Modal */}
       <RewardSessionSummary
         visible={showSessionSummary}
@@ -1376,6 +1418,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         onRedeemAirtime={handleRedeemAirtime}
         onContinue={handleContinue}
         onClose={handleCloseSession}
+        maxStreak={sessionSummary.maxStreak}
+        bonusPoints={sessionSummary.bonusPoints}
+        averageTime={averageTimeSeconds}
         lastRedemption={lastRedemption}
         onQuickRedeem={handleQuickRedeem}
       />

@@ -207,18 +207,21 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
     enableAnalytics = true,
   } = config;
 
-  // ========== STATE ==========
+  // ========== RENDERING STATE (only values that gate rendering) ==========
   const [canShowAd, setCanShowAd] = useState(false);
   const [blockedReason, setBlockedReason] = useState<string | null>('initializing');
   const [isReady, setIsReady] = useState(false);
-  const [isViewable, setIsViewable] = useState(false);
-  const [viewabilityPercent, setViewabilityPercent] = useState(0);
-  const [currentViewabilityTime, setCurrentViewabilityTime] = useState(0);
-  const [userFatigue, setUserFatigue] = useState(0);
-  const [sessionImpressions, setSessionImpressions] = useState(0);
-  const [refreshKey, setRefreshKey] = useState(0);
 
-  // ========== REFS ==========
+  // ========== NON-RENDERING STATE (refs — no re-renders) ==========
+  const isViewableRef = useRef(false);
+  const viewabilityPercentRef = useRef(0);
+  const currentViewabilityTimeRef = useRef(0);
+  const userFatigueRef = useRef(0);
+  const sessionImpressionsRef = useRef(0);
+  const refreshKeyRef = useRef(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // ========== EXISTING REFS ==========
   const viewabilityStartTimeRef = useRef<number>(0);
   const viewabilityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const contextStateRef = useRef<{
@@ -255,77 +258,75 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
   }, [canShowAd, forceShow, placementType, position]);
 
   const recommendedDelay = useMemo(() => {
-    return calculateRecommendedDelay(placementType, userFatigue, sessionImpressions);
-  }, [placementType, userFatigue, sessionImpressions]);
+    return calculateRecommendedDelay(placementType, userFatigueRef.current, sessionImpressionsRef.current);
+  }, [placementType, refreshTrigger]);
 
   // ========== EFFECTS ==========
 
   // Check ad eligibility
   useEffect(() => {
-    async function checkEligibility() {
-      // Force show overrides all checks
-      if (forceShow) {
-        setCanShowAd(true);
-        setBlockedReason(null);
-        setIsReady(true);
-        return;
-      }
-
-      // Check frequency cap
-      const frequencyAllowed = AdFrequencyManager.canShowAd(placementType);
-      if (!frequencyAllowed) {
-        if (__DEV__) console.log(`[SmartAd] Blocked: frequency_cap for ${placementType}/${adId}`);
-        setCanShowAd(false);
-        setBlockedReason('frequency_cap');
-        setIsReady(true);
-        return;
-      }
-
-      // Check user fatigue
-      const isFatigued = AdFrequencyManager.checkUserFatigue();
-      if (isFatigued) {
-        if (__DEV__) console.log(`[SmartAd] Blocked: user_fatigue for ${placementType}/${adId}`);
-        setCanShowAd(false);
-        setBlockedReason('user_fatigue');
-        setIsReady(true);
-        return;
-      }
-
-      // Check context limits
-      const { adsInContext, lastAdTime } = contextStateRef.current;
-
-      if (adsInContext >= contextConfig.maxAds) {
-        if (__DEV__) console.log(`[SmartAd] Blocked: context_limit (${adsInContext}/${contextConfig.maxAds}) for ${placementType}`);
-        setCanShowAd(false);
-        setBlockedReason('context_limit');
-        setIsReady(true);
-        return;
-      }
-
-      const timeSinceLastAd = Date.now() - lastAdTime;
-      if (lastAdTime > 0 && timeSinceLastAd < contextConfig.minInterval) {
-        if (__DEV__) console.log(`[SmartAd] Blocked: context_interval (${timeSinceLastAd}ms < ${contextConfig.minInterval}ms) for ${placementType}`);
-        setCanShowAd(false);
-        setBlockedReason('context_interval');
-        setIsReady(true);
-        return;
-      }
-
-      // All checks passed
-      if (__DEV__) console.log(`[SmartAd] Allowed: ${placementType}/${adId}`);
+    // Force show overrides all checks
+    if (forceShow) {
       setCanShowAd(true);
       setBlockedReason(null);
       setIsReady(true);
+      return;
     }
 
-    checkEligibility();
-  }, [placementType, forceShow, contextConfig, refreshKey]);
+    // Check frequency cap
+    const frequencyAllowed = AdFrequencyManager.canShowAd(placementType);
+    if (!frequencyAllowed) {
+      if (__DEV__) console.log(`[SmartAd] Blocked: frequency_cap for ${placementType}/${adId}`);
+      setCanShowAd(false);
+      setBlockedReason('frequency_cap');
+      setIsReady(true);
+      return;
+    }
 
-  // Load context state
+    // Check user fatigue
+    const isFatigued = AdFrequencyManager.checkUserFatigue();
+    if (isFatigued) {
+      if (__DEV__) console.log(`[SmartAd] Blocked: user_fatigue for ${placementType}/${adId}`);
+      setCanShowAd(false);
+      setBlockedReason('user_fatigue');
+      setIsReady(true);
+      return;
+    }
+
+    // Check context limits
+    const { adsInContext, lastAdTime } = contextStateRef.current;
+
+    if (adsInContext >= contextConfig.maxAds) {
+      if (__DEV__) console.log(`[SmartAd] Blocked: context_limit (${adsInContext}/${contextConfig.maxAds}) for ${placementType}`);
+      setCanShowAd(false);
+      setBlockedReason('context_limit');
+      setIsReady(true);
+      return;
+    }
+
+    const timeSinceLastAd = Date.now() - lastAdTime;
+    if (lastAdTime > 0 && timeSinceLastAd < contextConfig.minInterval) {
+      if (__DEV__) console.log(`[SmartAd] Blocked: context_interval (${timeSinceLastAd}ms < ${contextConfig.minInterval}ms) for ${placementType}`);
+      setCanShowAd(false);
+      setBlockedReason('context_interval');
+      setIsReady(true);
+      return;
+    }
+
+    // All checks passed
+    if (__DEV__) console.log(`[SmartAd] Allowed: ${placementType}/${adId}`);
+    setCanShowAd(true);
+    setBlockedReason(null);
+    setIsReady(true);
+  }, [placementType, forceShow, contextConfig, refreshTrigger]);
+
+  // Load context state from AsyncStorage (once per context type)
   useEffect(() => {
+    let cancelled = false;
     async function loadContextState() {
       try {
         const stored = await AsyncStorage.getItem(`${CONTEXT_STATE_KEY}_${contextType}`);
+        if (cancelled) return;
         if (stored) {
           const parsed = JSON.parse(stored);
           // Reset if context started more than 30 minutes ago
@@ -345,29 +346,22 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
     }
 
     loadContextState();
+    return () => { cancelled = true; };
   }, [contextType]);
 
-  // Update fatigue and session impressions
+  // Load initial fatigue metrics (once, no interval — on-demand via refs)
   useEffect(() => {
-    async function updateMetrics() {
-      const stats = AdFrequencyManager.getStats();
-      setUserFatigue(stats.sessionAdCount / SESSION_FATIGUE_THRESHOLD);
-      setSessionImpressions(stats.sessionAdCount);
-    }
-
-    updateMetrics();
-    
-    // Refresh metrics periodically
-    const interval = setInterval(updateMetrics, 30000);
-    return () => clearInterval(interval);
+    const stats = AdFrequencyManager.getStats();
+    userFatigueRef.current = stats.sessionAdCount / SESSION_FATIGUE_THRESHOLD;
+    sessionImpressionsRef.current = stats.sessionAdCount;
   }, []);
 
-  // App state listener (reset context on background)
+  // App state listener (refresh eligibility on foreground)
   useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
-        // App came to foreground, refresh eligibility
-        setRefreshKey(k => k + 1);
+        refreshKeyRef.current += 1;
+        setRefreshTrigger(refreshKeyRef.current);
       }
     };
 
@@ -375,7 +369,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
     return () => subscription.remove();
   }, []);
 
-  // ========== HANDLERS ==========
+  // ========== STABLE HANDLERS ==========
 
   const trackImpression = useCallback(async () => {
     // Record impression
@@ -398,19 +392,17 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       console.error('Failed to save context state:', error);
     }
 
-    // Update local metrics
-    setSessionImpressions(prev => prev + 1);
-    setUserFatigue(prev => Math.min(1, prev + 0.05));
+    // Update refs (no re-render)
+    sessionImpressionsRef.current += 1;
+    userFatigueRef.current = Math.min(1, userFatigueRef.current + 0.05);
 
-    if (enableAnalytics) {
-      // TODO: Send to analytics service
+    if (enableAnalytics && __DEV__) {
       console.log(`[Analytics] Ad impression: ${adId}, placement: ${placementType}`);
     }
   }, [adId, placementType, contextType, enableAnalytics]);
 
   const trackClick = useCallback(async () => {
-    if (enableAnalytics) {
-      // TODO: Send to analytics service
+    if (enableAnalytics && __DEV__) {
       console.log(`[Analytics] Ad click: ${adId}, placement: ${placementType}`);
     }
   }, [adId, placementType, enableAnalytics]);
@@ -423,14 +415,19 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
 
     viewabilityIntervalRef.current = setInterval(() => {
       const elapsed = Date.now() - viewabilityStartTimeRef.current;
-      setCurrentViewabilityTime(elapsed);
+      currentViewabilityTimeRef.current = elapsed;
 
-      // Check if meets IAB viewability standard
-      if (elapsed >= viewabilityTime && viewabilityPercent >= viewabilityThreshold) {
-        setIsViewable(true);
+      // Check if meets IAB viewability standard — use refs, no setState
+      if (elapsed >= viewabilityTime && viewabilityPercentRef.current >= viewabilityThreshold) {
+        isViewableRef.current = true;
+        // Clear interval once viewability confirmed — no need to keep ticking
+        if (viewabilityIntervalRef.current) {
+          clearInterval(viewabilityIntervalRef.current);
+          viewabilityIntervalRef.current = null;
+        }
       }
-    }, 100);
-  }, [adId, trackViewability, viewabilityThreshold, viewabilityTime, viewabilityPercent]);
+    }, 500); // 500ms instead of 100ms — IAB standard is 1s, 500ms granularity is sufficient
+  }, [adId, trackViewability, viewabilityThreshold, viewabilityTime]);
 
   const stopViewabilityTracking = useCallback(() => {
     if (viewabilityIntervalRef.current) {
@@ -441,7 +438,7 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
   }, [adId]);
 
   const updateViewability = useCallback((isVisible: boolean, visiblePercent: number) => {
-    setViewabilityPercent(visiblePercent);
+    viewabilityPercentRef.current = visiblePercent;
     AdFrequencyManager.updateViewability(adId, isVisible, visiblePercent);
 
     if (isVisible && visiblePercent >= viewabilityThreshold) {
@@ -452,8 +449,8 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
       if (viewabilityIntervalRef.current) {
         stopViewabilityTracking();
         viewabilityStartTimeRef.current = 0;
-        setCurrentViewabilityTime(0);
-        setIsViewable(false);
+        currentViewabilityTimeRef.current = 0;
+        isViewableRef.current = false;
       }
     }
   }, [adId, viewabilityThreshold, startViewabilityTracking, stopViewabilityTracking]);
@@ -461,7 +458,8 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
   const refresh = useCallback(() => {
     setIsReady(false);
     setBlockedReason('initializing');
-    setRefreshKey(k => k + 1);
+    refreshKeyRef.current += 1;
+    setRefreshTrigger(refreshKeyRef.current);
   }, []);
 
   // ========== CLEANUP ==========
@@ -474,9 +472,9 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
     };
   }, []);
 
-  // ========== RETURN ==========
+  // ========== MEMOIZED RETURN (stable reference) ==========
 
-  return {
+  return useMemo<SmartAdPlacementResult>(() => ({
     shouldShowAd,
     canShowAd,
     isReady,
@@ -486,14 +484,26 @@ export function useSmartAdPlacement(config: SmartAdPlacementConfig): SmartAdPlac
     startViewabilityTracking,
     stopViewabilityTracking,
     updateViewability,
-    isViewable,
-    viewabilityPercent,
-    viewabilityTime: currentViewabilityTime,
-    userFatigue,
-    sessionImpressions,
+    isViewable: isViewableRef.current,
+    viewabilityPercent: viewabilityPercentRef.current,
+    viewabilityTime: currentViewabilityTimeRef.current,
+    userFatigue: userFatigueRef.current,
+    sessionImpressions: sessionImpressionsRef.current,
     recommendedDelay,
     refresh,
-  };
+  }), [
+    shouldShowAd,
+    canShowAd,
+    isReady,
+    blockedReason,
+    trackImpression,
+    trackClick,
+    startViewabilityTracking,
+    stopViewabilityTracking,
+    updateViewability,
+    recommendedDelay,
+    refresh,
+  ]);
 }
 
 // ============================================================================

@@ -1,7 +1,7 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons";
 import { useToast } from "@/components/ui/Toast";
-import { formatCurrency } from "@/services/api";
+import { formatCurrency, rewardsApi } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useInstantRewardQuestions } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
@@ -22,7 +22,7 @@ import {
   normalizeText,
   triggerHaptic,
 } from "@/utils/quiz-utils";
-import { RewardSessionSummary, RedemptionModal } from "@/components/quiz";
+import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -308,6 +308,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [quickRedeemType, setQuickRedeemType] = useState<'CASH' | 'AIRTIME' | undefined>(undefined);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [showResultOverlay, setShowResultOverlay] = useState(false);
+  const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
+  const [overlayEarned, setOverlayEarned] = useState(0);
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
@@ -355,6 +358,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     return last ? { provider: last.provider, phoneNumber: last.phoneNumber } : null;
   }, [redemptionHistory]);
 
+  // ── Zustand: current streak for overlay ──
+  const currentStreak = useInstantRewardStore((s) => s.sessionSummary.currentStreak);
+
   // ── Zustand: offline queue state ──
   const isOnline = useInstantRewardStore((s) => s.isOnline);
   const hasPendingSubmission = useInstantRewardStore((s) => s.hasPendingSubmission);
@@ -367,6 +373,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     startSession,
     endSession,
     goToNextQuestion,
+    recordQuestionStart,
     updateSessionSummary,
     initiateRedemption,
     completeRedemption,
@@ -381,6 +388,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       startSession: s.startSession,
       endSession: s.endSession,
       goToNextQuestion: s.goToNextQuestion,
+      recordQuestionStart: s.recordQuestionStart,
       updateSessionSummary: s.updateSessionSummary,
       initiateRedemption: s.initiateRedemption,
       completeRedemption: s.completeRedemption,
@@ -426,9 +434,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     setRevealedCorrectAnswer(null);
     setIsExpired(false);
     setIsTransitioning(false);
+    setShowResultOverlay(false);
     transitionOpacity.value = 1;
     transitionTranslateX.value = 0;
-  }, [questionId, transitionOpacity, transitionTranslateX]);
+    recordQuestionStart();
+  }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
 
   // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
 
@@ -665,6 +675,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           // Update session statistics
           updateSessionSummary(payload.isCorrect, earnedAmount);
 
+          // Show animated result overlay
+          setOverlayIsCorrect(payload.isCorrect);
+          setOverlayEarned(earnedAmount);
+          setShowResultOverlay(true);
+
           if (payload.isCorrect) {
             triggerHaptic('success');
 
@@ -756,7 +771,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     );
   }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
 
-  // Handle redemption
+  // Handle redemption via real API
   const handleRedeem = useCallback(async (
     amount: number,
     type: 'CASH' | 'AIRTIME',
@@ -771,12 +786,25 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       phoneNumber,
     });
 
-    // TODO: Call actual redemption API
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      const response = await rewardsApi.redeem(amount, provider, phoneNumber, type);
 
-    const transactionRef = `TXN-${Date.now()}`;
-    completeRedemption(transactionRef, true);
-    return { success: true, message: `${formatCurrency(amount)} has been sent to your ${provider} number!` };
+      if (response.data?.success) {
+        completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+        return {
+          success: true,
+          message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
+        };
+      } else {
+        const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
+        completeRedemption('', false, errorMsg);
+        return { success: false, message: `${errorMsg} Points refunded.` };
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message ?? 'Something went wrong. Please try again.';
+      completeRedemption('', false, errorMsg);
+      return { success: false, message: errorMsg };
+    }
   }, [initiateRedemption, completeRedemption]);
 
   // ── Stable modal callbacks (avoid inline arrow fns in JSX) ──
@@ -821,10 +849,20 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     router.back();
   }, []);
 
+  const handleOverlayDismiss = useCallback(() => {
+    setShowResultOverlay(false);
+  }, []);
+
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
     cancelRedemption();
   }, [cancelRedemption]);
+
+  const averageTimeSeconds = useMemo(() => {
+    const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
+    if (questionsAnswered === 0) return 0;
+    return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
+  }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
 
   const handleFooterPress = useMemo(
     () => (result || hasAlreadyAttempted ? handleTransitionToNext : handleSubmit),
@@ -1128,6 +1166,15 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         />
       </View>
 
+      {/* Answer Result Overlay */}
+      <AnswerResultOverlay
+        visible={showResultOverlay}
+        isCorrect={overlayIsCorrect}
+        earnedAmount={overlayEarned}
+        streakCount={currentStreak}
+        onDismiss={handleOverlayDismiss}
+      />
+
       {/* Session Summary Modal */}
       <RewardSessionSummary
         visible={showSessionSummary}
@@ -1142,6 +1189,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         onRedeemAirtime={handleRedeemAirtime}
         onContinue={handleContinue}
         onClose={handleCloseSession}
+        maxStreak={sessionSummary.maxStreak}
+        bonusPoints={sessionSummary.bonusPoints}
+        averageTime={averageTimeSeconds}
         lastRedemption={lastRedemption}
         onQuickRedeem={handleQuickRedeem}
       />

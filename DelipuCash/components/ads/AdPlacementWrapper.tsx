@@ -161,6 +161,9 @@ export interface InFeedAdProps {
  * Hook for IAB MRC viewability tracking
  * - Display ads: 50% visible for 1 continuous second
  * - Video ads: 50% visible for 2 continuous seconds
+ *
+ * Performance: uses refs for tracking state to avoid re-renders during scroll.
+ * Only triggers a single state update when viewability is confirmed.
  */
 function useViewabilityTracking(
   adId: string,
@@ -169,10 +172,14 @@ function useViewabilityTracking(
   isVideo: boolean = false
 ) {
   const [isViewable, setIsViewable] = useState(false);
-  const [viewabilityPercent, setViewabilityPercent] = useState(0);
+  // Use ref for viewability percent — updated on every scroll frame, shouldn't re-render
+  const viewabilityPercentRef = useRef(0);
   const visibleStartTimeRef = useRef<number>(0);
   const viewabilityIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasRecordedViewableRef = useRef(false);
+  // Stable ref for callback to avoid stale closures in interval
+  const onViewableRef = useRef(onViewable);
+  onViewableRef.current = onViewable;
 
   const viewabilityThreshold = isVideo ? 2000 : 1000; // IAB standard
 
@@ -185,18 +192,20 @@ function useViewabilityTracking(
     viewabilityIntervalRef.current = setInterval(() => {
       const elapsed = Date.now() - visibleStartTimeRef.current;
 
-      if (elapsed >= viewabilityThreshold && viewabilityPercent >= 50 && !hasRecordedViewableRef.current) {
+      // Read from ref — always current, no stale closure
+      if (elapsed >= viewabilityThreshold && viewabilityPercentRef.current >= 50 && !hasRecordedViewableRef.current) {
         setIsViewable(true);
         hasRecordedViewableRef.current = true;
-        onViewable?.();
+        onViewableRef.current?.();
 
         // Stop tracking after viewability confirmed
         if (viewabilityIntervalRef.current) {
           clearInterval(viewabilityIntervalRef.current);
+          viewabilityIntervalRef.current = null;
         }
       }
-    }, 100);
-  }, [adId, enabled, onViewable, viewabilityPercent, viewabilityThreshold]);
+    }, 500); // 500ms granularity sufficient for 1s/2s IAB thresholds
+  }, [adId, enabled, viewabilityThreshold]);
 
   const stopTracking = useCallback(() => {
     if (viewabilityIntervalRef.current) {
@@ -207,7 +216,7 @@ function useViewabilityTracking(
   }, [adId]);
 
   const updateVisibility = useCallback((percent: number) => {
-    setViewabilityPercent(percent);
+    viewabilityPercentRef.current = percent;
 
     // Only update frequency manager if tracking is enabled
     if (enabled) {
@@ -466,24 +475,27 @@ const InFeedAdComponent: React.FC<InFeedAdProps> = memo(({
   trackViewability = true,
   style,
 }) => {
-  // Delay animation based on index for staggered effect
-  const delay = index * 100;
+  // Limit stagger delay to prevent very long delays for deep items
+  const delay = Math.min(index * 100, 500);
   const impressionRecordedRef = useRef(false);
   const containerRef = useRef<View>(null);
+
+  // Stable viewability callback — avoid anonymous closure that breaks memo
+  const handleViewable = useCallback(() => {
+    onViewable?.(ad);
+    // Record impression when viewable (IAB standard)
+    if (!impressionRecordedRef.current) {
+      impressionRecordedRef.current = true;
+      AdFrequencyManager.recordImpression(ad.id, 'feed');
+      onImpression?.(ad);
+    }
+  }, [ad, onViewable, onImpression]);
 
   // Viewability tracking
   const { updateVisibility } = useViewabilityTracking(
     ad.id,
     trackViewability,
-    () => {
-      onViewable?.(ad);
-      // Record impression when viewable (IAB standard)
-      if (!impressionRecordedRef.current) {
-        impressionRecordedRef.current = true;
-        AdFrequencyManager.recordImpression(ad.id, 'feed');
-        onImpression?.(ad);
-      }
-    }
+    handleViewable
   );
 
   // Handle layout for viewability calculation
@@ -710,17 +722,20 @@ const AdPlacementWrapperComponent: React.FC<AdPlacementWrapperProps> = ({
     trackViewability,
   });
 
+  // Extract stable method refs so useCallback deps don't cascade re-renders
+  const { trackClick, trackImpression } = smartPlacement;
+
   // Handle ad click with tracking
   const handleAdClick = useCallback((clickedAd: Ad) => {
-    smartPlacement.trackClick();
+    trackClick();
     onAdClick?.(clickedAd);
-  }, [smartPlacement, onAdClick]);
+  }, [trackClick, onAdClick]);
 
   // Handle viewable callback
   const handleViewable = useCallback((viewableAd: Ad) => {
-    smartPlacement.trackImpression();
+    trackImpression();
     onViewable?.(viewableAd);
-  }, [smartPlacement, onViewable]);
+  }, [trackImpression, onViewable]);
 
   if (!ad && (!ads || ads.length === 0)) return null;
   if (!visible) return null;

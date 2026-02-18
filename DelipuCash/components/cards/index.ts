@@ -43,5 +43,8 @@ export type { RecentQuestionCardProps } from './RecentQuestionCard';
 export { ExploreModal } from './ExploreModal';
 export type { ExploreModalProps, ExploreFeature } from './ExploreModal';
 
+export { LeaderboardCard } from './LeaderboardCard';
+export type { LeaderboardCardProps } from './LeaderboardCard';
+
 export { SearchOverlay } from './SearchOverlay';
 export type { SearchOverlayProps } from './SearchOverlay';

@@ -54,6 +54,7 @@ model AppUser {
   videoLikes               VideoLike[]
   videoBookmarks           VideoBookmark[]
   SurveyResponse           SurveyResponse[]
+  rewardRedemptions        RewardRedemption[]
 }
 
 model Video {
@@ -497,6 +498,26 @@ model Reward {
   user        AppUser  @relation(fields: [userEmail], references: [email])
 
   @@index([userEmail])
+}
+
+model RewardRedemption {
+  id             String        @id @default(uuid()) @db.Uuid
+  userId         String        @db.Uuid
+  cashValue      Int
+  provider       String
+  phoneNumber    String
+  type           String
+  status         PaymentStatus @default(PENDING)
+  transactionRef String?
+  errorMessage   String?
+  requestedAt    DateTime      @default(now())
+  completedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           AppUser       @relation(fields: [userId], references: [id])
+
+  @@index([userId, status])
+  @@index([status])
 }
 
 model Payment {

@@ -798,6 +798,13 @@ export default function QuestionsScreen(): React.ReactElement {
   ]);
 
   // ========== RENDER FUNCTIONS ==========
+  // Stable ad identity keys — prevent header re-render when ad objects are
+  // referentially new but content-identical (TanStack Query refetches).
+  const bannerAdIds = useMemo(() => bannerAds?.map(a => a.id).join(',') ?? '', [bannerAds]);
+  const feedAdIds = useMemo(() => feedAds?.map(a => a.id).join(',') ?? '', [feedAds]);
+  const featuredAdIds = useMemo(() => featuredAds?.map(a => a.id).join(',') ?? '', [featuredAds]);
+  const leaderboardKey = leaderboard?.users?.[0]?.id ?? '';
+
   // Header as element (not function) — avoids extra wrapper View from FlatList
   const headerElement = useMemo(
     () => (
@@ -825,6 +832,7 @@ export default function QuestionsScreen(): React.ReactElement {
         onOpenCreateWizard={handleOpenCreateWizard}
       />
     ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps — ad arrays tracked via stable ID keys
     [
       isStatsLoading,
       isFeedLoading,
@@ -836,10 +844,10 @@ export default function QuestionsScreen(): React.ReactElement {
       feedStats.unansweredCount,
       feedStats.rewardsCount,
       selectedTab,
-      leaderboard,
-      bannerAds,
-      feedAds,
-      featuredAds,
+      leaderboardKey,
+      bannerAdIds,
+      feedAdIds,
+      featuredAdIds,
       isSearching,
       searchQuery,
       searchResults.length,
@@ -1027,13 +1035,13 @@ export default function QuestionsScreen(): React.ReactElement {
           onEndReachedThreshold={0.5}
           // Scroll tracking — FAB auto-hide + per-tab position
           onScroll={handleScroll}
-          scrollEventThrottle={100}
+          scrollEventThrottle={200}
           // Performance optimizations
           removeClippedSubviews={true}
-          maxToRenderPerBatch={4}
+          maxToRenderPerBatch={3}
           windowSize={5}
           initialNumToRender={3}
-          updateCellsBatchingPeriod={200}
+          updateCellsBatchingPeriod={300}
           viewabilityConfigCallbackPairs={
             viewabilityConfigCallbackPairs.current
           }

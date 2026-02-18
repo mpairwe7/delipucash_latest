@@ -286,6 +286,7 @@ export const API_ROUTES = {
     createQuestion: "/api/reward-questions/create",
     claim: (id: string) => `/api/rewards/${id}/claim`,
     daily: "/api/rewards/daily",
+    redeem: "/api/rewards/redeem",
   },
   // Ads
   ads: {
@@ -305,43 +306,51 @@ export const userApi = {
   /**
    * Get current user profile
    * Backend: GET /api/users/profile (requires auth token)
+   * Server returns { success, data: AppUser } — unwrap the nested data.
    */
   async getProfile(): Promise<ApiResponse<AppUser>> {
-    return fetchJson<AppUser>(API_ROUTES.user.profile, {
+    const response = await fetchJson<{ data: AppUser }>(API_ROUTES.user.profile, {
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
   },
 
   /**
    * Update user profile
    * Backend: PUT /api/users/profile (requires auth token)
+   * Server returns { success, data: AppUser } — unwrap the nested data.
    */
   async updateProfile(data: Partial<AppUser>): Promise<ApiResponse<AppUser>> {
-    return fetchJson<AppUser>(API_ROUTES.user.update, {
+    const response = await fetchJson<{ data: AppUser }>(API_ROUTES.user.update, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(data),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
   },
 
   /**
    * Get user statistics
    * Backend: GET /api/users/stats
+   * Server returns { success, data: UserStats } — unwrap the nested data.
    */
   async getStats(): Promise<ApiResponse<UserStats>> {
-    return fetchJson<UserStats>(API_ROUTES.user.stats, {
+    const response = await fetchJson<{ data: UserStats }>(API_ROUTES.user.stats, {
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
   },
 
   /**
    * Get user by ID
    * Backend: GET /api/users/:userId
+   * Server returns { success, data: AppUser } — unwrap the nested data.
    */
   async getById(userId: string): Promise<ApiResponse<AppUser | null>> {
-    return fetchJson<AppUser>(`/api/users/${userId}`, {
+    const response = await fetchJson<{ data: AppUser }>(`/api/users/${userId}`, {
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
   },
 
   /**
@@ -1046,6 +1055,21 @@ export const rewardsApi = {
    */
   async claimDaily(): Promise<ApiResponse<{ reward: number; streak: number }>> {
     return fetchJson<{ reward: number; streak: number }>(API_ROUTES.rewards.daily, { method: 'POST' });
+  },
+
+  /**
+   * Redeem rewards — convert points to cash/airtime via mobile money
+   */
+  async redeem(
+    cashValue: number,
+    provider: string,
+    phoneNumber: string,
+    type: string,
+  ): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string }>> {
+    return fetchJson(API_ROUTES.rewards.redeem, {
+      method: 'POST',
+      body: JSON.stringify({ cashValue, provider, phoneNumber, type }),
+    });
   },
 
   /**

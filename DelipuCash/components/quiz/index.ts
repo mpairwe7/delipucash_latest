@@ -16,3 +16,4 @@ export {
 // Instant Reward Session Components
 export { RewardSessionSummary } from './RewardSessionSummary';
 export { RedemptionModal } from './RedemptionModal';
+export { AnswerResultOverlay } from './AnswerResultOverlay';

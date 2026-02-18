@@ -17,6 +17,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, devtools } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getStreakBonus } from '@/utils/quiz-utils';
 
 // ===========================================
 // Constants
@@ -107,6 +108,11 @@ export interface InstantRewardSessionSummary {
   accuracy: number;
   sessionStartedAt: string | null;
   sessionCompletedAt: string | null;
+  currentStreak: number;
+  maxStreak: number;
+  bonusPoints: number;
+  totalTimeSpentMs: number;
+  questionStartTimeMs: number | null;
 }
 
 /** Redemption request details */
@@ -180,6 +186,7 @@ export interface InstantRewardUIActions {
   getSessionProgress: () => { current: number; total: number; remaining: number };
   hasMoreQuestions: () => boolean;
   setSessionState: (state: InstantRewardSessionState) => void;
+  recordQuestionStart: () => void;
   updateSessionSummary: (isCorrect: boolean, rewardEarned: number) => void;
 
   // Wallet Management
@@ -230,6 +237,11 @@ const initialSessionSummary: InstantRewardSessionSummary = {
   accuracy: 0,
   sessionStartedAt: null,
   sessionCompletedAt: null,
+  currentStreak: 0,
+  maxStreak: 0,
+  bonusPoints: 0,
+  totalTimeSpentMs: 0,
+  questionStartTimeMs: null,
 };
 
 const initialState: InstantRewardUIState = {
@@ -467,11 +479,29 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
         set({ sessionState: state });
       },
 
+      recordQuestionStart: () => {
+        set(state => ({
+          sessionSummary: {
+            ...state.sessionSummary,
+            questionStartTimeMs: Date.now(),
+          },
+        }));
+      },
+
       updateSessionSummary: (isCorrect, rewardEarned) => {
         set(state => {
           const summary = state.sessionSummary;
+          const now = Date.now();
+          const elapsed = summary.questionStartTimeMs != null
+            ? now - summary.questionStartTimeMs
+            : 0;
+
           const newCorrect = isCorrect ? summary.correctAnswers + 1 : summary.correctAnswers;
           const newAnswered = summary.questionsAnswered + 1;
+          const newStreak = isCorrect ? summary.currentStreak + 1 : 0;
+          const newMaxStreak = Math.max(summary.maxStreak, newStreak);
+          const bonusFromThisAnswer = isCorrect ? getStreakBonus(newStreak) : 0;
+
           return {
             sessionSummary: {
               ...summary,
@@ -480,6 +510,11 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
               incorrectAnswers: isCorrect ? summary.incorrectAnswers : summary.incorrectAnswers + 1,
               totalEarned: summary.totalEarned + rewardEarned,
               accuracy: newAnswered > 0 ? Math.round((newCorrect / newAnswered) * 100) : 0,
+              currentStreak: newStreak,
+              maxStreak: newMaxStreak,
+              bonusPoints: summary.bonusPoints + bonusFromThisAnswer,
+              totalTimeSpentMs: summary.totalTimeSpentMs + elapsed,
+              questionStartTimeMs: null,
             },
           };
         });

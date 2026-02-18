@@ -9,6 +9,16 @@ import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
 // import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useFonts } from 'expo-font';
+import {
+  Roboto_400Regular,
+  Roboto_500Medium,
+  Roboto_700Bold,
+} from '@expo-google-fonts/roboto';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Feather from '@expo/vector-icons/Feather';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
 import { ToastProvider } from '@/components/ui/Toast';
@@ -61,9 +71,15 @@ if (Platform.OS !== 'web') {
     const originalErrorHandler = ErrorUtils.getGlobalHandler();
     ErrorUtils.setGlobalHandler((error, isFatal) => {
       if (error && typeof error === 'object' && 'message' in error) {
-        if ((error.message as string).includes('keep awake')) {
+        const msg = error.message as string;
+        if (msg.includes('keep awake')) {
           console.warn('[Expo Go] Keep-awake error caught and ignored');
-          return; // Don't call the original handler for keep-awake errors
+          return;
+        }
+        // Suppress ExpoAsset download failures (fonts/icons over flaky dev network)
+        if (msg.includes('ExpoAsset.downloadAsync') || msg.includes('unable to download asset')) {
+          console.warn('[ExpoAsset] Asset download failed — using fallback:', msg.slice(0, 120));
+          return;
         }
       }
       // Call original handler for other errors
@@ -150,6 +166,26 @@ export default function RootLayout() {
   // Read isReady directly from Zustand — no TanStack dependency
   const isReady = useAuthStore(s => s.isReady);
 
+  // Preload Roboto fonts + vector icon font families so they're available
+  // before any component renders. Prevents ExpoAsset.downloadAsync rejections
+  // by loading everything up-front while the splash screen is still visible.
+  const [fontsLoaded, fontError] = useFonts({
+    Roboto_400Regular,
+    Roboto_500Medium,
+    Roboto_700Bold,
+    ...Ionicons.font,
+    ...MaterialCommunityIcons.font,
+    ...MaterialIcons.font,
+    ...Feather.font,
+  });
+
+  // Log font loading errors but don't block the app — system fonts are the fallback
+  useEffect(() => {
+    if (fontError) {
+      console.warn('[Fonts] Failed to load custom fonts, using system fallback:', fontError.message);
+    }
+  }, [fontError]);
+
   // Initialize auth state from SecureStore on app start
   // Uses standalone initializeAuth() — no QueryClient needed
   useEffect(() => {
@@ -180,12 +216,14 @@ export default function RootLayout() {
     }
   }, []);
 
-  // Hide native splash after auth state initialization is complete.
+  // Hide native splash after BOTH auth state AND fonts are ready.
+  // This prevents flash-of-unstyled-text and ExpoAsset download errors
+  // by keeping the splash visible until all assets are available.
   useEffect(() => {
-    if (isReady) {
+    if (isReady && (fontsLoaded || fontError)) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [isReady]);
+  }, [isReady, fontsLoaded, fontError]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -218,6 +256,7 @@ export default function RootLayout() {
               <Stack.Screen name="create-survey" options={{ headerShown: false }} />
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
+              <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
             </Stack>
             <StatusBar style="auto" />
             </ToastProvider>

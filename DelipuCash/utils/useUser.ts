@@ -76,33 +76,38 @@ function syncAuthStoreUser(freshProfile: AppUser): void {
   const currentAuth = useAuthStore.getState().auth;
   if (!currentAuth) return;
 
-  // Merge fresh profile fields into the persisted user object
+  // Guard: skip sync if the fresh profile looks empty (e.g. API returned
+  // a malformed response). An email is the minimum identity field.
+  if (!freshProfile.email) return;
+
+  // Merge fresh profile fields into the persisted user object.
+  // Only overwrite with defined values to prevent corrupting persisted data.
+  const cur = currentAuth.user;
   const updatedUser: AppUser = {
-    ...currentAuth.user,
-    firstName: freshProfile.firstName,
-    lastName: freshProfile.lastName,
-    phone: freshProfile.phone,
-    email: freshProfile.email,
-    avatar: freshProfile.avatar,
-    points: freshProfile.points,
-    role: freshProfile.role,
-    twoFactorEnabled: freshProfile.twoFactorEnabled,
-    emailVerified: freshProfile.emailVerified,
-    subscriptionStatus: freshProfile.subscriptionStatus,
-    surveysubscriptionStatus: freshProfile.surveysubscriptionStatus,
-    updatedAt: freshProfile.updatedAt,
+    ...cur,
+    firstName: freshProfile.firstName ?? cur.firstName,
+    lastName: freshProfile.lastName ?? cur.lastName,
+    phone: freshProfile.phone ?? cur.phone,
+    email: freshProfile.email ?? cur.email,
+    avatar: freshProfile.avatar !== undefined ? freshProfile.avatar : cur.avatar,
+    points: freshProfile.points ?? cur.points,
+    role: freshProfile.role ?? cur.role,
+    twoFactorEnabled: freshProfile.twoFactorEnabled ?? cur.twoFactorEnabled,
+    emailVerified: freshProfile.emailVerified ?? cur.emailVerified,
+    subscriptionStatus: freshProfile.subscriptionStatus ?? cur.subscriptionStatus,
+    surveysubscriptionStatus: freshProfile.surveysubscriptionStatus ?? cur.surveysubscriptionStatus,
+    updatedAt: freshProfile.updatedAt ?? cur.updatedAt,
   };
 
   // Only persist if something actually changed
-  const current = currentAuth.user;
   const hasChanged =
-    current.firstName !== updatedUser.firstName ||
-    current.lastName !== updatedUser.lastName ||
-    current.phone !== updatedUser.phone ||
-    current.email !== updatedUser.email ||
-    current.avatar !== updatedUser.avatar ||
-    current.points !== updatedUser.points ||
-    current.role !== updatedUser.role;
+    cur.firstName !== updatedUser.firstName ||
+    cur.lastName !== updatedUser.lastName ||
+    cur.phone !== updatedUser.phone ||
+    cur.email !== updatedUser.email ||
+    cur.avatar !== updatedUser.avatar ||
+    cur.points !== updatedUser.points ||
+    cur.role !== updatedUser.role;
 
   if (hasChanged) {
     useAuthStore.getState().setAuth({
