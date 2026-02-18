@@ -1,7 +1,10 @@
 import { FormInput } from "@/components/FormInput";
 import { PrimaryButton } from "@/components/PrimaryButton";
+import { OTPVerificationModal } from "@/components/profile/OTPVerificationModal";
 import { AuthErrorMessage } from "@/components/ui/AuthErrorMessage";
+import { useSend2FACodeMutation, useVerify2FALoginMutation } from "@/services/authHooks";
 import { useAuth } from "@/utils/auth";
+import { useAuthStore } from "@/utils/auth/store";
 import {
     SPACING,
     TYPOGRAPHY,
@@ -10,6 +13,7 @@ import {
 } from "@/utils/theme";
 import { validateForm, ValidationSchema, validators } from "@/utils/validation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail } from "lucide-react-native";
@@ -53,6 +57,7 @@ export default function LoginScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const { login, isLoading, isReady: authReady, isAuthenticated } = useAuth();
   const isNavigatingRef = React.useRef(false);
+  const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState<FormData>({
     email: "",
@@ -61,6 +66,15 @@ export default function LoginScreen(): React.ReactElement {
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
   const [generalError, setGeneralError] = useState<string>("");
+
+  // 2FA state
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+
+  const send2FAMutation = useSend2FACodeMutation();
+  const verify2FAMutation = useVerify2FALoginMutation();
 
   // Auto-redirect if user lands on login while already authenticated
   // (e.g. back-navigation). Skip if handleLogin is driving navigation.
@@ -134,6 +148,26 @@ export default function LoginScreen(): React.ReactElement {
     });
 
     if (response.success) {
+      // 2FA required — send code and show OTP modal
+      if (response.message === '2FA_REQUIRED') {
+        isNavigatingRef.current = false;
+        setLoginEmail(formData.email);
+        send2FAMutation.mutate(
+          { email: formData.email },
+          {
+            onSuccess: (data) => {
+              setMaskedEmail(data.data?.email || formData.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'));
+              setOtpExpiresAt(Date.now() + (data.data?.expiresIn ?? 600) * 1000);
+              setShow2FAModal(true);
+            },
+            onError: (err) => {
+              setGeneralError(err.message || 'Failed to send verification code.');
+            },
+          }
+        );
+        return;
+      }
+
       // Defer navigation by one tick so the root layout can settle
       // after the auth state change (prevents "navigate before mounting" error)
       requestAnimationFrame(() => {
@@ -151,6 +185,47 @@ export default function LoginScreen(): React.ReactElement {
       setGeneralError(response.error || "Login failed. Please try again.");
     }
   };
+
+  /** Verify the 2FA code entered in the OTP modal */
+  const handle2FAVerify = useCallback(async (code: string) => {
+    // Pre-read onboarding flag before auth state change
+    const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
+    isNavigatingRef.current = true;
+
+    verify2FAMutation.mutate(
+      { email: loginEmail, code },
+      {
+        onSuccess: () => {
+          setShow2FAModal(false);
+          queryClient.invalidateQueries();
+          requestAnimationFrame(() => {
+            if (!hasOnboarded) {
+              AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+              router.replace("/welcome");
+            } else {
+              router.replace("/(tabs)/home-redesigned");
+            }
+          });
+        },
+        onError: (err) => {
+          isNavigatingRef.current = false;
+          setGeneralError(err.message || 'Invalid verification code.');
+        },
+      }
+    );
+  }, [loginEmail, verify2FAMutation, queryClient]);
+
+  /** Resend 2FA code */
+  const handle2FAResend = useCallback(() => {
+    send2FAMutation.mutate(
+      { email: loginEmail },
+      {
+        onSuccess: (data) => {
+          setOtpExpiresAt(Date.now() + (data.data?.expiresIn ?? 600) * 1000);
+        },
+      }
+    );
+  }, [loginEmail, send2FAMutation]);
 
   const handleBack = (): void => {
     router.back();
@@ -287,6 +362,24 @@ export default function LoginScreen(): React.ReactElement {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* 2FA Verification Modal */}
+      <OTPVerificationModal
+        visible={show2FAModal}
+        variant="verification"
+        title="Two-Factor Authentication"
+        subtitle="Enter the 6-digit code sent to your email"
+        maskedEmail={maskedEmail}
+        expiresAt={otpExpiresAt}
+        onVerify={handle2FAVerify}
+        onResend={handle2FAResend}
+        onClose={() => {
+          setShow2FAModal(false);
+          isNavigatingRef.current = false;
+        }}
+        isVerifying={verify2FAMutation.isPending}
+        isResending={send2FAMutation.isPending}
+      />
     </View>
   );
 }

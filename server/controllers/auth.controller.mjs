@@ -38,6 +38,48 @@ const verifyOTPCode = (inputCode, hashedCode) => {
   return inputHash === hashedCode;
 };
 
+// ── 2FA brute-force protection ────────────────────────────────
+const MAX_2FA_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+/**
+ * Check if user is locked out from 2FA verification.
+ * Returns { locked: true, waitSeconds } if locked, { locked: false } otherwise.
+ */
+const check2FALockout = (user) => {
+  if (user.twoFactorLockedUntil && new Date() < user.twoFactorLockedUntil) {
+    const waitSeconds = Math.ceil((user.twoFactorLockedUntil.getTime() - Date.now()) / 1000);
+    return { locked: true, waitSeconds };
+  }
+  return { locked: false };
+};
+
+/**
+ * Record a failed 2FA attempt. Locks the account after MAX_2FA_ATTEMPTS failures.
+ */
+const record2FAFailure = async (userId, currentAttempts) => {
+  const newAttempts = currentAttempts + 1;
+  const data = { twoFactorAttempts: newAttempts };
+
+  if (newAttempts >= MAX_2FA_ATTEMPTS) {
+    data.twoFactorLockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
+    data.twoFactorCode = null;
+    data.twoFactorCodeExpiry = null;
+  }
+
+  await prisma.appUser.update({ where: { id: userId }, data });
+};
+
+/**
+ * Reset 2FA attempts after a successful verification or when a new code is generated.
+ */
+const reset2FAAttempts = async (userId) => {
+  await prisma.appUser.update({
+    where: { id: userId },
+    data: { twoFactorAttempts: 0, twoFactorLockedUntil: null },
+  });
+};
+
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
   const {email: rawEmail, password,firstName,lastName,phone } = req.body;
@@ -475,7 +517,7 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
  * When disabling: Requires current password verification
  */
 export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
-  const { enabled, password } = req.body;
+  const { enabled, password, code } = req.body;
   const userId = req.user.id;
 
   console.log('🔐 2FA toggle request for user ID:', userId, '| Enable:', enabled);
@@ -489,6 +531,10 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         firstName: true,
         password: true,
         twoFactorEnabled: true,
+        twoFactorCode: true,
+        twoFactorCodeExpiry: true,
+        twoFactorAttempts: true,
+        twoFactorLockedUntil: true,
       },
     });
 
@@ -496,7 +542,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
       return next(errorHandler(404, "User not found"));
     }
 
-    // If disabling 2FA, verify password first
+    // If disabling 2FA — 2-step: password → send OTP, then password + code → disable
     if (!enabled && user.twoFactorEnabled) {
       if (!password) {
         return res.status(400).json({
@@ -513,22 +559,100 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         });
       }
 
-      // Disable 2FA
+      // Step 2: Code provided — verify OTP then disable
+      if (code) {
+        // Brute-force lockout check
+        const lockout = check2FALockout(user);
+        if (lockout.locked) {
+          return res.status(429).json({
+            success: false,
+            error: `Too many failed attempts. Please try again in ${lockout.waitSeconds} seconds.`
+          });
+        }
+
+        if (!user.twoFactorCode || !user.twoFactorCodeExpiry) {
+          return res.status(400).json({
+            success: false,
+            error: "No verification code found. Please request a new code."
+          });
+        }
+
+        if (new Date() > user.twoFactorCodeExpiry) {
+          return res.status(400).json({
+            success: false,
+            error: "Verification code has expired. Please request a new code."
+          });
+        }
+
+        if (!verifyOTPCode(code, user.twoFactorCode)) {
+          await record2FAFailure(user.id, user.twoFactorAttempts);
+          return res.status(400).json({
+            success: false,
+            error: "Invalid verification code"
+          });
+        }
+
+        // Disable 2FA and clear all 2FA fields
+        await prisma.appUser.update({
+          where: { id: userId },
+          data: {
+            twoFactorEnabled: false,
+            twoFactorCode: null,
+            twoFactorCodeExpiry: null,
+            twoFactorAttempts: 0,
+            twoFactorLockedUntil: null,
+            updatedAt: new Date(),
+          },
+        });
+
+        // Invalidate all other sessions (security-critical change)
+        await prisma.loginSession.updateMany({
+          where: { userId, isActive: true },
+          data: { isActive: false, logoutTime: new Date() },
+        });
+
+        console.log('✅ 2FA disabled for user ID:', userId);
+        return res.status(200).json({
+          success: true,
+          data: { enabled: false },
+          message: "Two-factor authentication disabled successfully"
+        });
+      }
+
+      // Step 1: No code — send OTP to email for confirmation
+      const otpCode = generateOTPCode();
+      const hashedCode = hashOTPCode(otpCode);
+      const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
+
       await prisma.appUser.update({
         where: { id: userId },
         data: {
-          twoFactorEnabled: false,
-          twoFactorCode: null,
-          twoFactorCodeExpiry: null,
-          updatedAt: new Date(),
+          twoFactorCode: hashedCode,
+          twoFactorCodeExpiry: expiryTime,
+          twoFactorAttempts: 0,
+          twoFactorLockedUntil: null,
         },
       });
 
-      console.log('✅ 2FA disabled for user ID:', userId);
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+
+      if (!emailResult.success && process.env.NODE_ENV === 'production') {
+        return res.status(500).json({
+          success: false,
+          error: "Failed to send verification code. Please try again."
+        });
+      }
+
+      console.log('📧 Disable-2FA verification code sent to:', user.email);
       return res.status(200).json({
         success: true,
-        data: { enabled: false },
-        message: "Two-factor authentication disabled successfully"
+        data: {
+          codeSent: true,
+          email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
+          expiresIn: 180,
+        },
+        message: "Verification code sent to confirm disabling 2FA",
+        ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
       });
     }
 
@@ -538,12 +662,14 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
       const hashedCode = hashOTPCode(otpCode);
       const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
 
-      // Store hashed code
+      // Store hashed code and reset brute-force counters (fresh code = fresh window)
       await prisma.appUser.update({
         where: { id: userId },
         data: {
           twoFactorCode: hashedCode,
           twoFactorCodeExpiry: expiryTime,
+          twoFactorAttempts: 0,
+          twoFactorLockedUntil: null,
         },
       });
 
@@ -613,11 +739,22 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
         twoFactorCode: true,
         twoFactorCodeExpiry: true,
         twoFactorEnabled: true,
+        twoFactorAttempts: true,
+        twoFactorLockedUntil: true,
       },
     });
 
     if (!user) {
       return next(errorHandler(404, "User not found"));
+    }
+
+    // Brute-force lockout check
+    const lockout = check2FALockout(user);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many failed attempts. Please try again in ${lockout.waitSeconds} seconds.`
+      });
     }
 
     // Check if already enabled
@@ -646,21 +783,30 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
 
     // Verify the code
     if (!verifyOTPCode(code, user.twoFactorCode)) {
+      await record2FAFailure(user.id, user.twoFactorAttempts);
       return res.status(400).json({
         success: false,
         error: "Invalid verification code"
       });
     }
 
-    // Enable 2FA and clear code
+    // Enable 2FA, clear code, and reset brute-force counters
     await prisma.appUser.update({
       where: { id: userId },
       data: {
         twoFactorEnabled: true,
         twoFactorCode: null,
         twoFactorCodeExpiry: null,
+        twoFactorAttempts: 0,
+        twoFactorLockedUntil: null,
         updatedAt: new Date(),
       },
+    });
+
+    // Invalidate all other sessions (security-critical change)
+    await prisma.loginSession.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false, logoutTime: new Date() },
     });
 
     console.log('✅ 2FA enabled successfully for user ID:', userId);
@@ -722,7 +868,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       }
     }
 
-    // Generate new code
+    // Generate new code and reset brute-force counters (fresh code = fresh window)
     const otpCode = generateOTPCode();
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
@@ -732,6 +878,8 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       data: {
         twoFactorCode: hashedCode,
         twoFactorCodeExpiry: expiryTime,
+        twoFactorAttempts: 0,
+        twoFactorLockedUntil: null,
       },
     });
 
@@ -809,11 +957,14 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Store hashed code and reset brute-force counters (fresh code = fresh window)
     await prisma.appUser.update({
       where: { id: user.id },
       data: {
         twoFactorCode: hashedCode,
         twoFactorCodeExpiry: expiryTime,
+        twoFactorAttempts: 0,
+        twoFactorLockedUntil: null,
       },
     });
 
@@ -868,9 +1019,23 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
         email: true,
         firstName: true,
         lastName: true,
+        phone: true,
+        points: true,
+        avatar: true,
+        role: true,
+        password: true,
+        twoFactorEnabled: true,
+        emailVerified: true,
         twoFactorCode: true,
         twoFactorCodeExpiry: true,
-        twoFactorEnabled: true,
+        twoFactorAttempts: true,
+        twoFactorLockedUntil: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        currentSubscriptionId: true,
+        privacySettings: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
 
@@ -878,6 +1043,15 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: "Invalid request"
+      });
+    }
+
+    // Brute-force lockout check
+    const lockout = check2FALockout(user);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many failed attempts. Please try again in ${lockout.waitSeconds} seconds.`
       });
     }
 
@@ -896,34 +1070,35 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
     }
 
     if (!verifyOTPCode(code, user.twoFactorCode)) {
+      await record2FAFailure(user.id, user.twoFactorAttempts);
       return res.status(400).json({
         success: false,
         error: "Invalid verification code"
       });
     }
 
-    // Clear the used code
+    // Clear the used code and reset brute-force counters
     await prisma.appUser.update({
       where: { id: user.id },
       data: {
         twoFactorCode: null,
         twoFactorCodeExpiry: null,
+        twoFactorAttempts: 0,
+        twoFactorLockedUntil: null,
       },
     });
 
     // Issue access + refresh token pair for successful 2FA login
     const { accessToken, refreshToken } = await issueTokenPair(user.id, req);
 
+    // Strip sensitive fields before returning user data
+    const { password: _pw, twoFactorCode: _tc, twoFactorCodeExpiry: _te, ...safeUser } = user;
+
     console.log('✅ 2FA login successful for:', email);
     return res.status(200).json({
       success: true,
       message: "Two-factor authentication verified",
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-      },
+      user: safeUser,
       token: accessToken,
       refreshToken,
     });

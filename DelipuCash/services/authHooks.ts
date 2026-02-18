@@ -101,8 +101,12 @@ interface ValidateTokenResponse {
 interface TwoFactorSendResponse {
   success: boolean;
   message: string;
-  maskedEmail?: string;
-  expiresAt?: string;
+  data?: {
+    codeSent: boolean;
+    email: string;
+    expiresIn: number;
+  };
+  devCode?: string;
 }
 
 interface TwoFactorVerifyLoginResponse {

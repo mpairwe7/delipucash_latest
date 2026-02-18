@@ -6,7 +6,8 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/services";
-import { useInstantRewardQuestions } from "@/services/hooks";
+import { useInstantRewardQuestions, useInstantRewardQuestionAttempts } from "@/services/hooks";
+import type { UserAttemptRecord } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
@@ -240,10 +241,14 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
   const { data: rewardQuestions, isLoading, error: rewardError, refetch, isFetching } = useInstantRewardQuestions();
 
+  // Server-provided attempt records (shares cache with useInstantRewardQuestions — no extra fetch)
+  const { data: serverAttempts = [] } = useInstantRewardQuestionAttempts();
+
   // Access instant reward store for attempt tracking — individual selectors prevent over-subscription
   const initializeAttemptHistory = useInstantRewardStore((s) => s.initializeAttemptHistory);
   const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
   const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
+  const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
 
   const userEmail = auth?.user?.email || user?.email;
 
@@ -253,6 +258,32 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       initializeAttemptHistory(userEmail);
     }
   }, [userEmail, initializeAttemptHistory]);
+
+  // Hydrate local store from server-provided attempts so the UI stays in sync
+  // even after app restarts or store clears.
+  useEffect(() => {
+    if (!serverAttempts.length) return;
+    for (const sa of serverAttempts) {
+      if (!hasAttemptedQuestion(sa.rewardQuestionId)) {
+        markQuestionAttempted({
+          questionId: sa.rewardQuestionId,
+          isCorrect: sa.isCorrect,
+          selectedAnswer: sa.selectedAnswer,
+          rewardEarned: 0,
+          isWinner: false,
+          position: null,
+          paymentStatus: null,
+        });
+      }
+    }
+  }, [serverAttempts, hasAttemptedQuestion, markQuestionAttempted]);
+
+  // Build a fast lookup of server-side attempted question IDs
+  const serverAttemptMap = useMemo(() => {
+    const map = new Map<string, UserAttemptRecord>();
+    for (const a of serverAttempts) map.set(a.rewardQuestionId, a);
+    return map;
+  }, [serverAttempts]);
 
   /**
    * Role-based access control: Check user's role field from backend
@@ -268,7 +299,10 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         return new Date(q.expiryTime) > now;
       })
       .map((q) => {
-        const attemptedQuestion = getAttemptedQuestion(q.id);
+        const localAttempt = getAttemptedQuestion(q.id);
+        const serverAttempt = serverAttemptMap.get(q.id);
+        // Question is answered if EITHER the server or local store says so
+        const isAnswered = hasAttemptedQuestion(q.id) || !!serverAttempt;
         const spots = Math.max(q.maxWinners - q.winnersCount, 0);
         return {
           id: q.id,
@@ -279,15 +313,15 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           winnersCount: q.winnersCount,
           isInstantReward: true,
           createdAt: q.createdAt,
-          isAnswered: hasAttemptedQuestion(q.id),
-          isCorrect: attemptedQuestion?.isCorrect ?? false,
-          rewardEarned: attemptedQuestion?.rewardEarned ?? 0,
+          isAnswered,
+          isCorrect: localAttempt?.isCorrect ?? serverAttempt?.isCorrect ?? false,
+          rewardEarned: localAttempt?.rewardEarned ?? 0,
           spotsLeft: spots,
           isFull: spots <= 0 || q.isCompleted,
           isExpiringSoon: checkExpiringSoon(q.expiryTime),
         };
       });
-  }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion]);
+  }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion, serverAttemptMap]);
 
   // Separate questions into unanswered (sorted by opportunity) and completed
   const unansweredQuestions = useMemo(() => {

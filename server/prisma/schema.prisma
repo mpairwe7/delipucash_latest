@@ -20,6 +20,8 @@ model AppUser {
   emailVerified            Boolean               @default(false)
   twoFactorCode            String?               // Hashed OTP code
   twoFactorCodeExpiry      DateTime?             // OTP expiration time
+  twoFactorAttempts        Int                   @default(0)
+  twoFactorLockedUntil     DateTime?
   passwordResetToken       String?               // Hashed password reset token
   passwordResetExpiry      DateTime?             // Password reset token expiration
   subscriptionStatus       SubscriptionStatus    @default(INACTIVE)

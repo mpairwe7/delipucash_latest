@@ -400,10 +400,10 @@ export function EditProfileModal({
   useEffect(() => {
     if (visible && user && !isDirty) {
       setFormData({
-        firstName: user.firstName || '',
-        lastName: user.lastName || '',
-        email: user.email || '',
-        telephone: user.telephone || '',
+        firstName: (user.firstName ?? '').trim(),
+        lastName: (user.lastName ?? '').trim(),
+        email: (user.email ?? '').trim(),
+        telephone: (user.telephone ?? '').trim(),
         avatarUri: user.avatarUri,
       });
       setErrors({});

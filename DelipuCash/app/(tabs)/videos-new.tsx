@@ -395,11 +395,18 @@ export default function VideosScreen(): React.ReactElement {
     (state) => state.currentLivestream?.viewerCount ?? 0
   );
   const [sessionAdCount, setSessionAdCount] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   // Memoized tab icons — prevents AnimatedTabPill re-renders from new JSX refs
   const followingIcon = useMemo(() => <Users size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
   const forYouIcon = useMemo(() => <Sparkles size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
   const trendingIcon = useMemo(() => <TrendingUp size={12} color={colors.text} strokeWidth={2} />, [colors.text]);
+
+  // Measure header height so the feed can position content below it
+  const handleHeaderLayout = useCallback((e: { nativeEvent: { layout: { height: number } } }) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0 && h !== headerHeight) setHeaderHeight(h);
+  }, [headerHeight]);
 
   // ============================================================================
   // 2026 ACCESSIBILITY - Reduced Motion Detection (WCAG 2.2 AAA)
@@ -944,6 +951,7 @@ export default function VideosScreen(): React.ReactElement {
         {/* 2026 HEADER: Glassmorphism + adaptive density              */}
         {/* ──────────────────────────────────────────────────────────── */}
       <View
+        onLayout={handleHeaderLayout}
         style={[
           styles.header,
             systemBarsHeaderStyle,
@@ -1097,6 +1105,7 @@ export default function VideosScreen(): React.ReactElement {
         onAdFeedback={handleAdFeedback}
         onAdImpression={handleInFeedAdImpression}
         isDataSaver={isDataSaverMode}
+        headerHeight={headerHeight > 0 ? headerHeight : undefined}
         testID="video-feed"
       />
       </VideoErrorBoundary>

@@ -200,15 +200,36 @@ export function ProfileUserCard({
     onAvatarPress?.();
   };
 
-  // Deterministic initials: prefer name chars, fall back to email initial or 'U'
+  // ── Normalised name parts (trim whitespace, treat blank as absent) ──
+  const normFirst = useMemo(() => firstName?.trim() || '', [firstName]);
+  const normLast  = useMemo(() => lastName?.trim()  || '', [lastName]);
+  const normEmail = useMemo(() => email?.trim()      || '', [email]);
+
+  // Extract a readable username from email (before the @)
+  const emailUsername = useMemo(() => {
+    if (!normEmail) return '';
+    const atIdx = normEmail.indexOf('@');
+    return atIdx > 0 ? normEmail.slice(0, atIdx) : normEmail;
+  }, [normEmail]);
+
+  // Deterministic initials: name chars → email-username initial → 'U'
   const initials = useMemo(() => {
-    const fi = firstName?.charAt(0) || '';
-    const li = lastName?.charAt(0) || '';
+    const fi = normFirst.charAt(0);
+    const li = normLast.charAt(0);
     if (fi || li) return `${fi}${li}`.toUpperCase();
-    if (email) return email.charAt(0).toUpperCase();
+    if (emailUsername) return emailUsername.charAt(0).toUpperCase();
     return 'U';
-  }, [firstName, lastName, email]);
-  const fullName = `${firstName} ${lastName}`.trim() || 'User';
+  }, [normFirst, normLast, emailUsername]);
+
+  // Display name: "First Last" → "First" → "Last" → email username → "User"
+  const hasName = Boolean(normFirst || normLast);
+  const fullName = useMemo(() => {
+    if (normFirst && normLast) return `${normFirst} ${normLast}`;
+    if (normFirst) return normFirst;
+    if (normLast) return normLast;
+    if (emailUsername) return emailUsername;
+    return 'User';
+  }, [normFirst, normLast, emailUsername]);
 
   // Mask phone for display: +256 7** *** **0
   const maskedPhone = useMemo(() => {
@@ -330,15 +351,26 @@ export function ProfileUserCard({
               {fullName}
             </Text>
 
-            {/* Email — always visible for quick identification */}
-            {email ? (
-              <View style={styles.contactRow}>
-                <Mail size={12} color={colors.textMuted} strokeWidth={1.5} />
-                <Text style={[styles.contactText, { color: colors.textMuted }]} numberOfLines={1}>
-                  {email}
-                </Text>
-              </View>
+            {/* Nudge if name is missing — email is used as display name */}
+            {!hasName && normEmail ? (
+              <Text style={[styles.contactHint, { color: colors.warning }]}>
+                Tap edit to add your name
+              </Text>
             ) : null}
+
+            {/* Email — always visible; shows placeholder when absent */}
+            <View style={styles.contactRow}>
+              <Mail size={12} color={normEmail ? colors.textMuted : colors.warning} strokeWidth={1.5} />
+              <Text
+                style={[
+                  styles.contactText,
+                  { color: normEmail ? colors.textMuted : colors.warning },
+                ]}
+                numberOfLines={1}
+              >
+                {normEmail || 'No email set'}
+              </Text>
+            </View>
 
             {/* Phone — masked for on-screen privacy */}
             {maskedPhone ? (
@@ -596,6 +628,11 @@ const styles = StyleSheet.create({
   contactText: {
     fontSize: TYPOGRAPHY.fontSize.xs,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
+  },
+  contactHint: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    marginTop: 2,
   },
 
   // Stats Container

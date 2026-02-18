@@ -67,15 +67,25 @@ interface RewardQuestionPagination {
   hasMore: boolean;
 }
 
+/** A single user attempt record returned by the listing endpoints */
+export interface UserAttemptRecord {
+  rewardQuestionId: string;
+  selectedAnswer: string;
+  isCorrect: boolean;
+  attemptedAt: string;
+}
+
 /** GET /api/reward-questions/regular — response.data shape */
 interface RegularRewardQuestionsPayload {
   rewardQuestions: RewardQuestion[];
+  userAttempts?: UserAttemptRecord[];
   pagination: RewardQuestionPagination;
 }
 
 /** GET /api/reward-questions/instant — response.data shape */
 interface InstantRewardQuestionsPayload {
   instantRewardQuestions: RewardQuestion[];
+  userAttempts?: UserAttemptRecord[];
   pagination: RewardQuestionPagination;
 }
 
@@ -228,14 +238,14 @@ interface TwoFactorToggleResponse {
 export function useUpdateTwoFactor(): UseMutationResult<
   TwoFactorToggleResponse,
   Error,
-  { enabled: boolean; password?: string }
+  { enabled: boolean; password?: string; code?: string }
 > {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ['user', 'updateTwoFactor'],
-    mutationFn: async ({ enabled, password }) => {
-      const response = await api.user.updateTwoFactor(enabled, password);
+    mutationFn: async ({ enabled, password, code }) => {
+      const response = await api.user.updateTwoFactor(enabled, password, code);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
@@ -1217,6 +1227,26 @@ export function useRegularRewardQuestions(page = 1, limit = 20): UseQueryResult<
 }
 
 /**
+ * Reads userAttempts from the same cached regular-questions query.
+ * Shares cache with useRegularRewardQuestions — no extra network request.
+ */
+export function useRegularRewardQuestionAttempts(page = 1, limit = 20): UseQueryResult<UserAttemptRecord[], Error> {
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<RegularRewardQuestionsPayload, Error, UserAttemptRecord[]>({
+    queryKey: [...queryKeys.regularRewardQuestions, page, limit],
+    queryFn: async () => {
+      const response = await api.rewards.getRegularQuestions(page, limit);
+      if (!response.success) throw new Error(response.error);
+      return response.data as unknown as RegularRewardQuestionsPayload;
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: isAuthReady,
+    select: (data) => data.userAttempts ?? [],
+  });
+}
+
+/**
  * Hook to fetch instant reward questions only (paginated).
  * Uses the dedicated /instant endpoint for server-side filtering + pagination.
  */
@@ -1233,6 +1263,26 @@ export function useInstantRewardQuestions(page = 1, limit = 20): UseQueryResult<
     staleTime: 1000 * 60 * 2,
     enabled: isAuthReady,
     select: (data) => data.instantRewardQuestions ?? [],
+  });
+}
+
+/**
+ * Reads userAttempts from the same cached instant-questions query.
+ * Shares cache with useInstantRewardQuestions — no extra network request.
+ */
+export function useInstantRewardQuestionAttempts(page = 1, limit = 20): UseQueryResult<UserAttemptRecord[], Error> {
+  const isAuthReady = useAuthStore(s => s.isReady && !!s.auth?.token);
+
+  return useQuery<InstantRewardQuestionsPayload, Error, UserAttemptRecord[]>({
+    queryKey: [...queryKeys.instantQuestions, page, limit],
+    queryFn: async () => {
+      const response = await api.rewards.getInstantQuestions(page, limit);
+      if (!response.success) throw new Error(response.error);
+      return response.data as unknown as InstantRewardQuestionsPayload;
+    },
+    staleTime: 1000 * 60 * 2,
+    enabled: isAuthReady,
+    select: (data) => data.userAttempts ?? [],
   });
 }
 

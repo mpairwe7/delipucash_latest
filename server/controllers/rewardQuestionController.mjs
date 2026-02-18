@@ -227,6 +227,17 @@ export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
+    // Resolve authenticated user's email for attempt lookup
+    const userId = req.user?.id;
+    let userEmail = null;
+    if (userId) {
+      const authUser = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+      userEmail = authUser?.email ?? null;
+    }
+
     const where = {
       isActive: true,
       isInstantReward: false,
@@ -269,11 +280,35 @@ export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
       prisma.rewardQuestion.count({ where }),
     ]);
 
+    // Fetch user's attempts for these questions so the client knows which are answered
+    let userAttempts = [];
+    if (userEmail && rewardQuestions.length > 0) {
+      const questionIds = rewardQuestions.map(q => q.id);
+      userAttempts = await prisma.rewardQuestionAttempt.findMany({
+        where: {
+          userEmail,
+          rewardQuestionId: { in: questionIds },
+        },
+        select: {
+          rewardQuestionId: true,
+          selectedAnswer: true,
+          isCorrect: true,
+          attemptedAt: true,
+        },
+      });
+    }
+
     const formattedRewardQuestions = rewardQuestions.map(rq => formatRewardQuestionPublic(rq));
 
     res.json({
       message: "Regular reward questions fetched successfully",
       rewardQuestions: formattedRewardQuestions,
+      userAttempts: userAttempts.map(a => ({
+        rewardQuestionId: a.rewardQuestionId,
+        selectedAnswer: a.selectedAnswer,
+        isCorrect: a.isCorrect,
+        attemptedAt: a.attemptedAt instanceof Date ? a.attemptedAt.toISOString() : a.attemptedAt,
+      })),
       pagination: {
         page,
         limit,
@@ -295,6 +330,17 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
     const page = Math.max(1, parseInt(req.query.page) || 1);
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
+
+    // Resolve authenticated user's email for attempt lookup
+    const userId = req.user?.id;
+    let userEmail = null;
+    if (userId) {
+      const authUser = await prisma.appUser.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      });
+      userEmail = authUser?.email ?? null;
+    }
 
     const where = {
       isActive: true,
@@ -341,11 +387,35 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
       prisma.rewardQuestion.count({ where }),
     ]);
 
+    // Fetch user's attempts for these questions so the client knows which are answered
+    let userAttempts = [];
+    if (userEmail && instantRewardQuestions.length > 0) {
+      const questionIds = instantRewardQuestions.map(q => q.id);
+      userAttempts = await prisma.rewardQuestionAttempt.findMany({
+        where: {
+          userEmail,
+          rewardQuestionId: { in: questionIds },
+        },
+        select: {
+          rewardQuestionId: true,
+          selectedAnswer: true,
+          isCorrect: true,
+          attemptedAt: true,
+        },
+      });
+    }
+
     const formattedInstantRewardQuestions = instantRewardQuestions.map(rq => formatRewardQuestionPublic(rq));
 
     res.json({
       message: "Instant reward questions fetched successfully",
       instantRewardQuestions: formattedInstantRewardQuestions,
+      userAttempts: userAttempts.map(a => ({
+        rewardQuestionId: a.rewardQuestionId,
+        selectedAnswer: a.selectedAnswer,
+        isCorrect: a.isCorrect,
+        attemptedAt: a.attemptedAt instanceof Date ? a.attemptedAt.toISOString() : a.attemptedAt,
+      })),
       pagination: {
         page,
         limit,

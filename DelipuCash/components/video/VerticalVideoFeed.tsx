@@ -125,6 +125,10 @@ export interface VerticalVideoFeedProps {
   onAdImpression?: (video: Video) => void;
   /** 2026: Data saver mode — skip neighbor preloading */
   isDataSaver?: boolean;
+  /** Height of the absolute-positioned header overlay (search bar + tabs).
+   *  When provided, the feed adjusts its top padding and item sizing so
+   *  video content starts below the header instead of behind it. */
+  headerHeight?: number;
   /** Test ID for testing */
   testID?: string;
 }
@@ -152,6 +156,7 @@ function VerticalVideoFeedComponent({
   ListHeaderComponent,
   onAdImpression,
   isDataSaver = false,
+  headerHeight,
   testID,
 }: VerticalVideoFeedProps): React.ReactElement {
   const { colors } = useTheme();
@@ -181,10 +186,12 @@ function VerticalVideoFeedComponent({
   // Animation values
   const feedOpacity = useSharedValue(1);
 
-  // Calculate item height (full screen minus safe areas)
+  // Calculate item height — if headerHeight is provided, items fill the area
+  // below the header; otherwise fall back to safe-area-only calculation.
+  const effectiveTopOffset = headerHeight ?? insets.top;
   const itemHeight = useMemo(() => {
-    return SCREEN_HEIGHT - insets.top;
-  }, [insets.top]);
+    return SCREEN_HEIGHT - effectiveTopOffset;
+  }, [effectiveTopOffset]);
 
   // ============================================================================
   // EFFECTS
@@ -346,14 +353,14 @@ function VerticalVideoFeedComponent({
   // Key extractor
   const keyExtractor = useCallback((item: Video) => item.id, []);
 
-  // Get item layout for optimization
+  // Get item layout for optimization — offset accounts for contentContainer paddingTop
   const getItemLayout = useCallback(
     (_: ArrayLike<Video> | null | undefined, index: number) => ({
       length: itemHeight,
-      offset: itemHeight * index,
+      offset: effectiveTopOffset + itemHeight * index,
       index,
     }),
-    [itemHeight]
+    [itemHeight, effectiveTopOffset]
   );
 
   // Render video item - optimized with granular selectors
@@ -493,7 +500,7 @@ function VerticalVideoFeedComponent({
               onRefresh={handleRefresh}
               tintColor={colors.primary}
               colors={[colors.primary]}
-              progressViewOffset={insets.top}
+              progressViewOffset={effectiveTopOffset}
             />
           ) : undefined
         }
@@ -514,7 +521,7 @@ function VerticalVideoFeedComponent({
         // Content styling
         contentContainerStyle={[
           styles.contentContainer,
-          { paddingTop: insets.top },
+          { paddingTop: effectiveTopOffset },
         ]}
       />
     </Animated.View>

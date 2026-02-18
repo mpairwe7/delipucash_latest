@@ -718,6 +718,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           const errorMessage = error?.message || "Unable to submit your answer. Please try again.";
 
           if (errorMessage.includes("already attempted")) {
+            // Sync local store so the question moves to "Attempted/Completed" tab
+            markQuestionAttempted({
+              questionId: question.id,
+              isCorrect: false, // unknown — server didn't reveal
+              selectedAnswer: answer || "",
+              rewardEarned: 0,
+              isWinner: false,
+              position: null,
+              paymentStatus: null,
+            });
             showToast({
               message: 'You have already attempted this question.',
               type: 'warning',

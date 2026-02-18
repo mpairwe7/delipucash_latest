@@ -386,22 +386,26 @@ export default function ProfileScreen(): React.ReactElement {
 
   const responsivePadding = getResponsivePadding();
 
-  // Profile data
-  const profile = useMemo(() => ({
-    firstName: user?.firstName || '',
-    lastName: user?.lastName || '',
-    email: user?.email || '',
-    telephone: user?.telephone || '',
-    avatarUri: user?.avatar || undefined,
-    walletBalance: user?.walletBalance ?? 0,
-    totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
-    totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
-    streakDays: userStats?.currentStreak || 0,
-    // Verification must come from an authoritative backend flag;
-    // the mere existence of an email string is not proof of verification.
-    isVerified: Boolean(user?.emailVerified),
-    activeSessions: sessions.filter(s => s.isActive).length,
-  }), [user, userStats, sessions]);
+  // Profile data — defensive: treat null / undefined / whitespace-only as absent
+  const profile = useMemo(() => {
+    const trimOrEmpty = (v: string | null | undefined): string =>
+      (v ?? '').trim();
+    return {
+      firstName: trimOrEmpty(user?.firstName),
+      lastName: trimOrEmpty(user?.lastName),
+      email: trimOrEmpty(user?.email),
+      telephone: trimOrEmpty(user?.telephone ?? user?.phone),
+      avatarUri: user?.avatar || undefined,
+      walletBalance: user?.walletBalance ?? 0,
+      totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
+      totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
+      streakDays: userStats?.currentStreak || 0,
+      // Verification must come from an authoritative backend flag;
+      // the mere existence of an email string is not proof of verification.
+      isVerified: Boolean(user?.emailVerified),
+      activeSessions: sessions.filter(s => s.isActive).length,
+    };
+  }, [user, userStats, sessions]);
 
   // Quick access items
   const quickAccessItems: ProfileQuickAction[] = useMemo(() => [
@@ -560,12 +564,17 @@ export default function ProfileScreen(): React.ReactElement {
 
   const handleSaveProfile = useCallback(async (data: EditProfileData) => {
     try {
+      // Sanitise inputs — trim whitespace before persisting
+      const firstName = (data.firstName ?? '').trim();
+      const lastName = (data.lastName ?? '').trim();
+      const phone = (data.telephone ?? '').trim();
+
       // Map telephone (UI field name) to phone (API/Prisma field name)
       // Include avatar so photo changes are persisted to the backend
       await updateProfileMutation.mutateAsync({
-        firstName: data.firstName,
-        lastName: data.lastName,
-        phone: data.telephone,
+        firstName,
+        lastName,
+        phone,
         avatar: data.avatarUri ?? null,
       } as any);
       await refetchUser();
@@ -603,22 +612,72 @@ export default function ProfileScreen(): React.ReactElement {
     }
   }, [twoFactorEnabled, updateTwoFactorMutation]);
 
+  // State for disable-2FA OTP step
+  const [showDisable2FAOTPModal, setShowDisable2FAOTPModal] = useState(false);
+  const [disable2FAMaskedEmail, setDisable2FAMaskedEmail] = useState('');
+  const [disable2FAOtpExpiresAt, setDisable2FAOtpExpiresAt] = useState<number | null>(null);
+
   const handleConfirmDisable2FA = useCallback(() => {
     if (!disable2FAPassword.trim()) {
       Alert.alert('Error', 'Password is required to disable 2FA.');
       return;
     }
+    // Step 1: Send password → backend sends OTP code
     updateTwoFactorMutation.mutate(
       { enabled: false, password: disable2FAPassword },
       {
+        onSuccess: (data) => {
+          if (data.codeSent) {
+            // Backend sent OTP — show OTP modal
+            setShowDisable2FAPrompt(false);
+            setDisable2FAMaskedEmail(data.email || '');
+            setDisable2FAOtpExpiresAt(Date.now() + (data.expiresIn || 180) * 1000);
+            setShowDisable2FAOTPModal(true);
+          } else if (data.enabled === false) {
+            // Directly disabled (shouldn't happen with new backend, but handle gracefully)
+            setTwoFactorEnabled(false);
+            setShowDisable2FAPrompt(false);
+            setDisable2FAPassword('');
+            Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
+          }
+        },
+        onError: (error) => {
+          Alert.alert('Error', error.message || 'Failed to disable 2FA.');
+        },
+      }
+    );
+  }, [disable2FAPassword, updateTwoFactorMutation]);
+
+  /** Step 2: Verify OTP code to complete disabling 2FA */
+  const handleVerifyDisable2FA = useCallback((code: string) => {
+    updateTwoFactorMutation.mutate(
+      { enabled: false, password: disable2FAPassword, code },
+      {
         onSuccess: () => {
           setTwoFactorEnabled(false);
-          setShowDisable2FAPrompt(false);
+          setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
           Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
         },
         onError: (error) => {
-          Alert.alert('Error', error.message || 'Failed to disable 2FA.');
+          Alert.alert('Verification Failed', error.message || 'Invalid verification code.');
+        },
+      }
+    );
+  }, [disable2FAPassword, updateTwoFactorMutation]);
+
+  /** Resend disable-2FA OTP code */
+  const handleResendDisable2FA = useCallback(() => {
+    updateTwoFactorMutation.mutate(
+      { enabled: false, password: disable2FAPassword },
+      {
+        onSuccess: (data) => {
+          if (data.codeSent) {
+            setDisable2FAOtpExpiresAt(Date.now() + (data.expiresIn || 180) * 1000);
+          }
+        },
+        onError: (error) => {
+          Alert.alert('Error', error.message || 'Failed to resend verification code.');
         },
       }
     );
@@ -996,6 +1055,24 @@ export default function ProfileScreen(): React.ReactElement {
           </View>
         </View>
       </Modal>
+
+      {/* 2FA Disable OTP Verification Modal */}
+      <OTPVerificationModal
+        visible={showDisable2FAOTPModal}
+        variant="disable2FA"
+        title="Confirm Disable 2FA"
+        subtitle="Enter the verification code to confirm disabling two-factor authentication"
+        maskedEmail={disable2FAMaskedEmail}
+        expiresAt={disable2FAOtpExpiresAt}
+        onVerify={handleVerifyDisable2FA}
+        onResend={handleResendDisable2FA}
+        onClose={() => {
+          setShowDisable2FAOTPModal(false);
+          setDisable2FAPassword('');
+        }}
+        isVerifying={updateTwoFactorMutation.isPending}
+        isResending={updateTwoFactorMutation.isPending}
+      />
 
       {/* Edit Profile Modal */}
       <EditProfileModal

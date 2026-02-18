@@ -15,7 +15,8 @@ import {
   StatCard,
 } from "@/components";
 import { formatCurrency } from "@/services";
-import { useRegularRewardQuestions } from "@/services/hooks";
+import { useRegularRewardQuestions, useRegularRewardQuestionAttempts } from "@/services/hooks";
+import type { UserAttemptRecord } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
@@ -306,6 +307,9 @@ export default function RewardQuestionsScreen(): React.ReactElement {
     isFetching,
   } = useRegularRewardQuestions();
 
+  // Server-provided attempt records (shares cache with useRegularRewardQuestions — no extra fetch)
+  const { data: serverAttempts = [] } = useRegularRewardQuestionAttempts();
+
   // Attempt tracking from Zustand store
   const initializeAttemptHistory = useInstantRewardStore(
     (s) => s.initializeAttemptHistory
@@ -316,6 +320,9 @@ export default function RewardQuestionsScreen(): React.ReactElement {
   const getAttemptedQuestion = useInstantRewardStore(
     (s) => s.getAttemptedQuestion
   );
+  const markQuestionAttempted = useInstantRewardStore(
+    (s) => s.markQuestionAttempted
+  );
 
   const userEmail = auth?.user?.email || user?.email;
 
@@ -325,10 +332,39 @@ export default function RewardQuestionsScreen(): React.ReactElement {
     }
   }, [userEmail, initializeAttemptHistory]);
 
+  // Hydrate local store from server-provided attempts so the UI stays in sync
+  // even after app restarts or store clears.
+  useEffect(() => {
+    if (!serverAttempts.length) return;
+    for (const sa of serverAttempts) {
+      if (!hasAttemptedQuestion(sa.rewardQuestionId)) {
+        markQuestionAttempted({
+          questionId: sa.rewardQuestionId,
+          isCorrect: sa.isCorrect,
+          selectedAnswer: sa.selectedAnswer,
+          rewardEarned: 0,
+          isWinner: false,
+          position: null,
+          paymentStatus: null,
+        });
+      }
+    }
+  }, [serverAttempts, hasAttemptedQuestion, markQuestionAttempted]);
+
+  // Build a fast lookup of server-side attempted question IDs
+  const serverAttemptMap = useMemo(() => {
+    const map = new Map<string, UserAttemptRecord>();
+    for (const a of serverAttempts) map.set(a.rewardQuestionId, a);
+    return map;
+  }, [serverAttempts]);
+
   // ── Build list items with attempt status ──
   const allItems = useMemo<RewardListItem[]>(() => {
     return (rewardQuestions || []).map((q) => {
-      const attempt = getAttemptedQuestion(q.id);
+      const localAttempt = getAttemptedQuestion(q.id);
+      const serverAttempt = serverAttemptMap.get(q.id);
+      // Question is answered if EITHER the server or local store says so
+      const isAnswered = hasAttemptedQuestion(q.id) || !!serverAttempt;
       const spots = Math.max(q.maxWinners - q.winnersCount, 0);
       return {
         id: q.id,
@@ -338,15 +374,15 @@ export default function RewardQuestionsScreen(): React.ReactElement {
         maxWinners: q.maxWinners,
         winnersCount: q.winnersCount,
         createdAt: q.createdAt,
-        isAnswered: hasAttemptedQuestion(q.id),
-        isCorrect: attempt?.isCorrect ?? false,
-        rewardEarned: attempt?.rewardEarned ?? 0,
+        isAnswered,
+        isCorrect: localAttempt?.isCorrect ?? serverAttempt?.isCorrect ?? false,
+        rewardEarned: localAttempt?.rewardEarned ?? 0,
         spotsLeft: spots,
         isFull: spots <= 0 || q.isCompleted,
         isExpiringSoon: checkExpiringSoon(q.expiryTime),
       };
     });
-  }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion]);
+  }, [rewardQuestions, hasAttemptedQuestion, getAttemptedQuestion, serverAttemptMap]);
 
   const availableQuestions = useMemo(
     () => allItems.filter((q) => !q.isAnswered).sort(sortByOpportunity),

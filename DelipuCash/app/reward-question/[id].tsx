@@ -694,6 +694,16 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
             err?.message || "Unable to submit your answer. Please try again.";
 
           if (errorMessage.includes("already attempted")) {
+            // Sync local store so the question moves to "Attempted" tab
+            markQuestionAttempted({
+              questionId: question.id,
+              isCorrect: false, // unknown — server didn't reveal
+              selectedAnswer: answer || "",
+              rewardEarned: 0,
+              isWinner: false,
+              position: null,
+              paymentStatus: null,
+            });
             showToast({
               message: "You have already attempted this question.",
               type: "warning",

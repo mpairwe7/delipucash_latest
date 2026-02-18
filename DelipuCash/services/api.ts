@@ -364,7 +364,7 @@ export const userApi = {
    * Toggle 2FA settings (enable/disable)
    * Backend: PUT /api/auth/two-factor
    */
-  async updateTwoFactor(enabled: boolean, password?: string): Promise<ApiResponse<{
+  async updateTwoFactor(enabled: boolean, password?: string, code?: string): Promise<ApiResponse<{
     enabled?: boolean;
     codeSent?: boolean;
     email?: string;
@@ -373,7 +373,7 @@ export const userApi = {
     return fetchJson<any>('/api/auth/two-factor', {
       method: 'PUT',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ enabled, password }),
+      body: JSON.stringify({ enabled, password, code }),
     });
   },
 
