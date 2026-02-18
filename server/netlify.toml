@@ -5,7 +5,13 @@
 
 [functions]
   node_bundler = "esbuild"
-  included_files = ["prisma/schema.prisma", "prisma/migrations/**"]
+  included_files = [
+    "prisma/schema.prisma",
+    "prisma/migrations/**",
+    "node_modules/.prisma/client/**",
+    "node_modules/@prisma/client/**",
+    "node_modules/@prisma/engines/**"
+  ]
 
 # Edge Function — SSE streaming (runs BEFORE redirects)
 [[edge_functions]]

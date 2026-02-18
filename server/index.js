@@ -34,10 +34,11 @@ console.log('Bootstrapping API server...');
 
 const app = express();
 
-// Database connection
-// For Vercel serverless, we connect on each cold start
-// The connection is cached by the MongoDB driver
-connectDB();
+// Database health check on cold start (non-blocking)
+// connectDB is the postgres tagged-template client — calling it validates the connection
+connectDB`SELECT 1`.catch((err) =>
+  console.warn('[DB] Initial health check failed:', err.message)
+);
 
 // Middleware
 app.use(express.json());
@@ -51,8 +52,10 @@ const allowedOrigins = [
   'https://mpairwe7-delipucashlatest.vercel.app',
   'http://localhost:8081',
   'exp://192.168.0.117:8081',
-    'https://delipucash-latest.vercel.app',
-  process.env.FRONTEND_URL // Add your production frontend URL
+  'https://delipucash-latest.vercel.app',
+  'https://sensational-semifreddo-166028.netlify.app',
+  process.env.NETLIFY_URL,
+  process.env.FRONTEND_URL,
 ].filter(Boolean);
 
 app.use(cors({
