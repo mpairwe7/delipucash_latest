@@ -947,30 +947,56 @@ export default function VideosScreen(): React.ReactElement {
         {/* StatusBar configured via useSystemBars hook for intelligent management */}
         <StatusBar style={isDark ? 'light' : 'dark'} translucent animated />
 
+        {/* Main Video Feed — rendered FIRST so the header naturally paints on top.
+            The feed uses flex: 1 and is offset by headerHeight via contentContainerStyle. */}
+        <VideoErrorBoundary>
+          <VerticalVideoFeed
+            videos={videos}
+            isLoading={isLoading}
+            isRefreshing={isFetching}
+            isLoadingMore={isFetchingNextPage}
+            onRefresh={handleRefresh}
+            onEndReached={handleEndReached}
+            onLike={handleLike}
+            onComment={handleComment}
+            onShare={handleShare}
+            onBookmark={handleBookmark}
+            onExpandPlayer={handleExpandPlayer}
+            onVideoEnd={handleVideoEnd}
+            onAdCtaPress={handleAdCtaPress}
+            onAdFeedback={handleAdFeedback}
+            onAdImpression={handleInFeedAdImpression}
+            isDataSaver={isDataSaverMode}
+            headerHeight={headerHeight > 0 ? headerHeight : undefined}
+            testID="video-feed"
+          />
+        </VideoErrorBoundary>
+
         {/* ──────────────────────────────────────────────────────────── */}
         {/* 2026 HEADER: Glassmorphism + adaptive density              */}
+        {/* Rendered AFTER the feed so it always paints on top.        */}
         {/* ──────────────────────────────────────────────────────────── */}
-      <View
-        onLayout={handleHeaderLayout}
-        style={[
-          styles.header,
+        <View
+          onLayout={handleHeaderLayout}
+          style={[
+            styles.header,
             systemBarsHeaderStyle,
-          {
-            paddingTop: insets.top + SPACING.xs,
-          },
-        ]}
-        pointerEvents="box-none"
+            {
+              paddingTop: insets.top + SPACING.xs,
+            },
+          ]}
+          pointerEvents="box-none"
           accessibilityRole="toolbar"
           accessibilityLabel="Video feed controls"
-      >
+        >
           {/* Glassmorphism blur background — pointerEvents none so touches pass through to video layer */}
           <BlurView
-            intensity={40}
+            intensity={60}
             tint={isDark ? 'dark' : 'light'}
             style={StyleSheet.absoluteFill}
             pointerEvents="none"
           />
-          <View style={[styles.headerScrim, { backgroundColor: withAlpha(colors.background, 0.35) }]} pointerEvents="none" />
+          <View style={[styles.headerScrim, { backgroundColor: withAlpha(colors.background, 0.55) }]} pointerEvents="none" />
 
           {/* Search Bar Row - 2026: Voice search affordance + data saver */}
           <View style={styles.searchRow}>
@@ -1068,7 +1094,7 @@ export default function VideosScreen(): React.ReactElement {
               <LiveViewerCount count={liveViewerCount} />
             </View>
           </View>
-      </View>
+        </View>
 
         {/* Search Overlay */}
         <SearchOverlay
@@ -1085,30 +1111,6 @@ export default function VideosScreen(): React.ReactElement {
           searchContext="Videos"
           trendingSearches={['Trending', 'Live streams', 'How to', 'Tutorial', 'AI tools']}
         />
-
-      {/* Main Video Feed - wrapped in error boundary for crash isolation */}
-      <VideoErrorBoundary>
-      <VerticalVideoFeed
-        videos={videos}
-        isLoading={isLoading}
-        isRefreshing={isFetching}
-        isLoadingMore={isFetchingNextPage}
-        onRefresh={handleRefresh}
-        onEndReached={handleEndReached}
-        onLike={handleLike}
-        onComment={handleComment}
-        onShare={handleShare}
-        onBookmark={handleBookmark}
-        onExpandPlayer={handleExpandPlayer}
-        onVideoEnd={handleVideoEnd}
-        onAdCtaPress={handleAdCtaPress}
-        onAdFeedback={handleAdFeedback}
-        onAdImpression={handleInFeedAdImpression}
-        isDataSaver={isDataSaverMode}
-        headerHeight={headerHeight > 0 ? headerHeight : undefined}
-        testID="video-feed"
-      />
-      </VideoErrorBoundary>
 
       {/* Full Screen Video Player */}
       {ui.showFullPlayer && currentVideoData && (
@@ -1250,6 +1252,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.base,
     zIndex: Z_INDEX.sticky,
+    elevation: Z_INDEX.sticky, // Android: elevation mirrors zIndex for proper layering
     gap: SPACING.sm,
     overflow: 'hidden',
   },
