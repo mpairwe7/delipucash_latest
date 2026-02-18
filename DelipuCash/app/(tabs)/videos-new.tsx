@@ -452,8 +452,9 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: recordAdImpression } = useRecordAdImpression();
   const adFrequency = useAdFrequency();
 
-  // Interstitial ad state - 2026: Session-capped ad frequency
+  // Interstitial ad state - 2026: Session-capped ad frequency with round-robin selection
   const [showInterstitialAd, setShowInterstitialAd] = useState(false);
+  const [activeInterstitialAd, setActiveInterstitialAd] = useState<Ad | null>(null);
   const [showAdFeedback, setShowAdFeedback] = useState(false);
   const [feedbackAd, setFeedbackAd] = useState<Ad | null>(null);
   const [videosWatchedCount, setVideosWatchedCount] = useState(0);
@@ -474,6 +475,9 @@ export default function VideosScreen(): React.ReactElement {
   useEffect(() => { likedVideoIdsRef.current = likedVideoIds; }, [likedVideoIds]);
   const bookmarkedVideoIdsRef = useRef(bookmarkedVideoIds);
   useEffect(() => { bookmarkedVideoIdsRef.current = bookmarkedVideoIds; }, [bookmarkedVideoIds]);
+
+  // Round-robin index for interstitial ad selection — cycles through available ads
+  const interstitialAdIndexRef = useRef(0);
 
   // Track AppState changes (foreground/background)
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -730,6 +734,8 @@ export default function VideosScreen(): React.ReactElement {
   }, [shareVideoMutate]);
 
   const handleBookmark = useCallback((video: Video) => {
+    // Guard: don't call video APIs for sponsored ad items
+    if (video.isSponsored || video.id.startsWith('ad-')) return;
     if (!authReady) return;
     if (!isAuthenticated) {
       router.push('/(auth)/login' as Href);
@@ -778,6 +784,7 @@ export default function VideosScreen(): React.ReactElement {
 
   const handleInterstitialClose = useCallback(() => {
     setShowInterstitialAd(false);
+    setActiveInterstitialAd(null);
     setVideosWatchedCount(0); // Reset counter after ad shown
   }, []);
 
@@ -826,7 +833,7 @@ export default function VideosScreen(): React.ReactElement {
     setShowAdFeedback(true);
   }, []);
 
-  // 2026: In-feed sponsored video impression tracking
+  // 2026: In-feed sponsored video impression tracking + session cap enforcement
   const handleInFeedAdImpression = useCallback((video: Video) => {
     if (!video.isSponsored) return;
     const originalAdId = video.id.replace('ad-', '');
@@ -837,6 +844,8 @@ export default function VideosScreen(): React.ReactElement {
       wasVisible: true,
       viewportPercentage: 100,
     });
+    // Count in-feed ads toward session cap — ensures videosWithAds respects maxAdsPerSession
+    setSessionAdCount(prev => prev + 1);
   }, [recordAdImpression]);
 
   const handleVideoEnd = useCallback((video: Video) => {
@@ -853,9 +862,15 @@ export default function VideosScreen(): React.ReactElement {
       sessionAdCountRef.current < AD_INSERTION_CONFIG.maxAdsPerSession &&
       frequencyAllowed
     ) {
+      // Round-robin: cycle through available ads instead of always picking [0]
+      const adIdx = interstitialAdIndexRef.current % videoAds.length;
+      const selectedAd = videoAds[adIdx];
+      interstitialAdIndexRef.current = adIdx + 1;
+
+      setActiveInterstitialAd(selectedAd);
       setShowInterstitialAd(true);
-      // Record impression in AdFrequencyManager for cooldown tracking
-      adFrequency.recordImpression(videoAds[0].id, 'interstitial', true);
+      // Record impression against the selected ad for cooldown tracking
+      adFrequency.recordImpression(selectedAd.id, 'interstitial', true);
     }
   }, [videoAds, adFrequency]);
 
@@ -1187,10 +1202,10 @@ export default function VideosScreen(): React.ReactElement {
         />
       )}
 
-        {/* Interstitial Ad - 2026: Session-capped */}
-        {videoAds && videoAds.length > 0 && (
+        {/* Interstitial Ad - 2026: Session-capped with round-robin ad selection */}
+        {activeInterstitialAd && (
           <InterstitialAd
-            ad={videoAds[0]}
+            ad={activeInterstitialAd}
             visible={showInterstitialAd}
             onClose={handleInterstitialClose}
             onAdClick={handleAdClick}
