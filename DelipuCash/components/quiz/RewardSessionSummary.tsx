@@ -262,10 +262,15 @@ const AnimatedCountDisplay: React.FC<{
 }> = ({ value, suffix = '', prefix = '', style, formatFn }) => {
   const [displayText, setDisplayText] = React.useState(`${prefix}0${suffix}`);
 
+  // Format + update must run on JS thread (formatFn uses Intl.NumberFormat)
+  const updateDisplay = React.useCallback((rounded: number) => {
+    const formatted = formatFn ? formatFn(rounded) : `${rounded}`;
+    setDisplayText(`${prefix}${formatted}${suffix}`);
+  }, [formatFn, prefix, suffix]);
+
   useDerivedValue(() => {
     const rounded = Math.round(value.value);
-    const formatted = formatFn ? formatFn(rounded) : `${rounded}`;
-    runOnJS(setDisplayText)(`${prefix}${formatted}${suffix}`);
+    runOnJS(updateDisplay)(rounded);
     return rounded;
   });
 

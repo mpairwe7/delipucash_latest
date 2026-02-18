@@ -27,7 +27,7 @@ import { Platform, StatusBar as RNStatusBar, StyleSheet, ViewStyle } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { setStatusBarStyle, setStatusBarHidden, setStatusBarTranslucent } from 'expo-status-bar';
 import type { StatusBarStyle } from 'expo-status-bar';
-import { SYSTEM_BARS, type SystemBarsMode } from '@/utils/theme';
+import { SYSTEM_BARS, type SystemBarsMode, useThemeStore } from '@/utils/theme';
 
 // ============================================================================
 // TYPES
@@ -149,8 +149,11 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
   // COMPUTED VALUES
   // ============================================================================
 
+  const isDark = useThemeStore((s) => s.isDark);
   const isVisible = mode !== 'immersive';
-  const currentStyle: StatusBarStyle = initialStyle === 'auto' ? 'light' : initialStyle;
+  const currentStyle: StatusBarStyle = initialStyle === 'auto'
+    ? (isDark ? 'light' : 'dark')
+    : initialStyle;
 
   // Header offset accounting for status bar
   const headerOffset = useMemo(() => {
@@ -252,7 +255,7 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
     left: 0,
     right: 0,
     height: insets.top + SYSTEM_BARS.statusBar.height.ios,
-    backgroundColor: statusBarBackground || SYSTEM_BARS.statusBar.darkOverlay,
+    backgroundColor: statusBarBackground || 'transparent',
     zIndex: 1,
   }), [insets.top, statusBarBackground]);
 
@@ -262,10 +265,10 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
 
   // Apply initial configuration
   useEffect(() => {
-    // Save previous state for restoration
+    // Save previous state for restoration (capture actual theme-aware style)
     if (restoreOnUnmount && !previousStateRef.current) {
       previousStateRef.current = {
-        style: 'light', // Default assumption
+        style: currentStyle,
         hidden: false,
       };
     }
@@ -367,7 +370,7 @@ export const SYSTEM_BARS_PRESETS = {
   /** TikTok/Reels style video feed */
   videoFeed: {
     mode: 'edge-to-edge' as SystemBarsMode,
-    statusBarStyle: 'light' as StatusBarStyle,
+    statusBarStyle: 'auto' as 'auto',
     translucent: true,
     animated: true,
   },
@@ -383,7 +386,7 @@ export const SYSTEM_BARS_PRESETS = {
   /** Standard screen with dark header */
   darkHeader: {
     mode: 'edge-to-edge' as SystemBarsMode,
-    statusBarStyle: 'light' as StatusBarStyle,
+    statusBarStyle: 'auto' as 'auto',
     translucent: true,
     animated: true,
   },

@@ -1,30 +1,27 @@
 /**
- * CollapsibleSearchBar Component
- * 
- * YouTube-inspired collapsible search bar that:
- * - Expands when scrolling up or tapping
- * - Collapses to icon-only when scrolling down
- * - Smooth native thread animations with Reanimated
- * - Supports voice search and query clearing
- * 
- * Performance: Uses native thread animations for 60fps on low-end devices
- * Accessibility: Full keyboard and screen reader support
+ * CollapsibleSearchBar — YouTube-style pill search bar
+ *
+ * - Collapses to icon-only on scroll-down, expands on scroll-up
+ * - Clean solid-fill pill (no border, no glassmorphism)
+ * - Tap opens SearchOverlay for full search experience
+ * - Native-thread animations via Reanimated for 60 fps
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View,
   Text,
   Pressable,
   StyleSheet,
 } from 'react-native';
 import Animated, {
   useAnimatedStyle,
+  useDerivedValue,
   Extrapolate,
   interpolate,
+  runOnJS,
   type SharedValue,
 } from 'react-native-reanimated';
-import { Search, X, Mic } from 'lucide-react-native';
+import { Search, X } from 'lucide-react-native';
 import {
   useTheme,
   SPACING,
@@ -33,12 +30,12 @@ import {
   withAlpha,
 } from '@/utils/theme';
 
-interface CollapsibleSearchBarProps {
+export interface CollapsibleSearchBarProps {
   /** Current search query */
   query: string;
   /** Query change handler */
   onChangeQuery: (query: string) => void;
-  /** Submit/focus handler - opens search overlay */
+  /** Submit/focus handler — opens search overlay */
   onFocus: () => void;
   /** Clear search handler */
   onClear: () => void;
@@ -57,103 +54,60 @@ export const CollapsibleSearchBar = React.memo(
     scrollProgress,
     placeholder = 'Search videos, creators...',
   }: CollapsibleSearchBarProps) => {
-    const { colors } = useTheme();
+    const { colors, isDark } = useTheme();
 
     // ──────────────────────────────────────────────────────────────
-    // ANIMATED VALUES
+    // COLLAPSE STATE (bridged from UI thread via useDerivedValue)
+    // Fixes Reanimated warning: no .value reads in JSX render
     // ──────────────────────────────────────────────────────────────
 
-    // Search input and text opacity
-    const inputOpacity = useAnimatedStyle(() => {
-      return {
-        opacity: interpolate(
-          scrollProgress.value,
-          [0, 0.7],
-          [1, 0],
-          Extrapolate.CLAMP
-        ),
-        width: interpolate(
-          scrollProgress.value,
-          [0, 1],
-          [1, 0],
-          Extrapolate.CLAMP
-        ),
-      };
+    const [isCollapsed, setIsCollapsed] = useState(false);
+
+    useDerivedValue(() => {
+      const collapsed = scrollProgress.value > 0.5;
+      runOnJS(setIsCollapsed)(collapsed);
+      return collapsed;
     });
 
-    // Border radius: from full (RADIUS.full) to small circle (14)
-    const borderRadiusAnim = useAnimatedStyle(() => {
-      const radius = interpolate(
+    // ──────────────────────────────────────────────────────────────
+    // ANIMATED STYLES
+    // ──────────────────────────────────────────────────────────────
+
+    // Input wrapper: fades out and shrinks as user scrolls
+    const inputAnimStyle = useAnimatedStyle(() => ({
+      opacity: interpolate(
+        scrollProgress.value,
+        [0, 0.7],
+        [1, 0],
+        Extrapolate.CLAMP
+      ),
+      flex: interpolate(
         scrollProgress.value,
         [0, 1],
-        [RADIUS.full, 20],
+        [1, 0],
         Extrapolate.CLAMP
-      );
+      ),
+    }));
 
-      return {
-        borderRadius: radius,
-      };
-    });
-
-    // Padding: from md to xs when collapsed
-    const paddingAnim = useAnimatedStyle(() => {
-      const paddingH = interpolate(
+    // Container padding: tightens when collapsed
+    const paddingAnimStyle = useAnimatedStyle(() => ({
+      paddingHorizontal: interpolate(
         scrollProgress.value,
         [0, 1],
         [SPACING.md, SPACING.sm],
         Extrapolate.CLAMP
-      );
+      ),
+    }));
 
-      const paddingV = interpolate(
+    // Clear button: visible when query exists AND bar is expanded
+    const clearAnimStyle = useAnimatedStyle(() => ({
+      opacity: interpolate(
         scrollProgress.value,
-        [0, 1],
-        [SPACING.xs, SPACING.xs],
+        [0, 0.7],
+        [query.length > 0 ? 1 : 0, 0],
         Extrapolate.CLAMP
-      );
-
-      return {
-        paddingHorizontal: paddingH,
-        paddingVertical: paddingV,
-      };
-    });
-
-    // Height: from 38 to 40px (icon size only)
-    const heightAnim = useAnimatedStyle(() => {
-      const height = interpolate(
-        scrollProgress.value,
-        [0, 1],
-        [38, 40],
-        Extrapolate.CLAMP
-      );
-
-      return {
-        height,
-      };
-    });
-
-    // Voice search button visibility
-    const voiceOpacity = useAnimatedStyle(() => {
-      return {
-        opacity: interpolate(
-          scrollProgress.value,
-          [0, 0.7],
-          [query.length === 0 ? 1 : 0, 0],
-          Extrapolate.CLAMP
-        ),
-      };
-    });
-
-    // Clear button visibility (X icon)
-    const clearOpacity = useAnimatedStyle(() => {
-      return {
-        opacity: interpolate(
-          scrollProgress.value,
-          [0, 0.7],
-          [query.length > 0 ? 1 : 0, 0],
-          Extrapolate.CLAMP
-        ),
-      };
-    });
+      ),
+    }));
 
     // ──────────────────────────────────────────────────────────────
     // HANDLERS
@@ -164,125 +118,87 @@ export const CollapsibleSearchBar = React.memo(
       onClear();
     }, [onChangeQuery, onClear]);
 
-    const handleIconPress = useCallback(() => {
+    const handlePress = useCallback(() => {
       onFocus();
     }, [onFocus]);
 
-    // Accessibility label that updates with query
     const accessibilityLabel = useMemo(() => {
       return query
         ? `Search field with query: ${query}`
         : 'Search videos';
     }, [query]);
 
+    // YouTube-style background: solid fill, no transparency
+    const pillBg = isDark ? '#272727' : '#F2F2F2';
+
     return (
       <Animated.View
         style={[
-          styles.searchContainer,
-          borderRadiusAnim,
-          heightAnim,
-          paddingAnim,
-          {
-            backgroundColor: withAlpha(colors.text, 0.18),
-            borderColor: withAlpha(colors.text, 0.15),
-          },
+          styles.pill,
+          paddingAnimStyle,
+          { backgroundColor: pillBg },
         ]}
-        accessible={true}
+        accessible
         accessibilityRole="search"
         accessibilityLabel={accessibilityLabel}
-        accessibilityHint="Tap to search videos. Expands on tap"
+        accessibilityHint="Tap to search videos"
       >
-        {/* Search Icon - Always visible, opacity changes based on scroll */}
+        {/* Search icon — always visible */}
         <Pressable
-          onPress={handleIconPress}
+          onPress={handlePress}
           style={styles.iconButton}
           accessibilityRole="button"
-          accessibilityLabel="Search button"
-          accessibilityHint="Tap to open search overlay"
+          accessibilityLabel="Search"
+          hitSlop={6}
         >
           <Search
             size={18}
-            color={withAlpha(colors.text, 0.85)}
+            color={withAlpha(colors.text, 0.6)}
             strokeWidth={2}
           />
         </Pressable>
 
-        {/* Input & Placeholder - Visible when expanded, fades when collapsed */}
+        {/* Input area — fades on scroll */}
         <Animated.View
-          style={[
-            styles.inputWrapper,
-            inputOpacity,
-          ]}
-          pointerEvents={scrollProgress.value > 0.5 ? 'none' : 'auto'}
+          style={[styles.inputWrapper, inputAnimStyle]}
+          pointerEvents={isCollapsed ? 'none' : 'auto'}
         >
-          {!query && (
-            <Text
-              style={[
-                styles.placeholder,
-                {
-                  color: withAlpha(colors.text, 0.65),
-                },
-              ]}
-              numberOfLines={1}
-              pointerEvents="none"
-            >
-              {placeholder}
-            </Text>
-          )}
           <Pressable
             style={styles.inputPressable}
-            onPress={onFocus}
+            onPress={handlePress}
             accessibilityRole="search"
-            accessibilityLabel="Search input field"
-            accessibilityHint="Open search overlay to search"
+            accessibilityLabel="Search input"
+            accessibilityHint="Open search"
           >
             <Text
               style={[
-                styles.queryText,
-                {
-                  color: colors.text,
-                },
+                styles.inputText,
+                { color: query ? colors.text : withAlpha(colors.text, 0.5) },
               ]}
               numberOfLines={1}
             >
-              {query}
+              {query || placeholder}
             </Text>
           </Pressable>
         </Animated.View>
 
-        {/* Clear Button (X Icon) - Shows when query exists and expanded */}
-        <Animated.View style={[styles.actionButton, clearOpacity]}>
-          <Pressable
-            onPress={handleClear}
-            accessibilityRole="button"
-            accessibilityLabel="Clear search"
-            hitSlop={8}
-          >
-            <X
-              size={18}
-              color={colors.text}
-              strokeWidth={2}
-            />
-          </Pressable>
-        </Animated.View>
-
-        {/* Voice Search Button - Shows when no query and expanded */}
-        <Animated.View style={[styles.actionButton, voiceOpacity]}>
-          <View
-            style={[
-              styles.voiceButton,
-              {
-                backgroundColor: withAlpha(colors.text, 0.15),
-              },
-            ]}
-          >
-            <Mic
-              size={14}
-              color={withAlpha(colors.text, 0.75)}
-              strokeWidth={2}
-            />
-          </View>
-        </Animated.View>
+        {/* Clear button — visible when query exists and expanded */}
+        {query.length > 0 && (
+          <Animated.View style={[styles.clearButton, clearAnimStyle]}>
+            <Pressable
+              onPress={handleClear}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+            >
+              <X
+                size={16}
+                color={withAlpha(colors.text, 0.6)}
+                strokeWidth={2}
+              />
+            </Pressable>
+          </Animated.View>
+        )}
       </Animated.View>
     );
   }
@@ -295,55 +211,42 @@ CollapsibleSearchBar.displayName = 'CollapsibleSearchBar';
 // ══════════════════════════════════════════════════════════════════════════════
 
 const styles = StyleSheet.create({
-  searchContainer: {
+  pill: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    borderWidth: 1,
-    // Animated: borderRadius, height, paddingHorizontal, paddingVertical
+    height: 36,
+    borderRadius: RADIUS.full,
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
   },
 
   iconButton: {
     justifyContent: 'center',
     alignItems: 'center',
-    // Pressed feedback
-    opacity: 0.7,
+    width: 24,
+    height: 24,
   },
 
   inputWrapper: {
-    flex: 1,
     justifyContent: 'center',
-    // Animated: opacity, width
-  },
-
-  placeholder: {
-    position: 'absolute',
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    overflow: 'hidden',
   },
 
   inputPressable: {
     flex: 1,
     justifyContent: 'center',
-    paddingRight: SPACING.xs,
   },
 
-  queryText: {
+  inputText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
 
-  actionButton: {
+  clearButton: {
     justifyContent: 'center',
     alignItems: 'center',
-    // Animated: opacity
-  },
-
-  voiceButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 24,
+    height: 24,
   },
 });

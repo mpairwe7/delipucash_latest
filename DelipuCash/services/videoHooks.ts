@@ -709,7 +709,7 @@ export function useVideoSearch(query: string): UseQueryResult<Video[]> {
       if (!response.success) throw new Error(response.error || 'Search failed');
       return response.data;
     },
-    enabled: query.length >= 2,
+    enabled: (query ?? '').length >= 2,
     staleTime: 1000 * 60 * 2,
   });
 }
@@ -1031,7 +1031,7 @@ export function useVideoSearchInfinite(query: string, limit: number = 15): UseIn
     },
     getNextPageParam: (lastPage) => lastPage.nextPage,
     initialPageParam: 1,
-    enabled: query.length >= 2,
+    enabled: (query ?? '').length >= 2,
     staleTime: 1000 * 60 * 2,
   });
 }

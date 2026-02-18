@@ -80,7 +80,6 @@ import {
   withAlpha,
   ICON_SIZE,
   Z_INDEX,
-  SYSTEM_BARS,
   RADIUS,
 } from '@/utils/theme';
 import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
@@ -358,7 +357,6 @@ export default function VideosScreen(): React.ReactElement {
     headerStyle: systemBarsHeaderStyle,
   } = useSystemBars({
     ...SYSTEM_BARS_PRESETS.videoFeed,
-    statusBarBackground: SYSTEM_BARS.statusBar.darkOverlay,
   });
 
   // ============================================================================
@@ -512,14 +510,6 @@ export default function VideosScreen(): React.ReactElement {
     enabled: activeTab === 'for-you',
   });
 
-  // Server-side search with infinite scroll
-  const {
-    data: searchData,
-    fetchNextPage: fetchNextSearch,
-    hasNextPage: hasNextSearch,
-    isFetchingNextPage: isFetchingNextSearch,
-  } = useVideoSearchInfinite(searchQuery, 15);
-
   // User controls + completion tracking
   const { mutate: submitFeedback } = useVideoFeedback();
   const { mutate: recordCompletion } = useRecordVideoCompletion();
@@ -667,6 +657,14 @@ export default function VideosScreen(): React.ReactElement {
     storageKey: '@videos_search_history',
     debounceMs: 250,
   });
+
+  // Server-side search with infinite scroll (must be after useSearch for searchQuery)
+  const {
+    data: searchData,
+    fetchNextPage: fetchNextSearch,
+    hasNextPage: hasNextSearch,
+    isFetchingNextPage: isFetchingNextSearch,
+  } = useVideoSearchInfinite(searchQuery, 15);
 
   // Generate search suggestions from local data (instant) while server search is loading
   const searchSuggestions = useMemo(() => {
@@ -1467,7 +1465,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.md,
     paddingBottom: SPACING.base,
     zIndex: Z_INDEX.sticky,
-    elevation: Z_INDEX.sticky, // Android: elevation mirrors zIndex for proper layering
     gap: SPACING.sm,
   },
 

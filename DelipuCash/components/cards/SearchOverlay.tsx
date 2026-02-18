@@ -1,17 +1,11 @@
 /**
- * SearchOverlay Component
- * 
- * Full-screen search overlay with:
- * - Recent searches with quick access
- * - Suggestions based on query
- * - Animated transitions
- * - Empty state handling
- * - Keyboard-aware design
- * 
- * Industry Standards:
- * - iOS/Android native search patterns
- * - Accessibility compliant (WCAG 2.1)
- * - Performance optimized (memoization)
+ * SearchOverlay — YouTube-style full-screen search experience
+ *
+ * - Slides in from right (Reanimated native thread)
+ * - Header: [Back arrow] [Pill TextInput] [Mic button]
+ * - Arrow-up-left on each item fills input without submitting
+ * - Recent searches, suggestions, trending sections
+ * - ScrollView with keyboard handling
  */
 
 import React, { useCallback, useEffect, useRef, memo } from 'react';
@@ -21,14 +15,23 @@ import {
   Pressable,
   StyleSheet,
   Keyboard,
-  Animated,
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  ScrollView,
+  Dimensions,
   Platform,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, X, Clock, TrendingUp, ArrowUpLeft } from 'lucide-react-native';
+import { ArrowLeft, X, Clock, TrendingUp, ArrowUpLeft, Search, Mic } from 'lucide-react-native';
+import * as Haptics from 'expo-haptics';
 import {
   useTheme,
   SPACING,
@@ -36,53 +39,53 @@ import {
   RADIUS,
   withAlpha,
 } from '@/utils/theme';
-import { triggerHaptic } from '@/utils/quiz-utils';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ============================================================================
+// TYPES
+// ============================================================================
 
 export interface SearchOverlayProps {
-  /** Whether the overlay is visible */
   visible: boolean;
-  /** Close handler */
   onClose: () => void;
-  /** Current search query */
   query: string;
-  /** Query change handler */
   onChangeQuery: (query: string) => void;
-  /** Submit handler */
   onSubmit: (query: string) => void;
-  /** Recent searches array */
   recentSearches: string[];
-  /** Remove from history handler */
   onRemoveFromHistory: (term: string) => void;
-  /** Clear all history handler */
   onClearHistory: () => void;
-  /** Suggestions array */
   suggestions?: string[];
-  /** Placeholder text */
   placeholder?: string;
-  /** Section title for search context */
   searchContext?: string;
-  /** Trending searches (optional) */
   trendingSearches?: string[];
 }
+
+// ============================================================================
+// SEARCH ITEM
+// ============================================================================
 
 interface SearchItemProps {
   item: string;
   onPress: (item: string) => void;
   onRemove?: (item: string) => void;
+  onFill?: (item: string) => void;
   icon: React.ReactNode;
   showRemove?: boolean;
 }
 
-const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchItemProps) => {
+const SearchItem = memo(({ item, onPress, onRemove, onFill, icon, showRemove }: SearchItemProps) => {
   const { colors } = useTheme();
 
   return (
     <Pressable
-      style={[styles.searchItem, { borderBottomColor: colors.border }]}
+      style={({ pressed }) => [
+        styles.searchItem,
+        pressed && { backgroundColor: withAlpha(colors.text, 0.05) },
+      ]}
       onPress={() => onPress(item)}
       accessibilityRole="button"
       accessibilityLabel={`Search for ${item}`}
-      accessibilityHint="Tap to search for this term"
     >
       <View style={styles.searchItemLeft}>
         {icon}
@@ -90,21 +93,33 @@ const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchIt
           {item}
         </Text>
       </View>
+
       <View style={styles.searchItemRight}>
-        {showRemove && onRemove ? (
+        {showRemove && onRemove && (
           <Pressable
             onPress={() => {
-              triggerHaptic('light');
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onRemove(item);
             }}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={10}
+            style={styles.itemAction}
             accessibilityLabel={`Remove ${item} from history`}
-            accessibilityHint="Tap to remove this search from history"
           >
-            <X size={18} color={colors.textMuted} strokeWidth={1.5} />
+            <X size={16} color={colors.textMuted} strokeWidth={1.5} />
           </Pressable>
-        ) : (
-          <ArrowUpLeft size={18} color={colors.textMuted} strokeWidth={1.5} />
+        )}
+        {onFill && (
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onFill(item);
+            }}
+            hitSlop={10}
+            style={styles.itemAction}
+            accessibilityLabel={`Fill search with ${item}`}
+          >
+            <ArrowUpLeft size={18} color={colors.textMuted} strokeWidth={1.5} />
+          </Pressable>
         )}
       </View>
     </Pressable>
@@ -112,6 +127,10 @@ const SearchItem = memo(({ item, onPress, onRemove, icon, showRemove }: SearchIt
 });
 
 SearchItem.displayName = 'SearchItem';
+
+// ============================================================================
+// SEARCH OVERLAY
+// ============================================================================
 
 function SearchOverlayComponent({
   visible,
@@ -124,52 +143,48 @@ function SearchOverlayComponent({
   onClearHistory,
   suggestions = [],
   placeholder = 'Search...',
-  searchContext,
   trendingSearches = [],
 }: SearchOverlayProps): React.ReactElement | null {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(-20)).current;
 
-  // Animate in/out
+  // Reanimated shared values for slide-from-right
+  const translateX = useSharedValue(SCREEN_WIDTH);
+  const opacity = useSharedValue(0);
+
+  // Animate open / close
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start(() => {
-        // Focus input after animation
-        setTimeout(() => inputRef.current?.focus(), 100);
+      translateX.value = withTiming(0, {
+        duration: 250,
+        easing: Easing.out(Easing.cubic),
       });
+      opacity.value = withTiming(1, { duration: 200 });
+      // Focus input after animation settles
+      setTimeout(() => inputRef.current?.focus(), 280);
     } else {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: -20,
-          duration: 150,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      translateX.value = withTiming(SCREEN_WIDTH, {
+        duration: 200,
+        easing: Easing.in(Easing.cubic),
+      });
+      opacity.value = withTiming(0, { duration: 150 });
     }
-  }, [visible, fadeAnim, slideAnim]);
+  }, [visible, translateX, opacity]);
+
+  // Animated styles
+  const overlayStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+    opacity: opacity.value,
+  }));
+
+  // ──────────────────────────────────────────────────────────────
+  // HANDLERS
+  // ──────────────────────────────────────────────────────────────
 
   const handleClose = useCallback(() => {
     Keyboard.dismiss();
-    triggerHaptic('light');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
 
@@ -182,22 +197,34 @@ function SearchOverlayComponent({
   }, [query, onSubmit, onClose]);
 
   const handleSelectItem = useCallback((item: string) => {
-    triggerHaptic('light');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChangeQuery(item);
     onSubmit(item);
     onClose();
   }, [onChangeQuery, onSubmit, onClose]);
 
+  /** YouTube behavior: fills input with term but does NOT submit */
+  const handleFillInput = useCallback((item: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onChangeQuery(item);
+    inputRef.current?.focus();
+  }, [onChangeQuery]);
+
   const handleClear = useCallback(() => {
-    triggerHaptic('light');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChangeQuery('');
     inputRef.current?.focus();
   }, [onChangeQuery]);
 
-  // Show suggestions if query exists, otherwise show recent
+  // ──────────────────────────────────────────────────────────────
+  // DERIVED STATE
+  // ──────────────────────────────────────────────────────────────
+
   const showSuggestions = query.length > 0 && suggestions.length > 0;
   const showRecent = query.length === 0 && recentSearches.length > 0;
   const showTrending = query.length === 0 && trendingSearches.length > 0 && recentSearches.length === 0;
+
+  const pillBg = isDark ? '#272727' : '#F2F2F2';
 
   if (!visible) return null;
 
@@ -216,144 +243,166 @@ function SearchOverlayComponent({
         <Animated.View
           style={[
             styles.overlay,
-            {
-              backgroundColor: colors.background,
-              opacity: fadeAnim,
-            },
+            { backgroundColor: colors.background },
+            overlayStyle,
           ]}
         >
-          {/* Header with Search Input */}
-          <Animated.View
-            style={[
-              styles.header,
-              {
-                paddingTop: insets.top + SPACING.sm,
-                borderBottomColor: colors.border,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            <View style={[styles.searchInputContainer, { backgroundColor: colors.card }]}>
-              <Search size={20} color={colors.textMuted} strokeWidth={1.5} />
+          {/* ── Header: [Back] [Pill Input] [Mic] ── */}
+          <View style={[styles.header, { paddingTop: insets.top + SPACING.sm }]}>
+            {/* Back arrow */}
+            <Pressable
+              onPress={handleClose}
+              style={styles.backButton}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              hitSlop={8}
+            >
+              <ArrowLeft size={24} color={colors.text} strokeWidth={2} />
+            </Pressable>
+
+            {/* Search input pill */}
+            <View style={[styles.searchPill, { backgroundColor: pillBg }]}>
               <TextInput
                 ref={inputRef}
                 style={[styles.searchInput, { color: colors.text }]}
                 placeholder={placeholder}
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={withAlpha(colors.text, 0.5)}
                 value={query}
                 onChangeText={onChangeQuery}
                 onSubmitEditing={handleSubmit}
                 returnKeyType="search"
                 autoCapitalize="none"
                 autoCorrect={false}
-                autoFocus
+                selectionColor={colors.primary}
                 accessibilityLabel={placeholder}
               />
               {query.length > 0 && (
-                <Pressable onPress={handleClear} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityHint="Tap to clear search text">
-                  <X size={18} color={colors.textMuted} strokeWidth={1.5} />
+                <Pressable
+                  onPress={handleClear}
+                  hitSlop={8}
+                  accessibilityLabel="Clear search"
+                >
+                  <X size={18} color={withAlpha(colors.text, 0.6)} strokeWidth={2} />
                 </Pressable>
               )}
             </View>
-            <Pressable
-              onPress={handleClose}
-              style={styles.cancelButton}
-              accessibilityLabel="Cancel search"
-              accessibilityHint="Tap to close search"
-            >
-              <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
-            </Pressable>
-          </Animated.View>
 
-          {/* Search Context Badge */}
-          {searchContext && (
-            <View style={styles.contextContainer}>
-              <View style={[styles.contextBadge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-                <Text style={[styles.contextText, { color: colors.primary }]}>
-                  Searching in: {searchContext}
+            {/* Mic button (YouTube circular, visible when no query) */}
+            {query.length === 0 && (
+              <View style={[styles.micButton, { backgroundColor: pillBg }]}>
+                <Mic size={20} color={colors.text} strokeWidth={2} />
+              </View>
+            )}
+          </View>
+
+          {/* ── Content ── */}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.scrollContent}
+          >
+            {/* Suggestions */}
+            {showSuggestions && (
+              <View style={styles.section}>
+                {suggestions.map((item, index) => (
+                  <SearchItem
+                    key={`suggestion-${index}`}
+                    item={item}
+                    onPress={handleSelectItem}
+                    onFill={handleFillInput}
+                    icon={<Search size={18} color={colors.textMuted} strokeWidth={1.5} />}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Recent Searches */}
+            {showRecent && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>
+                    Recent searches
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      onClearHistory();
+                    }}
+                    accessibilityLabel="Clear all recent searches"
+                  >
+                    <Text style={[styles.clearAllText, { color: colors.primary }]}>
+                      Clear all
+                    </Text>
+                  </Pressable>
+                </View>
+                {recentSearches.map((item, index) => (
+                  <SearchItem
+                    key={`recent-${index}`}
+                    item={item}
+                    onPress={handleSelectItem}
+                    onRemove={onRemoveFromHistory}
+                    onFill={handleFillInput}
+                    icon={<Clock size={18} color={colors.textMuted} strokeWidth={1.5} />}
+                    showRemove
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Trending Searches */}
+            {showTrending && (
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.textMuted }, styles.sectionTitlePadded]}>
+                  Trending searches
+                </Text>
+                {trendingSearches.map((item, index) => (
+                  <SearchItem
+                    key={`trending-${index}`}
+                    item={item}
+                    onPress={handleSelectItem}
+                    onFill={handleFillInput}
+                    icon={<TrendingUp size={18} color={colors.warning} strokeWidth={1.5} />}
+                  />
+                ))}
+              </View>
+            )}
+
+            {/* Empty State */}
+            {!showSuggestions && !showRecent && !showTrending && query.length === 0 && (
+              <View style={styles.emptyState}>
+                <Search size={36} color={withAlpha(colors.text, 0.2)} strokeWidth={1} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  Search videos
+                </Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+                  Find videos, creators, and more
                 </Text>
               </View>
-            </View>
-          )}
+            )}
 
-          {/* Suggestions */}
-          {showSuggestions && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Suggestions</Text>
-              {suggestions.map((item, index) => (
-                <SearchItem
-                  key={`suggestion-${index}`}
-                  item={item}
-                  onPress={handleSelectItem}
-                  icon={<Search size={18} color={colors.textMuted} strokeWidth={1.5} />}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Recent Searches */}
-          {showRecent && (
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Recent Searches</Text>
-                <Pressable onPress={() => { triggerHaptic('light'); onClearHistory(); }} accessibilityLabel="Clear all recent searches" accessibilityHint="Tap to clear all search history">
-                  <Text style={[styles.clearAllText, { color: colors.error }]}>Clear All</Text>
-                </Pressable>
+            {/* No Results for typed query */}
+            {query.length > 0 && suggestions.length === 0 && (
+              <View style={styles.emptyState}>
+                <Search size={36} color={withAlpha(colors.text, 0.2)} strokeWidth={1} />
+                <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                  No suggestions found
+                </Text>
+                <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+                  Press search to find results for {'\u201C'}{query}{'\u201D'}
+                </Text>
               </View>
-              {recentSearches.map((item, index) => (
-                <SearchItem
-                  key={`recent-${index}`}
-                  item={item}
-                  onPress={handleSelectItem}
-                  onRemove={onRemoveFromHistory}
-                  icon={<Clock size={18} color={colors.textMuted} strokeWidth={1.5} />}
-                  showRemove
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Trending Searches */}
-          {showTrending && (
-            <View style={styles.section}>
-              <Text style={[styles.sectionTitle, { color: colors.textMuted }]}>Trending Searches</Text>
-              {trendingSearches.map((item, index) => (
-                <SearchItem
-                  key={`trending-${index}`}
-                  item={item}
-                  onPress={handleSelectItem}
-                  icon={<TrendingUp size={18} color={colors.warning} strokeWidth={1.5} />}
-                />
-              ))}
-            </View>
-          )}
-
-          {/* Empty State */}
-          {!showSuggestions && !showRecent && !showTrending && query.length === 0 && (
-            <View style={styles.emptyState}>
-              <Search size={48} color={colors.textMuted} strokeWidth={1} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>Start Searching</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-                Type to search {searchContext?.toLowerCase() || 'content'}
-              </Text>
-            </View>
-          )}
-
-          {/* No Results */}
-          {query.length > 0 && suggestions.length === 0 && (
-            <View style={styles.emptyState}>
-              <Search size={48} color={colors.textMuted} strokeWidth={1} />
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No suggestions found</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-                Press search to find results for &ldquo;{query}&rdquo;
-              </Text>
-            </View>
-          )}
+            )}
+          </ScrollView>
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );
 }
+
+// ============================================================================
+// STYLES
+// ============================================================================
 
 const styles = StyleSheet.create({
   modalContainer: {
@@ -362,79 +411,81 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
   },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.sm,
     paddingBottom: SPACING.sm,
-    borderBottomWidth: 1,
+    gap: SPACING.sm,
   },
-  searchInputContainer: {
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchPill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.lg,
+    height: 40,
+    borderRadius: RADIUS.full,
+    paddingHorizontal: SPACING.base,
     gap: SPACING.sm,
   },
   searchInput: {
     flex: 1,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.base,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    paddingVertical: SPACING.xs,
+    paddingVertical: 0,
   },
-  cancelButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
+  micButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  cancelText: {
-    fontSize: TYPOGRAPHY.fontSize.md,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
+
+  // Content
+  scrollContent: {
+    flexGrow: 1,
   },
-  contextContainer: {
-    paddingHorizontal: SPACING.md,
-    paddingTop: SPACING.sm,
-  },
-  contextBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
-  },
-  contextText: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-  },
+
+  // Sections
   section: {
-    paddingTop: SPACING.md,
+    paddingTop: SPACING.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.xs,
+    paddingHorizontal: SPACING.base,
+    paddingBottom: SPACING.xs,
   },
   sectionTitle: {
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.xs,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  sectionTitlePadded: {
+    paddingHorizontal: SPACING.base,
+    paddingBottom: SPACING.xs,
   },
   clearAllText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
+
+  // Search Items
   searchItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: SPACING.md,
+    paddingHorizontal: SPACING.base,
     paddingVertical: SPACING.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    minHeight: 48,
   },
   searchItemLeft: {
     flex: 1,
@@ -444,12 +495,23 @@ const styles = StyleSheet.create({
   },
   searchItemText: {
     flex: 1,
-    fontSize: TYPOGRAPHY.fontSize.md,
+    fontSize: TYPOGRAPHY.fontSize.base,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
   },
   searchItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
     marginLeft: SPACING.sm,
   },
+  itemAction: {
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  // Empty States
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -459,7 +521,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     marginTop: SPACING.md,
   },
   emptySubtitle: {

@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { SplashScreen, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { AppState, Platform, ErrorUtils } from 'react-native';
+import { AppState, LogBox, Platform, ErrorUtils } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
@@ -37,6 +37,9 @@ import { AdFrequencyManager } from '@/services/adFrequencyManager';
 import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
 import { useUploadQueueProcessor } from '@/hooks/useUploadQueueProcessor';
 import { telemetry } from '@/services/telemetryApi';
+
+// Suppress Reanimated false-positive warning (all .value reads are inside useAnimatedStyle)
+LogBox.ignoreLogs(['Reading from `value` during component render']);
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -243,10 +246,10 @@ export default function RootLayout() {
       >
         <SSEProvider>
         <NotificationProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
             <ToastProvider>
             <GlobalProcessors />
-            <Stack>
+            <Stack screenOptions={{ contentStyle: { backgroundColor: isDark ? '#000000' : '#FFFFFF' } }}>
               <Stack.Screen name="index" options={{ headerShown: false }} />
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -269,7 +272,7 @@ export default function RootLayout() {
               <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
               <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
             </Stack>
-            <StatusBar style={isDark ? 'light' : 'dark'} />
+            <StatusBar style={isDark ? 'light' : 'dark'} translucent animated />
             </ToastProvider>
           </ThemeProvider>
         </NotificationProvider>
