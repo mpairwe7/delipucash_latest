@@ -355,7 +355,9 @@ export const EarningOpportunitiesList = memo(function EarningOpportunitiesList({
       ))}
     </View>
   );
-}) = StyleSheet.create({
+});
+
+const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     borderRadius: RADIUS.lg,
