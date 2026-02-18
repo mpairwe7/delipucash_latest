@@ -17,7 +17,7 @@
  * ```
  */
 
-import React, { useCallback } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -93,7 +93,7 @@ export interface QuickActionsProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-function QuickActionButton({
+const MemoizedQuickActionButton = memo(function QuickActionButton({
   action,
   index,
   testID,
@@ -202,7 +202,7 @@ function QuickActionButton({
       )}
     </Animated.View>
   );
-}
+})
 
 export function QuickActions({
   onAnswerQuestion,
@@ -217,8 +217,9 @@ export function QuickActions({
 }: QuickActionsProps): React.ReactElement {
   const { colors } = useTheme();
 
-  // Default actions if not provided
-  const defaultActions: QuickAction[] = [
+  // Default actions if not provided — memoized to prevent recreating
+  // inline JSX icons and closure refs on every render
+  const defaultActions: QuickAction[] = useMemo(() => [
     {
       id: 'answer',
       icon: <MessageCircleQuestion size={ICON_SIZE} color="#FFFFFF" strokeWidth={1.5} />,
@@ -263,7 +264,11 @@ export function QuickActions({
         ? 'Claim your daily reward now'
         : 'Daily reward already claimed, come back tomorrow',
     },
-  ];
+  ], [
+    availableQuestions, runningSurveys, dailyRewardAvailable,
+    onAnswerQuestion, onWatchVideo, onTakeSurvey, onClaimReward,
+    colors.textMuted,
+  ]);
 
   const actionsToRender = customActions || defaultActions;
 
@@ -289,7 +294,7 @@ export function QuickActions({
 
       <View style={styles.actionsRow}>
         {actionsToRender.map((action, index) => (
-          <QuickActionButton
+          <MemoizedQuickActionButton
             key={action.id}
             action={action}
             index={index}
@@ -373,4 +378,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default QuickActions;
+export default memo(QuickActions);

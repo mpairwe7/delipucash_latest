@@ -20,7 +20,7 @@
  * ```
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -606,4 +606,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default HeroRewardCard;
+export default memo(HeroRewardCard);

@@ -342,6 +342,12 @@ export default function HomePage(): React.ReactElement {
   // With query cache persistence, this is nearly instant on repeat opens.
   const isInitialLoading = userLoading && !user;
 
+  // Stable identity keys for ad arrays — prevents sections from recalculating
+  // when TanStack Query returns structurally-identical data with new references.
+  const bannerAdKey = useMemo(() => bannerAds?.map((a: any) => a.id).join(',') ?? '', [bannerAds]);
+  const homeAdKey = useMemo(() => homeAds?.map((a: any) => a.id).join(',') ?? '', [homeAds]);
+  const featuredAdKey = useMemo(() => featuredAds?.map((a: any) => a.id).join(',') ?? '', [featuredAds]);
+
   // Build sections array for FlatList.
   // All sections are always included — each section's renderItem handles its
   // own loading/empty state (progressive rendering, Instagram/TikTok pattern).
@@ -401,10 +407,11 @@ export default function HomePage(): React.ReactElement {
     sectionsList.push({ id: "footer-spacer", type: "footer-spacer" });
 
     return sectionsList;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ad identity keys replace unstable array refs
   }, [
-    bannerAds,
-    homeAds,
-    featuredAds,
+    bannerAdKey,
+    homeAdKey,
+    featuredAdKey,
   ]);
 
   // Scroll handler for animations
@@ -1181,7 +1188,7 @@ export default function HomePage(): React.ReactElement {
         keyExtractor={keyExtractor}
         renderItem={renderSection}
         onScroll={scrollHandler}
-        scrollEventThrottle={16}
+        scrollEventThrottle={200}
         contentContainerStyle={[
           styles.flatListContent,
           { paddingTop: insets.top + SPACING.sm, paddingHorizontal: horizontalPadding },
@@ -1197,9 +1204,9 @@ export default function HomePage(): React.ReactElement {
         }
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={Platform.OS === "android"}
-        maxToRenderPerBatch={3}
-        updateCellsBatchingPeriod={100}
-        windowSize={7}
+        maxToRenderPerBatch={5}
+        updateCellsBatchingPeriod={150}
+        windowSize={5}
         initialNumToRender={4}
         // Performance optimizations
         maintainVisibleContentPosition={{

@@ -7,7 +7,7 @@
  * Accessibility: WCAG 2.2 AA compliant
  */
 
-import React, { useCallback } from 'react';
+import React, { memo, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -121,7 +121,10 @@ export function EarningOpportunityCard({
   const { colors } = useTheme();
   const scale = useSharedValue(1);
 
-  const typeConfig = getTypeConfig(opportunity.type, colors);
+  const typeConfig = useMemo(
+    () => getTypeConfig(opportunity.type, colors),
+    [opportunity.type, colors],
+  );
 
   const handlePressIn = useCallback(() => {
     scale.value = withSpring(0.97, { damping: 15, stiffness: 300 });
@@ -316,7 +319,7 @@ export interface EarningOpportunitiesListProps {
   testID?: string;
 }
 
-export function EarningOpportunitiesList({
+export const EarningOpportunitiesList = memo(function EarningOpportunitiesList({
   opportunities,
   onOpportunityPress,
   variant = 'compact',
@@ -352,9 +355,7 @@ export function EarningOpportunitiesList({
       ))}
     </View>
   );
-}
-
-const styles = StyleSheet.create({
+}) = StyleSheet.create({
   card: {
     flexDirection: 'row',
     borderRadius: RADIUS.lg,
@@ -519,4 +520,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default EarningOpportunityCard;
+export default memo(EarningOpportunityCard);

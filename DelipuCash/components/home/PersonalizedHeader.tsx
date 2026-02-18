@@ -21,7 +21,7 @@
  * ```
  */
 
-import React, { useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import {
   View,
   Text,
@@ -446,4 +446,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default PersonalizedHeader;
+export default memo(PersonalizedHeader);
