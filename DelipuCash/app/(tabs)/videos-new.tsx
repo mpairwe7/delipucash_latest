@@ -52,7 +52,6 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
 import { router, Href, useFocusEffect } from 'expo-router';
 import {
   Wifi,
@@ -973,7 +972,7 @@ export default function VideosScreen(): React.ReactElement {
         </VideoErrorBoundary>
 
         {/* ──────────────────────────────────────────────────────────── */}
-        {/* 2026 HEADER: Glassmorphism + adaptive density              */}
+        {/* 2026 HEADER: Solid background — hides scrolling content  */}
         {/* Rendered AFTER the feed so it always paints on top.        */}
         {/* ──────────────────────────────────────────────────────────── */}
         <View
@@ -983,20 +982,13 @@ export default function VideosScreen(): React.ReactElement {
             systemBarsHeaderStyle,
             {
               paddingTop: insets.top + SPACING.xs,
+              backgroundColor: colors.background,
             },
           ]}
           pointerEvents="box-none"
           accessibilityRole="toolbar"
           accessibilityLabel="Video feed controls"
         >
-          {/* Glassmorphism blur background — pointerEvents none so touches pass through to video layer */}
-          <BlurView
-            intensity={60}
-            tint={isDark ? 'dark' : 'light'}
-            style={StyleSheet.absoluteFill}
-            pointerEvents="none"
-          />
-          <View style={[styles.headerScrim, { backgroundColor: withAlpha(colors.background, 0.55) }]} pointerEvents="none" />
 
           {/* Search Bar Row - 2026: Voice search affordance + data saver */}
           <View style={styles.searchRow}>
@@ -1254,10 +1246,6 @@ const styles = StyleSheet.create({
     zIndex: Z_INDEX.sticky,
     elevation: Z_INDEX.sticky, // Android: elevation mirrors zIndex for proper layering
     gap: SPACING.sm,
-    overflow: 'hidden',
-  },
-  headerScrim: {
-    ...StyleSheet.absoluteFillObject,
   },
 
   // ── SEARCH ROW ──

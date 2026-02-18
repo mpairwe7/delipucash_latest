@@ -1,457 +1,382 @@
 /**
- * Mock Data Seeding Script via REST APIs
+ * Mock Data Seeding Script via Direct Prisma DB Operations
  *
- * This script populates the database with mock data by making HTTP requests
- * to the REST API endpoints. This ensures proper validation and business logic
- * is applied during data creation.
+ * This script populates the database with mock data using Prisma Client directly,
+ * bypassing REST API endpoints and authentication requirements.
  *
- * Run with: node scripts/seed-mock-data.mjs
+ * Run with: bun scripts/seed-mock-data.mjs
  */
 
-import axios from 'axios';
-import { mockUsers, mockVideos, mockComments, mockSurveys, mockSurveyQuestions, mockAds, mockQuestions, mockResponses, mockResponseReplies, mockRewardQuestions, mockQuizQuestions } from './mockData.js';
+import 'dotenv/config';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
+import bcrypt from 'bcryptjs';
 
-// Server configuration
-const BASE_URL = process.env.API_BASE_URL || 'https://delipucash-latest.vercel.app/api';
+import {
+  mockUsers,
+  mockVideos,
+  mockComments,
+  mockSurveys,
+  mockSurveyQuestions,
+  mockAds,
+  mockQuestions,
+  mockResponses,
+  mockResponseReplies,
+  mockRewardQuestions,
+} from './mockData.js';
 
-// Global variables for authentication
-let adminToken = null;
-let userTokens = new Map(); // userId -> token
-let realUserIds = new Map(); // mockUserId -> realUserId
-let realVideoIds = new Map(); // mockVideoId -> realVideoId
-let realQuestionIds = new Map(); // mockQuestionId -> realQuestionId
+// Use direct database connection (bypasses Accelerate cache)
+const connectionString = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('❌ No DATABASE_URL or DIRECT_DATABASE_URL found in environment');
+  process.exit(1);
+}
 
-// Helper function to make authenticated requests
-const makeRequest = async (method, url, data = null, token = null) => {
-  const config = {
-    method,
-    url: `${BASE_URL}${url}`,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
+const pool = new pg.Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+// Maps mock IDs → real DB UUIDs
+const realUserIds = new Map();
+const realVideoIds = new Map();
+const realSurveyIds = new Map();
+const realQuestionIds = new Map();
+const realResponseIds = new Map();
 
-  if (data) {
-    config.data = data;
-  }
-
-  try {
-    const response = await axios(config);
-    return response.data;
-  } catch (error) {
-    console.error(`❌ Error ${method} ${url}:`, error.response?.data || error.message);
-    throw error;
-  }
-};
-
-// Authentication functions
-const loginUser = async (email, password) => {
-  try {
-    const response = await makeRequest('POST', '/auth/signin', { email, password });
-    return response.token;
-  } catch (error) {
-    console.log(`⚠️  Could not login ${email}, attempting signup...`);
-    return null;
-  }
-};
-
-const signupUser = async (user) => {
-  // Don't try to signup admin user as it already exists
-  if (user.email === 'admin@delipucash.com') {
-    console.log(`⚠️  Admin user already exists, skipping signup`);
-    return null;
-  }
-
-  try {
-    const signupData = {
-      email: user.email,
-      password: 'password123', // Default password for mock users
-      firstName: user.firstName,
-      lastName: user.lastName,
-      phone: user.phone,
-      role: user.role.toLowerCase(),
-    };
-
-    const response = await makeRequest('POST', '/auth/signup', signupData);
-    console.log(`✅ Created user: ${user.email}`);
-
-    // Now login to get token
-    const token = await loginUser(user.email, 'password123');
-    
-    return {
-      token,
-      userId: response.user?.id || response.id
-    };
-  } catch (error) {
-    console.log(`⚠️  Could not create user ${user.email}:`, error.message);
-    return null;
-  }
-};
-
-const authenticateUser = async (user) => {
-  // For admin user, use the provided credentials
-  if (user.email === 'admin@delipucash.com') {
-    const token = await loginUser(user.email, 'admin123456');
-    if (token) {
-      console.log(`✅ Admin authenticated: ${user.email}`);
-      adminToken = token;
-      userTokens.set(user.id, token);
-      // Extract user ID from token (assuming JWT structure)
-      try {
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-        realUserIds.set(user.id, payload.id);
-      } catch (error) {
-        console.log(`⚠️  Could not extract user ID from admin token`);
-      }
-      return token;
-    } else {
-      console.log(`❌ Could not authenticate admin user`);
-      return null;
-    }
-  }
-
-  // For other users, try login first, then signup if needed
-  let token = await loginUser(user.email, 'password123');
-  if (!token) {
-    const signupResult = await signupUser(user);
-    if (signupResult) {
-      token = signupResult.token;
-      realUserIds.set(user.id, signupResult.userId);
-    }
-  } else {
-    // If login succeeded, extract user ID from token
-    try {
-      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-      realUserIds.set(user.id, payload.id);
-    } catch (error) {
-      console.log(`⚠️  Could not extract user ID from token for ${user.email}`);
-    }
-  }
-  
-  if (token) {
-    userTokens.set(user.id, token);
-  }
-  return token;
-};
-
-// Data seeding functions
+// ─── Users ───────────────────────────────────────────────────────────────────
 const seedUsers = async () => {
   console.log('\n🌱 Seeding Users...');
-
-  // First try to authenticate admin
-  const adminToken = userTokens.get('admin');
-  if (!adminToken) {
-    console.log('⚠️  No admin token available - user creation may fail');
-  }
+  const hashedPassword = await bcrypt.hash('password123', 10);
+  const adminHashedPassword = await bcrypt.hash('admin123456', 10);
 
   for (const user of mockUsers) {
-    if (user.email === 'admin@delipucash.com') {
-      // Admin user should already exist
-      console.log(`⏭️  Skipping admin user (should already exist)`);
-      continue;
-    }
-
-    const token = await authenticateUser(user);
-    if (token) {
-      userTokens.set(user.id, token);
-      console.log(`✅ User authenticated: ${user.email}`);
-      
-      // Note: Profile update endpoint has issues on the deployed server
-      // Users are created with all fields during signup, so profile update is optional
+    const isAdmin = user.email === 'admin@delipucash.com';
+    try {
+      const dbUser = await prisma.appUser.upsert({
+        where: { email: user.email },
+        update: {},
+        create: {
+          email: user.email,
+          password: isAdmin ? adminHashedPassword : hashedPassword,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          phone: user.phone,
+          points: user.points || 0,
+          avatar: user.avatar || undefined,
+          role: user.role,
+          subscriptionStatus: user.subscriptionStatus || 'INACTIVE',
+          surveysubscriptionStatus: user.surveysubscriptionStatus || 'INACTIVE',
+          privacySettings: user.privacySettings || undefined,
+        },
+      });
+      realUserIds.set(user.id, dbUser.id);
+      console.log(`  ✅ ${user.email} (${user.role})`);
+    } catch (error) {
+      console.error(`  ❌ ${user.email}: ${error.message}`);
     }
   }
 };
 
+// ─── Videos ──────────────────────────────────────────────────────────────────
 const seedVideos = async () => {
   console.log('\n🎥 Seeding Videos...');
 
   for (const video of mockVideos) {
-    const realUserId = realUserIds.get(video.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${video.userId}, skipping video`);
+    const userId = realUserIds.get(video.userId);
+    if (!userId) {
+      console.log(`  ⚠️  No user for ${video.userId}, skipping video`);
       continue;
     }
-
-    const videoData = {
-      title: video.title,
-      description: video.description,
-      videoUrl: video.videoUrl,
-      thumbnail: video.thumbnail,
-      userId: realUserId,
-      duration: video.duration,
-    };
-
     try {
-      const result = await makeRequest('POST', '/videos/create', videoData);
-      if (result && result.video && result.video.id) {
-        realVideoIds.set(video.id, result.video.id);
-      }
-      console.log(`✅ Created video: ${video.title}`);
+      const dbVideo = await prisma.video.create({
+        data: {
+          title: video.title,
+          description: video.description,
+          videoUrl: video.videoUrl,
+          thumbnail: video.thumbnail,
+          userId,
+          likes: video.likes || 0,
+          views: video.views || 0,
+          duration: video.duration || null,
+          commentsCount: video.commentsCount || 0,
+        },
+      });
+      realVideoIds.set(video.id, dbVideo.id);
+      console.log(`  ✅ ${video.title}`);
     } catch (error) {
-      console.log(`⚠️  Could not create video: ${video.title}`);
+      console.error(`  ❌ ${video.title}: ${error.message}`);
     }
   }
 };
 
+// ─── Comments ────────────────────────────────────────────────────────────────
 const seedComments = async () => {
-  console.log('\n💬 Seeding Comments...');
+  console.log('\n💬 Seeding Video Comments...');
 
   for (const comment of mockComments) {
-    const realUserId = realUserIds.get(comment.userId);
-    const realVideoId = realVideoIds.get(comment.videoId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${comment.userId}, skipping comment`);
+    const userId = realUserIds.get(comment.userId);
+    const videoId = realVideoIds.get(comment.videoId);
+    if (!userId || !videoId) {
+      console.log(`  ⚠️  Missing user/video for comment ${comment.id}, skipping`);
       continue;
     }
-    if (!realVideoId) {
-      console.log(`⚠️  No real video ID found for mock video ${comment.videoId}, skipping comment`);
-      continue;
-    }
-
-    const commentData = {
-      text: comment.text,
-      media: comment.mediaUrls,
-      user_id: realUserId,
-      created_at: comment.createdAt,
-    };
-
     try {
-      await makeRequest('POST', `/videos/${realVideoId}/comments`, commentData);
-      console.log(`✅ Created comment on video ${comment.videoId}`);
+      await prisma.comment.create({
+        data: {
+          text: comment.text,
+          mediaUrls: comment.mediaUrls || [],
+          userId,
+          videoId,
+        },
+      });
+      console.log(`  ✅ Comment on ${comment.videoId}`);
     } catch (error) {
-      console.log(`⚠️  Could not create comment on video ${comment.videoId}`);
+      console.error(`  ❌ Comment ${comment.id}: ${error.message}`);
     }
   }
 };
 
+// ─── Surveys + Survey Questions ──────────────────────────────────────────────
 const seedSurveys = async () => {
   console.log('\n📊 Seeding Surveys...');
 
   for (const survey of mockSurveys) {
-    const realUserId = realUserIds.get(survey.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${survey.userId}, skipping survey`);
+    const userId = realUserIds.get(survey.userId);
+    if (!userId) {
+      console.log(`  ⚠️  No user for ${survey.userId}, skipping survey`);
       continue;
     }
 
-    // Get questions for this survey
-    const surveyQuestions = mockSurveyQuestions.filter(q => q.surveyId === survey.id);
-    const formattedQuestions = surveyQuestions.map(q => ({
-      question: q.text,
-      type: q.type,
-      options: q.options ? JSON.parse(q.options) : [],
-    }));
-
-    const surveyData = {
-      surveyTitle: survey.title,
-      surveyDescription: survey.description,
-      userId: realUserId,
-      startDate: survey.startDate,
-      endDate: survey.endDate,
-      rewardAmount: survey.rewardAmount || 2000,
-      maxResponses: survey.maxResponses || null,
-      questions: formattedQuestions,
-    };
-
     try {
-      const result = await makeRequest('POST', '/surveys/create', surveyData);
-      console.log(`✅ Created survey: ${survey.title} with ${formattedQuestions.length} questions`);
+      const dbSurvey = await prisma.survey.create({
+        data: {
+          title: survey.title,
+          description: survey.description || null,
+          userId,
+          rewardAmount: survey.rewardAmount || 2000,
+          maxResponses: survey.maxResponses || null,
+          startDate: new Date(survey.startDate),
+          endDate: new Date(survey.endDate),
+        },
+      });
+      realSurveyIds.set(survey.id, dbSurvey.id);
+      console.log(`  ✅ ${survey.title}`);
     } catch (error) {
-      console.log(`⚠️  Could not create survey: ${survey.title}`);
+      console.error(`  ❌ ${survey.title}: ${error.message}`);
     }
   }
-};
 
-const seedSurveyQuestions = async () => {
+  // Now seed survey questions (UploadSurvey records)
   console.log('\n❓ Seeding Survey Questions...');
 
   for (const question of mockSurveyQuestions) {
-    const realUserId = realUserIds.get(question.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${question.userId}, skipping survey question`);
+    const userId = realUserIds.get(question.userId);
+    const surveyId = realSurveyIds.get(question.surveyId);
+    if (!userId || !surveyId) {
+      console.log(`  ⚠️  Missing user/survey for question ${question.id}, skipping`);
       continue;
     }
 
-    const questionData = {
-      text: question.text,
-      type: question.type,
-      options: question.options,
-      placeholder: question.placeholder,
-      minValue: question.minValue,
-      maxValue: question.maxValue,
-      surveyId: question.surveyId,
-      userId: realUserId,
-    };
-
     try {
-      await makeRequest('POST', '/surveys/upload', questionData);
-      console.log(`✅ Created survey question: ${question.text.substring(0, 50)}...`);
+      await prisma.uploadSurvey.create({
+        data: {
+          text: question.text,
+          type: question.type,
+          options: typeof question.options === 'string' ? question.options : JSON.stringify(question.options),
+          placeholder: question.placeholder || null,
+          minValue: question.minValue ?? null,
+          maxValue: question.maxValue ?? null,
+          required: true,
+          userId,
+          surveyId,
+        },
+      });
+      console.log(`  ✅ ${question.text.substring(0, 50)}...`);
     } catch (error) {
-      console.log(`⚠️  Could not create survey question: ${question.text.substring(0, 50)}...`);
+      console.error(`  ❌ ${question.text.substring(0, 50)}: ${error.message}`);
     }
   }
 };
 
+// ─── Ads ─────────────────────────────────────────────────────────────────────
 const seedAds = async () => {
   console.log('\n📢 Seeding Ads...');
 
   for (const ad of mockAds) {
-    const realUserId = realUserIds.get(ad.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${ad.userId}, skipping ad`);
+    const userId = realUserIds.get(ad.userId);
+    if (!userId) {
+      console.log(`  ⚠️  No user for ${ad.userId}, skipping ad`);
       continue;
     }
 
-    const adData = {
-      title: ad.title,
-      headline: ad.headline,
-      description: ad.description,
-      imageUrl: ad.imageUrl,
-      videoUrl: ad.videoUrl,
-      thumbnailUrl: ad.thumbnailUrl,
-      type: ad.type,
-      placement: ad.placement,
-      sponsored: ad.sponsored,
-      startDate: ad.startDate,
-      endDate: ad.endDate,
-      priority: ad.priority,
-      frequency: ad.frequency,
-      targetUrl: ad.targetUrl,
-      callToAction: ad.callToAction,
-      pricingModel: ad.pricingModel,
-      totalBudget: ad.totalBudget,
-      bidAmount: ad.bidAmount,
-      dailyBudgetLimit: ad.dailyBudgetLimit,
-      targetAgeRanges: ad.targetAgeRanges,
-      targetGender: ad.targetGender,
-      targetLocations: ad.targetLocations,
-      targetInterests: ad.targetInterests,
-      enableRetargeting: ad.enableRetargeting,
-      userId: realUserId,
-    };
-
     try {
-      const result = await makeRequest('POST', '/ads/create', adData);
-      console.log(`✅ Created ad: ${ad.title}`);
+      await prisma.ad.create({
+        data: {
+          title: ad.title,
+          headline: ad.headline || null,
+          description: ad.description,
+          imageUrl: ad.imageUrl || null,
+          videoUrl: ad.videoUrl || null,
+          thumbnailUrl: ad.thumbnailUrl || null,
+          type: ad.type || 'regular',
+          placement: ad.placement || 'feed',
+          sponsored: ad.sponsored ?? false,
+          isActive: ad.isActive ?? true,
+          startDate: ad.startDate ? new Date(ad.startDate) : null,
+          endDate: ad.endDate ? new Date(ad.endDate) : null,
+          userId,
+          priority: ad.priority || 5,
+          frequency: ad.frequency || null,
+          targetUrl: ad.targetUrl || null,
+          callToAction: ad.callToAction || 'learn_more',
+          pricingModel: ad.pricingModel || 'cpm',
+          totalBudget: ad.totalBudget || 0,
+          bidAmount: ad.bidAmount || 0,
+          dailyBudgetLimit: ad.dailyBudgetLimit || null,
+          targetAgeRanges: ad.targetAgeRanges || null,
+          targetGender: ad.targetGender || 'all',
+          targetLocations: ad.targetLocations || null,
+          targetInterests: ad.targetInterests || null,
+          enableRetargeting: ad.enableRetargeting ?? false,
+          status: ad.status || 'approved',
+          approvedAt: ad.status === 'approved' ? new Date() : null,
+        },
+      });
+      console.log(`  ✅ ${ad.title}`);
     } catch (error) {
-      console.log(`⚠️  Could not create ad: ${ad.title}`);
+      console.error(`  ❌ ${ad.title}: ${error.message}`);
     }
   }
 };
 
+// ─── Questions (Q&A) ────────────────────────────────────────────────────────
 const seedQuestions = async () => {
   console.log('\n❓ Seeding Questions...');
 
   for (const question of mockQuestions) {
-    const realUserId = realUserIds.get(question.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${question.userId}, skipping question`);
+    const userId = realUserIds.get(question.userId);
+    if (!userId) {
+      console.log(`  ⚠️  No user for ${question.userId}, skipping question`);
       continue;
     }
 
-    const questionData = {
-      text: question.text,
-      category: question.category,
-      rewardAmount: question.rewardAmount,
-      isInstantReward: question.isInstantReward,
-      userId: realUserId,
-    };
-
     try {
-      const result = await makeRequest('POST', '/questions/create', questionData);
-      if (result && result.question && result.question.id) {
-        realQuestionIds.set(question.id, result.question.id);
-      }
-      console.log(`✅ Created question: ${question.text.substring(0, 50)}...`);
+      const dbQuestion = await prisma.question.create({
+        data: {
+          text: question.text,
+          userId,
+          category: question.category || 'General',
+          rewardAmount: question.rewardAmount || 0,
+          isInstantReward: question.isInstantReward ?? false,
+        },
+      });
+      realQuestionIds.set(question.id, dbQuestion.id);
+      console.log(`  ✅ ${question.text.substring(0, 50)}...`);
     } catch (error) {
-      console.log(`⚠️  Could not create question: ${question.text.substring(0, 50)}...`);
+      console.error(`  ❌ ${question.text.substring(0, 50)}: ${error.message}`);
     }
   }
 };
 
+// ─── Responses (Answers to Questions) ────────────────────────────────────────
 const seedResponses = async () => {
   console.log('\n💬 Seeding Responses...');
 
   for (const response of mockResponses) {
-    const realUserId = realUserIds.get(response.userId);
-    const realQuestionId = realQuestionIds.get(response.questionId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${response.userId}, skipping response`);
+    const userId = realUserIds.get(response.userId);
+    const questionId = realQuestionIds.get(response.questionId);
+    if (!userId || !questionId) {
+      console.log(`  ⚠️  Missing user/question for response ${response.id}, skipping`);
       continue;
     }
-    if (!realQuestionId) {
-      console.log(`⚠️  No real question ID found for mock question ${response.questionId}, skipping response`);
-      continue;
-    }
-
-    const responseData = {
-      responseText: response.responseText,
-      userId: realUserId,
-    };
 
     try {
-      await makeRequest('POST', `/questions/${realQuestionId}/responses`, responseData);
-      console.log(`✅ Created response for question ${response.questionId}`);
+      const dbResponse = await prisma.response.create({
+        data: {
+          responseText: response.responseText,
+          userId,
+          questionId,
+        },
+      });
+      realResponseIds.set(response.id, dbResponse.id);
+      console.log(`  ✅ Response for ${response.questionId}`);
     } catch (error) {
-      console.log(`⚠️  Could not create response for question ${response.questionId}`);
+      console.error(`  ❌ Response ${response.id}: ${error.message}`);
     }
   }
 };
 
+// ─── Response Replies ────────────────────────────────────────────────────────
+const seedResponseReplies = async () => {
+  console.log('\n💬 Seeding Response Replies...');
+
+  for (const reply of mockResponseReplies) {
+    const userId = realUserIds.get(reply.userId);
+    const responseId = realResponseIds.get(reply.responseId);
+    if (!userId || !responseId) {
+      console.log(`  ⚠️  Missing user/response for reply ${reply.id}, skipping`);
+      continue;
+    }
+
+    try {
+      await prisma.responseReply.create({
+        data: {
+          replyText: reply.replyText,
+          userId,
+          responseId,
+        },
+      });
+      console.log(`  ✅ Reply to ${reply.responseId}`);
+    } catch (error) {
+      console.error(`  ❌ Reply ${reply.id}: ${error.message}`);
+    }
+  }
+};
+
+// ─── Reward Questions ────────────────────────────────────────────────────────
 const seedRewardQuestions = async () => {
   console.log('\n🎁 Seeding Reward Questions...');
 
-  for (const rewardQuestion of mockRewardQuestions) {
-    const realUserId = realUserIds.get(rewardQuestion.userId);
-    if (!realUserId) {
-      console.log(`⚠️  No real user ID found for mock user ${rewardQuestion.userId}, skipping reward question`);
+  for (const rq of mockRewardQuestions) {
+    const userId = realUserIds.get(rq.userId);
+    if (!userId) {
+      console.log(`  ⚠️  No user for ${rq.userId}, skipping reward question`);
       continue;
     }
 
-    const questionData = {
-      text: rewardQuestion.text,
-      options: rewardQuestion.options,
-      correctAnswer: rewardQuestion.correctAnswer,
-      rewardAmount: rewardQuestion.rewardAmount,
-      expiryTime: rewardQuestion.expiryTime,
-      isInstantReward: rewardQuestion.isInstantReward,
-      maxWinners: rewardQuestion.maxWinners,
-      paymentProvider: rewardQuestion.paymentProvider,
-      phoneNumber: rewardQuestion.phoneNumber,
-      userId: realUserId,
-    };
-
     try {
-      const result = await makeRequest('POST', '/reward-questions/create', questionData);
-      console.log(`✅ Created reward question: ${rewardQuestion.text.substring(0, 50)}...`);
+      await prisma.rewardQuestion.create({
+        data: {
+          text: rq.text,
+          options: rq.options,
+          correctAnswer: rq.correctAnswer,
+          rewardAmount: rq.rewardAmount || 0,
+          expiryTime: rq.expiryTime ? new Date(rq.expiryTime) : null,
+          isActive: rq.isActive ?? true,
+          userId,
+          isInstantReward: rq.isInstantReward ?? false,
+          maxWinners: rq.maxWinners || 2,
+          winnersCount: rq.winnersCount || 0,
+          isCompleted: rq.isCompleted ?? false,
+          paymentProvider: rq.paymentProvider || null,
+          phoneNumber: rq.phoneNumber || null,
+        },
+      });
+      console.log(`  ✅ ${rq.text.substring(0, 50)}...`);
     } catch (error) {
-      console.log(`⚠️  Could not create reward question: ${rewardQuestion.text.substring(0, 50)}...`);
+      console.error(`  ❌ ${rq.text.substring(0, 50)}: ${error.message}`);
     }
   }
 };
 
-// Main seeding function
+// ─── Main ────────────────────────────────────────────────────────────────────
 const seedAllData = async () => {
-  console.log('🚀 Starting mock data seeding via REST APIs...');
-  console.log('📍 API Base URL:', BASE_URL);
-  console.log('⚠️  Note: Using deployed API - some endpoints may require authentication');
+  console.log('🚀 Starting mock data seeding via Prisma...');
+  console.log(`📍 Database: ${connectionString.replace(/:[^:@]+@/, ':***@')}`);
 
   try {
-    // Try to authenticate admin first
-    console.log('\n🔐 Attempting admin authentication...');
-    const adminToken = await loginUser('admin@delipucash.com', 'admin123456');
-    if (adminToken) {
-      console.log('✅ Admin authenticated successfully');
-      userTokens.set('admin', adminToken);
-    } else {
-      console.log('❌ Admin authentication failed - continuing with available endpoints');
-    }
-
-    // Seed data in order of dependencies
+    // Seed data in dependency order
     await seedUsers();
     await seedVideos();
     await seedComments();
@@ -459,18 +384,23 @@ const seedAllData = async () => {
     await seedAds();
     await seedQuestions();
     await seedResponses();
+    await seedResponseReplies();
     await seedRewardQuestions();
 
     console.log('\n🎉 Mock data seeding completed!');
     console.log('📊 Summary:');
-    console.log(`   - Users authenticated: ${userTokens.size}`);
-    console.log('   - Check the output above for success/failure details');
-
+    console.log(`   Users:            ${realUserIds.size}`);
+    console.log(`   Videos:           ${realVideoIds.size}`);
+    console.log(`   Surveys:          ${realSurveyIds.size}`);
+    console.log(`   Questions:        ${realQuestionIds.size}`);
+    console.log(`   Responses:        ${realResponseIds.size}`);
   } catch (error) {
     console.error('\n💥 Error during seeding:', error.message);
     process.exit(1);
+  } finally {
+    await prisma.$disconnect();
+    await pool.end();
   }
 };
 
-// Run the seeding script
 seedAllData();
