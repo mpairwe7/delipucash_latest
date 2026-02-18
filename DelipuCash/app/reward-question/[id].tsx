@@ -427,13 +427,15 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
 
   // ── Unanswered reward questions for auto-transition (excludes instant rewards) ──
+  // Excludes full/completed questions so transitions never land on a dead-end.
   const unansweredQuestions = useMemo(() => {
     if (rewardQuestionsOnly.length === 0) return [];
     return rewardQuestionsOnly.filter(
       (q) =>
         q.id !== questionId &&
         !q.isCompleted &&
-        !attemptHistory?.attemptedQuestionIds.includes(q.id)
+        !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+        q.maxWinners - q.winnersCount > 0 // skip full questions
     );
   }, [rewardQuestionsOnly, questionId, attemptHistory]);
 

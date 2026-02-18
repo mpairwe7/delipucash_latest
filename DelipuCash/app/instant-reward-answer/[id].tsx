@@ -312,7 +312,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── TanStack Query — server state ──
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
-  const { data: allQuestions } = useInstantRewardQuestions();
+  const { data: allQuestions, refetch: refetchAllQuestions } = useInstantRewardQuestions();
   const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
@@ -442,16 +442,42 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }
   }, [timerExpired, result, hasAlreadyAttempted, showToast]);
 
+  // Auto-show SessionClosedModal when landing on a question with no spots left.
+  // This catches the race condition where spots fill between navigation and render.
+  // Also refetches the questions list so unansweredQuestions gets fresh winnersCount data.
+  useEffect(() => {
+    if (
+      question &&
+      !isLoading &&
+      !hasAlreadyAttempted &&
+      !result &&
+      !showSessionClosed &&
+      !showSessionSummary &&
+      spotsLeft <= 0
+    ) {
+      // Refetch the list cache so unansweredQuestions recomputes with fresh data
+      refetchAllQuestions();
+      const timer = setTimeout(() => {
+        triggerHaptic('warning');
+        setSessionClosedReason('SLOTS_FULL');
+        setShowSessionClosed(true);
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [question, isLoading, hasAlreadyAttempted, result, spotsLeft, showSessionClosed, showSessionSummary, refetchAllQuestions]);
+
   // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
 
   // Get unanswered questions for auto-transition (reactive via attemptHistory)
+  // Excludes full/completed questions so transitions never land on a dead-end.
   const unansweredQuestions = useMemo(() => {
     if (!allQuestions) return [];
     return allQuestions.filter(q =>
       q.id !== questionId &&
       !q.isCompleted &&
       q.isInstantReward === question?.isInstantReward &&
-      !attemptHistory?.attemptedQuestionIds.includes(q.id)
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0 // skip full questions
     );
   }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
 
@@ -861,20 +887,37 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   }, [cancelRedemption]);
 
   // SessionClosedModal handlers
-  const handleSessionClosedContinue = useCallback(() => {
+  // Refetch fresh data before transitioning — stale cache may show questions as open
+  // when all spots are actually full.
+  const handleSessionClosedContinue = useCallback(async () => {
     triggerHaptic('light');
     setShowSessionClosed(false);
-    if (unansweredQuestions.length > 0) {
+
+    // Refetch to get fresh winnersCount data before deciding next action
+    const { data: freshQuestions } = await refetchAllQuestions();
+
+    // Re-derive open questions from fresh data
+    const freshOpen = (freshQuestions || []).filter(q =>
+      q.id !== questionId &&
+      !q.isCompleted &&
+      q.isInstantReward === question?.isInstantReward &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0
+    );
+
+    if (freshOpen.length > 0) {
       setIsTransitioning(true);
       transitionOpacity.value = withTiming(0, { duration: 200 });
       transitionTranslateX.value = withTiming(-50, { duration: 200 }, () => {
-        runOnJS(executeTransition)(unansweredQuestions[0].id);
+        runOnJS(executeTransition)(freshOpen[0].id);
       });
     } else {
+      // All questions truly full or answered — show session summary
+      triggerHaptic('success');
       endSession();
       setShowSessionSummary(true);
     }
-  }, [unansweredQuestions, transitionOpacity, transitionTranslateX, executeTransition, endSession]);
+  }, [refetchAllQuestions, questionId, question?.isInstantReward, attemptHistory, transitionOpacity, transitionTranslateX, executeTransition, endSession]);
 
   const handleSessionClosedRedeem = useCallback(() => {
     triggerHaptic('medium');
@@ -897,9 +940,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
   }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
 
+  // When closed on arrival (spots full, not attempted, no result), allow
+  // navigation forward instead of a dead-end disabled button.
+  const isClosedOnArrival = isClosed && !hasAlreadyAttempted && !result;
+
   const handleFooterPress = useMemo(
-    () => (result || hasAlreadyAttempted ? handleTransitionToNext : handleSubmit),
-    [result, hasAlreadyAttempted, handleTransitionToNext, handleSubmit]
+    () => (result || hasAlreadyAttempted || isClosedOnArrival ? handleTransitionToNext : handleSubmit),
+    [result, hasAlreadyAttempted, isClosedOnArrival, handleTransitionToNext, handleSubmit]
   );
 
   if (isLoading) {
@@ -1199,14 +1246,16 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
               : result
                 ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
-                : isClosed
-                  ? "Closed"
-                  : "Submit Answer"
+                : isClosedOnArrival
+                  ? (unansweredQuestions.length > 0 ? "Next Question" : "View Summary")
+                  : isClosed
+                    ? "Closed"
+                    : "Submit Answer"
           }
           onPress={handleFooterPress}
           loading={submitAnswer.isPending || isTransitioning}
-          disabled={isClosed && !hasAlreadyAttempted && !result}
-          variant={hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
+          disabled={false}
+          variant={isClosedOnArrival ? "secondary" : hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
         />
       </View>
 

@@ -6,12 +6,15 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/services";
+import { rewardsApi } from "@/services/api";
 import { useInstantRewardQuestions, useInstantRewardQuestionAttempts } from "@/services/hooks";
 import type { UserAttemptRecord } from "@/services/hooks";
-import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
 import { useToast } from "@/components/ui/Toast";
+import { RewardSessionSummary, RedemptionModal, SessionClosedModal } from "@/components/quiz";
 import { InstantRewardListSkeleton } from "@/components/question/QuestionSkeletons";
 import {
     BORDER_WIDTH,
@@ -300,6 +303,35 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
   const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
 
+  // Session + wallet state for summary/redemption modals
+  const { walletBalance, sessionSummary } = useInstantRewardStore(
+    useShallow((s) => ({
+      walletBalance: s.walletBalance,
+      sessionSummary: s.sessionSummary,
+    }))
+  );
+  const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
+  const endSession = useInstantRewardStore((s) => s.endSession);
+  const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
+  const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
+  const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
+
+  // Last successful redemption for quick-redeem shortcut
+  const redemptionHistory = useInstantRewardStore((s) => s.redemptionHistory);
+  const lastRedemption = useMemo(() => {
+    const last = [...redemptionHistory].reverse().find((r) => r.status === 'SUCCESSFUL');
+    return last ? { provider: last.provider, phoneNumber: last.phoneNumber } : null;
+  }, [redemptionHistory]);
+
+  // Session summary / closed modal state
+  const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showSessionClosed, setShowSessionClosed] = useState(false);
+  const [sessionClosedReason, setSessionClosedReason] = useState<'EXPIRED' | 'SLOTS_FULL' | 'COMPLETED'>('SLOTS_FULL');
+  const [showRedemptionModal, setShowRedemptionModal] = useState(false);
+  const [quickRedeemProvider, setQuickRedeemProvider] = useState<'MTN' | 'AIRTEL' | undefined>(undefined);
+  const [quickRedeemPhone, setQuickRedeemPhone] = useState<string | undefined>(undefined);
+  const [quickRedeemType, setQuickRedeemType] = useState<'CASH' | 'AIRTIME' | undefined>(undefined);
+
   const userEmail = auth?.user?.email || user?.email;
 
   // Initialize attempt history for current user
@@ -463,7 +495,10 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const keyExtractor = useCallback((item: RewardListItem) => item.id, []);
 
   const renderItem = useCallback(({ item }: { item: RewardListItem }) => {
-    if (activeTab === 'unanswered') {
+    // Use item.isAnswered instead of activeTab — displayedQuestions already
+    // filters by tab, so this avoids recreating renderItem on tab switch
+    // (which would force every visible cell to re-render).
+    if (!item.isAnswered) {
       return (
         <UnansweredQuestionItem
           item={item}
@@ -480,7 +515,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         onPress={handleOpenQuestion}
       />
     );
-  }, [activeTab, handleOpenQuestion, colors]);
+  }, [handleOpenQuestion, colors]);
 
   // ── Memoized FlatList sub-components (stable refs prevent header/empty re-mount) ──
 
@@ -492,6 +527,163 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const handleSelectCompleted = useCallback(() => {
     triggerHaptic('selection');
     setActiveTab('completed');
+  }, []);
+
+  // ── Session detection: all questions done or all spots full ──
+
+  // Track whether user has been shown the session-done prompt (avoid re-triggering)
+  const sessionShownRef = useRef(false);
+
+  // Detect when all questions are answered or all spots are full
+  const allQuestionsDone = useMemo(() => {
+    if (!rewardQuestions || rewardQuestions.length === 0 || isLoading) return false;
+    // Every active question is either answered or full
+    return activeQuestions.length > 0 && unansweredQuestions.length === 0;
+  }, [rewardQuestions, activeQuestions, unansweredQuestions, isLoading]);
+
+  const allSpotsFull = useMemo(() => {
+    if (!rewardQuestions || rewardQuestions.length === 0 || isLoading) return false;
+    return openQuestions.length === 0 && unansweredQuestions.length > 0;
+  }, [rewardQuestions, openQuestions, unansweredQuestions, isLoading]);
+
+  // Auto-show session summary when all questions done
+  useEffect(() => {
+    if (allQuestionsDone && completedQuestions.length > 0 && !sessionShownRef.current) {
+      sessionShownRef.current = true;
+      // Small delay so the list finishes rendering
+      const timer = setTimeout(() => {
+        triggerHaptic('success');
+        endSession();
+        setShowSessionSummary(true);
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [allQuestionsDone, completedQuestions.length, endSession]);
+
+  // Auto-show session-closed when all spots full but unanswered questions remain
+  useEffect(() => {
+    if (allSpotsFull && !allQuestionsDone && !sessionShownRef.current) {
+      sessionShownRef.current = true;
+      const timer = setTimeout(() => {
+        triggerHaptic('warning');
+        setSessionClosedReason('SLOTS_FULL');
+        setShowSessionClosed(true);
+      }, 600);
+      return () => clearTimeout(timer);
+    }
+  }, [allSpotsFull, allQuestionsDone]);
+
+  // Reset trigger when data refreshes and new questions appear
+  useEffect(() => {
+    if (openQuestions.length > 0 || unansweredQuestions.length > 0) {
+      if (!allQuestionsDone && !allSpotsFull) {
+        sessionShownRef.current = false;
+      }
+    }
+  }, [openQuestions.length, unansweredQuestions.length, allQuestionsDone, allSpotsFull]);
+
+  // ── Session summary average time ──
+  const averageTimeSeconds = useMemo(() => {
+    const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
+    if (questionsAnswered === 0) return 0;
+    return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
+  }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
+
+  // ── Modal callbacks ──
+  const handleRedeemCash = useCallback(() => {
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleRedeemAirtime = useCallback(() => {
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleQuickRedeem = useCallback((provider: 'MTN' | 'AIRTEL', phoneNumber: string) => {
+    setQuickRedeemType('CASH');
+    setQuickRedeemProvider(provider);
+    setQuickRedeemPhone(phoneNumber);
+    setShowSessionSummary(false);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleSessionContinue = useCallback(() => {
+    setShowSessionSummary(false);
+  }, []);
+
+  const handleSessionClose = useCallback(() => {
+    setShowSessionSummary(false);
+    router.back();
+  }, []);
+
+  const handleCloseRedemption = useCallback(() => {
+    setShowRedemptionModal(false);
+    cancelRedemption();
+  }, [cancelRedemption]);
+
+  const handleRedeem = useCallback(async (
+    amount: number,
+    type: 'CASH' | 'AIRTIME',
+    provider: 'MTN' | 'AIRTEL',
+    phoneNumber: string
+  ): Promise<{ success: boolean; message?: string }> => {
+    initiateRedemption({
+      points: cashToPoints(amount),
+      cashValue: amount,
+      type,
+      provider,
+      phoneNumber,
+    });
+
+    try {
+      const response = await rewardsApi.redeem(amount, provider, phoneNumber, type);
+
+      if (response.data?.success) {
+        completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+        return {
+          success: true,
+          message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
+        };
+      } else {
+        const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
+        completeRedemption('', false, errorMsg);
+        return { success: false, message: `${errorMsg} Points refunded.` };
+      }
+    } catch (err: any) {
+      const errorMsg = err?.message ?? 'Something went wrong. Please try again.';
+      completeRedemption('', false, errorMsg);
+      return { success: false, message: errorMsg };
+    }
+  }, [initiateRedemption, completeRedemption]);
+
+  // SessionClosedModal handlers
+  const handleSessionClosedContinue = useCallback(async () => {
+    triggerHaptic('light');
+    setShowSessionClosed(false);
+    sessionShownRef.current = false; // allow re-evaluation after fresh data
+    await handleRefresh();
+  }, [handleRefresh]);
+
+  const handleSessionClosedRedeem = useCallback(() => {
+    triggerHaptic('medium');
+    setShowSessionClosed(false);
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleSessionClosedExit = useCallback(() => {
+    triggerHaptic('light');
+    setShowSessionClosed(false);
+    router.back();
   }, []);
 
   const listHeader = useMemo(() => (
@@ -671,17 +863,63 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-        maxToRenderPerBatch={6}
-        windowSize={3}
+        maxToRenderPerBatch={10}
+        windowSize={5}
         removeClippedSubviews
-        initialNumToRender={5}
-        updateCellsBatchingPeriod={50}
+        initialNumToRender={8}
         ItemSeparatorComponent={ItemSeparator}
       />
 
       <UploadRewardQuestionModal
         visible={showUploadModal}
         onClose={() => setShowUploadModal(false)}
+      />
+
+      {/* Session Closed Modal — all spots full */}
+      <SessionClosedModal
+        visible={showSessionClosed}
+        reason={sessionClosedReason}
+        questionsAnswered={sessionSummary.questionsAnswered}
+        correctAnswers={sessionSummary.correctAnswers}
+        totalEarned={sessionSummary.totalEarned}
+        totalBalance={walletBalance}
+        canRedeem={canRedeemRewards}
+        onContinue={handleSessionClosedContinue}
+        onExit={handleSessionClosedExit}
+        onRedeem={handleSessionClosedRedeem}
+        remainingQuestions={unansweredQuestions.length}
+      />
+
+      {/* Session Summary Modal — all questions answered */}
+      <RewardSessionSummary
+        visible={showSessionSummary}
+        totalQuestions={sessionSummary.totalQuestions}
+        correctAnswers={sessionSummary.correctAnswers}
+        incorrectAnswers={sessionSummary.incorrectAnswers}
+        totalEarned={sessionSummary.totalEarned}
+        sessionEarnings={sessionSummary.totalEarned}
+        totalBalance={walletBalance}
+        canRedeemRewards={canRedeemRewards}
+        onRedeemCash={handleRedeemCash}
+        onRedeemAirtime={handleRedeemAirtime}
+        onContinue={handleSessionContinue}
+        onClose={handleSessionClose}
+        maxStreak={sessionSummary.maxStreak}
+        bonusPoints={sessionSummary.bonusPoints}
+        averageTime={averageTimeSeconds}
+        lastRedemption={lastRedemption}
+        onQuickRedeem={handleQuickRedeem}
+      />
+
+      {/* Redemption Modal */}
+      <RedemptionModal
+        visible={showRedemptionModal}
+        availableAmount={walletBalance}
+        onClose={handleCloseRedemption}
+        onRedeem={handleRedeem}
+        initialType={quickRedeemType}
+        initialProvider={quickRedeemProvider}
+        initialPhone={quickRedeemPhone}
       />
     </View>
   );
