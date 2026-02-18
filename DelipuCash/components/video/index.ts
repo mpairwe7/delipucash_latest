@@ -75,6 +75,9 @@ export type { UploadModalProps } from './UploadModal';
 export { SearchResults } from './SearchResults';
 export type { SearchResultsProps } from './SearchResults';
 
+export { CollapsibleSearchBar } from './CollapsibleSearchBar';
+export type { CollapsibleSearchBarProps } from './CollapsibleSearchBar';
+
 // Slider Components
 export { TrendingVideoSlider } from './TrendingVideoSlider';
 export type { TrendingVideoSliderProps } from './TrendingVideoSlider';

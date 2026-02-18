@@ -129,8 +129,14 @@ export interface VerticalVideoFeedProps {
    *  When provided, the feed adjusts its top padding and item sizing so
    *  video content starts below the header instead of behind it. */
   headerHeight?: number;
+  /** Custom empty state title (per-tab differentiation) */
+  emptyTitle?: string;
+  /** Custom empty state subtitle (per-tab differentiation) */
+  emptySubtitle?: string;
   /** Test ID for testing */
   testID?: string;
+  /** Callback when FlatList scrolls (for scroll-based animations) */
+  onScroll?: (offsetY: number) => void;
 }
 
 // ============================================================================
@@ -157,7 +163,10 @@ function VerticalVideoFeedComponent({
   onAdImpression,
   isDataSaver = false,
   headerHeight,
+  emptyTitle,
+  emptySubtitle,
   testID,
+  onScroll,
 }: VerticalVideoFeedProps): React.ReactElement {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -249,6 +258,15 @@ function VerticalVideoFeedComponent({
   // ============================================================================
   // CALLBACKS
   // ============================================================================
+
+  // Handle scroll - for header collapse animations
+  const handleScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+      const offsetY = event.nativeEvent.contentOffset.y;
+      onScroll?.(offsetY);
+    },
+    [onScroll]
+  );
 
   // Handle viewable items change (core auto-play logic)
   const onViewableItemsChanged = useCallback(
@@ -418,7 +436,7 @@ function VerticalVideoFeedComponent({
     );
   }, [isLoadingMore, itemHeight, colors]);
 
-  // Render empty state
+  // Render empty state — supports per-tab customization via emptyTitle/emptySubtitle props
   const renderEmpty = useCallback(() => {
     if (isLoading) {
       return <VideoFeedSkeleton count={3} itemHeight={itemHeight} />;
@@ -426,14 +444,14 @@ function VerticalVideoFeedComponent({
     return (
       <View style={[styles.emptyContainer, { height: itemHeight }]}>
         <Text style={[styles.emptyTitle, { color: colors.text }]}>
-          No videos yet
+          {emptyTitle || 'No videos yet'}
         </Text>
         <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-          Pull down to refresh or check back later
+          {emptySubtitle || 'Pull down to refresh or check back later'}
         </Text>
       </View>
     );
-  }, [isLoading, itemHeight, colors]);
+  }, [isLoading, itemHeight, colors, emptyTitle, emptySubtitle]);
 
   // Stable scroll-to-index failure handler (extracted from inline closure)
   const handleScrollToIndexFailed = useCallback(
@@ -523,6 +541,9 @@ function VerticalVideoFeedComponent({
           styles.contentContainer,
           { paddingTop: effectiveTopOffset },
         ]}
+        // Scroll events for header animations
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
       />
     </Animated.View>
   );

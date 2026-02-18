@@ -56,6 +56,11 @@
               "scheme": "https",
               "host": "delipucashserver.vercel.app",
               "pathPrefix": "/reset-password"
+            },
+            {
+              "scheme": "https",
+              "host": "delipucashserver.vercel.app",
+              "pathPrefix": "/video"
             }
           ],
           "category": ["BROWSABLE", "DEFAULT"]

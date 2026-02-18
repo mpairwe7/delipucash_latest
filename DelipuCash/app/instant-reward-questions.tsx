@@ -28,7 +28,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, CheckCircle2, Circle, Clock3, Lock, Plus, RefreshCcw, Trophy, Zap } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     FlatList,
     Alert,
@@ -230,6 +230,56 @@ const CompletedQuestionCard = memo(function CompletedQuestionCard({
   );
 });
 
+// ─── Memoized Unanswered Question Item ───────────────────────────────────────
+// Extracted from renderItem to prevent re-creation of question object and onPress
+// closure on every FlatList render cycle. Props are shallow-compared by memo.
+
+interface UnansweredQuestionItemProps {
+  item: RewardListItem;
+  colors: ReturnType<typeof useTheme>['colors'];
+  onPress: (id: string) => void;
+}
+
+const dimmedItemStyle = { opacity: 0.55 } as const;
+
+const UnansweredQuestionItem = memo(function UnansweredQuestionItem({
+  item,
+  colors,
+  onPress,
+}: UnansweredQuestionItemProps) {
+  const question = useMemo(() => ({
+    id: item.id,
+    text: item.text,
+    userId: null,
+    createdAt: item.createdAt,
+    updatedAt: item.createdAt,
+    rewardAmount: item.rewardAmount,
+    isInstantReward: true,
+    totalAnswers: item.winnersCount,
+    category: "Rewards",
+  }), [item.id, item.text, item.createdAt, item.rewardAmount, item.winnersCount]);
+
+  const handlePress = useCallback(() => onPress(item.id), [onPress, item.id]);
+
+  return (
+    <View style={item.isFull ? dimmedItemStyle : undefined}>
+      <QuestionCard
+        question={question}
+        variant="default"
+        onPress={handlePress}
+      />
+      <SpotsIndicator
+        spotsLeft={item.spotsLeft}
+        maxWinners={item.maxWinners}
+        winnersCount={item.winnersCount}
+        isFull={item.isFull}
+        isExpiringSoon={item.isExpiringSoon}
+        colors={colors}
+      />
+    </View>
+  );
+});
+
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
@@ -336,6 +386,12 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const openQuestions = useMemo(() => unansweredQuestions.filter(q => !q.isFull), [unansweredQuestions]);
   const closedQuestions = useMemo(() => unansweredQuestions.filter(q => q.isFull), [unansweredQuestions]);
 
+  // Refs for stable callback access — avoids recreating handleOpenQuestion on every data refetch
+  const activeQuestionsRef = useRef(activeQuestions);
+  activeQuestionsRef.current = activeQuestions;
+  const openQuestionsRef = useRef(openQuestions);
+  openQuestionsRef.current = openQuestions;
+
   // Stats
   const totalRewardsEarned = useMemo(() => {
     return completedQuestions.reduce((sum, q) => sum + (q.rewardEarned || 0), 0);
@@ -360,6 +416,9 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     setShowUploadModal(true);
   }, []);
 
+  // Stable callback — reads data from refs so it doesn't recreate on every refetch.
+  // This is the #1 fix: previously, activeQuestions/openQuestions in deps caused
+  // handleOpenQuestion → renderItem → ALL items to re-render on every data change.
   const handleOpenQuestion = useCallback((id: string) => {
     if (!authReady) return;
     triggerHaptic('medium');
@@ -367,11 +426,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       router.push("/(auth)/login" as Href);
       return;
     }
-    // Check if question is full before navigating
-    const item = activeQuestions.find(q => q.id === id);
+    // Check if question is full before navigating (read from ref for latest data)
+    const item = activeQuestionsRef.current.find(q => q.id === id);
     if (item?.isFull && !item.isAnswered) {
       triggerHaptic('warning');
-      const nextOpen = openQuestions.find(q => q.id !== id);
+      const nextOpen = openQuestionsRef.current.find(q => q.id !== id);
       Alert.alert(
         'No Spots Left',
         'All winner spots have been filled for this question.',
@@ -388,7 +447,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       return;
     }
     router.push(`/instant-reward-answer/${id}` as Href);
-  }, [authReady, isAuthenticated, activeQuestions, openQuestions]);
+  }, [authReady, isAuthenticated]);
 
   // Dynamic reward amount from question model, fallback to constant
   const displayRewardAmount = useMemo(() => {
@@ -406,31 +465,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const renderItem = useCallback(({ item }: { item: RewardListItem }) => {
     if (activeTab === 'unanswered') {
       return (
-        <View style={{ opacity: item.isFull ? 0.55 : 1 }}>
-          <QuestionCard
-            question={{
-              id: item.id,
-              text: item.text,
-              userId: null,
-              createdAt: item.createdAt,
-              updatedAt: item.createdAt,
-              rewardAmount: item.rewardAmount,
-              isInstantReward: true,
-              totalAnswers: item.winnersCount,
-              category: "Rewards",
-            }}
-            variant="default"
-            onPress={() => handleOpenQuestion(item.id)}
-          />
-          <SpotsIndicator
-            spotsLeft={item.spotsLeft}
-            maxWinners={item.maxWinners}
-            winnersCount={item.winnersCount}
-            isFull={item.isFull}
-            isExpiringSoon={item.isExpiringSoon}
-            colors={colors}
-          />
-        </View>
+        <UnansweredQuestionItem
+          item={item}
+          colors={colors}
+          onPress={handleOpenQuestion}
+        />
       );
     }
 
@@ -632,10 +671,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-        maxToRenderPerBatch={8}
-        windowSize={5}
+        maxToRenderPerBatch={6}
+        windowSize={3}
         removeClippedSubviews
-        initialNumToRender={6}
+        initialNumToRender={5}
+        updateCellsBatchingPeriod={50}
         ItemSeparatorComponent={ItemSeparator}
       />
 

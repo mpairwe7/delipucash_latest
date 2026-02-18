@@ -51,6 +51,12 @@ export interface AnswerResultOverlayProps {
 
 // ─── Confetti Particle (lightweight, same pattern as RewardSessionSummary) ──
 
+// Deterministic seeded random — stable across re-renders (replaces Math.random())
+const seededRandom = (seed: number): number => {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+};
+
 const ConfettiParticle: React.FC<{
   color: string;
   index: number;
@@ -62,18 +68,33 @@ const ConfettiParticle: React.FC<{
   const rotate = useSharedValue(0);
   const scale = useSharedValue(0);
 
-  const angle = (index / total) * 2 * Math.PI;
-  const speed = 200 + Math.random() * 180;
-  const dx = Math.cos(angle) * (30 + Math.random() * 60);
+  // Pre-compute deterministic values from index — stable across re-renders
+  const seed = React.useMemo(() => {
+    const r1 = seededRandom(index * 9301 + 49297);
+    const r2 = seededRandom(index * 7919 + 31337);
+    const r3 = seededRandom(index * 6571 + 17389);
+    const r4 = seededRandom(index * 4231 + 21013);
+    const ang = (index / total) * 2 * Math.PI;
+    const spd = 200 + r1 * 180;
+    const dxVal = Math.cos(ang) * (30 + r2 * 60);
+    const size = 5 + r3 * 5;
+    return {
+      speed: spd,
+      dx: dxVal,
+      sz: size,
+      borderRadius: r4 > 0.5 ? size / 2 : 2,
+      rotDir: r1 > 0.5 ? 1 : -1,
+    };
+  }, [index, total]);
 
   useEffect(() => {
     const d = index * 20;
     scale.value = withDelay(d, withSpring(1, { damping: 5, stiffness: 200 }));
-    y.value = withDelay(d, withTiming(-speed, { duration: 1000, easing: Easing.out(Easing.quad) }));
-    x.value = withDelay(d, withTiming(dx, { duration: 1000, easing: Easing.out(Easing.quad) }));
+    y.value = withDelay(d, withTiming(-seed.speed, { duration: 1000, easing: Easing.out(Easing.quad) }));
+    x.value = withDelay(d, withTiming(seed.dx, { duration: 1000, easing: Easing.out(Easing.quad) }));
     rotate.value = withDelay(
       d,
-      withTiming(360 * (Math.random() > 0.5 ? 1 : -1), { duration: 1000 }),
+      withTiming(360 * seed.rotDir, { duration: 1000 }),
     );
     opacity.value = withDelay(d + 600, withTiming(0, { duration: 400 }));
   }, []);
@@ -88,15 +109,14 @@ const ConfettiParticle: React.FC<{
     opacity: opacity.value,
   }));
 
-  const sz = 5 + Math.random() * 5;
   return (
     <Animated.View
       style={[
         {
           position: 'absolute',
-          width: sz,
-          height: sz,
-          borderRadius: Math.random() > 0.5 ? sz / 2 : 2,
+          width: seed.sz,
+          height: seed.sz,
+          borderRadius: seed.borderRadius,
           backgroundColor: color,
         },
         style,
@@ -114,6 +134,11 @@ const AnimatedEarnings: React.FC<{ amount: number; color: string }> = ({ amount,
   const opacity = useSharedValue(0);
   const [displayText, setDisplayText] = React.useState('+0');
 
+  // Format + update on JS thread — formatCurrency can't be serialized into a worklet
+  const updateDisplayText = React.useCallback((rounded: number) => {
+    setDisplayText(`+${formatCurrency(rounded)}`);
+  }, []);
+
   useEffect(() => {
     opacity.value = withDelay(200, withTiming(1, { duration: 200 }));
     translateY.value = withDelay(200, withSpring(-4, { damping: 14, stiffness: 140 }));
@@ -125,7 +150,7 @@ const AnimatedEarnings: React.FC<{ amount: number; color: string }> = ({ amount,
 
   useDerivedValue(() => {
     const rounded = Math.round(animatedValue.value);
-    runOnJS(setDisplayText)(`+${formatCurrency(rounded)}`);
+    runOnJS(updateDisplayText)(rounded);
     return rounded;
   });
 

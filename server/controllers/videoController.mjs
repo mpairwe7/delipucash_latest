@@ -352,6 +352,200 @@ export const getAllVideos = asyncHandler(async (req, res) => {
   }
 });
 
+// ============================================================================
+// TRENDING — Engagement-velocity scoring with time-decay
+// Score = (likes×2 + views + commentsCount×3) / (hours_since_creation + 2)^1.5
+// Only considers videos from the last 7 days to surface genuinely viral content
+// ============================================================================
+
+export const getTrendingVideos = asyncHandler(async (req, res) => {
+  try {
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const authUserId = req.user?.id;
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [videos, userLikes, userBookmarks] = await Promise.all([
+      prisma.video.findMany({
+        where: { createdAt: { gte: sevenDaysAgo } },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+        // Fetch more than needed — we'll rank and trim in JS
+        take: Math.min(limit * 3, 100),
+        orderBy: { createdAt: 'desc' },
+      }),
+      authUserId
+        ? prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+      authUserId
+        ? prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } })
+        : Promise.resolve([]),
+    ]);
+
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+    const now = Date.now();
+
+    // Score and rank
+    const scored = await Promise.all(videos.map(async (video) => {
+      const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
+      const engagementScore = (video.likes * 2) + video.views + (video.commentsCount * 3);
+      const trendingScore = engagementScore / Math.pow(hoursAge + 2, 1.5);
+
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id,
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
+        userId: video.userId,
+        likes: video.likes || 0,
+        views: video.views || 0,
+        isLiked: likedSet.has(video.id),
+        isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0,
+        createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(),
+        duration: video.duration || 0,
+        comments: [],
+        user: video.user ? {
+          id: video.user.id,
+          firstName: video.user.firstName || 'Anonymous',
+          lastName: video.user.lastName || '',
+          avatar: video.user.avatar,
+        } : null,
+        trendingScore,
+      };
+    }));
+
+    // Sort by trending score descending, take limit
+    scored.sort((a, b) => b.trendingScore - a.trendingScore);
+    const trending = scored.slice(0, limit);
+
+    res.json({
+      success: true,
+      message: 'Trending videos fetched successfully',
+      data: trending,
+    });
+  } catch (error) {
+    console.error('VideoController: getTrendingVideos - Error:', error);
+    res.status(500).json({ message: 'Failed to fetch trending videos' });
+  }
+});
+
+// ============================================================================
+// FOLLOWING — Implicit follow via engagement signals (likes + bookmarks)
+// Finds creators the user has liked/bookmarked, returns their recent videos.
+// This provides a meaningful "Following" feed without a dedicated Follow model.
+// ============================================================================
+
+export const getFollowingVideos = asyncHandler(async (req, res) => {
+  try {
+    const authUserId = req.user?.id;
+    if (!authUserId) {
+      return res.json({ success: true, data: [], message: 'Login to see videos from creators you follow' });
+    }
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    // Step 1: Find creator IDs the user has engaged with (liked or bookmarked their videos)
+    const [likedCreators, bookmarkedCreators] = await Promise.all([
+      prisma.videoLike.findMany({
+        where: { userId: authUserId },
+        select: { video: { select: { userId: true } } },
+      }),
+      prisma.videoBookmark.findMany({
+        where: { userId: authUserId },
+        select: { video: { select: { userId: true } } },
+      }),
+    ]);
+
+    const engagedCreatorIds = [
+      ...new Set([
+        ...likedCreators.map(l => l.video.userId),
+        ...bookmarkedCreators.map(b => b.video.userId),
+      ]),
+    ].filter(id => id !== authUserId); // Exclude own videos
+
+    if (engagedCreatorIds.length === 0) {
+      return res.json({
+        success: true,
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
+        message: 'Like or bookmark videos to see more from those creators',
+      });
+    }
+
+    // Step 2: Fetch recent videos from engaged creators
+    const [videos, total, userLikes, userBookmarks] = await Promise.all([
+      prisma.video.findMany({
+        where: { userId: { in: engagedCreatorIds } },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      prisma.video.count({ where: { userId: { in: engagedCreatorIds } } }),
+      prisma.videoLike.findMany({
+        where: { userId: authUserId },
+        select: { videoId: true },
+      }),
+      prisma.videoBookmark.findMany({
+        where: { userId: authUserId },
+        select: { videoId: true },
+      }),
+    ]);
+
+    const likedSet = new Set(userLikes.map(l => l.videoId));
+    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+
+    const formattedVideos = await Promise.all(videos.map(async (video) => {
+      const signed = await signVideoUrls(video);
+      return {
+        id: video.id,
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
+        userId: video.userId,
+        likes: video.likes || 0,
+        views: video.views || 0,
+        isLiked: likedSet.has(video.id),
+        isBookmarked: bookmarkedSet.has(video.id),
+        commentsCount: video.commentsCount || 0,
+        createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(),
+        duration: video.duration || 0,
+        comments: [],
+        user: video.user ? {
+          id: video.user.id,
+          firstName: video.user.firstName || 'Anonymous',
+          lastName: video.user.lastName || '',
+          avatar: video.user.avatar,
+        } : null,
+      };
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+
+    res.json({
+      success: true,
+      message: 'Following videos fetched successfully',
+      data: formattedVideos,
+      pagination: { page, limit, total, totalPages, hasMore: page < totalPages },
+    });
+  } catch (error) {
+    console.error('VideoController: getFollowingVideos - Error:', error);
+    res.status(500).json({ message: 'Failed to fetch following videos' });
+  }
+});
+
 // Update Video Information
 export const updateVideo = asyncHandler(async (req, res) => {
   try {

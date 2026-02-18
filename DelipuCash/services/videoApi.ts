@@ -79,6 +79,8 @@ const VIDEO_ROUTES = {
   livestreamJoin: (sessionId: string) => `/api/videos/livestream/${sessionId}/join`,
   livestreamLeave: (sessionId: string) => `/api/videos/livestream/${sessionId}/leave`,
   livestreamChat: (sessionId: string) => `/api/videos/livestream/${sessionId}/chat`,
+  trending: "/api/videos/trending",
+  following: "/api/videos/following",
   live: "/api/videos/live",
   validateSession: "/api/videos/validate-session",
 } as const;
@@ -350,10 +352,10 @@ export const videoApi = {
   },
 
   /**
-   * Get trending videos — uses /all with sortBy=popular (no dedicated backend route)
+   * Get trending videos — dedicated /trending endpoint with time-decay scoring
    */
-  async getTrending(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?sortBy=popular&limit=${limit}`);
+  async getTrending(limit: number = 20): Promise<ApiResponse<Video[]>> {
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.trending}?limit=${limit}`);
     return {
       success: response.success,
       data: getPlayableVideos(extractVideos(response.data)),
@@ -366,6 +368,21 @@ export const videoApi = {
    */
   async getPopular(limit: number = 10): Promise<ApiResponse<Video[]>> {
     return videoApi.getTrending(limit);
+  },
+
+  /**
+   * Get following videos — videos from creators the user has engaged with (liked/bookmarked)
+   */
+  async getFollowing(page: number = 1, limit: number = 15): Promise<ApiResponse<Video[]> & { pagination?: any }> {
+    const response = await fetchJson<{ data: Video[]; pagination: any }>(
+      `${VIDEO_ROUTES.following}?page=${page}&limit=${limit}`,
+    );
+    return {
+      success: response.success,
+      data: getPlayableVideos(extractVideos(response.data)),
+      pagination: response.data && 'pagination' in (response as any) ? (response as any).pagination : undefined,
+      error: response.error,
+    };
   },
 
   /**

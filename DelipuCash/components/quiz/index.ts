@@ -17,3 +17,7 @@ export {
 export { RewardSessionSummary } from './RewardSessionSummary';
 export { RedemptionModal } from './RedemptionModal';
 export { AnswerResultOverlay } from './AnswerResultOverlay';
+export { QuestionTimer, CompactQuestionTimer } from './QuestionTimer';
+export { SessionClosedModal } from './SessionClosedModal';
+export { RedemptionOptions } from './RedemptionOptions';
+export { SpotsStatus, SpotsInlineBadge } from './SpotsStatus';

@@ -41,6 +41,7 @@ export const videoQueryKeys = {
   detail: (id: string) => [...videoQueryKeys.details(), id] as const,
   comments: (videoId: string) => [...videoQueryKeys.all, 'comments', videoId] as const,
   trending: () => [...videoQueryKeys.all, 'trending'] as const,
+  following: () => [...videoQueryKeys.all, 'following'] as const,
   live: () => [...videoQueryKeys.all, 'live'] as const,
   recommended: () => [...videoQueryKeys.all, 'recommended'] as const,
   search: (query: string) => [...videoQueryKeys.all, 'search', query] as const,
@@ -564,9 +565,10 @@ export function useDeleteVideoComment(): UseMutationResult<
 // ============================================================================
 
 /**
- * Hook to fetch trending videos
+ * Hook to fetch trending videos — uses dedicated /trending endpoint with
+ * time-decay scoring (engagement velocity, not just total likes).
  */
-export function useTrendingVideos(limit: number = 10): UseQueryResult<Video[]> {
+export function useTrendingVideos(limit: number = 20): UseQueryResult<Video[]> {
   return useQuery({
     queryKey: videoQueryKeys.trending(),
     queryFn: async () => {
@@ -574,7 +576,38 @@ export function useTrendingVideos(limit: number = 10): UseQueryResult<Video[]> {
       if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
       return response.data;
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 60 * 3, // 3 minutes — trending changes faster than general feed
+  });
+}
+
+/**
+ * Hook to fetch following videos — videos from creators the user has engaged with.
+ * Uses infinite query for seamless infinite scroll within the Following tab.
+ */
+export function useInfiniteFollowingVideos(params: { limit?: number; enabled?: boolean } = {}): UseInfiniteQueryResult<{
+  pages: { videos: Video[]; nextPage: number | null }[];
+  pageParams: number[];
+}> {
+  const { limit = 15, enabled = true } = params;
+
+  return useInfiniteQuery({
+    queryKey: videoQueryKeys.following(),
+    queryFn: async ({ pageParam = 1 }) => {
+      const response = await videoApi.getFollowing(pageParam, limit);
+      if (!response.success) throw new Error(response.error || 'Failed to fetch following videos');
+
+      const pagination = (response as any).pagination;
+      const hasMore = pagination ? pageParam < pagination.totalPages : response.data.length === limit;
+
+      return {
+        videos: response.data,
+        nextPage: hasMore ? pageParam + 1 : null,
+      };
+    },
+    getNextPageParam: (lastPage) => lastPage.nextPage,
+    initialPageParam: 1,
+    enabled,
+    staleTime: 1000 * 60 * 2,
   });
 }
 

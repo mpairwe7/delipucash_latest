@@ -22,7 +22,7 @@ import {
   normalizeText,
   triggerHaptic,
 } from "@/utils/quiz-utils";
-import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay } from "@/components/quiz";
+import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay, QuestionTimer, SessionClosedModal } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -42,8 +42,6 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FlatList,
-  ListRenderItemInfo,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -256,17 +254,10 @@ interface WinnersSectionProps {
   colors: ThemeColors;
 }
 
-const winnerKeyExtractor = (item: { id: string }) => item.id;
-
+// Winners are bounded to maxWinners (1-10), so .map() is used instead of FlatList
+// to eliminate the nested VirtualizedList-inside-ScrollView warning.
 const WinnersSection = memo(function WinnersSection({ winners, colors }: WinnersSectionProps) {
   if (!winners || winners.length === 0) return null;
-
-  const renderWinner = useCallback(
-    ({ item }: ListRenderItemInfo<WinnersSectionProps['winners'][number]>) => (
-      <WinnerRow winner={item} colors={colors} />
-    ),
-    [colors]
-  );
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -277,15 +268,9 @@ const WinnersSection = memo(function WinnersSection({ winners, colors }: Winners
         </View>
         <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
       </View>
-      <FlatList
-        data={winners}
-        keyExtractor={winnerKeyExtractor}
-        renderItem={renderWinner}
-        scrollEnabled={false}
-        initialNumToRender={5}
-        maxToRenderPerBatch={10}
-        removeClippedSubviews
-      />
+      {winners.map((winner) => (
+        <WinnerRow key={winner.id} winner={winner} colors={colors} />
+      ))}
     </View>
   );
 });
@@ -302,6 +287,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [revealedCorrectAnswer, setRevealedCorrectAnswer] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
+  const [showSessionClosed, setShowSessionClosed] = useState(false);
+  const [sessionClosedReason, setSessionClosedReason] = useState<'EXPIRED' | 'SLOTS_FULL' | 'COMPLETED'>('EXPIRED');
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
   const [quickRedeemProvider, setQuickRedeemProvider] = useState<'MTN' | 'AIRTEL' | undefined>(undefined);
   const [quickRedeemPhone, setQuickRedeemPhone] = useState<string | undefined>(undefined);
@@ -311,6 +298,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [showResultOverlay, setShowResultOverlay] = useState(false);
   const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
   const [overlayEarned, setOverlayEarned] = useState(0);
+  const [timerExpired, setTimerExpired] = useState(false);
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
@@ -433,12 +421,26 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     setResult(null);
     setRevealedCorrectAnswer(null);
     setIsExpired(false);
+    setTimerExpired(false);
     setIsTransitioning(false);
     setShowResultOverlay(false);
     transitionOpacity.value = 1;
     transitionTranslateX.value = 0;
     recordQuestionStart();
   }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
+
+  // Handle 60-second session timer expiration (UX enhancement)
+  useEffect(() => {
+    if (timerExpired && !result && !hasAlreadyAttempted) {
+      triggerHaptic('error');
+      setSessionClosedReason('EXPIRED');
+      setShowSessionClosed(true);
+      showToast({
+        message: 'Time\'s up! This question session has ended.',
+        type: 'warning',
+      });
+    }
+  }, [timerExpired, result, hasAlreadyAttempted, showToast]);
 
   // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
 
@@ -858,6 +860,37 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     cancelRedemption();
   }, [cancelRedemption]);
 
+  // SessionClosedModal handlers
+  const handleSessionClosedContinue = useCallback(() => {
+    triggerHaptic('light');
+    setShowSessionClosed(false);
+    if (unansweredQuestions.length > 0) {
+      setIsTransitioning(true);
+      transitionOpacity.value = withTiming(0, { duration: 200 });
+      transitionTranslateX.value = withTiming(-50, { duration: 200 }, () => {
+        runOnJS(executeTransition)(unansweredQuestions[0].id);
+      });
+    } else {
+      endSession();
+      setShowSessionSummary(true);
+    }
+  }, [unansweredQuestions, transitionOpacity, transitionTranslateX, executeTransition, endSession]);
+
+  const handleSessionClosedRedeem = useCallback(() => {
+    triggerHaptic('medium');
+    setShowSessionClosed(false);
+    setQuickRedeemType(undefined);
+    setQuickRedeemProvider(undefined);
+    setQuickRedeemPhone(undefined);
+    setShowRedemptionModal(true);
+  }, []);
+
+  const handleSessionClosedExit = useCallback(() => {
+    triggerHaptic('light');
+    setShowSessionClosed(false);
+    router.back();
+  }, []);
+
   const averageTimeSeconds = useMemo(() => {
     const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
     if (questionsAnswered === 0) return 0;
@@ -969,6 +1002,17 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               />
             )}
           </View>
+
+          {/* 60-Second Session Timer */}
+          {!hasAlreadyAttempted && !result && !isClosed && (
+            <View style={styles.timerContainer}>
+              <QuestionTimer
+                timeLimit={60}
+                onTimeExpired={() => setTimerExpired(true)}
+                reset={false}
+              />
+            </View>
+          )}
 
           <Text style={[styles.heroTitle, { color: colors.text }]}>{formatCurrency(rewardAmount)}</Text>
           <Text style={[styles.heroSubtitle, { color: colors.textMuted }]}>
@@ -1173,6 +1217,21 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         earnedAmount={overlayEarned}
         streakCount={currentStreak}
         onDismiss={handleOverlayDismiss}
+      />
+
+      {/* Session Closed Modal - Shows when spots are full or session expires */}
+      <SessionClosedModal
+        visible={showSessionClosed}
+        reason={sessionClosedReason}
+        questionsAnswered={sessionSummary.questionsAnswered}
+        correctAnswers={sessionSummary.correctAnswers}
+        totalEarned={sessionSummary.totalEarned}
+        totalBalance={walletBalance}
+        canRedeem={canRedeemRewards}
+        onContinue={handleSessionClosedContinue}
+        onExit={handleSessionClosedExit}
+        onRedeem={handleSessionClosedRedeem}
+        remainingQuestions={unansweredQuestions.length}
       />
 
       {/* Session Summary Modal */}
@@ -1450,4 +1509,10 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     lineHeight: TYPOGRAPHY.fontSize.sm * 1.6,
   },
+  timerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: SPACING.md,
+  },
 });
+

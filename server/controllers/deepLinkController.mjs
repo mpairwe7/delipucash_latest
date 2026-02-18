@@ -67,7 +67,7 @@ export const appleAppSiteAssociation = (req, res) => {
       details: [
         {
           appID: `${teamId}.${bundleId}`,
-          paths: ['/reset-password*'],
+          paths: ['/reset-password*', '/video/*'],
         },
       ],
     },

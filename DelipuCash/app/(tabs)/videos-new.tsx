@@ -53,6 +53,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { router, Href, useFocusEffect } from 'expo-router';
+import { Image } from 'expo-image';
 import {
   Wifi,
   Upload,
@@ -87,6 +88,7 @@ import { useUnreadCount } from '@/services/hooks';
 import {
   useInfiniteVideos,
   useTrendingVideos,
+  useInfiniteFollowingVideos,
   useLikeVideo,
   useBookmarkVideo,
   useShareVideo,
@@ -100,6 +102,7 @@ import {
   VideoCommentsSheet,
   UploadModal,
   VideoErrorBoundary,
+  CollapsibleSearchBar,
 } from '@/components/video';
 import { LiveStreamScreen } from '@/components/livestream';
 import { useVideoStore } from '@/store/VideoStore';
@@ -122,6 +125,7 @@ import {
 } from '@/services/adHooksRefactored';
 import { useAdFrequency } from '@/services/adFrequencyManager';
 import { useAuth } from '@/utils/auth/useAuth';
+import { generateVideoShareUrl } from '@/utils/share';
 
 // ============================================================================
 // CONSTANTS & 2026 CONFIGURATION
@@ -408,6 +412,22 @@ export default function VideosScreen(): React.ReactElement {
   }, [headerHeight]);
 
   // ============================================================================
+  // COLLAPSIBLE SEARCH BAR ANIMATIONS
+  // ============================================================================
+
+  // Scroll progress for collapsible header (0 = expanded, 1 = collapsed)
+  const scrollProgress = useSharedValue<number>(0);
+
+  // Calculate collapsible threshold: when user scrolls >100px, start collapsing
+  const COLLAPSE_THRESHOLD = 100;
+
+  const handleFeedScroll = useCallback((offsetY: number) => {
+    // Map offsetY to progress: 0-COLLAPSE_THRESHOLD = 0-1 progress
+    const progress = Math.min(offsetY / COLLAPSE_THRESHOLD, 1);
+    scrollProgress.value = progress;
+  }, [scrollProgress]);
+
+  // ============================================================================
   // 2026 ACCESSIBILITY - Reduced Motion Detection (WCAG 2.2 AAA)
   // ============================================================================
 
@@ -429,16 +449,34 @@ export default function VideosScreen(): React.ReactElement {
   // DATA HOOKS - Using infinite query for proper pagination/infinite scroll
   // ============================================================================
 
+  // Per-tab data sources — each tab gets its own query for proper scroll/pagination isolation
   const {
     data: videosData,
-    isLoading,
-    refetch,
-    isFetching,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
+    isLoading: isForYouLoading,
+    refetch: refetchForYou,
+    isFetching: isForYouFetching,
+    fetchNextPage: fetchNextForYou,
+    hasNextPage: hasNextForYou,
+    isFetchingNextPage: isFetchingNextForYou,
   } = useInfiniteVideos({ limit: 15 });
-  const { data: trendingVideos } = useTrendingVideos(20);
+
+  const {
+    data: followingData,
+    isLoading: isFollowingLoading,
+    refetch: refetchFollowing,
+    isFetching: isFollowingFetching,
+    fetchNextPage: fetchNextFollowing,
+    hasNextPage: hasNextFollowing,
+    isFetchingNextPage: isFetchingNextFollowing,
+  } = useInfiniteFollowingVideos({ limit: 15, enabled: isAuthenticated });
+
+  const {
+    data: trendingVideos,
+    isLoading: isTrendingLoading,
+    refetch: refetchTrending,
+    isFetching: isTrendingFetching,
+  } = useTrendingVideos(20);
+
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideoMutate } = useLikeVideo();
   const { mutate: bookmarkVideoMutate } = useBookmarkVideo();
@@ -519,15 +557,40 @@ export default function VideosScreen(): React.ReactElement {
   }, [liveStreamVisible, pauseAllPlayback]);
 
   // ============================================================================
-  // COMPUTED DATA
+  // COMPUTED DATA — Per-tab data isolation
   // ============================================================================
 
-  const allVideos = useMemo(() => {
+  // For You: flatten infinite pages
+  const forYouVideos = useMemo(() => {
     if (!videosData?.pages) return [];
     return videosData.pages
       .flatMap((page) => page.videos)
       .filter((video) => hasPlayableVideoUrl(video.videoUrl));
   }, [videosData?.pages]);
+
+  // Following: flatten infinite pages from dedicated endpoint
+  const followingVideos = useMemo(() => {
+    if (!followingData?.pages) return [];
+    return followingData.pages
+      .flatMap((page) => page.videos)
+      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
+  }, [followingData?.pages]);
+
+  // Unified allVideos for search (searches across For You feed)
+  const allVideos = forYouVideos;
+
+  // Tab-aware derived state — avoids if/else chains in handlers
+  const isLoading = activeTab === 'for-you' ? isForYouLoading
+    : activeTab === 'following' ? isFollowingLoading
+    : isTrendingLoading;
+
+  const isFetching = activeTab === 'for-you' ? isForYouFetching
+    : activeTab === 'following' ? isFollowingFetching
+    : isTrendingFetching;
+
+  const isFetchingNextPage = activeTab === 'for-you' ? isFetchingNextForYou
+    : activeTab === 'following' ? isFetchingNextFollowing
+    : false; // Trending is a finite ranked list — no infinite scroll
 
   // Search hook for video search functionality
   const {
@@ -563,9 +626,8 @@ export default function VideosScreen(): React.ReactElement {
       .slice(0, 5);
   }, [searchQuery, allVideos, recentSearches]);
 
-  // 2026 Standard: Session-capped ad insertion with engagement awareness
+  // 2026 Standard: Session-capped ad insertion with per-tab data sources
   const videosWithAds = useMemo(() => {
-    let baseVideos: Video[] = [];
     const playableVideoAds = (videoAds || []).filter((ad) => hasPlayableVideoUrl(ad.videoUrl));
 
     // If searching, return filtered results without ads
@@ -573,21 +635,21 @@ export default function VideosScreen(): React.ReactElement {
       return filteredVideos.filter((video) => hasPlayableVideoUrl(video.videoUrl));
     }
 
+    // Select base videos per tab — each from its own dedicated data source
+    let baseVideos: Video[];
     switch (activeTab) {
       case 'trending':
         baseVideos = (trendingVideos || []).filter((video) => hasPlayableVideoUrl(video.videoUrl));
         break;
       case 'following':
-        // TODO: Replace with social graph API when follow system is implemented
-        baseVideos = allVideos.filter(v => v.likes > 100);
+        baseVideos = followingVideos;
         break;
       case 'for-you':
       default:
-        baseVideos = allVideos;
+        baseVideos = forYouVideos;
     }
 
-    // 2026 Standard: Session-aware ad insertion with max cap
-    // Read from ref to avoid recomputing videosWithAds on every ad impression
+    // Session-aware ad insertion with max cap
     const currentAdCount = sessionAdCountRef.current;
     if (playableVideoAds.length === 0 || currentAdCount >= AD_INSERTION_CONFIG.maxAdsPerSession) {
       return baseVideos;
@@ -606,8 +668,6 @@ export default function VideosScreen(): React.ReactElement {
         currentAdCount + adIndex < AD_INSERTION_CONFIG.maxAdsPerSession
       ) {
         const ad = playableVideoAds[adIndex];
-        // Convert ad to video-like format for feed display
-        // Map Ad properties to Video interface for seamless feed integration
         const ctaLabel = ad.callToAction?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || 'Learn More';
         const adAsVideo: Video = {
           id: `ad-${ad.id}`,
@@ -630,9 +690,31 @@ export default function VideosScreen(): React.ReactElement {
     });
 
     return result;
-  }, [allVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
+  }, [forYouVideos, followingVideos, trendingVideos, activeTab, showSearchResults, searchQuery, filteredVideos, videoAds]);
 
   const videos = videosWithAds;
+
+  // Tab-specific empty state messaging
+  const emptyState = useMemo(() => {
+    switch (activeTab) {
+      case 'following':
+        return {
+          title: 'No creators to follow yet',
+          subtitle: 'Like or bookmark videos to see more from those creators here',
+        };
+      case 'trending':
+        return {
+          title: 'Nothing trending right now',
+          subtitle: 'Check back soon — new content trends every hour',
+        };
+      case 'for-you':
+      default:
+        return {
+          title: 'No videos yet',
+          subtitle: 'Pull down to refresh or check back later',
+        };
+    }
+  }, [activeTab]);
 
   // Get current video data from store
   const currentVideoData = useMemo(() => {
@@ -646,26 +728,33 @@ export default function VideosScreen(): React.ReactElement {
   }, [ui.miniPlayerVideoId, ui.fullPlayerVideoId, getVideoById]);
 
   // ============================================================================
-  // HANDLERS
+  // HANDLERS — Tab-aware refresh + pagination
   // ============================================================================
 
   const handleRefresh = useCallback(async () => {
-    // 2026: Contextual haptic - soft for refresh initiation
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     setRefreshing(true);
-    await refetch();
+    // Refresh only the active tab's data source
+    switch (activeTab) {
+      case 'following': await refetchFollowing(); break;
+      case 'trending': await refetchTrending(); break;
+      case 'for-you':
+      default: await refetchForYou(); break;
+    }
     setRefreshing(false);
-    // 2026: Success haptic on refresh completion
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [refetch, setRefreshing]);
+  }, [activeTab, refetchForYou, refetchFollowing, refetchTrending, setRefreshing]);
 
   const handleEndReached = useCallback(() => {
-    // Use infinite query's fetchNextPage for proper pagination
-    if (hasNextPage && !isFetchingNextPage) {
+    // Only For You and Following support infinite scroll (trending is a finite ranked list)
+    if (activeTab === 'for-you' && hasNextForYou && !isFetchingNextForYou) {
       setLoadingMore(true);
-      fetchNextPage().finally(() => setLoadingMore(false));
+      fetchNextForYou().finally(() => setLoadingMore(false));
+    } else if (activeTab === 'following' && hasNextFollowing && !isFetchingNextFollowing) {
+      setLoadingMore(true);
+      fetchNextFollowing().finally(() => setLoadingMore(false));
     }
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage, setLoadingMore]);
+  }, [activeTab, hasNextForYou, isFetchingNextForYou, fetchNextForYou, hasNextFollowing, isFetchingNextFollowing, fetchNextFollowing, setLoadingMore]);
 
   const handleLike = useCallback((video: Video) => {
     // Guard: don't call video APIs for sponsored ad items
@@ -710,21 +799,26 @@ export default function VideosScreen(): React.ReactElement {
   }, [authReady, isAuthenticated, openComments]);
 
   const handleShare = useCallback(async (video: Video) => {
+    // Skip share for synthetic ad entries (no real DB record)
+    if (video.isSponsored || video.id.startsWith('ad-')) return;
+
     try {
+      // Use OG-enabled URL so social platforms render rich link previews
+      const shareUrl = generateVideoShareUrl(video.id);
       const result = await Share.share({
-        message: `Check out this video: ${video.title}\n${video.videoUrl}`,
+        message: `${video.title || 'Check out this video'}\n${shareUrl}`,
         title: video.title || 'Shared Video',
       });
-      
+
       if (result.action === Share.sharedAction) {
         let platform: 'copy' | 'twitter' | 'facebook' | 'whatsapp' | 'instagram' | 'telegram' | 'email' | 'sms' | 'other' = 'other';
         const activityType = result.activityType?.toLowerCase() || '';
-        
+
         if (activityType.includes('copy')) platform = 'copy';
         else if (activityType.includes('twitter')) platform = 'twitter';
         else if (activityType.includes('facebook')) platform = 'facebook';
         else if (activityType.includes('whatsapp')) platform = 'whatsapp';
-        
+
         shareVideoMutate({ videoId: video.id, platform });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -982,6 +1076,9 @@ export default function VideosScreen(): React.ReactElement {
             onAdImpression={handleInFeedAdImpression}
             isDataSaver={isDataSaverMode}
             headerHeight={headerHeight > 0 ? headerHeight : undefined}
+            emptyTitle={emptyState.title}
+            emptySubtitle={emptyState.subtitle}
+            onScroll={handleFeedScroll}
             testID="video-feed"
           />
         </VideoErrorBoundary>
@@ -1005,37 +1102,37 @@ export default function VideosScreen(): React.ReactElement {
           accessibilityLabel="Video feed controls"
         >
 
-          {/* Search Bar Row - 2026: Voice search affordance + data saver */}
-          <View style={styles.searchRow}>
+          {/* Top Row — YouTube-style: Logo | Search | Actions */}
+          <View style={styles.topRow}>
+            {/* Logo — navigates to home */}
             <Pressable
-              style={[styles.searchContainer, { backgroundColor: withAlpha(colors.text, 0.18), borderColor: withAlpha(colors.text, 0.15) }]}
-              onPress={() => setSearchOverlayVisible(true)}
-              accessibilityRole="search"
-              accessibilityLabel="Search videos"
-              accessibilityHint="Opens search overlay with voice and text search"
+              onPress={() => router.push('/(tabs)/' as Href)}
+              style={styles.logoButton}
+              accessibilityRole="button"
+              accessibilityLabel="DelipuCash home"
+              accessibilityHint="Navigates to home screen"
+              hitSlop={6}
             >
-              <Search size={ICON_SIZE.sm} color={withAlpha(colors.text, 0.85)} strokeWidth={2} />
-              <Text
-                style={[styles.searchPlaceholder, { color: searchQuery ? colors.text : withAlpha(colors.text, 0.65) }]}
-                numberOfLines={1}
-              >
-                {searchQuery || 'Search videos, creators...'}
-              </Text>
-              {searchQuery.length > 0 ? (
-                <Pressable onPress={clearSearch} accessibilityLabel="Clear search" hitSlop={8}>
-                  <X size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
-                </Pressable>
-              ) : (
-                /* 2026: Voice search affordance */
-                <View style={[styles.voiceSearchBtn, { backgroundColor: withAlpha(colors.text, 0.15) }]}>
-                  <Mic size={14} color={withAlpha(colors.text, 0.75)} strokeWidth={2} />
-                </View>
-              )}
+              <Image
+                source={require('@/assets/images/logo.png')}
+                style={styles.logoImage}
+                contentFit="contain"
+                cachePolicy="memory-disk"
+              />
             </Pressable>
+
+            {/* Collapsible search bar */}
+            <CollapsibleSearchBar
+              query={searchQuery}
+              onChangeQuery={setSearchQuery}
+              onFocus={() => setSearchOverlayVisible(true)}
+              onClear={clearSearch}
+              scrollProgress={scrollProgress}
+              placeholder="Search videos, creators..."
+            />
 
             {/* Right: Action Cluster */}
             <View style={styles.headerRight}>
-              {/* 2026: Data Saver Badge */}
               <NetworkBadge isDataSaver={isDataSaverMode} onToggle={toggleDataSaver} />
 
               <Pressable
@@ -1183,7 +1280,7 @@ export default function VideosScreen(): React.ReactElement {
         visible={uploadModalVisible}
         onClose={() => setUploadModalVisible(false)}
         onUploadComplete={() => {
-          refetch();
+          refetchForYou();
           refetchVideoAds();
         }}
       />
@@ -1195,7 +1292,7 @@ export default function VideosScreen(): React.ReactElement {
           mode={liveStreamMode}
           onClose={closeLiveStream}
           onVideoUploaded={() => {
-            refetch();
+            refetchForYou();
             refetchVideoAds();
           }}
           asModal={true}
@@ -1263,34 +1360,25 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
 
-  // ── SEARCH ROW ──
-  searchRow: {
+  // ── TOP ROW (YouTube-style: Logo | Search | Actions) ──
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.sm,
     zIndex: 1,
   },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: SPACING.md,
-    height: 38,
-    borderRadius: RADIUS.full,
-    gap: SPACING.sm,
-    borderWidth: 1,
-  },
-  searchPlaceholder: {
-    flex: 1,
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  voiceSearchBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  logoButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  logoImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
   },
   headerButton: {
     width: 36,

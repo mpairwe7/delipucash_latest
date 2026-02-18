@@ -3,6 +3,8 @@ import {
   createVideo,
   getVideosByUser,
   getAllVideos,
+  getTrendingVideos,
+  getFollowingVideos,
   updateVideo,
   deleteVideo,
   likeVideo,
@@ -50,6 +52,8 @@ const optionalAuth = (req, res, next) => {
 // ============================================================================
 
 router.get('/all', optionalAuth, getAllVideos);
+router.get('/trending', optionalAuth, getTrendingVideos);
+router.get('/following', verifyToken, getFollowingVideos);
 router.get('/live', getLiveStreams);
 router.get('/user/:userId', getVideosByUser);
 router.get('/:id/comments', getVideoComments);

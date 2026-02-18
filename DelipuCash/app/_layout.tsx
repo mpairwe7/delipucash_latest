@@ -30,6 +30,7 @@ import NetInfo from '@react-native-community/netinfo';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore, initializeAuth } from '@/utils/auth/store';
+import { useThemeStore } from '@/utils/theme';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
@@ -165,6 +166,8 @@ export default function RootLayout() {
   const colorScheme = useColorScheme();
   // Read isReady directly from Zustand — no TanStack dependency
   const isReady = useAuthStore(s => s.isReady);
+  // Get theme state from custom theme store for StatusBar
+  const isDark = useThemeStore(s => s.isDark);
 
   // Preload Roboto fonts + vector icon font families so they're available
   // before any component renders. Prevents ExpoAsset.downloadAsync rejections
@@ -257,8 +260,9 @@ export default function RootLayout() {
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
               <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+              <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
             </Stack>
-            <StatusBar style="auto" />
+            <StatusBar style={isDark ? 'light' : 'dark'} />
             </ToastProvider>
           </ThemeProvider>
         </NotificationProvider>
