@@ -47,3 +47,10 @@ export const useSSEStore = create<SSEState & SSEActions>()(
 export const selectSSEStatus = (state: SSEState) => state.status;
 export const selectSSEConnected = (state: SSEState) => state.status === 'connected';
 export const selectSSEEnabled = (state: SSEState) => state.isEnabled;
+
+/**
+ * Returns true when SSE is NOT delivering real-time events,
+ * meaning consumers should fall back to periodic polling.
+ */
+export const selectNeedsPolling = (state: SSEState) =>
+  state.status !== 'connected' && state.status !== 'connecting';

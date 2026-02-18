@@ -170,9 +170,10 @@ export class SSEManager {
 
       if (!response.body) {
         // Serverless platforms (e.g. Vercel) buffer the response and return
-        // null body. SSE streaming is unsupported there — stop silently.
-        console.debug('[SSE] Response has no body (serverless environment). SSE disabled.');
-        this.setStatus('disconnected');
+        // null body. SSE streaming is unsupported there — mark permanently
+        // unavailable so consumers switch to polling fallback.
+        console.debug('[SSE] Response has no body (serverless environment). SSE disabled — consumers will poll.');
+        this.setStatus('unavailable');
         return;
       }
 
@@ -187,8 +188,9 @@ export class SSEManager {
 
       // Endpoint is missing in the backend deployment/config;
       // do not spam reconnect loops for a permanent 404.
+      // Mark 'unavailable' so consumers switch to polling.
       if (err.message?.includes('SSE endpoint not found')) {
-        this.setStatus('disconnected');
+        this.setStatus('unavailable');
         return;
       }
 
@@ -323,8 +325,8 @@ export class SSEManager {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (!this.isAppActive || !this.isOnline) return;
     if (this.reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-      console.warn('[SSE] Max reconnect attempts reached, falling back to polling');
-      this.setStatus('error');
+      console.warn('[SSE] Max reconnect attempts reached — consumers will poll.');
+      this.setStatus('unavailable');
       return;
     }
 

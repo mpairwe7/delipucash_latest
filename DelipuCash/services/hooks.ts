@@ -23,6 +23,7 @@ import {
 import { keepPreviousData, useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
 import { useAuthStore } from '@/utils/auth/store';
+import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
 import { questionQueryKeys } from "./questionHooks";
 
 // Query Keys
@@ -1014,13 +1015,43 @@ export function useTransactions(params?: { type?: string; status?: string }): Us
 }
 
 // ===========================================
+// Adaptive Polling — SSE fallback
+// ===========================================
+
+/** Polling intervals when SSE is not delivering real-time events. */
+const POLL_INTERVALS = {
+  /** Unread badge — lightweight (single integer), poll every 30 s */
+  unreadCount: 1000 * 30,
+  /** Full notification list — heavier payload, poll every 60 s */
+  notifications: 1000 * 60,
+} as const;
+
+/**
+ * Returns a `refetchInterval` value for TanStack Query that is:
+ * - `false` when SSE is connected (no polling needed, push handles it)
+ * - A millisecond interval when SSE is down / unavailable
+ *
+ * This gives every critical query automatic adaptive polling:
+ * SSE up → zero network chatter; SSE down → graceful degradation.
+ */
+function useAdaptiveInterval(intervalMs: number): number | false {
+  const needsPolling = useSSEStore(selectNeedsPolling);
+  return needsPolling ? intervalMs : false;
+}
+
+// ===========================================
 // Notifications Hooks
 // ===========================================
 
 /**
- * Hook to fetch notifications
+ * Hook to fetch notifications.
+ *
+ * Adaptive: auto-polls every 60 s when SSE is down,
+ * relies on SSE push-invalidation when connected.
  */
 export function useNotifications(): UseQueryResult<Notification[], Error> {
+  const refetchInterval = useAdaptiveInterval(POLL_INTERVALS.notifications);
+
   return useQuery({
     queryKey: queryKeys.notifications,
     queryFn: async () => {
@@ -1028,15 +1059,22 @@ export function useNotifications(): UseQueryResult<Notification[], Error> {
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    staleTime: 1000 * 30, // 30 seconds
+    staleTime: 1000 * 30,
+    refetchInterval,
+    // Pause polling when tab/app is in background — saves battery & bandwidth
+    refetchIntervalInBackground: false,
   });
 }
 
 /**
- * Hook to get unread notification count
+ * Hook to get unread notification count.
+ *
+ * Adaptive: auto-polls every 30 s when SSE is down (lightweight — single int),
+ * relies on SSE push-invalidation when connected.
  */
 export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error> {
   const isAuthReady = useAuthStore((s) => s.isReady && !!s.auth?.token);
+  const refetchInterval = useAdaptiveInterval(POLL_INTERVALS.unreadCount);
 
   return useQuery({
     queryKey: queryKeys.unreadCount,
@@ -1046,7 +1084,9 @@ export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error>
       // Handle both number and object response formats
       return typeof response.data === 'number' ? response.data : response.data?.count ?? 0;
     },
-    staleTime: 1000 * 30, // SSE handles real-time invalidation
+    staleTime: 1000 * 30,
+    refetchInterval,
+    refetchIntervalInBackground: false,
     enabled: (enabled ?? true) && isAuthReady,
     placeholderData: keepPreviousData,
   });

@@ -128,4 +128,5 @@ export type SSEConnectionStatus =
   | 'connecting'
   | 'connected'
   | 'error'
-  | 'backgrounded';
+  | 'backgrounded'
+  | 'unavailable';
