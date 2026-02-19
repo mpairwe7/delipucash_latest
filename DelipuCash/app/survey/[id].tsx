@@ -33,7 +33,6 @@ import {
   ListChecks,
   Lock,
   MessageCircle,
-  RefreshCw,
   Shield,
   Star,
   ToggleLeft,
@@ -205,7 +204,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const userId = auth?.user?.id;
 
   // Server state: TanStack Query
-  const { data: surveyData, isLoading, error, refetch } = useSurvey(id || "");
+  const { data: surveyData, isLoading, error } = useSurvey(id || "");
   const submitSurveyMutation = useSubmitSurvey();
   
   // Check if user has already attempted this survey (single attempt enforcement)
@@ -276,13 +275,6 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Clamp currentQuestionIndex if visible questions shrink (conditional logic hides a question)
-  useEffect(() => {
-    if (visibleQuestions.length > 0 && currentQuestionIndex >= visibleQuestions.length) {
-      storeSetCurrentIndex(visibleQuestions.length - 1);
-    }
-  }, [visibleQuestions.length, currentQuestionIndex, storeSetCurrentIndex]);
-
   // Check for reduced motion preference (accessibility - WCAG 2.1)
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setIsReducedMotion);
@@ -349,6 +341,13 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       return evaluateConditions(q.conditionalLogic, answers);
     });
   }, [survey, answers]);
+
+  // Clamp currentQuestionIndex if visible questions shrink (conditional logic hides a question)
+  useEffect(() => {
+    if (visibleQuestions.length > 0 && currentQuestionIndex >= visibleQuestions.length) {
+      storeSetCurrentIndex(visibleQuestions.length - 1);
+    }
+  }, [visibleQuestions.length, currentQuestionIndex, storeSetCurrentIndex]);
 
   const question = visibleQuestions[currentQuestionIndex];
   const isLastQuestion = visibleQuestions.length > 0 ? currentQuestionIndex === visibleQuestions.length - 1 : false;
@@ -1106,7 +1105,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             <View style={styles.helperRow}>
               <MessageCircle size={16} color={colors.textMuted} strokeWidth={1.5} />
               <Text style={[styles.helperText, { color: colors.textMuted }]}>
-                Share as much detail as you'd like.
+                Share as much detail as you&apos;d like.
               </Text>
             </View>
           </View>

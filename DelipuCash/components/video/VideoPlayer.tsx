@@ -332,7 +332,7 @@ function VideoPlayerComponent({
         playerInstance.play();
       }
     } catch (error) {
-      console.warn('[VideoPlayer] Error configuring player:', error);
+      if (__DEV__) console.warn('[VideoPlayer] Error configuring player:', error);
     }
   });
 
@@ -362,7 +362,7 @@ function VideoPlayerComponent({
         setPlaybackState(PlaybackState.Loading);
       } else if (event.status === 'error') {
         setPlaybackState(PlaybackState.Error);
-        console.warn('[VideoPlayer] Playback error:', (event as any).error || 'Unknown');
+        if (__DEV__) console.warn('[VideoPlayer] Playback error:', (event as any).error || 'Unknown');
       }
     });
 
@@ -506,7 +506,7 @@ function VideoPlayerComponent({
           await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         }
       } catch (error) {
-        console.warn('Failed to change orientation:', error);
+        if (__DEV__) console.warn('Failed to change orientation:', error);
       }
     };
     updateOrientation();
@@ -914,7 +914,7 @@ function VideoPlayerComponent({
                   <Text style={[styles.settingsItemText, { color: colors.text }]}>Auto-Captions</Text>
                 </View>
                 <View style={[styles.settingsToggle, captionsEnabled && { backgroundColor: colors.primary }]}>
-                  <View style={[styles.settingsToggleKnob, captionsEnabled && styles.settingsToggleKnobActive]} />
+                  <View style={[styles.settingsToggleKnob, { backgroundColor: colors.card }, captionsEnabled && styles.settingsToggleKnobActive]} />
                 </View>
               </TouchableOpacity>
 
@@ -927,11 +927,11 @@ function VideoPlayerComponent({
                 accessibilityState={{ checked: silenceSkipEnabled }}
               >
                 <View style={styles.settingsItemLeft}>
-                  <Zap size={ICON_SIZE.md} color={silenceSkipEnabled ? '#FFD700' : colors.text} strokeWidth={2} />
+                  <Zap size={ICON_SIZE.md} color={silenceSkipEnabled ? colors.warning : colors.text} strokeWidth={2} />
                   <Text style={[styles.settingsItemText, { color: colors.text }]}>Skip Silence</Text>
                 </View>
-                <View style={[styles.settingsToggle, silenceSkipEnabled && { backgroundColor: '#FFD700' }]}>
-                  <View style={[styles.settingsToggleKnob, silenceSkipEnabled && styles.settingsToggleKnobActive]} />
+                <View style={[styles.settingsToggle, silenceSkipEnabled && { backgroundColor: colors.warning }]}>
+                  <View style={[styles.settingsToggleKnob, { backgroundColor: colors.card }, silenceSkipEnabled && styles.settingsToggleKnobActive]} />
                 </View>
               </TouchableOpacity>
             </>
@@ -1193,14 +1193,14 @@ function VideoPlayerComponent({
               <View style={styles.topCenter}>
                 {/* 2026: Adaptive Bitrate Quality Badge */}
                 <View style={[styles.qualityBadge, { backgroundColor: withAlpha(colors.card, 0.6) }]}>
-                  <Wifi size={12} color={streamQuality === 'HD' ? '#4CAF50' : colors.textMuted} strokeWidth={2.5} />
+                  <Wifi size={12} color={streamQuality === 'HD' ? colors.success : colors.textMuted} strokeWidth={2.5} />
                   <Text style={[styles.qualityBadgeText, { color: colors.text }]}>{streamQuality}</Text>
                 </View>
                 {/* 2026: Silence Skip active indicator */}
                 {silenceSkipEnabled && (
-                  <View style={[styles.qualityBadge, { backgroundColor: withAlpha('#FFD700', 0.15) }]}>
-                    <Zap size={12} color="#FFD700" strokeWidth={2.5} />
-                    <Text style={[styles.qualityBadgeText, { color: '#FFD700' }]}>Skip</Text>
+                  <View style={[styles.qualityBadge, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
+                    <Zap size={12} color={colors.warning} strokeWidth={2.5} />
+                    <Text style={[styles.qualityBadgeText, { color: colors.warning }]}>Skip</Text>
                   </View>
                 )}
                 {/* 2026: Captions active indicator */}
@@ -1393,11 +1393,11 @@ function VideoPlayerComponent({
 
                 {/* 2026: Creator Economy — Gift/Tip */}
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: withAlpha('#FFD700', 0.1), borderRadius: RADIUS.full }]}
+                  style={[styles.actionButton, { backgroundColor: withAlpha(colors.warning, 0.1), borderRadius: RADIUS.full }]}
                   accessibilityLabel="Send a gift to the creator"
                   accessibilityRole="button"
                 >
-                  <Gift size={ICON_SIZE.lg} color="#FFD700" strokeWidth={2} />
+                  <Gift size={ICON_SIZE.lg} color={colors.warning} strokeWidth={2} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1695,7 +1695,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: SPACING.md,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    borderBottomColor: withAlpha('#FFFFFF', 0.1),
   },
   settingsItemLeft: {
     flexDirection: 'row',
@@ -1720,7 +1720,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 24,
     borderRadius: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    backgroundColor: withAlpha('#FFFFFF', 0.15),
     padding: 2,
     justifyContent: 'center',
   },
@@ -1728,7 +1728,6 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
   },
   settingsToggleKnobActive: {
     alignSelf: 'flex-end',

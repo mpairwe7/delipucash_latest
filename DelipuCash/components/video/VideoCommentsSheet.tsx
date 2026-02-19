@@ -193,8 +193,8 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
             <Animated.View style={likeStyle}>
               <Heart
                 size={16}
-                color={isLiked ? '#FF2D55' : colors.textMuted}
-                fill={isLiked ? '#FF2D55' : 'transparent'}
+                color={isLiked ? colors.error : colors.textMuted}
+                fill={isLiked ? colors.error : 'transparent'}
               />
             </Animated.View>
             <Text style={[styles.commentActionText, { color: colors.textMuted }]}>
@@ -309,7 +309,7 @@ function VideoCommentsSheetComponent({
       setNewComment('');
       setReplyingTo(null);
     } catch (error) {
-      console.error('Failed to add comment:', error);
+      if (__DEV__) console.error('Failed to add comment:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -508,9 +508,9 @@ function VideoCommentsSheetComponent({
                   accessibilityState={{ disabled: !newComment.trim() || isSubmitting }}
                 >
                   {isSubmitting ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
+                    <ActivityIndicator size="small" color={colors.primaryText} />
                   ) : (
-                    <Send size={18} color="#FFFFFF" />
+                    <Send size={18} color={colors.primaryText} />
                   )}
                 </Pressable>
               </View>
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000000',
+    backgroundColor: withAlpha('#000000', 0.6),
   },
   sheet: {
     borderTopLeftRadius: RADIUS['2xl'],
@@ -542,7 +542,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...SHADOWS.lg,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
+    borderColor: withAlpha('#FFFFFF', 0.06),
     borderBottomWidth: 0,
   },
   handleContainer: {

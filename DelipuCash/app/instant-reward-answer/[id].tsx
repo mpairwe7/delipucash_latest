@@ -250,7 +250,7 @@ const TrustCard = memo(function TrustCard({ colors }: TrustCardProps) {
 // ─── Winners Section (memoized — only re-renders when winners change) ────────
 
 interface WinnersSectionProps {
-  winners: Array<{ id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number }>;
+  winners: { id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number }[];
   colors: ThemeColors;
 }
 
@@ -371,7 +371,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     completeRedemption,
     cancelRedemption,
     addPendingSubmission,
-    removePendingSubmission,
   } = useInstantRewardStore(
     useShallow((s) => ({
       initializeAttemptHistory: s.initializeAttemptHistory,
@@ -388,7 +387,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       completeRedemption: s.completeRedemption,
       cancelRedemption: s.cancelRedemption,
       addPendingSubmission: s.addPendingSubmission,
-      removePendingSubmission: s.removePendingSubmission,
     }))
   );
 
@@ -446,6 +444,53 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     recordQuestionStart();
   }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
 
+  // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
+
+  // Get unanswered questions for auto-transition (reactive via attemptHistory)
+  // Excludes full/completed questions so transitions never land on a dead-end.
+  const unansweredQuestions = useMemo(() => {
+    if (!allQuestions) return [];
+    return allQuestions.filter(q =>
+      q.id !== questionId &&
+      !q.isCompleted &&
+      q.isInstantReward === question?.isInstantReward &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0 // skip full questions
+    );
+  }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
+
+  // Check if user has already attempted this question (reactive via attemptHistory)
+  const previousAttempt = useMemo(() => {
+    if (!questionId || !attemptHistory) return null;
+    return attemptHistory.attemptedQuestions.find(
+      (a) => a.questionId === questionId
+    ) ?? null;
+  }, [questionId, attemptHistory]);
+
+  const hasAlreadyAttempted = useMemo(() => {
+    return attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
+  }, [questionId, attemptHistory]);
+
+  const spotsLeft = useMemo(() => {
+    if (!question) return 0;
+    return Math.max(question.maxWinners - question.winnersCount, 0);
+  }, [question]);
+
+  const isClosed = useMemo(
+    () =>
+      Boolean(
+        isExpired ||
+          question?.isCompleted ||
+          spotsLeft <= 0 ||
+          result?.isCorrect ||
+          result?.isExpired ||
+          result?.isCompleted ||
+          hasAlreadyAttempted ||
+          isOptimisticLocked
+      ),
+    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted, isOptimisticLocked]
+  );
+
   // Handle 60-second session timer expiration (UX enhancement)
   useEffect(() => {
     if (timerExpired && !result && !hasAlreadyAttempted) {
@@ -482,33 +527,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       return () => clearTimeout(timer);
     }
   }, [question, isLoading, hasAlreadyAttempted, result, spotsLeft, showSessionClosed, showSessionSummary, refetchAllQuestions]);
-
-  // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
-
-  // Get unanswered questions for auto-transition (reactive via attemptHistory)
-  // Excludes full/completed questions so transitions never land on a dead-end.
-  const unansweredQuestions = useMemo(() => {
-    if (!allQuestions) return [];
-    return allQuestions.filter(q =>
-      q.id !== questionId &&
-      !q.isCompleted &&
-      q.isInstantReward === question?.isInstantReward &&
-      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
-      q.maxWinners - q.winnersCount > 0 // skip full questions
-    );
-  }, [allQuestions, questionId, attemptHistory, question?.isInstantReward]);
-
-  // Check if user has already attempted this question (reactive via attemptHistory)
-  const previousAttempt = useMemo(() => {
-    if (!questionId || !attemptHistory) return null;
-    return attemptHistory.attemptedQuestions.find(
-      (a) => a.questionId === questionId
-    ) ?? null;
-  }, [questionId, attemptHistory]);
-
-  const hasAlreadyAttempted = useMemo(() => {
-    return attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
-  }, [questionId, attemptHistory]);
 
   // Stable callback for CountdownTimer to signal expiry (no per-second parent re-render)
   const handleTimerExpired = useCallback(() => setIsExpired(true), []);
@@ -552,26 +570,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     isClosed,
     hasAlreadyAttempted,
   ]);
-
-  const spotsLeft = useMemo(() => {
-    if (!question) return 0;
-    return Math.max(question.maxWinners - question.winnersCount, 0);
-  }, [question?.maxWinners, question?.winnersCount]);
-
-  const isClosed = useMemo(
-    () =>
-      Boolean(
-        isExpired ||
-          question?.isCompleted ||
-          spotsLeft <= 0 ||
-          result?.isCorrect ||
-          result?.isExpired ||
-          result?.isCompleted ||
-          hasAlreadyAttempted ||
-          isOptimisticLocked
-      ),
-    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted, isOptimisticLocked]
-  );
 
   // ── Reanimated transition style (native thread) ──
   const transitionStyle = useAnimatedStyle(() => ({
@@ -623,7 +621,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   }, [isClosed, hasAlreadyAttempted]);
 
   // ── Session progress (Duolingo-style X of Y tracker) ──
-  const sessionProgress = useMemo(() => getSessionProgress(), [getSessionProgress, sessionSummary.questionsAnswered]);
+  const sessionProgress = useMemo(() => getSessionProgress(), [getSessionProgress]);
 
   const handleSubmit = useCallback((): void => {
     // Debounce guard: prevent double-tap rapid submissions (HQ Trivia / Swagbucks pattern)
@@ -709,7 +707,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       {
         questionId: question.id,
         answer,
-        phoneNumber: userPhone,
+        phoneNumber: userPhone ?? undefined,
       },
       {
         onSuccess: (payload) => {
@@ -830,7 +828,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast]);
+  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user]);
 
   // Handle redemption via real API
   const handleRedeem = useCallback(async (
@@ -971,7 +969,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
     if (questionsAnswered === 0) return 0;
     return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
-  }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
+  }, [sessionSummary]);
 
   // When closed on arrival (spots full, not attempted, no result), allow
   // navigation forward instead of a dead-end disabled button.
@@ -1156,7 +1154,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               <Text style={[styles.attemptedBannerTitle, { color: colors.error }]}>
                 No Spots Left
               </Text>
-              <Text style={[styles.attemptedBannerSubtitle, { color: colors.textMuted }]}>
+              <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                 All {question.maxWinners} winner spots have been filled.
               </Text>
             </View>

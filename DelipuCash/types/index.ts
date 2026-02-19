@@ -189,8 +189,8 @@ export interface ConditionalLogicConfig {
 export interface ConditionalRule {
   sourceQuestionId: string;
   operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'is_empty' | 'is_not_empty';
-  value?: string;
-  action?: 'show' | 'skip_to';
+  value: string | number | boolean;
+  action: 'show' | 'skip_to';
 }
 
 export interface Ad {

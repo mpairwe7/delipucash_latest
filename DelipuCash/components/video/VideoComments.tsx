@@ -317,7 +317,7 @@ const EmptyState = memo<EmptyStateProps>(({ onRetry, isError }) => {
             accessibilityLabel="Retry loading comments"
           >
             <RefreshCw size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={2} />
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={[styles.retryButtonText, { color: colors.primaryText }]}>Retry</Text>
           </TouchableOpacity>
         )}
       </View>

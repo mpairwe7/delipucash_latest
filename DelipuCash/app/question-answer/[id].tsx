@@ -100,7 +100,7 @@ const ResponseItem = memo(function ResponseItem({
         { borderColor: colors.border },
         isOptimistic && { opacity: 0.7, borderStyle: "dashed" as any },
       ]}
-      accessibilityRole="article"
+      accessible={true}
       accessibilityLabel={`Response by ${authorName}`}
     >
       <View style={styles.responseHeader}>

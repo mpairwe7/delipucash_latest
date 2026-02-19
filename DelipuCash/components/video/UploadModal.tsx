@@ -222,7 +222,7 @@ function UploadModalComponent({
         }
       } catch {
         // Offline fallback — client validation already passed
-        console.warn('Server validation unavailable, using client-side only');
+        if (__DEV__) console.warn('Server validation unavailable, using client-side only');
       }
 
       setFileSizeError(null);

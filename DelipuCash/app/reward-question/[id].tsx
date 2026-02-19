@@ -772,6 +772,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     unansweredQuestions,
     handleTransitionToNext,
     showToast,
+    user,
   ]);
 
   // ── Redemption handler ──
@@ -867,7 +868,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     const { questionsAnswered, totalTimeSpentMs } = sessionSummary;
     if (questionsAnswered === 0) return 0;
     return Math.round(totalTimeSpentMs / questionsAnswered / 1000);
-  }, [sessionSummary.questionsAnswered, sessionSummary.totalTimeSpentMs]);
+  }, [sessionSummary]);
 
   const handleFooterPress = useMemo(
     () =>
@@ -1110,10 +1111,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
                 strokeWidth={2}
               />
               <View style={{ flex: 1, marginLeft: SPACING.xs }}>
-                <Text style={[styles.attemptedTitle, { color: colors.error }]}>
+                <Text style={[styles.attemptedBannerTitle, { color: colors.error }]}>
                   No Spots Left
                 </Text>
-                <Text style={[styles.attemptedSubtitle, { color: colors.textMuted }]}>
+                <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                   All {question.maxWinners} winner spots have been filled.
                 </Text>
               </View>

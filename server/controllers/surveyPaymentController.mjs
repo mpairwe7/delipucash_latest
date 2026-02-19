@@ -7,6 +7,7 @@
  * @module controllers/surveyPaymentController
  */
 
+import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { v4 as uuidv4 } from 'uuid';
@@ -122,7 +123,7 @@ const SURVEY_SUBSCRIPTION_PLANS = [
  */
 const generateTransactionId = () => {
   const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
-  const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
+  const random = crypto.randomBytes(6).toString('hex');
   return `TXN-SURV-${date}-${random}`;
 };
 
@@ -165,11 +166,10 @@ export const getPlans = asyncHandler(async (req, res) => {
  * @route GET /api/survey-subscriptions/status
  */
 export const getSubscriptionStatus = asyncHandler(async (req, res) => {
-  // Get userId from auth token or query parameter
-  const userId = req.user?.id || req.query.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   console.log(`[SurveyPayment] Checking subscription status for user: ${userId}`);
@@ -240,23 +240,23 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
  * @route POST /api/survey-payments/initiate
  */
 export const initiatePayment = asyncHandler(async (req, res) => {
-  const { phoneNumber, provider, planType, userId } = req.body;
+  const { phoneNumber, provider, planType } = req.body;
+  const actualUserId = req.user?.id;
 
   // Validation
+  if (!actualUserId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
   if (!phoneNumber || !provider || !planType) {
-    return res.status(400).json({ 
-      error: 'Missing required fields: phoneNumber, provider, planType' 
+    return res.status(400).json({
+      error: 'Missing required fields: phoneNumber, provider, planType'
     });
   }
 
   const plan = getPlanByType(planType);
   if (!plan) {
     return res.status(400).json({ error: 'Invalid subscription plan type' });
-  }
-
-  const actualUserId = userId || req.user?.id;
-  if (!actualUserId) {
-    return res.status(400).json({ error: 'User ID is required' });
   }
 
   console.log(`[SurveyPayment] Initiating payment for user: ${actualUserId}, plan: ${planType}, provider: ${provider}`);
@@ -436,6 +436,17 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: 'Payment not found' });
     }
 
+    // Authorization: only the payment owner or admin can view payment details
+    if (payment.userId !== req.user?.id) {
+      const requestingUser = await prisma.appUser.findUnique({
+        where: { id: req.user?.id },
+        select: { role: true },
+      });
+      if (!requestingUser || !['ADMIN', 'MODERATOR'].includes(requestingUser.role)) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
     const plan = getPlanByType(payment.subscriptionType);
 
     let subscription = null;
@@ -496,10 +507,10 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
  * @route GET /api/survey-payments/history
  */
 export const getPaymentHistory = asyncHandler(async (req, res) => {
-  const userId = req.user?.id || req.query.userId;
+  const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(400).json({ error: 'User ID is required' });
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   console.log(`[SurveyPayment] Fetching payment history for user: ${userId}`);

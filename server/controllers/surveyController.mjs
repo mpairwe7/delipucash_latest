@@ -97,7 +97,7 @@ export const createSurvey = asyncHandler(async (req, res) => {
     // Log the error
     console.error('Error creating survey and questions:', error);
 
-    res.status(500).json({ message: 'Error creating survey and questions', error: error.message });
+    res.status(500).json({ message: 'Error creating survey and questions' });
   }
 });
 
@@ -106,13 +106,8 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
   const { title, description, questions, startDate, endDate, rewardAmount, maxResponses } = req.body;
   const userId = req.user?.id;
 
-  // Log the incoming request
-  console.log('Incoming request: POST /api/surveys/upload');
-  console.log('Token:', req.headers.authorization);
-  console.log('User ID:', userId);
-  console.log('Title:', title);
-  console.log('Description:', description);
-  console.log('Questions:', JSON.stringify(questions, null, 2));
+  // Log the incoming request (no sensitive data)
+  console.log('Incoming request: POST /api/surveys/upload, userId:', userId);
 
   try {
     // Create the survey
@@ -170,7 +165,7 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
     // Log the error
     console.error('Error uploading survey and questions:', error);
 
-    res.status(500).json({ message: 'Error uploading survey and questions', error: error.message });
+    res.status(500).json({ message: 'Error uploading survey and questions' });
   }
 });
 
@@ -199,7 +194,7 @@ export const getSurveyById = asyncHandler(async (req, res) => {
     res.status(200).json(survey);
   } catch (error) {
     console.error('Error fetching survey:', error);
-    res.status(500).json({ message: 'Error fetching survey', error: error.message });
+    res.status(500).json({ message: 'Error fetching survey' });
   }
 });
 
@@ -295,7 +290,7 @@ export const updateSurvey = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Survey updated successfully', survey: updatedSurvey });
   } catch (error) {
     console.error('Error updating survey:', error);
-    res.status(500).json({ message: 'Error updating survey', error: error.message });
+    res.status(500).json({ message: 'Error updating survey' });
   }
 });
 
@@ -347,7 +342,7 @@ export const deleteSurvey = asyncHandler(async (req, res) => {
     res.status(200).json({ message: 'Survey deleted successfully' });
   } catch (error) {
     console.error('Error deleting survey:', error);
-    res.status(500).json({ message: 'Error deleting survey', error: error.message });
+    res.status(500).json({ message: 'Error deleting survey' });
   }
 });
 
@@ -387,9 +382,8 @@ export const checkSurveyAttempt = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error checking survey attempt:', error);
-    res.status(500).json({ 
-      message: 'Error checking survey attempt', 
-      error: error.message,
+    res.status(500).json({
+      message: 'Error checking survey attempt',
       hasAttempted: false,
     });
   }
@@ -437,8 +431,15 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       });
     }
 
-    // Check if survey is still within its valid date range
+    // Check if survey is within its valid date range
     const now = new Date();
+    if (survey.startDate && new Date(survey.startDate) > now) {
+      return res.status(400).json({
+        success: false,
+        submitted: false,
+        message: 'This survey has not started yet.',
+      });
+    }
     if (survey.endDate && new Date(survey.endDate) < now) {
       return res.status(410).json({
         success: false,
@@ -597,7 +598,6 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       success: false,
       submitted: false,
       message: 'Error submitting survey response',
-      error: error.message,
     });
   }
 });
@@ -605,7 +605,8 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
 // Get Survey Responses (with pagination, owner/admin only)
 export const getSurveyResponses = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
-  const { page = 1, limit = 20 } = req.query;
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 20, 100));
   const requestingUserId = req.user?.id;
 
   // Ownership check: only survey owner or admin/moderator can view responses
@@ -628,7 +629,7 @@ export const getSurveyResponses = asyncHandler(async (req, res) => {
     }
   }
 
-  const skip = (Number(page) - 1) * Number(limit);
+  const skip = (page - 1) * limit;
 
   try {
     const [responses, total] = await Promise.all([
@@ -636,7 +637,7 @@ export const getSurveyResponses = asyncHandler(async (req, res) => {
         where: { surveyId },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: Number(limit),
+        take: limit,
       }),
       prisma.surveyResponse.count({ where: { surveyId } }),
     ]);
@@ -645,15 +646,15 @@ export const getSurveyResponses = asyncHandler(async (req, res) => {
       success: true,
       data: responses,
       pagination: {
-        page: Number(page),
-        limit: Number(limit),
+        page,
+        limit,
         total,
-        totalPages: Math.ceil(total / Number(limit)),
+        totalPages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
     console.error('Error fetching survey responses:', error);
-    res.status(500).json({ message: 'Error fetching survey responses', error: error.message });
+    res.status(500).json({ message: 'Error fetching survey responses' });
   }
 });
 
@@ -691,10 +692,9 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Invalid status. Use "running", "upcoming", or "completed".' });
   }
 
-  console.log('Where clause for query:', whereClause);
-
-  const { page = 1, limit = 20 } = req.query;
-  const skip = (Number(page) - 1) * Number(limit);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 20, 100));
+  const skip = (page - 1) * limit;
 
   try {
     const [surveys, total] = await Promise.all([
@@ -706,7 +706,7 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: Number(limit),
+        take: limit,
       }),
       prisma.survey.count({ where: whereClause }),
     ]);
@@ -729,16 +729,16 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error retrieving surveys:', error);
-    res.status(500).json({ message: 'Error retrieving surveys', error: error.message });
+    res.status(500).json({ message: 'Error retrieving surveys' });
   }
 });
 
 // Get All Surveys
 export const getAllSurveys = asyncHandler(async (req, res) => {
-  console.log('Request received to get all surveys');
-  
-  const { page = 1, limit = 20, status } = req.query;
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 20, 100));
+  const { status } = req.query;
+  const skip = (page - 1) * limit;
   const currentDate = new Date();
   
   let whereClause = {};
@@ -777,7 +777,7 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
         },
         orderBy: { createdAt: 'desc' },
         skip,
-        take: parseInt(limit),
+        take: limit,
       }),
       prisma.survey.count({ where: whereClause }),
     ]);
@@ -804,7 +804,6 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error retrieving surveys',
-      error: error.message
     });
   }
 });
@@ -924,6 +923,6 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching survey analytics:', error);
-    res.status(500).json({ success: false, message: 'Error fetching analytics', error: error.message });
+    res.status(500).json({ success: false, message: 'Error fetching analytics' });
   }
 });

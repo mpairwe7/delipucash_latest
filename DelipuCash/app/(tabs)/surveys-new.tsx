@@ -222,12 +222,20 @@ export default function SurveysScreen(): React.ReactElement {
   const { data: completedSurveys = [], isLoading: loadingCompleted, refetch: refetchCompleted } = useCompletedSurveys();
   const { data: unreadCount } = useUnreadCount();
   
-  // Filter for user's surveys
+  // Filter for user's created surveys across all statuses
   const mySurveys = useMemo(() => {
     if (!auth?.user?.id) return [];
-    return runningSurveys.filter((s: Survey) => s.userId === auth.user?.id);
-  }, [runningSurveys, auth?.user?.id]);
-  const loadingMy = loadingRunning;
+    const uid = auth.user.id;
+    const all = [...runningSurveys, ...upcomingSurveys, ...completedSurveys];
+    // Deduplicate by ID (a survey may appear in multiple lists)
+    const seen = new Set<string>();
+    return all.filter((s: Survey) => {
+      if (s.userId !== uid || seen.has(s.id)) return false;
+      seen.add(s.id);
+      return true;
+    });
+  }, [runningSurveys, upcomingSurveys, completedSurveys, auth?.user?.id]);
+  const loadingMy = loadingRunning || loadingUpcoming || loadingCompleted;
 
   // Ad hooks - TanStack Query for intelligent ad loading
   // Following industry best practices: ads are contextually placed and non-intrusive
@@ -242,8 +250,10 @@ export default function SurveysScreen(): React.ReactElement {
   const [dismissedAdKeys, setDismissedAdKeys] = useState<Set<string>>(new Set());
   const handleDismissAd = useCallback((key: string) => {
     setDismissedAdKeys(prev => new Set(prev).add(key));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+    if (!prefersReducedMotion) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [prefersReducedMotion]);
 
   // Reduced motion preference
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -748,15 +758,21 @@ export default function SurveysScreen(): React.ReactElement {
             accessible
             role="summary"
           >
-            <FileText size={48} color={colors.textMuted} strokeWidth={1.5} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+            <FileText size={48} color={colors.textMuted} strokeWidth={1.5} accessible={false} />
+            <Text
+              style={[styles.emptyTitle, { color: colors.text }]}
+              maxFontSizeMultiplier={1.3}
+            >
               {activeTab === 'my-surveys' ? 'No surveys yet' :
                activeTab === 'running' ? 'No active surveys' :
                activeTab === 'upcoming' ? 'No upcoming surveys' :
                activeTab === 'completed' ? 'No completed surveys' :
                'No surveys to discover'}
             </Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
+            <Text
+              style={[styles.emptySubtitle, { color: colors.textMuted }]}
+              maxFontSizeMultiplier={1.2}
+            >
               {activeTab === 'my-surveys'
                 ? 'Create your first survey to start collecting insights'
                 : activeTab === 'completed'
@@ -785,14 +801,23 @@ export default function SurveysScreen(): React.ReactElement {
     }
   }, [auth, colors, activeTab, handleAdClick, handleAdImpression, handleCreationMode, handleSurveyPress, handleDismissAd, isTablet, cardViewStyle]);
 
-  // List header component
+  // List header rendered via memoized callback
   const ListHeader = useMemo(() => (
     <View style={styles.listHeader}>
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitleSection}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Surveys</Text>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+          <Text
+            style={[styles.headerTitle, { color: colors.text }]}
+            accessibilityRole="header"
+            maxFontSizeMultiplier={1.3}
+          >
+            Surveys
+          </Text>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.textMuted }]}
+            maxFontSizeMultiplier={1.2}
+          >
             Create, manage & analyze
           </Text>
         </View>
@@ -809,22 +834,26 @@ export default function SurveysScreen(): React.ReactElement {
         activeOpacity={0.8}
         accessibilityRole="button"
         accessibilityLabel="Search surveys"
+        accessibilityHint="Tap to open search and filter surveys"
       >
         <Search size={18} color={colors.textMuted} />
-        <Text style={[styles.searchPlaceholder, { color: colors.textMuted }]}>
+        <Text
+          style={[styles.searchPlaceholder, { color: colors.textMuted }]}
+          maxFontSizeMultiplier={1.2}
+        >
           {search || 'Search surveys...'}
         </Text>
         {isSearching && (
           <View style={[styles.searchBadge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-            <Text style={[styles.searchBadgeText, { color: colors.primary }]}>
+            <Text style={[styles.searchBadgeText, { color: colors.primary }]} maxFontSizeMultiplier={1.2}>
               {searchedSurveys.length}
             </Text>
           </View>
         )}
       </TouchableOpacity>
 
-      {/* Subscription Banner */}
-      {authReady && isAuthenticated && (
+      {/* Subscription Banner — hidden from admins who bypass subscription */}
+      {authReady && isAuthenticated && !isAdmin && (
         <TouchableOpacity
           style={[
             styles.subscriptionBanner,
@@ -861,13 +890,19 @@ export default function SurveysScreen(): React.ReactElement {
             )}
           </View>
           <View style={styles.subscriptionContent}>
-            <Text style={[
-              styles.subscriptionTitle,
-              { color: hasActiveSubscription ? colors.success : colors.warning }
-            ]}>
+            <Text
+              style={[
+                styles.subscriptionTitle,
+                { color: hasActiveSubscription ? colors.success : colors.warning }
+              ]}
+              maxFontSizeMultiplier={1.2}
+            >
               {hasActiveSubscription ? "Active Subscription" : "No Active Subscription"}
             </Text>
-            <Text style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}>
+            <Text
+              style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}
+              maxFontSizeMultiplier={1.2}
+            >
               {hasActiveSubscription
                 ? `${remainingDays} days remaining • ${subscriptionStatus?.subscription?.planType ?? 'Standard'} plan`
                 : "Subscribe to create unlimited surveys"
@@ -886,7 +921,10 @@ export default function SurveysScreen(): React.ReactElement {
       )}
 
       {/* Tabs */}
-      <View style={[styles.tabsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        style={[styles.tabsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+        accessibilityRole="tablist"
+      >
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -915,6 +953,7 @@ export default function SurveysScreen(): React.ReactElement {
                     { color: isActive ? colors.primary : colors.textMuted },
                     isActive && styles.tabLabelActive,
                   ]}
+                  maxFontSizeMultiplier={1.2}
                 >
                   {tab.label}
                 </Text>
@@ -930,6 +969,7 @@ export default function SurveysScreen(): React.ReactElement {
                         styles.tabBadgeText,
                         { color: isActive ? colors.primaryText : colors.textMuted },
                       ]}
+                      maxFontSizeMultiplier={1.2}
                     >
                       {tab.count}
                     </Text>
@@ -978,21 +1018,27 @@ export default function SurveysScreen(): React.ReactElement {
 
       {/* Section title */}
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>
+        <Text
+          style={[styles.sectionTitle, { color: colors.text }]}
+          maxFontSizeMultiplier={1.2}
+        >
           {activeTab === 'my-surveys' ? 'Your Surveys' :
            activeTab === 'discover' ? 'Featured Surveys' :
            activeTab === 'running' ? 'Active Surveys' :
            activeTab === 'completed' ? 'Completed Surveys' :
            'Scheduled Surveys'}
         </Text>
-        <Text style={[styles.sectionCount, { color: colors.textMuted }]}>
+        <Text
+          style={[styles.sectionCount, { color: colors.textMuted }]}
+          maxFontSizeMultiplier={1.2}
+        >
           {currentSurveys.length} {currentSurveys.length === 1 ? 'survey' : 'surveys'}
         </Text>
       </View>
     </View>
   ), [
     authReady, colors, currentSurveys.length, activeTab, handleSubscribe, handleTabChange,
-    hasActiveSubscription, isAuthenticated, isSearching, isTablet, remainingDays, search,
+    hasActiveSubscription, isAdmin, isAuthenticated, isSearching, isTablet, remainingDays, search,
     searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, unreadCount, cardViewStyle
   ]);
 
@@ -1010,6 +1056,7 @@ export default function SurveysScreen(): React.ReactElement {
         keyExtractor={keyExtractor}
         ListHeaderComponent={ListHeader}
         ItemSeparatorComponent={MemoizedItemSeparator}
+        accessibilityRole="list"
         contentContainerStyle={[
           styles.listContent,
           {

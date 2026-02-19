@@ -125,8 +125,8 @@ export const SurveyCardSkeleton: React.FC<SurveyCardSkeletonProps> = ({
           styles.cardCompact,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
-        accessibilityLabel="Loading survey"
-        accessibilityRole="progressbar"
+        accessibilityLabel="Loading survey list"
+        accessibilityRole="none"
       >
         <View style={styles.compactContent}>
           <Skeleton width="70%" height={16} />
@@ -144,8 +144,8 @@ export const SurveyCardSkeleton: React.FC<SurveyCardSkeletonProps> = ({
           styles.cardGrid,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
-        accessibilityLabel="Loading survey"
-        accessibilityRole="progressbar"
+        accessibilityLabel="Loading survey list"
+        accessibilityRole="none"
       >
         <Skeleton width="100%" height={80} borderRadius={RADIUS.md} />
         <View style={styles.gridContent}>
@@ -167,8 +167,8 @@ export const SurveyCardSkeleton: React.FC<SurveyCardSkeletonProps> = ({
         styles.cardDetailed,
         { backgroundColor: colors.card, borderColor: colors.border },
       ]}
-      accessibilityLabel="Loading survey"
-      accessibilityRole="progressbar"
+      accessibilityLabel="Loading survey list"
+      accessibilityRole="none"
     >
       <View style={styles.cardHeader}>
         <Skeleton width={48} height={48} borderRadius={RADIUS.md} />

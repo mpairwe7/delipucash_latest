@@ -170,7 +170,7 @@ function InlineVideoPlayerComponent({
       player.muted = isMuted;
       player.volume = isMuted ? 0 : 1;
     } catch (error) {
-      console.warn('[InlineVideoPlayer] Error configuring player:', error);
+      if (__DEV__) console.warn('[InlineVideoPlayer] Error configuring player:', error);
     }
   });
   
@@ -436,7 +436,7 @@ function InlineVideoPlayerComponent({
                 contentFit="cover"
                 nativeControls={false}
                 onError={(error) => {
-                  console.warn('[InlineVideoPlayer] VideoView error:', error);
+                  if (__DEV__) console.warn('[InlineVideoPlayer] VideoView error:', error);
                   // Ignore keep-awake related errors in Expo Go
                   if (error?.message?.includes('keep awake')) {
                     return;

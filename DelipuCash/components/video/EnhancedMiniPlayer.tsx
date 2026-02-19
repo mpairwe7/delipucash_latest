@@ -475,7 +475,7 @@ const styles = StyleSheet.create({
     zIndex: Z_INDEX.fixed,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
+    borderColor: withAlpha('#FFFFFF', 0.08),
   },
   progressContainer: {
     position: 'absolute',

@@ -131,11 +131,11 @@ const formatViewCount = (views: number): string => {
 const getRankingBadge = (index: number, colors: ReturnType<typeof useTheme>['colors']) => {
   switch (index) {
     case 0:
-      return { icon: Crown, color: '#FFD700', label: '#1' }; // Gold
+      return { icon: Crown, color: colors.warning, label: '#1' }; // Gold
     case 1:
-      return { icon: Flame, color: '#C0C0C0', label: '#2' }; // Silver
+      return { icon: Flame, color: colors.textMuted, label: '#2' }; // Silver
     case 2:
-      return { icon: TrendingUp, color: '#CD7F32', label: '#3' }; // Bronze
+      return { icon: TrendingUp, color: colors.warning, label: '#3' }; // Bronze
     default:
       return { icon: TrendingUp, color: colors.primary, label: `#${index + 1}` };
   }
@@ -178,7 +178,7 @@ const TrendingVideoCard = memo<TrendingVideoCardProps>(({
           setThumbnailUrl(getPlaceholderImage('video'));
         }
       } catch (error) {
-        console.error('[TrendingVideoCard] Failed to load thumbnail:', error);
+        if (__DEV__) console.error('[TrendingVideoCard] Failed to load thumbnail:', error);
         setThumbnailUrl(getPlaceholderImage('video'));
       } finally {
         setIsLoadingThumbnail(false);
@@ -522,7 +522,6 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
-    fontWeight: '700',
   },
   headerSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -536,7 +535,6 @@ const styles = StyleSheet.create({
   seeAllText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    fontWeight: '600',
   },
   scrollContent: {
     paddingHorizontal: SPACING.xl,
@@ -580,7 +578,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
-    fontWeight: '700',
   },
   trendingBadge: {
     position: 'absolute',
@@ -595,7 +592,7 @@ const styles = StyleSheet.create({
   },
   trendingText: {
     fontSize: 9,
-    fontWeight: '800',
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     color: '#FFFFFF',
     letterSpacing: 0.5,
   },
@@ -618,7 +615,6 @@ const styles = StyleSheet.create({
   videoTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
-    fontWeight: '600',
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
@@ -637,7 +633,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
     color: 'rgba(255,255,255,0.9)',
-    fontWeight: '500',
   },
   durationBadge: {
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -650,7 +645,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: 11,
     color: '#FFFFFF',
-    fontWeight: '600',
   },
   paginationContainer: {
     flexDirection: 'row',
