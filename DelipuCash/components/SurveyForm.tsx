@@ -42,6 +42,7 @@ import {
   List,
   Check,
   CheckSquare,
+  CheckCircle,
   Star,
   Calendar,
   Save,
@@ -60,6 +61,7 @@ import {
   GripVertical,
   Sparkles,
   GitBranch,
+  Award,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -75,6 +77,8 @@ import {
   selectExpandedQuestionId,
   selectIsMultiSelectMode,
   selectSelectedQuestionIds,
+  selectIsScoringEnabled,
+  useBuilderActions,
   type BuilderQuestionData,
   type BuilderQuestionType,
 } from '@/store/SurveyBuilderStore';
@@ -446,22 +450,10 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   const expandedQuestion = useSurveyBuilderStore(selectExpandedQuestionId);
   const isMultiSelectMode = useSurveyBuilderStore(selectIsMultiSelectMode);
   const selectedQuestionIds = useSurveyBuilderStore(selectSelectedQuestionIds);
-  const builderActions = useSurveyBuilderStore((s) => ({
-    addQuestion: s.addQuestion,
-    removeQuestion: s.removeQuestion,
-    updateQuestion: s.updateQuestion,
-    reorderQuestions: s.reorderQuestions,
-    setExpandedQuestion: s.setExpandedQuestion,
-    addOption: s.addOption,
-    removeOption: s.removeOption,
-    updateOption: s.updateOption,
-    loadQuestions: s.loadQuestions,
-    setSurveyTitle: s.setSurveyTitle,
-    setSurveyDescription: s.setSurveyDescription,
-    checkBadges: s.checkBadges,
-    toggleMultiSelectMode: s.toggleMultiSelectMode,
-    toggleQuestionSelection: s.toggleQuestionSelection,
-  }));
+  const isScoringEnabled = useSurveyBuilderStore(selectIsScoringEnabled);
+
+  // 2026 Pattern: Use dedicated actions hook (pre-memoized with useShallow)
+  const builderActions = useBuilderActions();
 
   // Local state for dates (not part of builder store since they're survey-level, not question-level)
   const [startDate, setStartDate] = useState(new Date());
@@ -490,6 +482,18 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   const [importError, setImportError] = useState<string | null>(null);
   const [conditionalLogicQuestionId, setConditionalLogicQuestionId] = useState<string | null>(null);
   const hasAutoOpenedImport = useRef(false);
+
+  // 2026 UX Enhancements
+  const [filePreview, setFilePreview] = useState<{
+    fileName: string;
+    fileSize: number;
+    questionCount: number;
+    title?: string;
+    description?: string;
+    warnings: string[];
+  } | null>(null);
+  const [parseProgress, setParseProgress] = useState(0);
+  const [showPreviewStep, setShowPreviewStep] = useState(false);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -581,13 +585,19 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   }, []);
 
   // ============================================================================
-  // FILE IMPORT HANDLER
+  // FILE IMPORT HANDLER (2026 Enhanced)
   // ============================================================================
 
   const handleFileImport = useCallback(async (fileType: ImportFileType) => {
     setIsUploading(true);
     setImportError(null);
+    setParseProgress(0);
+    setFilePreview(null);
+
     try {
+      // 2026: File size limits (prevent memory issues)
+      const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
       // Define MIME types for each format
       const mimeTypes: Record<ImportFileType, string[]> = {
         json: ['application/json'],
@@ -598,6 +608,8 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         ],
       };
 
+      setParseProgress(10); // File picker opened
+
       const result = await DocumentPicker.getDocumentAsync({
         type: mimeTypes[fileType],
         copyToCacheDirectory: true,
@@ -605,86 +617,198 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
       if (result.canceled || !result.assets?.length) {
         setIsUploading(false);
+        setParseProgress(0);
         return;
       }
 
       const file = result.assets[0];
+      setParseProgress(20); // File selected
+
+      // 2026: Validate file size
+      if (file.size && file.size > MAX_FILE_SIZE) {
+        throw new Error(
+          `File too large (${(file.size / 1024 / 1024).toFixed(2)}MB). ` +
+          `Maximum size is 5MB. Please split into smaller files or remove unnecessary data.`
+        );
+      }
+
+      setParseProgress(40); // Reading file
       const content = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
+      setParseProgress(60); // File read complete
 
       let parsedQuestions: QuestionData[] = [];
       let surveyTitle = '';
       let surveyDescription = '';
+      const warnings: string[] = [];
 
       // Detect actual file type from extension (more reliable than MIME type)
       const detectedType = detectFileTypeFromName(file.name);
       const actualFileType = detectedType || fileType;
 
+      setParseProgress(70); // Parsing content
+
       if (actualFileType === 'json') {
-        // Parse JSON
-        const cleanContent = stripBOM(content);
-        const parsed = JSON.parse(cleanContent);
+        // Parse JSON with better error messages
+        try {
+          const cleanContent = stripBOM(content);
+          const parsed = JSON.parse(cleanContent);
 
-        if (!parsed.title || !Array.isArray(parsed.questions)) {
-          throw new Error('Invalid JSON format. Expected { title: string, description?: string, questions: array }');
+          if (!parsed.title || !Array.isArray(parsed.questions)) {
+            throw new Error(
+              'Invalid JSON structure.\n\n' +
+              'Expected format:\n' +
+              '{\n' +
+              '  "title": "Survey Title",\n' +
+              '  "description": "Optional description",\n' +
+              '  "questions": [...]\n' +
+              '}'
+            );
+          }
+
+          surveyTitle = parsed.title;
+          surveyDescription = parsed.description || '';
+
+          parsedQuestions = parsed.questions.map((q: Record<string, unknown>, index: number) => {
+            const questionType = q.type as string;
+            if (!isValidQuestionType(questionType)) {
+              warnings.push(`Question ${index + 1}: Invalid type "${questionType}", defaulting to "text"`);
+            }
+            return {
+              id: `q${index + 1}`,
+              text: (q.text as string) || '',
+              type: isValidQuestionType(questionType) ? (questionType as QuestionType) : 'text',
+              options: Array.isArray(q.options) ? q.options as string[] : [],
+              minValue: q.minValue as number | undefined,
+              maxValue: q.maxValue as number | undefined,
+              placeholder: (q.placeholder as string) || '',
+              required: (q.required as boolean) || false,
+            };
+          });
+        } catch (parseError) {
+          if (parseError instanceof SyntaxError) {
+            throw new Error(
+              `Invalid JSON syntax: ${parseError.message}\n\n` +
+              'Tip: Validate your JSON at jsonlint.com before importing.'
+            );
+          }
+          throw parseError;
         }
-
-        surveyTitle = parsed.title;
-        surveyDescription = parsed.description || '';
-
-        parsedQuestions = parsed.questions.map((q: Record<string, unknown>, index: number) => ({
-          id: `q${index + 1}`,
-          text: (q.text as string) || '',
-          type: isValidQuestionType(q.type as string) ? (q.type as QuestionType) : 'text',
-          options: Array.isArray(q.options) ? q.options as string[] : [],
-          minValue: q.minValue as number | undefined,
-          maxValue: q.maxValue as number | undefined,
-          placeholder: (q.placeholder as string) || '',
-          required: (q.required as boolean) || false,
-        }));
       } else {
         // Parse CSV/TSV/Excel
-        const { questions: spreadsheetQuestions, warnings } = parseSpreadsheetContent(content);
-        parsedQuestions = spreadsheetQuestions;
+        const parseResult = parseSpreadsheetContent(content);
+        parsedQuestions = parseResult.questions;
+        warnings.push(...parseResult.warnings);
 
         if (parsedQuestions.length === 0) {
           const warningMsg = warnings.length > 0
             ? `\n\nValidation issues:\n${warnings.slice(0, 3).join('\n')}${warnings.length > 3 ? `\n...and ${warnings.length - 3} more` : ''}`
             : '';
-          throw new Error(`No valid questions found in the file. Please check the format matches our template.${warningMsg}`);
-        }
-
-        // Log warnings but continue with valid questions
-        if (warnings.length > 0) {
-          console.warn('[SurveyForm] Parse warnings:', warnings);
+          throw new Error(
+            `No valid questions found in the file.\n\n` +
+            `Please ensure your file has:\n` +
+            `• A header row with columns: text, type, options\n` +
+            `• At least one question with text\n` +
+            `• Proper delimiters (comma for CSV, tab for TSV)${warningMsg}`
+          );
         }
       }
+
+      setParseProgress(90); // Validating
 
       // Validate questions
       const validQuestions = parsedQuestions.filter(q => q.text.trim());
       if (validQuestions.length === 0) {
-        throw new Error('No valid questions found. Each question must have text.');
+        throw new Error(
+          'No valid questions found.\n\n' +
+          'Each question must have:\n' +
+          '• Question text (required)\n' +
+          '• Valid question type\n' +
+          '• Options (for choice-based questions)'
+        );
       }
 
-      // Update form state via builder store
-      if (surveyTitle) setTitle(surveyTitle);
-      if (surveyDescription) setDescription(surveyDescription);
-      builderActions.loadQuestions(validQuestions.length > 0 ? validQuestions : questions);
+      setParseProgress(100); // Complete
 
-      setShowImportModal(false);
-      Alert.alert(
-        'Success',
-        `Imported ${validQuestions.length} question${validQuestions.length !== 1 ? 's' : ''} successfully!${surveyTitle ? `\nSurvey: "${surveyTitle}"` : ''}`,
-        [{ text: 'OK' }]
-      );
+      // 2026: Show preview before confirming import
+      setFilePreview({
+        fileName: file.name,
+        fileSize: file.size || 0,
+        questionCount: validQuestions.length,
+        title: surveyTitle,
+        description: surveyDescription,
+        warnings,
+      });
+      setShowPreviewStep(true);
+      setIsUploading(false);
+
+      // Store parsed data for confirmation
+      (window as any).__pendingImport = { validQuestions, surveyTitle, surveyDescription };
     } catch (error) {
       console.error('[SurveyForm] Import error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to parse file';
       setImportError(errorMessage);
-      Alert.alert('Import Error', errorMessage);
+      setParseProgress(0);
+
+      // 2026 UX: Better error messages with recovery suggestions
+      const errorTitle = errorMessage.includes('JSON syntax') ? 'JSON Parse Error' :
+                         errorMessage.includes('size') ? 'File Too Large' :
+                         errorMessage.includes('format') ? 'Invalid Format' :
+                         'Import Error';
+
+      Alert.alert(
+        errorTitle,
+        errorMessage,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Download Template',
+            onPress: () => {
+              setShowImportModal(false);
+              handleDownloadTemplate(selectedImportType);
+            },
+          },
+        ]
+      );
     } finally {
       setIsUploading(false);
     }
-  }, [questions]);
+  }, [questions, selectedImportType, handleDownloadTemplate]);
+
+  // 2026: Confirm import after preview
+  const confirmImport = useCallback(() => {
+    const pendingData = (window as any).__pendingImport;
+    if (!pendingData) return;
+
+    const { validQuestions, surveyTitle, surveyDescription } = pendingData;
+
+    // Update form state via builder store
+    if (surveyTitle) setTitle(surveyTitle);
+    if (surveyDescription) setDescription(surveyDescription);
+    builderActions.loadQuestions(validQuestions);
+
+    // Clear preview
+    setShowPreviewStep(false);
+    setFilePreview(null);
+    setShowImportModal(false);
+    setParseProgress(0);
+    (window as any).__pendingImport = null;
+
+    // Success haptic + toast
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert(
+      '✓ Import Successful',
+      `Imported ${validQuestions.length} question${validQuestions.length !== 1 ? 's' : ''} successfully!${surveyTitle ? `\n\nSurvey: "${surveyTitle}"` : ''}`,
+      [{ text: 'OK' }]
+    );
+  }, [builderActions, setTitle, setDescription]);
+
+  // Cancel preview
+  const cancelPreview = useCallback(() => {
+    setShowPreviewStep(false);
+    setFilePreview(null);
+    setParseProgress(0);
+    (window as any).__pendingImport = null;
+  }, []);
 
   // Question CRUD — delegated to SurveyBuilderStore (supports undo/redo)
   const addQuestion = useCallback(() => {
@@ -823,6 +947,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         maxValue,
         required: q.required,
         ...(q.conditionalLogic ? { conditionalLogic: q.conditionalLogic } : {}),
+        ...(isScoringEnabled && q.points ? { points: q.points } : {}),
       };
     });
 
@@ -957,6 +1082,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             </Text>
             {question.required && (
               <View style={[styles.requiredDot, { backgroundColor: colors.error }]} />
+            )}
+            {isScoringEnabled && (question.points ?? 0) > 0 && (
+              <View style={[styles.pointsChip, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
+                <Text style={[styles.pointsChipText, { color: colors.warning }]}>{question.points} pts</Text>
+              </View>
             )}
           </View>
           <View style={styles.questionActions}>
@@ -1221,6 +1351,29 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <Text style={[styles.checkboxText, { color: colors.text }]}>Required</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Points input (visible when scoring is enabled) */}
+            {isScoringEnabled && (
+              <View style={styles.inputGroup}>
+                <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Points</Text>
+                <View style={styles.pointsInputRow}>
+                  <Award size={16} color={colors.warning} />
+                  <TextInput
+                    value={String(question.points || 0)}
+                    onChangeText={(text) => {
+                      const pts = parseInt(text) || 0;
+                      updateQuestion(question.id, { points: Math.max(0, pts) });
+                    }}
+                    keyboardType="numeric"
+                    placeholder="0"
+                    placeholderTextColor={colors.textMuted}
+                    style={[styles.pointsInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+                    accessibilityLabel={`Points for question ${questionIndex + 1}`}
+                  />
+                  <Text style={[styles.pointsUnit, { color: colors.textMuted }]}>pts</Text>
+                </View>
+              </View>
+            )}
           </Animated.View>
         )}
       </View>
@@ -1345,6 +1498,36 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               <Text style={[styles.addQuestionText, { color: colors.primaryText }]}>Add Question</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Scoring toggle */}
+          <View style={[styles.scoringToggleRow, { borderColor: colors.border }]}>
+            <View style={styles.scoringLabelRow}>
+              <Award size={16} color={isScoringEnabled ? colors.warning : colors.textMuted} />
+              <Text style={[styles.scoringLabel, { color: colors.text }]}>Enable Scoring</Text>
+            </View>
+            <Switch
+              value={isScoringEnabled}
+              onValueChange={(enabled) => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                builderActions.setScoringEnabled(enabled);
+              }}
+              trackColor={{ false: colors.border, true: withAlpha(colors.warning, 0.4) }}
+              thumbColor={isScoringEnabled ? colors.warning : colors.textMuted}
+              accessibilityLabel="Enable question scoring"
+              accessibilityRole="switch"
+              accessibilityState={{ checked: isScoringEnabled }}
+            />
+          </View>
+
+          {/* Total points banner */}
+          {isScoringEnabled && (
+            <View style={[styles.totalPointsBanner, { backgroundColor: withAlpha(colors.warning, 0.08), borderColor: withAlpha(colors.warning, 0.2) }]}>
+              <Award size={14} color={colors.warning} />
+              <Text style={[styles.totalPointsText, { color: colors.warning }]}>
+                Total: {questions.reduce((sum, q) => sum + (q.points || 0), 0)} pts across {questions.filter(q => (q.points || 0) > 0).length}/{questions.length} questions
+              </Text>
+            </View>
+          )}
 
           {/* Undo/Redo + Bulk Actions Toolbar */}
           <UndoRedoToolbar showBulkActions />
@@ -1471,7 +1654,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.modalHeaderText}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>Import Survey</Text>
                   <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
-                    Upload questions via JSON, CSV, or TSV
+                    Upload questions via JSON, CSV, Excel, or TSV
                   </Text>
                 </View>
               </View>
@@ -1496,7 +1679,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 {([
                   { type: 'json' as ImportFileType, icon: <FileJson size={24} color={selectedImportType === 'json' ? colors.primaryText : colors.primary} />, label: 'JSON', desc: 'Structured data' },
                   { type: 'csv' as ImportFileType, icon: <FileText size={24} color={selectedImportType === 'csv' ? colors.primaryText : colors.success} />, label: 'CSV', desc: 'Comma-separated' },
-                  { type: 'excel' as ImportFileType, icon: <FileSpreadsheet size={24} color={selectedImportType === 'excel' ? colors.primaryText : colors.info} />, label: 'TSV', desc: 'Tab-separated values' },
+                  { type: 'excel' as ImportFileType, icon: <FileSpreadsheet size={24} color={selectedImportType === 'excel' ? colors.primaryText : colors.info} />, label: 'Excel/TSV', desc: 'Spreadsheet formats' },
                 ]).map((format) => (
                   <TouchableOpacity
                     key={format.type}
@@ -1524,8 +1707,103 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 ))}
               </View>
 
+              {/* 2026: Progress Indicator */}
+              {parseProgress > 0 && parseProgress < 100 && (
+                <View style={[styles.progressContainer, { backgroundColor: withAlpha(colors.primary, 0.08), borderColor: withAlpha(colors.primary, 0.2) }]}>
+                  <View style={styles.progressHeader}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text style={[styles.progressText, { color: colors.text }]}>
+                      {parseProgress < 30 ? 'Selecting file...' :
+                       parseProgress < 60 ? 'Reading file...' :
+                       parseProgress < 90 ? 'Parsing content...' :
+                       'Validating questions...'}
+                    </Text>
+                  </View>
+                  <View style={[styles.progressBarTrack, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
+                    <View style={[styles.progressBarFill, { width: `${parseProgress}%`, backgroundColor: colors.primary }]} />
+                  </View>
+                  <Text style={[styles.progressPercentage, { color: colors.textMuted }]}>{parseProgress}%</Text>
+                </View>
+              )}
+
+              {/* 2026: File Preview Step */}
+              {showPreviewStep && filePreview && (
+                <View style={[styles.previewContainer, { backgroundColor: withAlpha(colors.success, 0.05), borderColor: withAlpha(colors.success, 0.2) }]}>
+                  <View style={styles.previewHeader}>
+                    <CheckCircle size={24} color={colors.success} />
+                    <Text style={[styles.previewTitle, { color: colors.success }]}>Ready to Import</Text>
+                  </View>
+
+                  <View style={[styles.previewDetails, { backgroundColor: colors.background }]}>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>File:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>{filePreview.fileName}</Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Size:</Text>
+                      <Text style={[styles.previewValue, { color: colors.text }]}>
+                        {(filePreview.fileSize / 1024).toFixed(2)} KB
+                      </Text>
+                    </View>
+                    <View style={styles.previewRow}>
+                      <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Questions:</Text>
+                      <Text style={[styles.previewValue, { color: colors.success, fontWeight: 'bold' }]}>
+                        {filePreview.questionCount}
+                      </Text>
+                    </View>
+                    {filePreview.title && (
+                      <View style={styles.previewRow}>
+                        <Text style={[styles.previewLabel, { color: colors.textMuted }]}>Title:</Text>
+                        <Text style={[styles.previewValue, { color: colors.text }]} numberOfLines={1}>
+                          {filePreview.title}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {filePreview.warnings.length > 0 && (
+                    <View style={[styles.warningsBanner, { backgroundColor: withAlpha(colors.warning, 0.1), borderColor: withAlpha(colors.warning, 0.3) }]}>
+                      <Info size={16} color={colors.warning} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.warningsTitle, { color: colors.warning }]}>
+                          {filePreview.warnings.length} Warning{filePreview.warnings.length !== 1 ? 's' : ''}
+                        </Text>
+                        {filePreview.warnings.slice(0, 3).map((warning, idx) => (
+                          <Text key={idx} style={[styles.warningText, { color: colors.textSecondary }]}>
+                            • {warning}
+                          </Text>
+                        ))}
+                        {filePreview.warnings.length > 3 && (
+                          <Text style={[styles.warningText, { color: colors.textMuted }]}>
+                            ...and {filePreview.warnings.length - 3} more
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  )}
+
+                  <View style={styles.previewActions}>
+                    <TouchableOpacity
+                      style={[styles.previewCancelBtn, { borderColor: colors.border }]}
+                      onPress={cancelPreview}
+                    >
+                      <Text style={[styles.previewCancelText, { color: colors.text }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.previewConfirmBtn, { backgroundColor: colors.success }]}
+                      onPress={confirmImport}
+                    >
+                      <CheckCircle size={18} color={colors.card} />
+                      <Text style={[styles.previewConfirmText, { color: colors.card }]}>
+                        Import {filePreview.questionCount} Question{filePreview.questionCount !== 1 ? 's' : ''}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
               {/* Error Display */}
-              {importError && (
+              {importError && !showPreviewStep && (
                 <View
                   style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}
                   accessibilityLiveRegion="assertive"
@@ -1536,6 +1814,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 </View>
               )}
 
+              {/* Hide selection UI when showing preview */}
+              {!showPreviewStep && (
+              <>
               {/* Download Templates Section */}
               <View style={[styles.templateSection, { backgroundColor: withAlpha(colors.info, 0.06), borderColor: withAlpha(colors.info, 0.15) }]}>
                 <View style={styles.templateHeader}>
@@ -1549,7 +1830,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                   {([
                     { type: 'json' as ImportFileType, label: 'JSON', color: colors.primary },
                     { type: 'csv' as ImportFileType, label: 'CSV', color: colors.success },
-                    { type: 'excel' as ImportFileType, label: 'TSV', color: colors.info },
+                    { type: 'excel' as ImportFileType, label: 'Excel/TSV', color: colors.info },
                   ]).map((template) => (
                     <TouchableOpacity
                       key={template.type}
@@ -1644,9 +1925,12 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                   ))}
                 </View>
               </View>
+              </>
+              )}
             </ScrollView>
 
             {/* Actions */}
+            {!showPreviewStep && (
             <View style={[styles.modalActions, { borderTopColor: colors.border }]}>
               <TouchableOpacity
                 style={[styles.modalCancelBtn, { borderColor: colors.border }]}
@@ -1670,6 +1954,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 </Text>
               </TouchableOpacity>
             </View>
+            )}
           </View>
         </View>
       </Modal>
@@ -2356,6 +2641,122 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     fontWeight: '600',
   },
+
+  // 2026: Progress & Preview Styles
+  progressContainer: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.md,
+  },
+  progressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  progressText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: RADIUS.full,
+    overflow: 'hidden',
+    marginBottom: SPACING.xs,
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: RADIUS.full,
+  },
+  progressPercentage: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'right',
+  },
+
+  previewContainer: {
+    padding: SPACING.lg,
+    borderRadius: RADIUS.xl,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.md,
+  },
+  previewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+  previewTitle: {
+    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontWeight: 'bold',
+  },
+  previewDetails: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  previewLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    flex: 1,
+  },
+  previewValue: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
+    flex: 2,
+    textAlign: 'right',
+  },
+  warningsBanner: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: BORDER_WIDTH.thin,
+    marginBottom: SPACING.md,
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  warningsTitle: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: 'bold',
+    marginBottom: SPACING.xs,
+  },
+  warningText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    lineHeight: TYPOGRAPHY.fontSize.xs * 1.4,
+  },
+  previewActions: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+  },
+  previewCancelBtn: {
+    flex: 1,
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    alignItems: 'center',
+  },
+  previewCancelText: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: '500',
+  },
+  previewConfirmBtn: {
+    flex: 2,
+    flexDirection: 'row',
+    paddingVertical: SPACING.md,
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+  },
+  previewConfirmText: {
+    fontSize: TYPOGRAPHY.fontSize.base,
+    fontWeight: 'bold',
+  },
   // File format selection styles
   sectionLabel: {
     fontSize: TYPOGRAPHY.fontSize.base,
@@ -2608,6 +3009,68 @@ const styles = StyleSheet.create({
   },
   previewDateText: {
     fontSize: TYPOGRAPHY.fontSize.base,
+  },
+  // Scoring
+  scoringToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.sm,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.md,
+    marginBottom: SPACING.sm,
+  },
+  scoringLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  scoringLabel: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
+  },
+  totalPointsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.sm,
+  },
+  totalPointsText: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontWeight: '600',
+  },
+  pointsChip: {
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+    marginLeft: SPACING.xs,
+  },
+  pointsChipText: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  pointsInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  pointsInput: {
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.md,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    width: 80,
+    textAlign: 'center',
+  },
+  pointsUnit: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500',
   },
 });
 

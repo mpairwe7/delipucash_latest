@@ -99,6 +99,45 @@ import * as Haptics from "expo-haptics";
 // ============================================================================
 
 /**
+ * MemoizedSurveyItem — Optimized survey card wrapper
+ * Prevents re-renders when unrelated list items change
+ */
+interface MemoizedSurveyItemProps {
+  survey: Survey;
+  onPress: () => void;
+  isOwner: boolean;
+  onViewResponses: () => void;
+  variant?: 'compact' | undefined;
+  isTablet: boolean;
+}
+
+const MemoizedSurveyItem = memo(({
+  survey,
+  onPress,
+  isOwner,
+  onViewResponses,
+  variant,
+  isTablet,
+}: MemoizedSurveyItemProps) => (
+  <View
+    style={[styles.surveyCardWrapper, isTablet && styles.surveyCardWrapperTablet]}
+    accessible
+    accessibilityRole="button"
+    accessibilityLabel={`Survey: ${survey.title}. ${survey.description || ''}`}
+    accessibilityHint="Double tap to open this survey"
+  >
+    <SurveyCard
+      survey={survey}
+      onPress={onPress}
+      isOwner={isOwner}
+      onViewResponses={onViewResponses}
+      variant={variant}
+    />
+  </View>
+));
+MemoizedSurveyItem.displayName = 'MemoizedSurveyItem';
+
+/**
  * Memoized item separator to prevent recreation on every render
  */
 const MemoizedItemSeparator = memo(function ItemSeparator() {
@@ -252,16 +291,7 @@ export default function SurveysScreen(): React.ReactElement {
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 
-  // Track dismissed ads for non-intrusive UX
-  const [dismissedAdKeys, setDismissedAdKeys] = useState<Set<string>>(new Set());
-  const handleDismissAd = useCallback((key: string) => {
-    setDismissedAdKeys(prev => new Set(prev).add(key));
-    if (!prefersReducedMotion) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-  }, [prefersReducedMotion]);
-
-  // Reduced motion preference
+  // Reduced motion preference — declared before handlers that reference it
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   // Check reduced motion preference (WCAG 2.3.3)
@@ -270,6 +300,15 @@ export default function SurveysScreen(): React.ReactElement {
     const listener = AccessibilityInfo.addEventListener('reduceMotionChanged', setPrefersReducedMotion);
     return () => listener.remove();
   }, []);
+
+  // Track dismissed ads for non-intrusive UX
+  const [dismissedAdKeys, setDismissedAdKeys] = useState<Set<string>>(new Set());
+  const handleDismissAd = useCallback((key: string) => {
+    setDismissedAdKeys(prev => new Set(prev).add(key));
+    if (!prefersReducedMotion) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [prefersReducedMotion]);
 
   // Combine all surveys for search
   const allSurveys = useMemo(() => {
@@ -551,6 +590,25 @@ export default function SurveysScreen(): React.ReactElement {
     router.push(`/survey/${id}`);
   }, []);
 
+  // Ref-based handlers to avoid inline closures in renderItem
+  const surveyPressHandlersRef = useRef<Map<string, () => void>>(new Map());
+  const getSurveyPressHandler = useCallback((surveyId: string) => {
+    if (!surveyPressHandlersRef.current.has(surveyId)) {
+      surveyPressHandlersRef.current.set(surveyId, () => handleSurveyPress(surveyId));
+    }
+    return surveyPressHandlersRef.current.get(surveyId)!;
+  }, [handleSurveyPress]);
+
+  const viewResponsesHandlersRef = useRef<Map<string, () => void>>(new Map());
+  const getViewResponsesHandler = useCallback((surveyId: string) => {
+    if (!viewResponsesHandlersRef.current.has(surveyId)) {
+      viewResponsesHandlersRef.current.set(surveyId, () =>
+        router.push(`/survey-responses/${surveyId}` as Href)
+      );
+    }
+    return viewResponsesHandlersRef.current.get(surveyId)!;
+  }, []);
+
   // Creation flow handlers
   const handleCreationMode = useCallback((mode: CreationMode) => {
     if (!isAuthenticated) {
@@ -647,22 +705,16 @@ export default function SurveysScreen(): React.ReactElement {
     switch (item.type) {
       case 'survey':
         const survey = item.data as Survey;
+        const isOwner = auth?.user?.id === survey.userId;
         return (
-          <View
-            style={[styles.surveyCardWrapper, isTablet && styles.surveyCardWrapperTablet]}
-            accessible
-            accessibilityRole="button"
-            accessibilityLabel={`Survey: ${survey.title}. ${survey.description || ''}`}
-            accessibilityHint="Double tap to open this survey"
-          >
-            <SurveyCard
-              survey={survey}
-              onPress={() => handleSurveyPress(survey.id)}
-              isOwner={auth?.user?.id === survey.userId}
-              onViewResponses={() => router.push(`/survey-responses/${survey.id}` as Href)}
-              variant={cardViewStyle === 'compact' ? 'compact' : undefined}
-            />
-          </View>
+          <MemoizedSurveyItem
+            survey={survey}
+            onPress={getSurveyPressHandler(survey.id)}
+            isOwner={isOwner}
+            onViewResponses={getViewResponsesHandler(survey.id)}
+            variant={cardViewStyle === 'compact' ? 'compact' : undefined}
+            isTablet={isTablet}
+          />
         );
 
       case 'ad-divider':
@@ -805,7 +857,19 @@ export default function SurveysScreen(): React.ReactElement {
       default:
         return null;
     }
-  }, [auth, colors, activeTab, handleAdClick, handleAdImpression, handleCreationMode, handleSurveyPress, handleDismissAd, isTablet, cardViewStyle]);
+  }, [
+    auth,
+    colors,
+    activeTab,
+    handleAdClick,
+    handleAdImpression,
+    handleCreationMode,
+    getSurveyPressHandler,
+    getViewResponsesHandler,
+    handleDismissAd,
+    isTablet,
+    cardViewStyle,
+  ]);
 
   // List header rendered via memoized callback
   const ListHeader = useMemo(() => (
@@ -857,6 +921,47 @@ export default function SurveysScreen(): React.ReactElement {
           </View>
         )}
       </TouchableOpacity>
+
+      {/* Admin Badge — shown for admins with full access */}
+      {authReady && isAuthenticated && isAdmin && (
+        <View
+          style={[
+            styles.subscriptionBanner,
+            {
+              backgroundColor: withAlpha(colors.info, 0.1),
+              borderColor: withAlpha(colors.info, 0.25),
+            },
+          ]}
+          accessible
+          accessibilityRole="text"
+          accessibilityLabel="Admin access - unlimited survey creation"
+        >
+          <View style={[
+            styles.subscriptionIconBg,
+            { backgroundColor: withAlpha(colors.info, 0.15) }
+          ]}>
+            <ShieldCheck size={20} color={colors.info} strokeWidth={2} />
+          </View>
+          <View style={styles.subscriptionContent}>
+            <Text
+              style={[
+                styles.subscriptionTitle,
+                { color: colors.info }
+              ]}
+              maxFontSizeMultiplier={1.2}
+            >
+              Admin Access
+            </Text>
+            <Text
+              style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}
+              maxFontSizeMultiplier={1.2}
+            >
+              Unlimited survey creation and full feature access
+            </Text>
+          </View>
+          <CheckCircle size={20} color={colors.info} strokeWidth={2} />
+        </View>
+      )}
 
       {/* Subscription Banner — hidden from admins who bypass subscription */}
       {authReady && isAuthenticated && !isAdmin && (
@@ -1081,7 +1186,7 @@ export default function SurveysScreen(): React.ReactElement {
         // Performance optimizations
         removeClippedSubviews
         maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={100}
+        updateCellsBatchingPeriod={50}
         windowSize={5}
         initialNumToRender={8}
         // Grid layout for tablet

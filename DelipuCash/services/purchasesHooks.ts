@@ -16,6 +16,14 @@ import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { purchasesService, ENTITLEMENTS } from './purchasesService';
 import { purchasesQueryKeys } from './purchasesQueryKeys';
 import { useUnifiedSubscription } from './subscriptionPaymentHooks';
+import {
+  MAX_UPLOAD_SIZE_FREE,
+  MAX_UPLOAD_SIZE_PREMIUM,
+  MAX_RECORDING_DURATION,
+  MAX_RECORDING_DURATION_PREMIUM,
+  MAX_LIVESTREAM_DURATION,
+  MAX_LIVESTREAM_DURATION_PREMIUM,
+} from '@/utils/video-utils';
 
 // Re-export query keys for backwards compatibility
 export { purchasesQueryKeys } from './purchasesQueryKeys';
@@ -284,21 +292,14 @@ export function useVideoPremiumAccess() {
   const { isPremium, isLoading } = usePremiumStatus();
   const { refetch } = useSubscriptionStatus();
 
-  // Constants for limits (synced with backend/VideoStore)
-  const FREE_UPLOAD_LIMIT = 40 * 1024 * 1024; // 40MB
-  const PREMIUM_UPLOAD_LIMIT = 500 * 1024 * 1024; // 500MB
-  const FREE_DURATION_LIMIT = 300; // 5 minutes
-  const PREMIUM_LIVESTREAM_LIMIT = 7200; // 2 hours
-  const PREMIUM_RECORDING_LIMIT = 1800; // 30 minutes
-
   return {
     hasVideoPremium: isPremium,
     isLoading,
     refetch,
-    // Return limits based on premium status
-    maxUploadSize: isPremium ? PREMIUM_UPLOAD_LIMIT : FREE_UPLOAD_LIMIT,
-    maxLivestreamDuration: isPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
-    maxRecordingDuration: isPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
+    // Limits from video-utils (single source of truth)
+    maxUploadSize: isPremium ? MAX_UPLOAD_SIZE_PREMIUM : MAX_UPLOAD_SIZE_FREE,
+    maxLivestreamDuration: isPremium ? MAX_LIVESTREAM_DURATION_PREMIUM : MAX_LIVESTREAM_DURATION,
+    maxRecordingDuration: isPremium ? MAX_RECORDING_DURATION_PREMIUM : MAX_RECORDING_DURATION,
     // Formatted versions for display
     maxUploadSizeFormatted: isPremium ? '500 MB' : '40 MB',
     maxLivestreamDurationFormatted: isPremium ? '2 hours' : '5 minutes',

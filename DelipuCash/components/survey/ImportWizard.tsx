@@ -73,6 +73,7 @@ interface QuestionData {
   placeholder?: string;
   minValue?: number;
   maxValue?: number;
+  points?: number;
 }
 
 interface InvalidRow {
@@ -107,17 +108,17 @@ const SAMPLE_JSON_TEMPLATE = {
   title: "Customer Feedback Survey",
   description: "Help us improve our services",
   questions: [
-    { text: "How would you rate our service?", type: "rating", required: true, minValue: 1, maxValue: 5 },
-    { text: "Which features do you use most?", type: "checkbox", options: ["Speed", "Design", "Support"], required: true },
-    { text: "Any additional feedback?", type: "paragraph", required: false },
+    { text: "How would you rate our service?", type: "rating", required: true, minValue: 1, maxValue: 5, points: 10 },
+    { text: "Which features do you use most?", type: "checkbox", options: ["Speed", "Design", "Support"], required: true, points: 5 },
+    { text: "Any additional feedback?", type: "paragraph", required: false, points: 0 },
   ],
 };
 
-const SAMPLE_CSV_TEMPLATE = `text,type,options,required,minValue,maxValue
-"How would you rate our service?",rating,,true,1,5
-"Which features do you use most?",checkbox,"Speed|Design|Support",true,,
-"How did you hear about us?",dropdown,"Social Media|Friend|Search Engine",false,,
-"Any additional feedback?",paragraph,,false,,`;
+const SAMPLE_CSV_TEMPLATE = `text,type,options,required,minValue,maxValue,points
+"How would you rate our service?",rating,,true,1,5,10
+"Which features do you use most?",checkbox,"Speed|Design|Support",true,,,5
+"How did you hear about us?",dropdown,"Social Media|Friend|Search Engine",false,,,5
+"Any additional feedback?",paragraph,,false,,,0`;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -250,6 +251,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
         placeholder: q.placeholder ? String(q.placeholder) : undefined,
         minValue: typeof q.minValue === 'number' ? q.minValue : undefined,
         maxValue: typeof q.maxValue === 'number' ? q.maxValue : undefined,
+        points: typeof q.points === 'number' ? q.points : undefined,
       });
     });
 
@@ -292,6 +294,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
     const requiredIndex = fieldIndex('required');
     const minValueIndex = fieldIndex('minValue');
     const maxValueIndex = fieldIndex('maxValue');
+    const pointsIndex = fieldIndex('points');
 
     if (textIndex === -1) {
       errors.push('Missing required column: "text" or "question". No column could be auto-mapped.');
@@ -345,6 +348,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
         required: requiredIndex !== -1 ? values[requiredIndex]?.toLowerCase() === 'true' : false,
         minValue: minValueIndex !== -1 && values[minValueIndex] ? Number(values[minValueIndex]) : undefined,
         maxValue: maxValueIndex !== -1 && values[maxValueIndex] ? Number(values[maxValueIndex]) : undefined,
+        points: pointsIndex !== -1 && values[pointsIndex] ? Number(values[pointsIndex]) || 0 : undefined,
       });
     }
 
@@ -663,6 +667,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
                   {item.required && (
                     <View style={[styles.requiredBadge, { backgroundColor: withAlpha(colors.error, 0.1) }]}>
                       <Text style={[styles.requiredBadgeText, { color: colors.error }]}>Required</Text>
+                    </View>
+                  )}
+                  {(item.points ?? 0) > 0 && (
+                    <View style={[styles.typeBadge, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+                      <Text style={[styles.typeBadgeText, { color: colors.warning }]}>{item.points} pts</Text>
                     </View>
                   )}
                 </View>

@@ -175,6 +175,8 @@ export interface UploadSurvey {
   survey?: Survey;
   /** Conditional display logic — when set, question is only shown if rules evaluate to true */
   conditionalLogic?: ConditionalLogicConfig | null;
+  /** Points value for scoring (0 = unscored) */
+  points?: number;
   createdAt: string;
   updatedAt: string;
 }

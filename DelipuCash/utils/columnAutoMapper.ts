@@ -19,7 +19,8 @@ export type TargetField =
   | 'required'
   | 'minValue'
   | 'maxValue'
-  | 'placeholder';
+  | 'placeholder'
+  | 'points';
 
 export interface ColumnMapping {
   /** Index in the CSV/TSV headers array */
@@ -65,6 +66,10 @@ const FIELD_ALIASES: Record<TargetField, string[]> = {
   placeholder: [
     'placeholder', 'hint', 'helper_text', 'helpertext', 'description',
     'help_text', 'helptext', 'input_hint', 'inputhint',
+  ],
+  points: [
+    'points', 'score', 'point', 'weight', 'marks', 'scoring',
+    'question_points', 'questionpoints', 'mark', 'grade',
   ],
 };
 

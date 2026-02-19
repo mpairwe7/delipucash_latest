@@ -114,10 +114,10 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     },
     {
       mode: 'import',
-      label: 'Import',
+      label: 'Import File',
       icon: <Upload size={22} />,
       color: colors.warning,
-      description: 'CSV, Excel, JSON',
+      description: 'JSON, CSV, Excel, TSV',
     },
     {
       mode: 'conversational',
@@ -445,7 +445,7 @@ export const CreationModeSelector: React.FC<CreationModeSelectorProps> = ({
       label: 'Import Questions',
       icon: <Upload size={24} />,
       color: colors.warning,
-      description: 'Import from CSV, Excel, or JSON files',
+      description: 'Import from JSON, CSV, Excel, or TSV files',
     },
     {
       mode: 'conversational',

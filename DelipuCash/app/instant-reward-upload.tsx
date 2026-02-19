@@ -30,6 +30,7 @@ import {
   CheckCircle2,
   Coins,
   Sparkles,
+  RefreshCw,
 } from "lucide-react-native";
 import React, { useState, useCallback, useRef } from "react";
 import {
@@ -44,6 +45,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { pointsToCash, cashToPoints, REWARD_CONSTANTS } from "@/store/InstantRewardStore";
 
 export default function InstantRewardUploadScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -60,10 +62,31 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const [option4, setOption4] = useState("");
   const [correctAnswer, setCorrectAnswer] = useState("");
   const [rewardAmount, setRewardAmount] = useState("");
+  const [rewardPoints, setRewardPoints] = useState("");
+  const isSyncingRef = useRef(false);
   const [maxWinners, setMaxWinners] = useState("2");
   const [expiryHours, setExpiryHours] = useState("24");
   const [paymentProvider, setPaymentProvider] = useState("MTN");
   const [phoneNumber, setPhoneNumber] = useState("");
+
+  // Bidirectional sync: UGX ↔ Points
+  const handleRewardAmountChange = useCallback((text: string) => {
+    setRewardAmount(text);
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    const ugx = parseFloat(text);
+    setRewardPoints(isNaN(ugx) || ugx <= 0 ? '' : String(cashToPoints(ugx)));
+    isSyncingRef.current = false;
+  }, []);
+
+  const handleRewardPointsChange = useCallback((text: string) => {
+    setRewardPoints(text);
+    if (isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    const pts = parseFloat(text);
+    setRewardAmount(isNaN(pts) || pts <= 0 ? '' : String(pointsToCash(pts)));
+    isSyncingRef.current = false;
+  }, []);
 
   // Admin access check
   const isAdmin = user?.role === UserRole.ADMIN || user?.role === UserRole.MODERATOR;
@@ -299,21 +322,43 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           />
 
           <View style={styles.formRow}>
-            <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.sm }]}>
-              <Text style={[styles.label, { color: colors.text }]}>Reward Amount *</Text>
+            <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
+              <Text style={[styles.label, { color: colors.text }]}>Reward (UGX) *</Text>
               <TextInput
-                style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
-                placeholder="0.00"
+                style={[styles.uploadInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                placeholder="0"
                 placeholderTextColor={colors.textMuted}
                 value={rewardAmount}
-                onChangeText={setRewardAmount}
+                onChangeText={handleRewardAmountChange}
                 keyboardType="numeric"
+                accessibilityLabel="Reward amount in UGX"
               />
             </View>
-            <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.sm }]}>
+            <View style={styles.syncIconContainer}>
+              <RefreshCw size={14} color={colors.textMuted} />
+            </View>
+            <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
+              <Text style={[styles.label, { color: colors.text }]}>Points</Text>
+              <TextInput
+                style={[styles.uploadInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
+                placeholder="0"
+                placeholderTextColor={colors.textMuted}
+                value={rewardPoints}
+                onChangeText={handleRewardPointsChange}
+                keyboardType="numeric"
+                accessibilityLabel="Reward amount in points"
+              />
+            </View>
+          </View>
+          <Text style={[styles.conversionHint, { color: colors.textMuted }]}>
+            1 point = {REWARD_CONSTANTS.POINTS_TO_UGX_RATE} UGX
+          </Text>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formGroup, { flex: 1 }]}>
               <Text style={[styles.label, { color: colors.text }]}>Max Winners (1-10)</Text>
               <TextInput
-                style={[styles.uploadInput, { color: colors.text, borderColor: colors.border }]}
+                style={[styles.uploadInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
                 placeholder="2"
                 placeholderTextColor={colors.textMuted}
                 value={maxWinners}
@@ -470,5 +515,17 @@ const styles = StyleSheet.create({
   paymentProviderText: {
     fontSize: TYPOGRAPHY.fontSize.sm,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
+  },
+  syncIconContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: SPACING.lg,
+    width: 24,
+  },
+  conversionHint: {
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    marginTop: -SPACING.xs,
+    marginBottom: SPACING.md,
   },
 });

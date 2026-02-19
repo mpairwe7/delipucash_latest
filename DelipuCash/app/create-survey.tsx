@@ -33,7 +33,6 @@ import { useRouter, Href } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
-  FileJson,
   PenTool,
   Upload,
   CheckCircle,
@@ -210,10 +209,10 @@ const CreateSurveyScreen: React.FC = () => {
     },
     {
       key: 'import',
-      label: 'Import JSON',
-      description: responsive.isPhone ? 'Upload file' : 'Upload a ready-made form',
-      icon: <FileJson size={ICON_SIZE.base} color={activeTab === 'import' ? colors.primaryText : colors.textSecondary} />,
-      accessibilityHint: 'Import a survey from a JSON file',
+      label: 'Import File',
+      description: responsive.isPhone ? 'JSON, CSV, Excel, TSV' : 'Upload a ready-made survey file',
+      icon: <Upload size={ICON_SIZE.base} color={activeTab === 'import' ? colors.primaryText : colors.textSecondary} />,
+      accessibilityHint: 'Import a survey from a JSON, CSV, Excel, or TSV file',
     },
   ];
 
@@ -476,7 +475,7 @@ const CreateSurveyScreen: React.FC = () => {
         },
       ]}
       accessible
-      accessibilityLabel="JSON import instructions"
+      accessibilityLabel="File import instructions"
     >
       {/* Header with icon */}
       <View style={styles.helperHeader}>
@@ -485,7 +484,7 @@ const CreateSurveyScreen: React.FC = () => {
         </View>
         <View style={styles.helperHeaderText}>
           <Text style={[styles.helperTitle, { color: colors.text }]}>
-            Import from JSON
+            Import from File
           </Text>
           <Text style={[styles.helperSubtitle, { color: colors.textSecondary }]}>
             Upload a pre-made survey file
@@ -495,15 +494,15 @@ const CreateSurveyScreen: React.FC = () => {
 
       {/* Description */}
       <Text style={[styles.helperText, { color: colors.textMuted }]}>
-        Your JSON file will be validated and automatically populate the form fields. 
-        Click the &quot;Choose File&quot; button below to get started.
+        Your file will be validated and automatically populate the form fields.
+        Supported formats: JSON, CSV, Excel, and TSV.
       </Text>
 
       {/* Feature cards */}
       <View style={styles.featureGrid}>
         {[
-          { icon: <FileText size={18} color={colors.success} />, title: 'Title & Description', desc: 'Auto-filled from JSON' },
-          { icon: <CheckCircle size={18} color={colors.info} />, title: 'Questions', desc: 'All types supported' },
+          { icon: <FileText size={18} color={colors.success} />, title: 'Auto-Detection', desc: 'Column mapping' },
+          { icon: <CheckCircle size={18} color={colors.info} />, title: '10+ Question Types', desc: 'All types supported' },
           { icon: <Code2 size={18} color={colors.warning} />, title: 'Validation', desc: 'Instant error feedback' },
         ].map((feature, index) => (
           <View
@@ -525,13 +524,18 @@ const CreateSurveyScreen: React.FC = () => {
         ))}
       </View>
 
-      {/* Supported formats */}
+      {/* Supported file formats */}
       <View style={[styles.formatInfo, { backgroundColor: withAlpha(colors.info, 0.08), borderColor: withAlpha(colors.info, 0.15) }]}>
-        <Text style={[styles.formatTitle, { color: colors.info }]}>Supported Question Types</Text>
+        <Text style={[styles.formatTitle, { color: colors.info }]}>Supported File Formats</Text>
         <View style={styles.formatTags}>
-          {['text', 'radio', 'checkbox', 'rating'].map((type) => (
-            <View key={type} style={[styles.formatTag, { backgroundColor: colors.background, borderColor: colors.border }]}>
-              <Text style={[styles.formatTagText, { color: colors.text }]}>{type}</Text>
+          {[
+            { label: 'JSON', color: colors.primary },
+            { label: 'CSV', color: colors.success },
+            { label: 'Excel', color: colors.warning },
+            { label: 'TSV', color: colors.info },
+          ].map((fmt) => (
+            <View key={fmt.label} style={[styles.formatTag, { backgroundColor: withAlpha(fmt.color, 0.1), borderColor: withAlpha(fmt.color, 0.25) }]}>
+              <Text style={[styles.formatTagText, { color: fmt.color }]}>{fmt.label}</Text>
             </View>
           ))}
         </View>

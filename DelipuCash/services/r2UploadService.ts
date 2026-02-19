@@ -99,8 +99,44 @@ export interface UploadOptions {
 // ============================================================================
 
 /**
+ * 2026 Pattern: Safe JSON parser with content-type validation
+ * Handles non-JSON error responses gracefully
+ */
+async function safeParseJSON(response: Response): Promise<any> {
+  const contentType = response.headers.get('Content-Type') || '';
+
+  // Check if response is actually JSON
+  if (!contentType.includes('application/json')) {
+    const text = await response.text();
+
+    // If it's an error response, try to extract meaningful message
+    if (!response.ok) {
+      // Common error patterns
+      if (text.startsWith('Error:') || text.startsWith('ERROR')) {
+        throw new Error(text);
+      }
+      if (text.includes('Request') || text.includes('timeout')) {
+        throw new Error(`Server error: ${text.substring(0, 200)}`);
+      }
+      throw new Error(`Upload failed: ${text.substring(0, 100)}`);
+    }
+
+    // Non-JSON success response (unusual but possible)
+    return { message: text };
+  }
+
+  // Try to parse JSON
+  try {
+    return await response.json();
+  } catch (parseError) {
+    const text = await response.text();
+    throw new Error(`Failed to parse server response. Got: ${text.substring(0, 100)}`);
+  }
+}
+
+/**
  * Create XMLHttpRequest with progress tracking
- * Required for upload progress in React Native
+ * 2026 Pattern: Clamped progress, better error handling
  */
 function createProgressRequest(
   url: string,
@@ -110,17 +146,21 @@ function createProgressRequest(
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    
+
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable && options.onProgress) {
+        // 2026: Clamp progress to 0-100 range to prevent overflow
+        const rawProgress = (event.loaded / event.total) * 100;
+        const clampedProgress = Math.min(Math.max(Math.round(rawProgress), 0), 100);
+
         options.onProgress({
           loaded: event.loaded,
           total: event.total,
-          progress: Math.round((event.loaded / event.total) * 100),
+          progress: clampedProgress,
         });
       }
     });
-    
+
     xhr.addEventListener('load', () => {
       const response = new Response(xhr.responseText, {
         status: xhr.status,
@@ -131,16 +171,24 @@ function createProgressRequest(
       });
       resolve(response);
     });
-    
+
     xhr.addEventListener('error', () => {
-      reject(new Error('Network error during upload'));
+      reject(new Error('Network error during upload. Please check your connection.'));
     });
-    
+
     xhr.addEventListener('abort', () => {
-      reject(new Error('Upload aborted'));
+      reject(new Error('Upload was cancelled'));
     });
-    
+
+    xhr.addEventListener('timeout', () => {
+      reject(new Error('Upload timed out. Please try again.'));
+    });
+
     xhr.open(method, url);
+
+    // 2026: Set timeout for large uploads (10 minutes)
+    xhr.timeout = 10 * 60 * 1000;
+
     const token = getAuthToken();
     if (token) {
       xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -253,23 +301,27 @@ export async function uploadVideoToR2(
       formData,
       options
     );
-    
-    const data = await response.json();
-    options.onComplete?.();
-    
+
+    // 2026: Safe JSON parsing with content-type validation
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
-      const error = new Error(data.message || 'Upload failed');
+      const errorMessage = data.message || data.error || 'Upload failed';
+      const error = new Error(errorMessage);
       options.onError?.(error);
       return {
         success: false,
         data: data as VideoUploadResult,
-        error: data.message,
+        error: errorMessage,
       };
     }
-    
+
+    // Only signal completion on actual success
+    options.onComplete?.();
+
     return {
       success: true,
-      data: data.video as VideoUploadResult,
+      data: data.video || data.data as VideoUploadResult,
     };
   } catch (error) {
     const err = error instanceof Error ? error : new Error('Upload failed');
@@ -305,39 +357,43 @@ export async function uploadMediaToR2(
     const videoMimeType = metadata.videoMimeType || 'video/mp4';
     const thumbnailFileName = metadata.thumbnailFileName || thumbnailUri.split('/').pop() || 'thumbnail.jpg';
     const thumbnailMimeType = metadata.thumbnailMimeType || 'image/jpeg';
-    
+
     const formData = new FormData();
     formData.append('video', assetToFormData(videoUri, videoFileName, videoMimeType) as unknown as Blob);
     formData.append('thumbnail', assetToFormData(thumbnailUri, thumbnailFileName, thumbnailMimeType) as unknown as Blob);
     formData.append('userId', userId);
-    
+
     if (metadata.title) formData.append('title', metadata.title);
     if (metadata.description) formData.append('description', metadata.description);
     if (metadata.duration) formData.append('duration', String(metadata.duration));
-    
+
     const response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/media`,
       'POST',
       formData,
       options
     );
-    
-    const data = await response.json();
-    options.onComplete?.();
-    
+
+    // 2026: Safe JSON parsing with content-type validation
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
-      const error = new Error(data.message || 'Upload failed');
+      const errorMessage = data.message || data.error || 'Upload failed';
+      const error = new Error(errorMessage);
       options.onError?.(error);
       return {
         success: false,
         data: data as VideoUploadResult,
-        error: data.message,
+        error: errorMessage,
       };
     }
-    
+
+    // Only signal completion on actual success
+    options.onComplete?.();
+
     return {
       success: true,
-      data: data.video as VideoUploadResult,
+      data: data.video || data.data as VideoUploadResult,
     };
   } catch (error) {
     const err = error instanceof Error ? error : new Error('Upload failed');

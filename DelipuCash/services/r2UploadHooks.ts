@@ -84,6 +84,8 @@ export interface UseUploadThumbnailParams {
 export interface UploadHookResult {
   progress: number;
   isUploading: boolean;
+  /** True after XHR completes (100%) while waiting for server response */
+  isProcessing: boolean;
 }
 
 // ============================================================================
@@ -140,12 +142,14 @@ export function useUploadVideoToR2(): UseMutationResult<
 > & UploadHookResult {
   const [progress, setProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async (params: UseUploadVideoParams) => {
       setProgress(0);
       setIsUploading(true);
+      setIsProcessing(false);
 
       try {
         const result = await uploadVideoToR2(
@@ -161,25 +165,36 @@ export function useUploadVideoToR2(): UseMutationResult<
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
+              // XHR bytes fully sent — waiting for server response
+              if (event.progress >= 100) {
+                setIsProcessing(true);
+              }
             },
             onComplete: () => {
               setProgress(100);
+              setIsProcessing(false);
               setIsUploading(false);
             },
             onError: () => {
+              setIsProcessing(false);
               setIsUploading(false);
             },
           }
         );
 
+        // Throw on service-level failure so retry logic in UploadModal triggers
+        if (!result.success) {
+          throw new Error(result.error || 'Upload failed');
+        }
+
         return result;
       } catch (error) {
+        setIsProcessing(false);
         setIsUploading(false);
         throw error;
       }
     },
     onSuccess: () => {
-      // Invalidate videos cache to refetch
       queryClient.invalidateQueries({ queryKey: ['videos'] });
     },
   });
@@ -188,6 +203,7 @@ export function useUploadVideoToR2(): UseMutationResult<
     ...mutation,
     progress,
     isUploading,
+    isProcessing,
   };
 }
 
@@ -205,12 +221,14 @@ export function useUploadMediaToR2(): UseMutationResult<
 > & UploadHookResult {
   const [progress, setProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async (params: UseUploadMediaParams) => {
       setProgress(0);
       setIsUploading(true);
+      setIsProcessing(false);
 
       try {
         const result = await uploadMediaToR2(
@@ -229,19 +247,30 @@ export function useUploadMediaToR2(): UseMutationResult<
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
+              if (event.progress >= 100) {
+                setIsProcessing(true);
+              }
             },
             onComplete: () => {
               setProgress(100);
+              setIsProcessing(false);
               setIsUploading(false);
             },
             onError: () => {
+              setIsProcessing(false);
               setIsUploading(false);
             },
           }
         );
 
+        // Throw on service-level failure so retry logic in UploadModal triggers
+        if (!result.success) {
+          throw new Error(result.error || 'Upload failed');
+        }
+
         return result;
       } catch (error) {
+        setIsProcessing(false);
         setIsUploading(false);
         throw error;
       }
@@ -255,6 +284,7 @@ export function useUploadMediaToR2(): UseMutationResult<
     ...mutation,
     progress,
     isUploading,
+    isProcessing,
   };
 }
 

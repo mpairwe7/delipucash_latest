@@ -65,6 +65,7 @@ export interface BuilderQuestionData {
   required: boolean;
   conditionalLogic?: ConditionalLogicConfig | null;
   fileUploadConfig?: FileUploadConfig | null;
+  points?: number;
 }
 
 export interface SurveyBuilderState {
@@ -81,6 +82,9 @@ export interface SurveyBuilderState {
   isMultiSelectMode: boolean;
   selectedQuestionIds: string[];
 
+  // Scoring
+  isScoringEnabled: boolean;
+
   // Gamification
   earnedBadges: string[];
 
@@ -93,6 +97,7 @@ export interface SurveyBuilderActions {
   setSurveyTitle: (title: string) => void;
   setSurveyDescription: (description: string) => void;
   setDraftId: (id: string | null) => void;
+  setScoringEnabled: (enabled: boolean) => void;
 
   // Question CRUD
   addQuestion: (question?: Partial<BuilderQuestionData>) => string;
@@ -158,6 +163,7 @@ function createDefaultQuestion(overrides?: Partial<BuilderQuestionData>): Builde
     required: false,
     conditionalLogic: null,
     fileUploadConfig: null,
+    points: 0,
     ...overrides,
   };
 }
@@ -184,6 +190,7 @@ const initialState: SurveyBuilderState = {
   questions: [createDefaultQuestion({ id: 'q1' })],
   isMultiSelectMode: false,
   selectedQuestionIds: [],
+  isScoringEnabled: false,
   earnedBadges: [],
   expandedQuestionId: 'q1',
 };
@@ -205,6 +212,15 @@ export const useSurveyBuilderStore = create<
           setSurveyTitle: (title) => set({ surveyTitle: title }),
           setSurveyDescription: (description) => set({ surveyDescription: description }),
           setDraftId: (id) => set({ draftId: id }),
+          setScoringEnabled: (enabled) => {
+            set((state) => ({
+              isScoringEnabled: enabled,
+              // Reset points to 0 when scoring is disabled
+              questions: enabled
+                ? state.questions
+                : state.questions.map((q) => ({ ...q, points: 0 })),
+            }));
+          },
 
           // ── Question CRUD ────────────────────────────────────────────
           addQuestion: (overrides) => {
@@ -448,7 +464,7 @@ export const useSurveyBuilderStore = create<
       {
         name: 'survey-builder-storage',
         storage: createJSONStorage(() => AsyncStorage),
-        version: 1,
+        version: 2,
         migrate: (persistedState: unknown, version: number) => {
           const state = persistedState as Record<string, unknown>;
           if (version === 0) {
@@ -465,15 +481,28 @@ export const useSurveyBuilderStore = create<
               state.earnedBadges = [];
             }
           }
+          if (version < 2) {
+            // Add points field to all questions and isScoringEnabled
+            if (Array.isArray(state.questions)) {
+              state.questions = (state.questions as any[]).map(q => ({
+                ...q,
+                points: q.points ?? 0,
+              }));
+            }
+            if (state.isScoringEnabled === undefined) {
+              state.isScoringEnabled = false;
+            }
+          }
           return state;
         },
         partialize: (state) => ({
-          // Persist: questions, metadata, badges — NOT undo history or UI ephemera
+          // Persist: questions, metadata, badges, scoring — NOT undo history or UI ephemera
           surveyTitle: state.surveyTitle,
           surveyDescription: state.surveyDescription,
           draftId: state.draftId,
           lastSavedAt: state.lastSavedAt,
           questions: state.questions,
+          isScoringEnabled: state.isScoringEnabled,
           earnedBadges: state.earnedBadges,
         }),
       }
@@ -493,6 +522,7 @@ export const selectDraftId = (state: SurveyBuilderState) => state.draftId;
 export const selectExpandedQuestionId = (state: SurveyBuilderState) => state.expandedQuestionId;
 export const selectIsMultiSelectMode = (state: SurveyBuilderState) => state.isMultiSelectMode;
 export const selectSelectedQuestionIds = (state: SurveyBuilderState) => state.selectedQuestionIds;
+export const selectIsScoringEnabled = (state: SurveyBuilderState) => state.isScoringEnabled;
 export const selectEarnedBadges = (state: SurveyBuilderState) => state.earnedBadges;
 export const selectQuestionsCount = (state: SurveyBuilderState) => state.questions.length;
 export const selectCanUndo = (state: { canUndo: boolean }) => state.canUndo;
@@ -515,9 +545,32 @@ export const selectMultiSelectState = (state: SurveyBuilderState) => ({
   selectedIds: state.selectedQuestionIds,
 });
 
+/**
+ * 2026 Pattern: Dedicated actions selector
+ * Returns only action methods (stable references, won't trigger re-renders)
+ */
+export const selectBuilderActions = (state: SurveyBuilderState) => ({
+  addQuestion: state.addQuestion,
+  removeQuestion: state.removeQuestion,
+  updateQuestion: state.updateQuestion,
+  reorderQuestions: state.reorderQuestions,
+  setExpandedQuestion: state.setExpandedQuestion,
+  addOption: state.addOption,
+  removeOption: state.removeOption,
+  updateOption: state.updateOption,
+  loadQuestions: state.loadQuestions,
+  setSurveyTitle: state.setSurveyTitle,
+  setSurveyDescription: state.setSurveyDescription,
+  checkBadges: state.checkBadges,
+  toggleMultiSelectMode: state.toggleMultiSelectMode,
+  toggleQuestionSelection: state.toggleQuestionSelection,
+  setScoringEnabled: state.setScoringEnabled,
+});
+
 // ============================================================================
 // CONVENIENCE HOOKS (pre-wrapped with useShallow)
 // ============================================================================
 
 export const useBuilderMeta = () => useSurveyBuilderStore(useShallow(selectBuilderMeta));
 export const useMultiSelectState = () => useSurveyBuilderStore(useShallow(selectMultiSelectState));
+export const useBuilderActions = () => useSurveyBuilderStore(useShallow(selectBuilderActions));

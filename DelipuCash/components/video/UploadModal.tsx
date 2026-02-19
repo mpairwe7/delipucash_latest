@@ -11,7 +11,7 @@
  * - Uploads directly to Cloudflare R2 (server creates DB record atomically)
  */
 
-import React, { memo, useState, useCallback, useEffect } from 'react';
+import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -49,6 +49,10 @@ import {
 import {
   MAX_UPLOAD_SIZE_FREE,
   MAX_UPLOAD_SIZE_PREMIUM,
+  MAX_RECORDING_DURATION,
+  MAX_RECORDING_DURATION_PREMIUM,
+  MAX_LIVESTREAM_DURATION,
+  MAX_LIVESTREAM_DURATION_PREMIUM,
   formatFileSize,
 } from '@/utils/video-utils';
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
@@ -114,10 +118,9 @@ function UploadModalComponent({
   // Auth
   const userId = useAuthStore(s => s.auth?.user?.id);
 
-  // Video store actions
+  // Video store actions — use getState() for actions to avoid subscription-driven re-renders
   const storeCurrentUpload = useVideoStore(selectCurrentUpload);
   const startUpload = useVideoStore(s => s.startUpload);
-  const updateUploadProgress = useVideoStore(s => s.updateUploadProgress);
   const cancelUpload = useVideoStore(s => s.cancelUpload);
   const completeUpload = useVideoStore(s => s.completeUpload);
   const failUpload = useVideoStore(s => s.failUpload);
@@ -128,27 +131,48 @@ function UploadModalComponent({
     mutateAsync: uploadVideoOnly,
     progress: videoProgress,
     isUploading: isUploadingVideo,
+    isProcessing: isProcessingVideo,
   } = useUploadVideoToR2();
 
   const {
     mutateAsync: uploadMedia,
     progress: mediaProgress,
     isUploading: isUploadingMedia,
+    isProcessing: isProcessingMedia,
   } = useUploadMediaToR2();
 
   const validateR2Mutation = useValidateR2Upload();
 
   // Derived state
   const isUploading = isUploadingVideo || isUploadingMedia;
+  const isProcessing = isProcessingVideo || isProcessingMedia;
   const uploadProgress = isUploadingMedia ? mediaProgress : videoProgress;
+
+  // Retry tracking for user feedback
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'retrying'>('idle');
+
+  // Derive upload phase from hook states
+  useEffect(() => {
+    if (isProcessing) {
+      setUploadPhase('processing');
+    } else if (isUploading && retryAttempt > 0) {
+      setUploadPhase('retrying');
+    } else if (isUploading) {
+      setUploadPhase('uploading');
+    } else if (uploadPhase !== 'idle') {
+      // Reset to idle only when not uploading/processing
+      setUploadPhase('idle');
+    }
+  }, [isUploading, isProcessing, retryAttempt]);
 
   // Sync premium status with store
   useEffect(() => {
     setPremiumStatus({
       hasVideoPremium,
       maxUploadSize,
-      maxRecordingDuration: hasVideoPremium ? 1800 : 300,
-      maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
+      maxRecordingDuration: hasVideoPremium ? MAX_RECORDING_DURATION_PREMIUM : MAX_RECORDING_DURATION,
+      maxLivestreamDuration: hasVideoPremium ? MAX_LIVESTREAM_DURATION_PREMIUM : MAX_LIVESTREAM_DURATION,
     });
   }, [hasVideoPremium, maxUploadSize, setPremiumStatus]);
 
@@ -269,16 +293,25 @@ function UploadModalComponent({
   }, [onUpgradeRequired]);
 
   const handleClose = useCallback(() => {
-    if (isUploading) {
+    if (isUploading || isProcessing || uploadPhase === 'retrying') {
       Alert.alert(
+        uploadPhase === 'processing' ? 'Processing Video' :
+        uploadPhase === 'retrying' ? 'Retrying Upload' :
         'Upload in Progress',
-        'An upload is currently in progress. Are you sure you want to cancel?',
+        uploadPhase === 'processing'
+          ? 'Your video is being processed on the server. Closing now may result in a lost upload.'
+          : 'An upload is currently in progress. Are you sure you want to cancel?',
         [
-          { text: 'Continue Upload', style: 'cancel' },
+          { text: 'Continue', style: 'cancel' },
           {
             text: 'Cancel Upload',
             style: 'destructive',
-            onPress: () => { resetForm(); onClose(); },
+            onPress: () => {
+              setRetryAttempt(0);
+              setUploadPhase('idle');
+              resetForm();
+              onClose();
+            },
           },
         ]
       );
@@ -301,24 +334,26 @@ function UploadModalComponent({
     } else {
       onClose();
     }
-  }, [title, description, selectedFile, isUploading, resetForm, onClose]);
+  }, [title, description, selectedFile, isUploading, isProcessing, uploadPhase, resetForm, onClose]);
 
-  // ── Upload handler — sends actual file to R2 ──────────────────────────────
+  // ── Upload handler — sends actual file to R2 with retry logic ──────────────
   const handleUpload = useCallback(async () => {
     if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a title');
+      Alert.alert('Validation Error', 'Please enter a title for your video');
       return;
     }
     if (!selectedFile) {
-      Alert.alert('Error', 'Please select a video to upload');
+      Alert.alert('Validation Error', 'Please select a video to upload');
       return;
     }
     if (!userId) {
-      Alert.alert('Error', 'You must be signed in to upload');
+      Alert.alert('Authentication Required', 'You must be signed in to upload videos');
       return;
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setRetryAttempt(0);
+    setUploadPhase('uploading');
 
     // Track in VideoStore
     const upload = startUpload({
@@ -328,54 +363,97 @@ function UploadModalComponent({
     });
     const fileId = upload?.fileId || '';
 
-    try {
-      let result;
+    const maxRetries = 2;
+    let attempt = 0;
+    let lastError: Error | null = null;
 
-      if (selectedThumbnail) {
-        // Upload video + thumbnail together → POST /api/r2/upload/media
-        result = await uploadMedia({
-          videoUri: selectedFile.uri,
-          userId,
-          title: title.trim(),
-          description: description.trim(),
-          fileName: selectedFile.name,
-          mimeType: selectedFile.type,
-          thumbnailUri: selectedThumbnail.uri,
-          thumbnailFileName: selectedThumbnail.name,
-          thumbnailMimeType: selectedThumbnail.type,
-        });
-      } else {
-        // Upload video only → POST /api/r2/upload/video
-        result = await uploadVideoOnly({
-          videoUri: selectedFile.uri,
-          userId,
-          title: title.trim(),
-          description: description.trim(),
-          fileName: selectedFile.name,
-          mimeType: selectedFile.type,
-        });
+    while (attempt <= maxRetries) {
+      try {
+        // Hooks now throw on service-level failure (success: false)
+        const result = selectedThumbnail
+          ? await uploadMedia({
+              videoUri: selectedFile.uri,
+              userId,
+              title: title.trim(),
+              description: description.trim(),
+              fileName: selectedFile.name,
+              mimeType: selectedFile.type,
+              thumbnailUri: selectedThumbnail.uri,
+              thumbnailFileName: selectedThumbnail.name,
+              thumbnailMimeType: selectedThumbnail.type,
+            })
+          : await uploadVideoOnly({
+              videoUri: selectedFile.uri,
+              userId,
+              title: title.trim(),
+              description: description.trim(),
+              fileName: selectedFile.name,
+              mimeType: selectedFile.type,
+            });
+
+        // Success — sync store, reset form, notify parent
+        if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        const videoId = result.data?.id || '';
+        setRetryAttempt(0);
+        setUploadPhase('idle');
+        setTitle('');
+        setDescription('');
+        setSelectedFile(null);
+        setSelectedThumbnail(null);
+        setFileSizeError(null);
+        onUploadComplete?.(videoId);
+        onClose();
+        return;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error('Upload failed');
+        attempt++;
+
+        // Non-retryable errors — break immediately
+        if (lastError.message.includes('Validation') ||
+            lastError.message.includes('Authentication') ||
+            lastError.message.includes('File too large') ||
+            lastError.message.includes('Invalid file type')) {
+          break;
+        }
+
+        // Signal retry to UI before backoff delay
+        if (attempt <= maxRetries) {
+          setRetryAttempt(attempt);
+          setUploadPhase('retrying');
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
-
-      if (!result.success) {
-        throw new Error(result.error || 'Upload failed');
-      }
-
-      // Success — sync store, reset form, notify parent
-      if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      const videoId = result.data?.id || '';
-      setTitle('');
-      setDescription('');
-      setSelectedFile(null);
-      setSelectedThumbnail(null);
-      setFileSizeError(null);
-      onUploadComplete?.(videoId);
-      onClose();
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Upload failed';
-      if (fileId) failUpload(fileId, message);
-      Alert.alert('Upload Failed', message);
     }
+
+    // All retries exhausted
+    setRetryAttempt(0);
+    setUploadPhase('idle');
+    const message = lastError?.message || 'Upload failed after multiple attempts';
+    if (fileId) failUpload(fileId, message);
+
+    let userMessage = message;
+    let actions: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }> = [
+      { text: 'OK', style: 'cancel' }
+    ];
+
+    if (message.includes('Network') || message.includes('timeout')) {
+      userMessage = 'Upload failed due to network issues. Please check your connection and try again.';
+      actions = [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Retry', onPress: handleUpload },
+      ];
+    } else if (message.includes('Server error')) {
+      userMessage = 'Server is temporarily unavailable. Please try again in a moment.';
+      actions = [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Retry', onPress: handleUpload },
+      ];
+    }
+
+    Alert.alert('Upload Failed', userMessage, actions);
   }, [
     title, description, selectedFile, selectedThumbnail, userId,
     uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,
@@ -385,11 +463,29 @@ function UploadModalComponent({
   const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
 
   // ── Sync R2 hook progress → VideoStore ─────────────────────────────────────
+  // Use refs to avoid subscription-driven re-render loops
+  const fileIdRef = useRef(storeCurrentUpload?.fileId);
+  const lastSyncedProgressRef = useRef(-1);
+
   useEffect(() => {
-    if (storeCurrentUpload && isUploading) {
-      updateUploadProgress(storeCurrentUpload.fileId, { progress: uploadProgress });
+    fileIdRef.current = storeCurrentUpload?.fileId;
+  }, [storeCurrentUpload?.fileId]);
+
+  // Sync progress to store via getState() — never subscribes, never re-triggers renders
+  useEffect(() => {
+    const fid = fileIdRef.current;
+    if (!fid || !isUploading) return;
+
+    // Guard: skip if value hasn't changed (prevents infinite loop)
+    if (uploadProgress === lastSyncedProgressRef.current) return;
+
+    // Only sync if progress increased by at least 1% or hit terminal values
+    const diff = uploadProgress - lastSyncedProgressRef.current;
+    if (diff >= 1 || uploadProgress === 100 || uploadProgress === 0) {
+      lastSyncedProgressRef.current = uploadProgress;
+      useVideoStore.getState().updateUploadProgress(fid, { progress: uploadProgress });
     }
-  }, [uploadProgress, isUploading, storeCurrentUpload, updateUploadProgress]);
+  }, [uploadProgress, isUploading]);
 
   return (
     <Modal
@@ -420,47 +516,67 @@ function UploadModalComponent({
 
           <TouchableOpacity
             onPress={handleUpload}
-            disabled={!isValid || isUploading}
+            disabled={!isValid || isUploading || isProcessing || uploadPhase === 'retrying'}
             style={[
               styles.uploadButton,
               {
-                backgroundColor: isValid && !isUploading ? colors.primary : colors.border,
-                opacity: isUploading ? 0.7 : 1,
+                backgroundColor:
+                  uploadPhase === 'processing' ? colors.warning :
+                  uploadPhase === 'retrying' ? colors.warning :
+                  isValid && !isUploading ? colors.primary : colors.border,
+                opacity: isUploading || isProcessing ? 0.7 : 1,
               },
             ]}
             accessibilityLabel="Upload video"
             accessibilityRole="button"
             accessibilityState={{ disabled: !isValid || isUploading }}
           >
-            {isUploading ? (
-              <Text style={[styles.uploadButtonText, { color: colors.primaryText }]}>
-                {uploadProgress}%
-              </Text>
-            ) : (
-              <Text
-                style={[
-                  styles.uploadButtonText,
-                  { color: isValid ? colors.primaryText : colors.textMuted },
-                ]}
-              >
-                Upload
-              </Text>
-            )}
+            <Text
+              style={[
+                styles.uploadButtonText,
+                {
+                  color: uploadPhase === 'idle'
+                    ? (isValid ? colors.primaryText : colors.textMuted)
+                    : colors.primaryText,
+                },
+              ]}
+            >
+              {uploadPhase === 'processing' ? 'Processing...' :
+               uploadPhase === 'retrying' ? `Retry ${retryAttempt}/2` :
+               isUploading ? `${uploadProgress}%` :
+               'Upload'}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Upload progress bar */}
-        {isUploading && (
+        {/* Upload progress bar — stays visible during processing & retry */}
+        {(isUploading || isProcessing || uploadPhase === 'retrying') && (
           <View style={styles.progressBarContainer}>
             <View
               style={[
                 styles.progressBar,
                 {
-                  backgroundColor: colors.primary,
-                  width: `${uploadProgress}%`,
+                  backgroundColor:
+                    uploadPhase === 'processing' ? colors.warning :
+                    uploadPhase === 'retrying' ? colors.warning :
+                    colors.primary,
+                  width: uploadPhase === 'processing' ? '100%' :
+                         uploadPhase === 'retrying' ? '100%' :
+                         `${uploadProgress}%`,
                 },
               ]}
             />
+          </View>
+        )}
+
+        {/* Upload phase status text */}
+        {uploadPhase !== 'idle' && uploadPhase !== 'uploading' && (
+          <View style={[styles.phaseStatusContainer, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+            <Text style={[styles.phaseStatusText, { color: colors.warning }]}>
+              {uploadPhase === 'processing'
+                ? 'Video uploaded. Processing on server...'
+                : `Connection issue. Retrying (${retryAttempt}/2)...`}
+            </Text>
           </View>
         )}
 
@@ -723,6 +839,15 @@ const styles = StyleSheet.create({
   progressBar: {
     height: 3,
     borderRadius: 1.5,
+  },
+  phaseStatusContainer: {
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.xs,
+    alignItems: 'center',
+  },
+  phaseStatusText: {
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    fontWeight: '500' as const,
   },
   content: {
     flex: 1,

@@ -27,7 +27,11 @@ import { CameraView } from 'expo-camera';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, withAlpha } from '@/utils/theme';
 import { useCamera } from '@/hooks/useCamera';
 import {
+  MAX_UPLOAD_SIZE_FREE,
+  MAX_UPLOAD_SIZE_PREMIUM,
   MAX_RECORDING_DURATION,
+  MAX_RECORDING_DURATION_PREMIUM,
+  MAX_LIVESTREAM_DURATION,
   MAX_LIVESTREAM_DURATION_PREMIUM,
   formatDuration,
 } from '@/utils/video-utils';
@@ -120,9 +124,9 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   useEffect(() => {
     useVideoStore.getState().setPremiumStatus({
       hasVideoPremium,
-      maxUploadSize: hasVideoPremium ? 500 * 1024 * 1024 : 40 * 1024 * 1024,
-      maxRecordingDuration: hasVideoPremium ? 1800 : 300,
-      maxLivestreamDuration: hasVideoPremium ? 7200 : 300,
+      maxUploadSize: hasVideoPremium ? MAX_UPLOAD_SIZE_PREMIUM : MAX_UPLOAD_SIZE_FREE,
+      maxRecordingDuration: hasVideoPremium ? MAX_RECORDING_DURATION_PREMIUM : MAX_RECORDING_DURATION,
+      maxLivestreamDuration: hasVideoPremium ? MAX_LIVESTREAM_DURATION_PREMIUM : MAX_LIVESTREAM_DURATION,
     });
   }, [hasVideoPremium]);
 
@@ -133,6 +137,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const recordingTitleRef = useRef<string>('');
+  const isStartingRef = useRef(false); // Guards against double-tap race condition
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -247,47 +252,49 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Recording timer with ref-based stop to avoid circular dependency
   const stopRecordingRef = useRef<(() => void) | null>(null);
 
-  // Recording timer with limit warning and auto-stop
+  // Ref-based time tracking avoids stale closures and setState-during-render issues
+  const recordingTimeRef = useRef(0);
+
+  // Recording timer — uses refs for time, updates state + store outside setState updater
   useEffect(() => {
     if (isRecording) {
+      recordingTimeRef.current = 0;
       setRecordingTime(0);
       setShowLimitWarning(false);
       recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => {
-          const newTime = prev + 1;
-          
-          // Sync with store
-          updateRecordingDuration(newTime);
+        recordingTimeRef.current += 1;
+        const newTime = recordingTimeRef.current;
 
-          // Show warning 30 seconds before limit (for free users)
-          if (!hasVideoPremium && newTime === effectiveMaxDuration - 30) {
-            setShowLimitWarning(true);
+        // Update UI state (direct value, not updater function)
+        setRecordingTime(newTime);
+
+        // Sync to Zustand store directly (not via derived effect)
+        updateRecordingDuration(newTime);
+
+        // Show warning 30 seconds before limit (for free users)
+        if (!hasVideoPremium && newTime === effectiveMaxDuration - 30) {
+          setShowLimitWarning(true);
+        }
+
+        // Stop at limit
+        if (newTime >= effectiveMaxDuration) {
+          stopRecordingRef.current?.();
+
+          // Show upgrade prompt for free users
+          if (!hasVideoPremium) {
+            Alert.alert(
+              'Recording Limit Reached',
+              `Free users can record up to ${formatDuration(MAX_RECORDING_DURATION)}. Upgrade to Video Premium for recordings up to ${formatDuration(MAX_LIVESTREAM_DURATION_PREMIUM)}.`,
+              [
+                { text: 'Later', style: 'cancel' },
+                {
+                  text: 'Upgrade Now',
+                  onPress: handleUpgrade,
+                },
+              ]
+            );
           }
-
-          // Stop at limit
-          if (newTime >= effectiveMaxDuration) {
-            stopRecordingRef.current?.();
-
-            // Show upgrade prompt for free users
-            if (!hasVideoPremium) {
-              Alert.alert(
-                'Recording Limit Reached',
-                `Free users can record up to ${formatDuration(MAX_RECORDING_DURATION)}. Upgrade to Video Premium for recordings up to ${formatDuration(MAX_LIVESTREAM_DURATION_PREMIUM)}.`,
-                [
-                  { text: 'Later', style: 'cancel' },
-                  {
-                    text: 'Upgrade Now',
-                    onPress: handleUpgrade,
-                  },
-                ]
-              );
-            }
-
-            return effectiveMaxDuration;
-          }
-
-          return newTime;
-        });
+        }
       }, 1000);
     } else {
       if (recordingTimerRef.current) {
@@ -296,7 +303,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       }
       setShowLimitWarning(false);
     }
-    
+
     return () => {
       if (recordingTimerRef.current) {
         clearInterval(recordingTimerRef.current);
@@ -377,9 +384,14 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [showControls, fadeAnim]);
   
   const startRecording = useCallback(async () => {
+    // Guard against double-tap / rapid re-invocation
+    if (isRecording || isStartingRef.current) return;
+    isStartingRef.current = true;
+
     // Verify auth before starting
     if (!userId) {
       Alert.alert('Sign In Required', 'Please sign in to start recording.');
+      isStartingRef.current = false;
       return;
     }
 
@@ -393,12 +405,14 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
           { text: 'Grant Permissions', onPress: requestPermissions },
         ]
       );
+      isStartingRef.current = false;
       return;
     }
 
     // Wait for camera hardware to be ready before starting
     if (!isReady) {
       Alert.alert('Camera Initializing', 'Please wait a moment for the camera to start.');
+      isStartingRef.current = false;
       return;
     }
 
@@ -426,6 +440,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         { text: 'Cancel', style: 'cancel' },
       ]);
       storeStopRecording();
+      isStartingRef.current = false;
       return;
     }
 
@@ -436,6 +451,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       console.error('Failed to start camera recording:', error);
       Alert.alert('Recording Error', 'Failed to start recording. Please try again.');
       storeStopRecording();
+      isStartingRef.current = false;
       return;
     }
 
@@ -444,13 +460,14 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       storeSetLivestreamLive();
     }
     setShowControls(true);
+    isStartingRef.current = false;
 
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 300,
       useNativeDriver: true,
     }).start();
-  }, [userId, mode, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording, isReady]);
+  }, [isRecording, userId, mode, fadeAnim, storeStartRecording, startLivestreamMutation, storeStartLivestream, storeSetLivestreamLive, hasAllPermissions, requestPermissions, cameraStartRecording, storeStopRecording, isReady]);
   
   const stopRecording = useCallback(async () => {
     // Transition livestream to 'ending' (only for actual livestreams)

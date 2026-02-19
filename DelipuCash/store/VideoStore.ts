@@ -12,25 +12,25 @@ import { create } from 'zustand';
 import { persist, createJSONStorage, devtools } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  MAX_UPLOAD_SIZE_FREE,
+  MAX_UPLOAD_SIZE_PREMIUM,
+  MAX_RECORDING_DURATION,
+  MAX_RECORDING_DURATION_PREMIUM,
+  MAX_LIVESTREAM_DURATION,
+  MAX_LIVESTREAM_DURATION_PREMIUM,
+  formatFileSize,
+} from '@/utils/video-utils';
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS — re-exported from video-utils (single source of truth)
 // ============================================================================
 
-/** Free user upload limit: 40MB */
-export const FREE_UPLOAD_LIMIT_BYTES = 40 * 1024 * 1024;
-
-/** Premium user upload limit: 500MB */
-export const PREMIUM_UPLOAD_LIMIT_BYTES = 500 * 1024 * 1024;
-
-/** Free user livestream/recording limit: 5 minutes */
-export const FREE_LIVESTREAM_LIMIT_SECONDS = 300;
-
-/** Premium user livestream limit: 2 hours */
-export const PREMIUM_LIVESTREAM_LIMIT_SECONDS = 7200;
-
-/** Premium user recording limit: 30 minutes */
-export const PREMIUM_RECORDING_LIMIT_SECONDS = 1800;
+export const FREE_UPLOAD_LIMIT_BYTES = MAX_UPLOAD_SIZE_FREE;
+export const PREMIUM_UPLOAD_LIMIT_BYTES = MAX_UPLOAD_SIZE_PREMIUM;
+export const FREE_LIVESTREAM_LIMIT_SECONDS = MAX_LIVESTREAM_DURATION;
+export const PREMIUM_LIVESTREAM_LIMIT_SECONDS = MAX_LIVESTREAM_DURATION_PREMIUM;
+export const PREMIUM_RECORDING_LIMIT_SECONDS = MAX_RECORDING_DURATION_PREMIUM;
 
 // ============================================================================
 // TYPES
@@ -322,13 +322,6 @@ const initialState: VideoState = {
 
 const generateSessionId = (): string => {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
-
-const formatFileSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
 const formatDuration = (seconds: number): string => {

@@ -161,8 +161,9 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
         RNStatusBar.setBackgroundColor('transparent', false);
       }
 
-      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
-      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
+      // Ensure Android navigation bar is truly transparent — edgeToEdgeEnabled
+      // alone is insufficient on many OEM skins / older Android versions.
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
 
       // Navigation bar button style: ensure icons are visible against content
       const navBarButtonStyle = mergedOptions.navigationBarStyle
@@ -200,8 +201,8 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
         setStatusBarTranslucent(mergedOptions.translucent ?? true);
         RNStatusBar.setBackgroundColor('transparent', false);
 
-        // Note: setBackgroundColorAsync / setPositionAsync removed — handled
-        // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
+        // Ensure navigation bar stays transparent on focus restore
+        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
         const navBarButtonStyle = mergedOptions.navigationBarStyle
           ?? (isDark ? 'light' : 'dark');
         NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
@@ -280,8 +281,7 @@ export function useImmersiveStatusBar() {
     resetStyle();
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('visible').catch(() => {});
-      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
-      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
     }
   }, [setHidden, resetStyle]);
 

@@ -83,7 +83,8 @@ import {
   COMPONENT_SIZE,
 } from '@/utils/theme';
 import { useReducedMotion } from '@/utils/accessibility';
-import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
+import { useStatusBar } from '@/hooks/useStatusBar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useUnreadCount } from '@/services/hooks';
 import {
   useInfiniteVideos,
@@ -355,14 +356,9 @@ export default function VideosScreen(): React.ReactElement {
   // Following iOS HIG and Material Design 3 guidelines for video content
   // ============================================================================
 
-  const {
-    insets,
-    statusBarStyle,
-    containerStyle: systemBarsContainerStyle,
-    headerStyle: systemBarsHeaderStyle,
-  } = useSystemBars({
-    ...SYSTEM_BARS_PRESETS.videoFeed,
-  });
+  // Focus-aware status bar management — re-applies correct style on tab switch
+  const { colors: _sbColors, style: statusBarStyle } = useStatusBar();
+  const insets = useSafeAreaInsets();
 
   // ============================================================================
   // STORE STATE
@@ -1157,9 +1153,8 @@ export default function VideosScreen(): React.ReactElement {
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <View style={[styles.container, systemBarsContainerStyle, { backgroundColor: colors.background }]}>
-        {/* StatusBar configured via useSystemBars hook for intelligent management */}
-        <StatusBar style={isDark ? 'light' : 'dark'} translucent animated />
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <StatusBar style={statusBarStyle} translucent animated />
 
         {/* Main Video Feed — rendered FIRST so the header naturally paints on top.
             The feed uses flex: 1 and is offset by headerHeight via contentContainerStyle. */}
@@ -1197,7 +1192,6 @@ export default function VideosScreen(): React.ReactElement {
           onLayout={handleHeaderLayout}
           style={[
             styles.header,
-            systemBarsHeaderStyle,
             {
               paddingTop: insets.top + SPACING.xs,
               backgroundColor: colors.background,
