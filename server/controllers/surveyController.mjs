@@ -2,12 +2,13 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { dispatchWebhooks } from '../lib/webhookDispatcher.mjs';
+import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
-  const { surveyTitle, surveyDescription, questions, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const { surveyTitle, surveyDescription, questions, startDate, endDate, rewardAmount, maxResponses, totalBudget } = req.body;
   const userId = req.user?.id;
 
   if (!userId) {
@@ -21,6 +22,7 @@ export const createSurvey = asyncHandler(async (req, res) => {
   console.log('Questions:', JSON.stringify(questions, null, 2));
   console.log('User ID:', userId);
   console.log('Reward Amount:', rewardAmount);
+  console.log('Total Budget:', totalBudget);
 
   // Validate dates
   const start = new Date(startDate);
@@ -43,6 +45,23 @@ export const createSurvey = asyncHandler(async (req, res) => {
     });
   }
 
+  // Validate budget if provided
+  const parsedBudget = totalBudget ? parseFloat(totalBudget) : null;
+  const parsedReward = rewardAmount || 2000;
+  if (parsedBudget !== null) {
+    if (isNaN(parsedBudget) || parsedBudget <= 0) {
+      return res.status(400).json({ message: 'Total budget must be a positive number' });
+    }
+    if (parsedBudget < parsedReward) {
+      return res.status(400).json({ message: 'Total budget must be at least equal to the reward amount per response' });
+    }
+    if (maxResponses && parsedBudget < parsedReward * maxResponses) {
+      return res.status(400).json({
+        message: `Total budget (${parsedBudget}) is insufficient for ${maxResponses} responses at ${parsedReward} each. Minimum: ${parsedReward * maxResponses}`,
+      });
+    }
+  }
+
   try {
     // Create the survey
     const newSurvey = await prisma.survey.create({
@@ -50,10 +69,11 @@ export const createSurvey = asyncHandler(async (req, res) => {
         title: surveyTitle,
         description: surveyDescription,
         userId,
-        rewardAmount: rewardAmount || 2000,
+        rewardAmount: parsedReward,
         maxResponses: maxResponses || null,
-        startDate: new Date(startDate), // Ensure startDate is a Date object
-        endDate: new Date(endDate), // Ensure endDate is a Date object
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        totalBudget: parsedBudget,
       },
     });
 
@@ -103,11 +123,23 @@ export const createSurvey = asyncHandler(async (req, res) => {
 
 
 export const uploadSurvey = asyncHandler(async (req, res) => {
-  const { title, description, questions, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const { title, description, questions, startDate, endDate, rewardAmount, maxResponses, totalBudget } = req.body;
   const userId = req.user?.id;
 
   // Log the incoming request (no sensitive data)
   console.log('Incoming request: POST /api/surveys/upload, userId:', userId);
+
+  // Validate budget if provided
+  const parsedBudget = totalBudget ? parseFloat(totalBudget) : null;
+  const parsedReward = rewardAmount || 2000;
+  if (parsedBudget !== null) {
+    if (isNaN(parsedBudget) || parsedBudget <= 0) {
+      return res.status(400).json({ message: 'Total budget must be a positive number' });
+    }
+    if (parsedBudget < parsedReward) {
+      return res.status(400).json({ message: 'Total budget must be at least equal to the reward amount per response' });
+    }
+  }
 
   try {
     // Create the survey
@@ -116,10 +148,11 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
         title,
         description,
         userId,
-        rewardAmount: rewardAmount || 2000,
+        rewardAmount: parsedReward,
         maxResponses: maxResponses || null,
-        startDate: new Date(startDate), // Ensure startDate is a Date object
-        endDate: new Date(endDate), // Ensure endDate is a Date object
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        totalBudget: parsedBudget,
       },
     });
 
@@ -548,6 +581,56 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       }
     }
 
+    // Auto-payout: disburse mobile money if survey has a budget
+    let payoutInitiated = false;
+    if (reward > 0 && survey.totalBudget && survey.amountDisbursed + reward <= survey.totalBudget) {
+      try {
+        // Fetch respondent's phone info
+        const respondent = await prisma.appUser.findUnique({
+          where: { id: userId },
+          select: { phone: true },
+        });
+
+        // Determine provider from phone prefix (Uganda: 077/078=MTN, 075/070=AIRTEL)
+        const phone = respondent?.phone?.replace(/\s+/g, '');
+        const provider = phone ? detectMoMoProvider(phone) : null;
+
+        if (phone && provider) {
+          // Atomically increment amountDisbursed + mark response as PENDING
+          await prisma.$transaction([
+            prisma.survey.update({
+              where: { id: surveyId },
+              data: { amountDisbursed: { increment: reward } },
+            }),
+            prisma.surveyResponse.update({
+              where: { id: surveyResponse.id },
+              data: {
+                amountAwarded: reward,
+                paymentStatus: 'PENDING',
+                paymentProvider: provider,
+                phoneNumber: phone,
+              },
+            }),
+          ]);
+
+          payoutInitiated = true;
+
+          // Fire-and-forget: process actual disbursement (non-blocking)
+          processSurveyPayout({
+            responseId: surveyResponse.id,
+            phone,
+            provider,
+            amount: reward,
+            userId,
+            surveyId,
+          }).catch((err) => console.error('Survey payout error (fire-and-forget):', err));
+        }
+      } catch (payoutError) {
+        console.error('Error initiating survey auto-payout:', payoutError);
+        // Don't fail the submission — points were already awarded
+      }
+    }
+
     console.log('Survey response submitted successfully:', surveyResponse.id);
 
     // SSE: Notify survey owner of new response
@@ -564,6 +647,7 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       publishEvent(userId, 'survey.completed', {
         surveyId,
         reward,
+        payoutInitiated,
       }).catch(() => {});
     }
 
@@ -578,8 +662,11 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     res.status(201).json({
       success: true,
       submitted: true,
-      message: 'Survey response submitted successfully!',
+      message: payoutInitiated
+        ? 'Survey response submitted! Your mobile money payment is being processed.'
+        : 'Survey response submitted successfully!',
       reward,
+      payoutInitiated,
       responseId: surveyResponse.id,
       submittedAt: surveyResponse.createdAt,
     });
@@ -925,4 +1012,161 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
     console.error('Error fetching survey analytics:', error);
     res.status(500).json({ success: false, message: 'Error fetching analytics' });
   }
+});
+
+// ── Survey Auto-Payout Helpers ──
+
+// Detect MoMo provider from Ugandan phone number
+function detectMoMoProvider(phone) {
+  const cleaned = phone.replace(/[^0-9]/g, '');
+  // Normalize to local format
+  const local = cleaned.startsWith('256') ? '0' + cleaned.slice(3) : cleaned;
+  // MTN Uganda: 077x, 078x, 076x
+  if (/^07[678]/.test(local)) return 'MTN';
+  // Airtel Uganda: 075x, 070x
+  if (/^07[05]/.test(local)) return 'AIRTEL';
+  return null;
+}
+
+// Process survey respondent payout with retry + exponential backoff
+const SURVEY_PAYOUT_MAX_RETRIES = 3;
+const SURVEY_PAYOUT_BASE_DELAY_MS = 1000;
+
+async function processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt = 1) {
+  try {
+    console.log(`Processing survey payout: response=${responseId}, amount=${amount}, provider=${provider} (attempt ${attempt}/${SURVEY_PAYOUT_MAX_RETRIES})`);
+
+    let paymentResult = null;
+
+    if (provider === 'MTN') {
+      paymentResult = await processMtnPayment({
+        amount,
+        phoneNumber: phone,
+        userId,
+        reason: `Survey reward payout - Survey ${surveyId}`,
+      });
+    } else if (provider === 'AIRTEL') {
+      paymentResult = await processAirtelPayment({
+        amount,
+        phoneNumber: phone,
+        userId,
+        reason: `Survey reward payout - Survey ${surveyId}`,
+      });
+    }
+
+    if (paymentResult && paymentResult.success) {
+      await prisma.surveyResponse.update({
+        where: { id: responseId },
+        data: {
+          paymentStatus: 'SUCCESSFUL',
+          paymentReference: paymentResult.reference,
+          paidAt: new Date(),
+        },
+      });
+
+      console.log(`Survey payout successful: response=${responseId}, ref=${paymentResult.reference}`);
+
+      // SSE: Notify respondent of payout success
+      publishEvent(userId, 'survey.payout.success', {
+        surveyId,
+        amount,
+        provider,
+        reference: paymentResult.reference,
+      }).catch(() => {});
+
+      return { status: 'SUCCESSFUL', reference: paymentResult.reference };
+    } else {
+      // Retry with exponential backoff
+      if (attempt < SURVEY_PAYOUT_MAX_RETRIES) {
+        const delay = SURVEY_PAYOUT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`Survey payout attempt ${attempt} failed for response=${responseId}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt + 1);
+      }
+
+      // All retries exhausted
+      await prisma.surveyResponse.update({
+        where: { id: responseId },
+        data: { paymentStatus: 'FAILED' },
+      });
+
+      // Rollback the disbursed amount since payment failed
+      await prisma.survey.update({
+        where: { id: surveyId },
+        data: { amountDisbursed: { decrement: amount } },
+      });
+
+      console.log(`Survey payout failed after ${SURVEY_PAYOUT_MAX_RETRIES} attempts: response=${responseId}`);
+
+      publishEvent(userId, 'survey.payout.failed', { surveyId, amount, provider }).catch(() => {});
+
+      return { status: 'FAILED', reference: null };
+    }
+  } catch (error) {
+    console.error(`Survey payout error (attempt ${attempt}): response=${responseId}`, error);
+
+    if (attempt < SURVEY_PAYOUT_MAX_RETRIES) {
+      const delay = SURVEY_PAYOUT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt + 1);
+    }
+
+    await prisma.surveyResponse.update({
+      where: { id: responseId },
+      data: { paymentStatus: 'FAILED' },
+    });
+
+    await prisma.survey.update({
+      where: { id: surveyId },
+      data: { amountDisbursed: { decrement: amount } },
+    });
+
+    publishEvent(userId, 'survey.payout.failed', { surveyId, amount, provider }).catch(() => {});
+
+    return { status: 'FAILED', reference: null };
+  }
+}
+
+// Get payout summary for a survey (owner only)
+export const getSurveyPayoutSummary = asyncHandler(async (req, res) => {
+  const { surveyId } = req.params;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ success: false, message: 'Authentication required' });
+  }
+
+  const survey = await prisma.survey.findUnique({
+    where: { id: surveyId },
+    select: { userId: true, totalBudget: true, amountDisbursed: true, rewardAmount: true },
+  });
+
+  if (!survey) {
+    return res.status(404).json({ success: false, message: 'Survey not found' });
+  }
+
+  if (survey.userId !== userId) {
+    return res.status(403).json({ success: false, message: 'Only the survey owner can view payout summary' });
+  }
+
+  const [totalResponses, paidResponses, failedPayouts, pendingPayouts] = await Promise.all([
+    prisma.surveyResponse.count({ where: { surveyId } }),
+    prisma.surveyResponse.count({ where: { surveyId, paymentStatus: 'SUCCESSFUL' } }),
+    prisma.surveyResponse.count({ where: { surveyId, paymentStatus: 'FAILED' } }),
+    prisma.surveyResponse.count({ where: { surveyId, paymentStatus: 'PENDING' } }),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      totalBudget: survey.totalBudget,
+      amountDisbursed: survey.amountDisbursed,
+      rewardPerResponse: survey.rewardAmount,
+      totalResponses,
+      paidResponses,
+      failedPayouts,
+      pendingPayouts,
+      budgetRemaining: survey.totalBudget ? survey.totalBudget - survey.amountDisbursed : null,
+    },
+  });
 });

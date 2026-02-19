@@ -116,6 +116,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
+import { useShouldShowAds } from "@/services/useShouldShowAds";
 import { useQuestionsLeaderboard } from "@/services/questionHooks";
 import {
   BannerAd,
@@ -301,11 +302,13 @@ export default function HomePage(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const claimDailyReward = useClaimDailyReward();
 
-  // Ad hooks - single consolidated query for all ad placements
+  // Ad hooks - gated by premium status (premium users see no ads)
+  const { shouldShowAds } = useShouldShowAds();
   const { data: screenAds, refetch: refetchAds } = useScreenAds("home", {
     feedLimit: 4,
     bannerLimit: 3,
     featuredLimit: 2,
+    enabled: shouldShowAds,
   });
   const bannerAds = screenAds?.bannerAds;
   const homeAds = screenAds?.feedAds;

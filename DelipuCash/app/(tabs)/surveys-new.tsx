@@ -40,6 +40,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
+import { useShouldShowAds } from "@/services/useShouldShowAds";
 import {
   AdPlacementWrapper,
   BetweenContentAd,
@@ -242,12 +243,11 @@ export default function SurveysScreen(): React.ReactElement {
   }, [runningSurveys, upcomingSurveys, completedSurveys, auth?.user?.id]);
   const loadingMy = loadingRunning || loadingUpcoming || loadingCompleted;
 
-  // Ad hooks - TanStack Query for intelligent ad loading
-  // Following industry best practices: ads are contextually placed and non-intrusive
-  // Fetch enough ads for every-2-surveys placement pattern
-  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 8);
-  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(4);
-  const { data: featuredAds = [], refetch: refetchFeaturedAds } = useFeaturedAds(3);
+  // Ad hooks - gated by premium status (premium users see no ads)
+  const { shouldShowAds } = useShouldShowAds();
+  const { data: surveyAds = [], refetch: refetchSurveyAds } = useAdsForPlacement('survey', 8, { enabled: shouldShowAds });
+  const { data: bannerAds = [], refetch: refetchBannerAds } = useBannerAds(4, { enabled: shouldShowAds });
+  const { data: featuredAds = [], refetch: refetchFeaturedAds } = useFeaturedAds(3, { enabled: shouldShowAds });
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 

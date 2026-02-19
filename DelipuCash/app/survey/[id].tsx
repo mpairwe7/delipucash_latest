@@ -239,6 +239,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Local UI state
   const [showReview, setShowReview] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+  const [payoutInitiated, setPayoutInitiated] = useState(false);
   const [showDropdownModal, setShowDropdownModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -475,6 +476,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         onSuccess: (data) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
           storeSetSubmitted(data.reward || 0);
+          setPayoutInitiated(!!data.payoutInitiated);
           closeReviewModal();
           setShowSuccess(true);
           // Animate success
@@ -590,6 +592,16 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               You earned {formatCurrency(submittedReward || 0)}!
             </Text>
           </View>
+        )}
+        {payoutInitiated && (
+          <Text style={[styles.stateText, { color: colors.success, textAlign: 'center', maxWidth: 300, marginTop: SPACING.sm }]}>
+            Mobile money payment is being sent to your phone.
+          </Text>
+        )}
+        {!payoutInitiated && (submittedReward ?? 0) > 0 && (
+          <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300, marginTop: SPACING.xs, fontSize: TYPOGRAPHY.fontSize.xs }]}>
+            Points added to your account.
+          </Text>
         )}
         <PrimaryButton
           title="Back to Surveys"

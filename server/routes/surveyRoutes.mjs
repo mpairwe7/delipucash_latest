@@ -1,5 +1,5 @@
 import express from 'express';
-import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys, updateSurvey, deleteSurvey, getSurveyAnalytics } from '../controllers/surveyController.mjs';
+import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys, updateSurvey, deleteSurvey, getSurveyAnalytics, getSurveyPayoutSummary } from '../controllers/surveyController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 import jwt from 'jsonwebtoken';
 
@@ -28,6 +28,7 @@ router.get('/:surveyId', optionalAuth, getSurveyById);
 router.get('/:surveyId/attempt', verifyToken, checkSurveyAttempt);
 router.get('/:surveyId/responses', verifyToken, getSurveyResponses);
 router.get('/:surveyId/analytics', verifyToken, getSurveyAnalytics);
+router.get('/:surveyId/payout-summary', verifyToken, getSurveyPayoutSummary);
 router.post('/create', verifyToken, createSurvey);
 router.post('/upload', verifyToken, uploadSurvey);
 router.post('/:surveyId/responses', verifyToken, submitSurveyResponse);

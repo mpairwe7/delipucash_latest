@@ -101,13 +101,14 @@ export function useAds(filters?: AdFilters): UseQueryResult<AdsListData, Error> 
 /**
  * Hook to fetch featured ads
  */
-export function useFeaturedAds(limit?: number): UseQueryResult<Ad[], Error> {
+export function useFeaturedAds(limit?: number, options?: { enabled?: boolean }): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.featured(limit),
     queryFn: async (): Promise<Ad[]> => {
       const ads = await adApi.fetchFeaturedAds(limit);
       return ads ?? [];
     },
+    enabled: options?.enabled !== false,
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
   });
@@ -116,13 +117,14 @@ export function useFeaturedAds(limit?: number): UseQueryResult<Ad[], Error> {
 /**
  * Hook to fetch banner ads
  */
-export function useBannerAds(limit?: number): UseQueryResult<Ad[], Error> {
+export function useBannerAds(limit?: number, options?: { enabled?: boolean }): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.banners(limit),
     queryFn: async (): Promise<Ad[]> => {
       const ads = await adApi.fetchBannerAds(limit);
       return ads ?? [];
     },
+    enabled: options?.enabled !== false,
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
   });
@@ -163,8 +165,9 @@ export function useAdById(adId: string, enabled = true): UseQueryResult<Ad | nul
  * Hook to fetch ads for a specific placement
  */
 export function useAdsForPlacement(
-  placement: AdPlacement, 
-  limit?: number
+  placement: AdPlacement,
+  limit?: number,
+  options?: { enabled?: boolean }
 ): UseQueryResult<Ad[], Error> {
   return useQuery({
     queryKey: adQueryKeys.placement(placement, limit),
@@ -172,6 +175,7 @@ export function useAdsForPlacement(
       const ads = await adApi.fetchAdsForPlacement(placement, limit);
       return ads ?? [];
     },
+    enabled: options?.enabled !== false,
     staleTime: STALE_TIME,
     gcTime: GC_TIME,
   });

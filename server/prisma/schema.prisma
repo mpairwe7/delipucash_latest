@@ -200,6 +200,8 @@ model Survey {
   surveyFileUploads  SurveyFileUpload[]
   webhooks           SurveyWebhook[]
   branding           Json?
+  totalBudget        Float?
+  amountDisbursed    Float            @default(0)
 
   @@index([userId])
   @@index([startDate, endDate])
@@ -358,16 +360,23 @@ model SurveyResponse {
   userId    String   @db.Uuid
   surveyId  String   @db.Uuid
   responses   String
-  completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  survey      Survey   @relation(fields: [surveyId], references: [id])
-  user        AppUser  @relation(fields: [userId], references: [id])
+  completedAt      DateTime?
+  amountAwarded    Float?
+  paymentStatus    PaymentStatus?
+  paymentProvider  String?
+  phoneNumber      String?
+  paymentReference String?
+  paidAt           DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  survey           Survey   @relation(fields: [surveyId], references: [id])
+  user             AppUser  @relation(fields: [userId], references: [id])
 
   // Industry standard: Enforce single attempt per user per survey at database level
   @@unique([userId, surveyId], name: "unique_user_survey_attempt")
   @@index([userId])
   @@index([surveyId])
+  @@index([paymentStatus])
   @@map("survey_responses")
 }
 

@@ -27,6 +27,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
+import { useShouldShowAds } from "@/services/useShouldShowAds";
 import {
   BannerAd,
   NativeAd,
@@ -187,10 +188,11 @@ export default function HomePage(): React.ReactElement {
     debounceMs: 250,
   });
 
-  // Ad hooks - TanStack Query for optimal caching and deduplication
-  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(3);
-  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2);
-  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement('home', 3);
+  // Ad hooks - gated by premium status (premium users see no ads)
+  const { shouldShowAds } = useShouldShowAds();
+  const { data: featuredAds, refetch: refetchFeaturedAds } = useFeaturedAds(3, { enabled: shouldShowAds });
+  const { data: bannerAds, refetch: refetchBannerAds } = useBannerAds(2, { enabled: shouldShowAds });
+  const { data: homeAds, refetch: refetchHomeAds } = useAdsForPlacement('home', 3, { enabled: shouldShowAds });
   const recordAdClick = useRecordAdClick();
   const recordAdImpression = useRecordAdImpression();
 

@@ -29,6 +29,7 @@ import {
   Modal,
   Clipboard,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -466,6 +467,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
+  // Reward & budget state
+  const [rewardAmount, setRewardAmount] = useState('2000');
+  const [enableMoMoPayout, setEnableMoMoPayout] = useState(false);
+  const [totalBudget, setTotalBudget] = useState('');
+
   // Title/description synced with builder store for cross-mode persistence
   const title = useSurveyBuilderStore((s) => s.surveyTitle);
   const description = useSurveyBuilderStore((s) => s.surveyDescription);
@@ -736,6 +742,20 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       return;
     }
 
+    // Validate budget
+    if (enableMoMoPayout) {
+      const budgetVal = parseFloat(totalBudget);
+      const rewardVal = parseFloat(rewardAmount) || 2000;
+      if (!budgetVal || budgetVal <= 0) {
+        Alert.alert('Error', 'Please enter a valid total budget for mobile money payouts');
+        return;
+      }
+      if (budgetVal < rewardVal) {
+        Alert.alert('Error', `Total budget must be at least ${rewardVal} UGX (one response)`);
+        return;
+      }
+    }
+
     // Convert questions to UploadSurvey format based on type
     const surveyQuestions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[] = questions.map(q => {
       let options: string;
@@ -807,11 +827,16 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
     });
 
     try {
+      const parsedReward = parseFloat(rewardAmount) || 2000;
+      const parsedBudget = enableMoMoPayout && totalBudget ? parseFloat(totalBudget) : undefined;
+
       await createSurveyMutation.mutateAsync({
         title: title.trim(),
         description: description.trim() || undefined,
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
+        rewardAmount: parsedReward,
+        totalBudget: parsedBudget,
         questions: surveyQuestions,
         userId: user?.id,
       });
@@ -1258,6 +1283,54 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* Reward & Budget */}
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Reward per response (UGX)</Text>
+            <TextInput
+              value={rewardAmount}
+              onChangeText={setRewardAmount}
+              placeholder="2000"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+            />
+            <Text style={[styles.helperText, { color: colors.textMuted }]}>
+              Points awarded to each respondent
+            </Text>
+          </View>
+
+          <View style={[styles.toggleRow, { borderColor: colors.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.inputLabel, { color: colors.text, marginBottom: 2 }]}>Enable Mobile Money Payouts</Text>
+              <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                Auto-send money to respondents with registered phones
+              </Text>
+            </View>
+            <Switch
+              value={enableMoMoPayout}
+              onValueChange={setEnableMoMoPayout}
+              trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
+              thumbColor={enableMoMoPayout ? colors.primary : colors.textMuted}
+            />
+          </View>
+
+          {enableMoMoPayout && (
+            <View style={styles.inputGroup}>
+              <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Total Budget (UGX)</Text>
+              <TextInput
+                value={totalBudget}
+                onChangeText={setTotalBudget}
+                placeholder={`Min: ${rewardAmount || '2000'}`}
+                placeholderTextColor={colors.textMuted}
+                keyboardType="numeric"
+                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+              />
+              <Text style={[styles.helperText, { color: colors.textMuted }]}>
+                Maximum amount to disburse. Covers up to {totalBudget && parseFloat(rewardAmount) > 0 ? Math.floor(parseFloat(totalBudget) / parseFloat(rewardAmount)) : '—'} responses.
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Questions */}
@@ -1985,6 +2058,14 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
     marginTop: SPACING.xs,
     fontStyle: 'italic',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.sm,
+    borderBottomWidth: BORDER_WIDTH.thin,
   },
   booleanLabels: {
     flexDirection: 'row',

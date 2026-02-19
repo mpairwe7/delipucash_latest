@@ -1,12 +1,9 @@
 /**
- * Subscription Screen
- * 
- * A Google Play Billing compliant subscription screen using RevenueCat.
- * This replaces direct mobile money payments with proper in-app purchases.
- * 
- * In Uganda, users can pay with MTN/Airtel Mobile Money through Google Play's
- * carrier billing integration - no need to handle it directly.
- * 
+ * DelipuCash Premium Subscription Screen
+ *
+ * Unified premium subscription via Google Play (RevenueCat) + MTN/Airtel MoMo.
+ * One subscription unlocks: survey creation, video premium, and ad-free experience.
+ *
  * @module app/subscription
  */
 
@@ -558,9 +555,9 @@ const SubscriptionScreen: React.FC = () => {
           <View style={styles.iconContainer}>
             <Zap size={40} color={colors.primary} />
           </View>
-          <Text style={styles.title}>Unlock Survey Creation</Text>
+          <Text style={styles.title}>DelipuCash Premium</Text>
           <Text style={styles.subtitle}>
-            Create unlimited surveys, get detailed analytics, and reach more respondents
+            Unlock all features: surveys, video premium, and an ad-free experience
           </Text>
         </View>
 
@@ -679,16 +676,16 @@ const SubscriptionScreen: React.FC = () => {
           </View>
         )}
 
-        {/* Features */}
+        {/* Premium Features */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{"What's Included"}</Text>
           <View style={styles.featuresCard}>
             <FeatureItem text="Create unlimited surveys" />
-            <FeatureItem text="Advanced question types" />
-            <FeatureItem text="Detailed response analytics" />
+            <FeatureItem text="Advanced question types & analytics" />
+            <FeatureItem text="Mobile money payouts to respondents" />
+            <FeatureItem text="Ad-free experience across the app" />
             <FeatureItem text="Export data to CSV/Excel" />
             <FeatureItem text="Priority support" />
-            <FeatureItem text="No watermarks on surveys" />
           </View>
         </View>
 
@@ -706,7 +703,7 @@ const SubscriptionScreen: React.FC = () => {
               </Text>
             </View>
             <Text style={[styles.videoPremiumDescription, { color: colors.textSecondary }]}>
-              Upgrade for more video capabilities
+              Included with your premium subscription
             </Text>
             <View style={styles.videoPremiumFeatures}>
               <View style={styles.videoPremiumFeatureRow}>

@@ -116,6 +116,7 @@ import {
   useRecordAdClick,
   useRecordAdImpression,
 } from "@/services/adHooksRefactored";
+import { useShouldShowAds } from "@/services/useShouldShowAds";
 import { useSearch } from "@/hooks/useSearch";
 import useUser from "@/utils/useUser";
 import { useAuth } from "@/utils/auth/useAuth";
@@ -505,12 +506,13 @@ export default function QuestionsScreen(): React.ReactElement {
   // Notification count
   const { data: unreadCount } = useUnreadCount(isAuthenticated);
 
-  // Consolidated ads — single hook replaces 3 separate ones, deferred until feed loads
+  // Consolidated ads — gated by premium status + deferred until feed loads
+  const { shouldShowAds } = useShouldShowAds();
   const { data: screenAds } = useScreenAds("question", {
     feedLimit: 6,
     bannerLimit: 3,
     featuredLimit: 2,
-    enabled: !isFeedLoading,
+    enabled: shouldShowAds && !isFeedLoading,
   });
   const feedAds = screenAds?.feedAds;
   const bannerAds = screenAds?.bannerAds;

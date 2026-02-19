@@ -794,7 +794,7 @@ export function useCheckSurveyAttempt(
  * Industry standard: sends userId, invalidates caches, prevents re-submission
  */
 export function useSubmitSurvey(): UseMutationResult<
-  { reward: number; message: string },
+  { reward: number; message: string; payoutInitiated?: boolean },
   Error,
   { surveyId: string; responses: Record<string, unknown> }
 > {
@@ -837,6 +837,7 @@ export function useCreateSurvey(): UseMutationResult<Survey, Error, {
   endDate: string;
   rewardAmount?: number;
   maxResponses?: number;
+  totalBudget?: number;
   questions: Omit<UploadSurvey, 'id' | 'userId' | 'surveyId' | 'createdAt' | 'updatedAt'>[];
   userId?: string;
 }> {

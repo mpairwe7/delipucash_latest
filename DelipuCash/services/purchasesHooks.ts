@@ -100,12 +100,17 @@ export function useCustomerInfo() {
  * ```
  */
 export function useSurveyCreatorAccess() {
-  const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
+  const premium = usePremiumStatus();
+  const { refetch } = useSubscriptionStatus();
 
   return {
-    canCreateSurvey: subscription?.isActive ?? false,
-    isLoading,
-    subscription,
+    canCreateSurvey: premium.isPremium,
+    isLoading: premium.isLoading,
+    subscription: premium.expirationDate ? {
+      expirationDate: new Date(premium.expirationDate),
+      willRenew: true,
+      isActive: premium.isPremium,
+    } : null,
     refetch,
   };
 }
@@ -166,6 +171,30 @@ export function useUnifiedSubscriptionStatus() {
     expirationDate,
     remainingDays,
     planType: momoSub?.planType ?? null,
+  };
+}
+
+/**
+ * Unified premium status — single source of truth for all premium gating.
+ *
+ * Returns true if the user has ANY active subscription (RevenueCat OR MoMo).
+ * Use this for survey creation access, video premium, and ad-free gating.
+ *
+ * @example
+ * ```tsx
+ * const { isPremium, source, remainingDays } = usePremiumStatus();
+ * ```
+ */
+export function usePremiumStatus() {
+  const unified = useUnifiedSubscriptionStatus();
+
+  return {
+    isPremium: unified.isActive,
+    isLoading: unified.isLoading,
+    source: unified.source,
+    expirationDate: unified.expirationDate,
+    remainingDays: unified.remainingDays,
+    planType: unified.planType,
   };
 }
 
@@ -234,15 +263,8 @@ export function useBillingIssueDetection() {
  * ```
  */
 export function useVideoPremiumAccess() {
-  const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
-
-  // Check if user has video_premium entitlement from RevenueCat
-  // Also consider general premium/active subscription for video features
-  const hasVideoPremium = (
-    subscription?.entitlements?.includes(ENTITLEMENTS.VIDEO_PREMIUM) ||
-    subscription?.entitlements?.includes(ENTITLEMENTS.PREMIUM) ||
-    subscription?.isActive
-  ) ?? false;
+  const { isPremium, isLoading } = usePremiumStatus();
+  const { refetch } = useSubscriptionStatus();
 
   // Constants for limits (synced with backend/VideoStore)
   const FREE_UPLOAD_LIMIT = 40 * 1024 * 1024; // 40MB
@@ -252,18 +274,17 @@ export function useVideoPremiumAccess() {
   const PREMIUM_RECORDING_LIMIT = 1800; // 30 minutes
 
   return {
-    hasVideoPremium,
+    hasVideoPremium: isPremium,
     isLoading,
-    subscription,
     refetch,
     // Return limits based on premium status
-    maxUploadSize: hasVideoPremium ? PREMIUM_UPLOAD_LIMIT : FREE_UPLOAD_LIMIT,
-    maxLivestreamDuration: hasVideoPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
-    maxRecordingDuration: hasVideoPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
+    maxUploadSize: isPremium ? PREMIUM_UPLOAD_LIMIT : FREE_UPLOAD_LIMIT,
+    maxLivestreamDuration: isPremium ? PREMIUM_LIVESTREAM_LIMIT : FREE_DURATION_LIMIT,
+    maxRecordingDuration: isPremium ? PREMIUM_RECORDING_LIMIT : FREE_DURATION_LIMIT,
     // Formatted versions for display
-    maxUploadSizeFormatted: hasVideoPremium ? '500 MB' : '40 MB',
-    maxLivestreamDurationFormatted: hasVideoPremium ? '2 hours' : '5 minutes',
-    maxRecordingDurationFormatted: hasVideoPremium ? '30 minutes' : '5 minutes',
+    maxUploadSizeFormatted: isPremium ? '500 MB' : '40 MB',
+    maxLivestreamDurationFormatted: isPremium ? '2 hours' : '5 minutes',
+    maxRecordingDurationFormatted: isPremium ? '30 minutes' : '5 minutes',
   };
 }
 

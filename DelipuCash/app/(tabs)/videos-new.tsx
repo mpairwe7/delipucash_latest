@@ -134,6 +134,7 @@ import {
   useRecordAdImpression,
 } from '@/services/adHooksRefactored';
 import { useAdFrequency } from '@/services/adFrequencyManager';
+import { useShouldShowAds } from '@/services/useShouldShowAds';
 import { useAuth } from '@/utils/auth/useAuth';
 import { generateVideoShareUrl } from '@/utils/share';
 import { blendFeed } from '@/utils/feedBlender';
@@ -525,8 +526,9 @@ export default function VideosScreen(): React.ReactElement {
   const { mutateAsync: addComment } = useAddVideoComment();
   const { data: commentsData, refetch: refetchComments } = useVideoCommentsQuery(ui.commentsVideoId || '');
 
-  // Ad data using TanStack Query for optimized caching - Industry Standard
-  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5);
+  // Ad data - gated by premium status (premium users see no ads)
+  const { shouldShowAds } = useShouldShowAds();
+  const { data: videoAds, refetch: refetchVideoAds } = useAdsForPlacement('video', 5, { enabled: shouldShowAds });
   const { mutate: recordAdClick } = useRecordAdClick();
   const { mutate: recordAdImpression } = useRecordAdImpression();
   const adFrequency = useAdFrequency();
