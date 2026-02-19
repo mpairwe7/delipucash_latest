@@ -44,6 +44,10 @@ isTokenExpiredResponse(status: number): boolean
 silentRefresh(): Promise<void>
 ```
 
+### Timeout Protection
+
+`surveyWebhookApi.ts` and `surveyFileApi.ts` use a `fetchWithTimeout` helper (10s timeout via AbortController) for all non-upload API calls.
+
 ## Feature API Modules
 
 Each feature domain has a dedicated API module:
@@ -51,6 +55,7 @@ Each feature domain has a dedicated API module:
 | Module | File | Key Functions |
 |--------|------|--------------|
 | Auth | `api.ts` (authApi) | login, signup, refreshToken, forgotPassword |
+| Auth Hooks | `authHooks.ts` | TanStack Query mutations for login, signup, 2FA |
 | Videos | `api.ts` (videoApi) | getAll, create, like, unlike, bookmark, comment |
 | Questions | `api.ts` (questionApi) | getAll, create, vote, respond |
 | Surveys | `surveyApi.ts` | getAll, getById, submit, getResponses |
@@ -59,6 +64,23 @@ Each feature domain has a dedicated API module:
 | Notifications | `notificationApi.ts` | getAll, markRead, getUnreadCount |
 | R2 Upload | `r2UploadService.ts` | uploadVideo, uploadThumbnail, getSignedUrl |
 | Support | `supportApi.ts` | getTickets, createTicket |
+| Survey Webhooks | `surveyWebhookApi.ts` | createWebhook, listWebhooks, updateWebhook, deleteWebhook, testWebhook |
+| Survey Files | `surveyFileApi.ts` | uploadSurveyFile, getSurveyFileDownloadUrl, deleteSurveyFile |
+
+### Auth Hooks (`authHooks.ts`)
+
+Centralized TanStack Query mutations for auth. Uses a dedicated `authFetch` helper with:
+
+- **Safe JSON parsing** — checks `Content-Type` header before calling `response.json()`; gracefully handles HTML error pages (e.g., Vercel proxy errors) instead of crashing with "unexpected character"
+- **`Accept: application/json`** header — signals to proxies/CDNs that JSON is expected
+- **Normalized error messages** — `normalizeAuthErrorMessage()` deep-walks error objects (checks `message`, `error`, `detail`, `reason`, arrays, nested objects) for the best human-readable error
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `useLoginMutation` | Mutation | Email/password login + auth store persistence |
+| `useSignupMutation` | Mutation | User registration |
+| `useSend2FACodeMutation` | Mutation | Send OTP for 2FA login flow |
+| `useVerify2FALoginMutation` | Mutation | Verify OTP + issue tokens for 2FA login |
 
 ## TanStack Query Hooks
 
@@ -101,6 +123,39 @@ Each feature domain has a dedicated API module:
 | `useAdImpressionTracker` | Hook | Auto-record on visibility change |
 | `useAdRefreshOnFocus` | Hook | Invalidate ad queries on foreground |
 | `useAdFrequency` | Hook | AdFrequencyManager wrapper |
+
+### Survey Hooks
+
+**File:** `services/surveyWebhookHooks.ts`
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `useSurveyWebhooks` | Query | List webhooks for survey (staleTime: 5min) |
+| `useCreateSurveyWebhook` | Mutation | Create webhook |
+| `useUpdateSurveyWebhook` | Mutation | Update webhook |
+| `useDeleteSurveyWebhook` | Mutation | Delete webhook |
+| `useTestSurveyWebhook` | Mutation | Test fire webhook |
+
+**File:** `services/surveyFileHooks.ts`
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `useUploadSurveyFile` | Mutation | Upload with progress tracking |
+| `useSurveyFileDownload` | Query | Get presigned download URL |
+| `useDeleteSurveyFile` | Mutation | Delete uploaded file |
+
+### Reward Question Hooks
+
+**File:** `services/hooks.ts` (reward section, lines 1233+)
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `useRegularRewardQuestions` | Query | Paginated regular reward questions (staleTime: 2min) |
+| `useInstantRewardQuestions` | Query | Paginated instant reward questions (staleTime: 2min) |
+| `useRewardQuestion` | Query | Single reward question by ID (staleTime: 1min) |
+| `useSubmitRewardAnswer` | Mutation | Submit answer (invalidates 5 query keys) |
+| `useRegularRewardQuestionAttempts` | Query | Shares cache with listing (no extra fetch) |
+| `useInstantRewardQuestionAttempts` | Query | Shares cache with listing (no extra fetch) |
 
 ### Legacy Hooks
 

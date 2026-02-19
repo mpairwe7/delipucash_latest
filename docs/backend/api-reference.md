@@ -320,8 +320,8 @@ Sessions auto-expire after 30 minutes of inactivity (5-minute cleanup sweep).
 | GET | `/user/:userId` | JWT | User's created reward questions |
 | GET | `/:id` | JWT | Single reward question (answer stripped) |
 | POST | `/create` | JWT | Create reward question |
-| PUT | `/:id/update` | JWT | Update reward question |
-| DELETE | `/:id/delete` | JWT | Delete reward question |
+| PUT | `/:id/update` | JWT | Update reward question (owner only) |
+| DELETE | `/:id/delete` | JWT | Delete reward question (owner only) |
 | POST | `/:id/answer` | JWT | Submit answer (triggers instant payout if correct) |
 | POST | `/submit-answer` | JWT | Submit answer (alias endpoint) |
 
@@ -334,20 +334,34 @@ Query parameters:
 | `page` | number | 1 | Page number |
 | `limit` | number | 10 | Items per page |
 
+### POST `/create` Validation
+
+| Field | Constraint |
+| ----- | --------- |
+| `text` | Required, max 2000 characters |
+| `options` | Non-null object, 2-10 entries |
+| `correctAnswer` | Must be a key in `options` |
+| `rewardAmount` | 1 — 1,000,000 |
+| `maxWinners` | 1 — 10 (instant rewards only) |
+| `paymentProvider` | Must be "MTN" or "AIRTEL" (instant only) |
+
 ### POST `/:id/answer`
 
 ```json
 // Request
 { "selectedAnswer": "Option B" }
 
-// Response 200 (correct)
-{ "isCorrect": true, "message": "Correct! You earned 500 UGX", "rewardAmount": 500 }
+// Response 200 (correct — answer revealed)
+{ "isCorrect": true, "correctAnswer": "Option B", "rewardEarned": 500, "remainingSpots": 1 }
 
-// Response 200 (incorrect)
-{ "isCorrect": false, "message": "Incorrect. The correct answer was Option A" }
+// Response 200 (incorrect — answer NOT revealed while question active)
+{ "isCorrect": false, "rewardEarned": 0, "remainingSpots": 2 }
 
-// Response 409 (already attempted)
-{ "error": "You have already attempted this question" }
+// Response 200 (incorrect — answer revealed after question completed/expired)
+{ "isCorrect": false, "correctAnswer": "Option A", "rewardEarned": 0, "remainingSpots": 0 }
+
+// Response 400 (already attempted)
+{ "message": "You have already attempted this question" }
 ```
 
 ---

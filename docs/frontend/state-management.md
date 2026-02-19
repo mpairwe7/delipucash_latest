@@ -30,7 +30,7 @@ DelipuCash separates state into three layers:
 | Optimistic updates | Immediate store mutation | Mutation + rollback |
 | Offline | Queue pending actions | Retry failed requests |
 
-## Zustand Stores (15 Total)
+## Zustand Stores (16 Total)
 
 ### QuestionUIStore
 
@@ -89,12 +89,12 @@ The most complex store — orchestrates TikTok/Reels-style video playback.
 | State Group | Fields | Purpose |
 |-------------|--------|---------|
 | Session | questionsAnswered, correctAnswers, totalEarned, currentStreak, maxStreak, bonusPoints, totalTimeSpentMs | Live quiz session tracking |
-| Wallet | walletBalance | Earned rewards (synced from server `user.points`) |
+| Wallet | walletBalance, syncWalletFromServer | Earned rewards (synced from server `user.points`) |
 | Redemption | status, provider, amount | Payout state |
 | Offline | pendingSubmissions, isOnline | Queue for offline answers |
 | History | attemptHistory | Which questions user attempted |
 
-Key selectors: `selectCanRedeem`, `selectSessionAccuracy`, `selectStreakInfo`
+Key selectors: `selectCanRedeem`, `selectSessionAccuracy`, `selectStreakInfo`, `selectWalletBalance`
 
 #### Wallet Sync Pattern
 
@@ -147,6 +147,28 @@ Persisted: `preferences` + `localMetrics` only (not session state)
 | answers | Draft answers (auto-saved) |
 | currentIndex | Current question index |
 | submissionStatus | Submission progress |
+
+**Draft Expiry:** `resumeAttempt()` auto-expires drafts older than 30 days via `DRAFT_MAX_AGE_MS`.
+
+### SurveyBuilderStore
+
+**File:** `store/SurveyBuilderStore.ts`
+
+Central builder state with undo/redo and persistence.
+
+| State Group | Fields | Purpose |
+|-------------|--------|---------|
+| Questions | questions, expandedQuestionId | Survey question array |
+| Metadata | surveyTitle, surveyDescription, draftId, lastSavedAt | Survey metadata |
+| Multi-Select | isMultiSelectMode, selectedQuestionIds | Bulk operations |
+| Undo/Redo | canUndo, canRedo | Undo stack state (via undoMiddleware) |
+| Gamification | earnedBadges | Builder milestone badges |
+
+**Middleware:** `undoMiddleware` (bounded 50-entry stack, 1000ms coalesce for text input) + `persist` (AsyncStorage, version 1 with v0→v1 migration)
+
+Selectors: `selectQuestions`, `selectCanUndo`, `selectCanRedo`, `selectDraftId`, `selectBuilderMeta`, `selectMultiSelectState`
+
+Convenience hooks: `useBuilderMeta()`, `useMultiSelectState()`
 
 ### SurveyUIStore
 

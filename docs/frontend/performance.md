@@ -213,3 +213,35 @@ const AnimatedItem = ({ index, children }) => {
   );
 };
 ```
+
+## Survey Builder
+
+**File:** `app/create-survey.tsx` + `components/survey/SurveyForm.tsx`
+
+| Optimization | Impact |
+|-------------|--------|
+| SurveyBuilderStore | Central state replaces per-component useState — one source of truth |
+| Undo middleware coalescing | 1000ms debounce on text input — prevents stack pollution |
+| Bounded undo stack | Max 50 entries — prevents unbounded memory growth |
+| DraggableQuestionList | Reanimated 2 gesture handler — animations on native thread |
+| `React.memo` sub-components | UndoRedoToolbar, ConditionalLogicEditor — isolated re-renders |
+| Persistence migration | v0→v1 migration adds missing fields without breaking existing drafts |
+| FlatList tuning (surveys-new.tsx) | `windowSize=5`, `maxToRenderPerBatch=5`, `initialNumToRender=8` |
+| Deferred ad loading | `enabled: !isFeedLoading` — ads don't block survey feed |
+| WCAG touch targets | 44x44 ad dismiss button — no hit slop workarounds needed |
+
+## Reward Question Screens
+
+**Files:** `app/reward-question/[id].tsx`, `app/instant-reward-answer/[id].tsx`
+
+| Optimization | Impact |
+|-------------|--------|
+| Memoized sub-components | `CountdownTimer`, `OptionItem`, `WinnerRow`, `TrustCard`, `WinnersSection` all `React.memo` |
+| `useMemo` for derived data | options, spotsLeft, isClosed, unansweredQuestions, sessionProgress |
+| `useCallback` for handlers | handleSelectOption, handleSubmit — stable references |
+| `useShallow` for grouped Zustand reads | wallet, session, sessionType, sessionSummary — no full-store subscription |
+| Ref-based callback stability | `activeQuestionsRef`, `openQuestionsRef` — prevent re-render cascade |
+| Submit debounce guard | `submitGuardRef` — 2s ref-based guard prevents double-tap |
+| Deterministic confetti | `seededRandom(index * 9301 + 49297)` — stable across re-renders |
+| Wallet sync on mount | All 4 reward screens sync `user.points` → Zustand wallet on load |
+| FlatList tuning (listing) | `maxToRenderPerBatch=8`, `windowSize=5`, `removeClippedSubviews`, `initialNumToRender=6` |

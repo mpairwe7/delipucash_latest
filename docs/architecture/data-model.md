@@ -300,7 +300,7 @@ Survey questions (template rows).
 | type | String | text, radio, checkbox, range, slider, rating |
 | options | String | JSON array of choices |
 | required | Boolean | Default: true |
-| conditionalLogic | Json? | Branching rules: `{ rules: [...], logicType: 'all' | 'any' }` |
+| conditionalLogic | Json? | Branching rules: `{ rules: [...], logicType: 'all' \| 'any' }` |
 
 ### SurveyResponse
 
@@ -311,6 +311,66 @@ Survey questions (template rows).
 | responses | String | JSON object of answers |
 
 **Unique:** `@@unique([userId, surveyId])` — one attempt per user
+
+## Survey Extension Models
+
+### SurveyWebhook
+
+Webhook endpoints for survey event notifications.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | UUID | Primary key |
+| surveyId | UUID | FK → Survey |
+| url | String | Webhook endpoint URL |
+| events | String[] | Event types to fire on |
+| secret | String? | HMAC-SHA256 signing secret |
+| isActive | Boolean | Default: true. Auto-disabled after 10 failures |
+| lastFired | DateTime? | Last successful delivery |
+| lastStatus | Int? | HTTP status of last delivery |
+| failCount | Int | Default: 0. Consecutive failures |
+
+**Indexes:** `[surveyId]`
+
+**Security:** SSRF protection blocks private IPs and localhost. Payload signed with HMAC-SHA256 via `X-Webhook-Signature` header.
+
+### SurveyTemplate
+
+Custom survey templates saved by users.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | UUID | Primary key |
+| userId | UUID | FK → AppUser (creator) |
+| name | String | Template name |
+| description | String? | |
+| category | String? | Template category |
+| questions | Json | Serialized question data |
+| branding | Json? | Logo, colors, header image |
+| isPublic | Boolean | Default: false. Visible to all users |
+| usageCount | Int | Default: 0. Times used |
+
+**Indexes:** `[userId]`, `[isPublic]`
+
+### SurveyFileUpload
+
+Files uploaded by respondents for file_upload question types.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | UUID | Primary key |
+| surveyId | UUID | FK → Survey |
+| responseId | UUID? | FK → SurveyResponse (linked after submission) |
+| questionId | UUID | Question the file answers |
+| userId | UUID | FK → AppUser (uploader) |
+| fileName | String | Original file name |
+| fileSize | Int | Bytes |
+| mimeType | String | e.g., application/pdf |
+| r2Key | String | Cloudflare R2 object key |
+| r2Etag | String? | R2 entity tag |
+| status | String | Default: "uploaded" |
+
+**Indexes:** `[surveyId, questionId]`, `[userId]`, `[r2Key]`
 
 ### Livestream
 
@@ -532,6 +592,7 @@ Event queue for Server-Sent Events, with auto-cleanup.
 | QuestionAttempt | `[userEmail, questionId]` | One attempt per user per question |
 | InstantRewardWinner | `[rewardQuestionId, userEmail]` | One win per user per question |
 | Payment | `TransactionId` | Unique payment reference |
+| SurveyWebhook | `[surveyId]` (index) | Fast webhook lookup per survey |
 
 ### Denormalized Counters
 
@@ -541,3 +602,4 @@ Event queue for Server-Sent Events, with auto-cleanup.
 | Video | views | Increment on view |
 | Video | commentsCount | Increment/decrement on comment CRUD |
 | RewardQuestion | winnersCount | `$transaction` on winner allocation |
+| SurveyTemplate | usageCount | Increment on template use |

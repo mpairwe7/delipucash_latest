@@ -47,9 +47,9 @@ All 41 screens organized by feature area.
 |--------|-------|-------------|
 | reward-questions | `/reward-questions` | Regular reward question listing (Available/Attempted tabs) |
 | reward-question/[id] | `/reward-question/:id` | Answer regular reward question, session summary, redemption |
-| instant-reward-questions | `/instant-reward-questions` | Instant reward questions listing |
-| instant-reward-answer/[id] | `/instant-reward-answer/:id` | Answer instant reward question with animated feedback |
-| instant-reward-upload | `/instant-reward-upload` | Upload instant reward answers |
+| instant-reward-questions | `/instant-reward-questions` | Instant reward questions listing with wallet sync from server points |
+| instant-reward-answer/[id] | `/instant-reward-answer/:id` | Answer instant reward question with animated feedback, progress bar, optimistic answer locking, submit debounce guard |
+| instant-reward-upload | `/instant-reward-upload` | Upload instant reward answers (MTN/Airtel only) |
 
 ## Quiz Screens
 

@@ -134,6 +134,13 @@
 | SessionSummaryCard | Quiz results card | |
 | AnswerResultOverlay | Post-answer animation | Reanimated, confetti |
 | RewardSessionSummary | Session summary modal | Accuracy ring, earnings, redemption |
+| RedemptionModal | Multi-step redemption wizard | 7 steps: type → amount → details → confirm → processing → success → error |
+| QuestionTimer | SVG circular countdown | Color phases: normal → warning → critical |
+| CompactQuestionTimer | Compact timer variant | |
+| SessionClosedModal | Session ended overlay | EXPIRED / SLOTS_FULL / COMPLETED reasons |
+| RedemptionOptions | Redemption type selection | Cash or Airtime |
+| SpotsStatus | Spots remaining display | Progress bar + urgency badges |
+| SpotsInlineBadge | Inline spots badge | "Last spot!", "Sold out" |
 
 ## Ad Components
 
@@ -179,11 +186,25 @@
 
 **Directory:** `components/survey/`
 
-| Component | Purpose |
-|-----------|---------|
-| SurveyForm | Dynamic form generator |
+| Component | Purpose | Notes |
+|-----------|---------|-------|
+| SurveyForm | Dynamic form generator with undo/redo | 11 question types, uses SurveyBuilderStore |
+| SurveyCreationFAB | Floating action button for creation modes | Backdrop dim on expand |
+| SurveyShareModal | Share survey link modal | Swipe-to-dismiss, copy with announceForAccessibility |
+| SurveyTemplatesGallery | Template browser (built-in + custom) | My Templates tab |
+| ImportWizard | CSV/JSON import with auto-mapping | Column confidence scoring, partial imports |
+| ConversationalBuilder | AI-assisted question builder | Tone/length sliders |
+| ConditionalLogicEditor | Per-question branching rules | Operators: equals, contains, greater_than, etc. |
+| FileUploadQuestion | File upload question (respondent) | expo-document-picker, progress bar, retry |
+| DraggableQuestionList | Drag-reorder with Reanimated 2 | Spring animations, 1-indexed a11y announcements |
+| UndoRedoToolbar | Undo/Redo button bar | Haptic feedback, reads SurveyBuilderStore |
+| WebhookSetupModal | Webhook configuration UI | URL validation, event checkboxes, test delivery |
+| DevicePreviewFrame | Device frame mockup for previews | iPhone/iPad/Android toggle |
+| CollaboratorAvatars | Real-time presence indicators | Avatar bubbles, "User X editing Q3" |
+| CreationProgressBadges | Builder milestone badges | "First Question", "Logic Master", etc. |
+| SessionClosedModal | Session ended modal | Reasons: EXPIRED, SLOTS_FULL, COMPLETED |
 
-Supports question types: text, radio, checkbox, rating, matrix, ranking, select, date/time, range, slider
+**Question Types:** text, radio, checkbox, rating, matrix, ranking, select, date/time, range, slider, file_upload
 
 ## Notification Components
 

@@ -27,7 +27,7 @@
 | File Storage | Cloudflare R2 (S3-compatible) |
 | Payments | MTN MoMo + Airtel Money APIs |
 | Real-time | Server-Sent Events (SSE) |
-| Auth | JWT (access + refresh tokens) with 2FA |
+| Auth | JWT (access + refresh tokens) with email-based 2FA (CSPRNG OTP, timing-safe comparison) |
 | Backend Deploy | Vercel Serverless Functions |
 | Mobile Deploy | EAS Build (iOS + Android) |
 
@@ -96,3 +96,12 @@ delipucash_latest/
 
 - [Contributing Guide](contributing/README.md) — Code style and workflow
 - [Testing](contributing/testing.md) — Test setup and conventions
+
+## Recent Changes
+
+### February 2026
+
+- **2FA Security Hardening** — OTP generation switched to `crypto.randomInt()` (CSPRNG); hash comparison uses `crypto.timingSafeEqual()` to prevent timing attacks; OTP removed from email subject line; 60-second rate limit added to all OTP send endpoints; session invalidation now preserves the current device session
+- **Instant Reward Enhancements** — Wallet balance syncs from server `user.points` (prevents client drift); submit debounce guard prevents double-tap submissions; optimistic answer locking; Duolingo-style session progress bar; payment retry with exponential backoff (3 attempts); admin upload form fixed to MTN/Airtel only
+- **Auth Fetch Safety** — `authFetch` in `authHooks.ts` now checks `Content-Type` before JSON parsing, preventing crashes when Vercel returns HTML error pages
+- **Theme Fix** — `TYPOGRAPHY.sizes` → `TYPOGRAPHY.fontSize` in survey components (UndoRedoToolbar, ConditionalLogicEditor)
