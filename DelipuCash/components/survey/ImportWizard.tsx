@@ -49,6 +49,13 @@ import {
   useTheme,
   withAlpha,
 } from '@/utils/theme';
+import {
+  autoMapColumns,
+  isHighConfidence,
+  getConfidenceLabel,
+  type ColumnMapping,
+  type TargetField,
+} from '@/utils/columnAutoMapper';
 
 // ============================================================================
 // TYPES
@@ -68,12 +75,22 @@ interface QuestionData {
   maxValue?: number;
 }
 
+interface InvalidRow {
+  rowIndex: number;
+  reason: string;
+  rawValues: string[];
+}
+
 interface ParsedImport {
   title?: string;
   description?: string;
   questions: QuestionData[];
   warnings: string[];
   errors: string[];
+  /** Rows that failed per-row validation (partial import support) */
+  invalidRows?: InvalidRow[];
+  /** Auto-mapped column mappings (for CSV/TSV) */
+  columnMappings?: ColumnMapping[];
 }
 
 interface ImportWizardProps {
@@ -250,26 +267,43 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
     const lines = cleanContent.split('\n').filter(line => line.trim());
     const errors: string[] = [];
     const warnings: string[] = [];
+    const invalidRows: InvalidRow[] = [];
 
     if (lines.length < 2) {
       errors.push('File must have a header row and at least one data row');
-      return { questions: [], errors, warnings };
+      return { questions: [], errors, warnings, invalidRows };
     }
 
     const delimiter = detectDelimiter(cleanContent);
-    const headers = parseCSVLine(lines[0], delimiter).map(h => h.toLowerCase().replace(/['"]/g, '').trim());
+    const rawHeaders = parseCSVLine(lines[0], delimiter).map(h => h.replace(/['"]/g, '').trim());
 
-    const textIndex = headers.findIndex(h => h === 'text' || h === 'question');
-    const typeIndex = headers.indexOf('type');
-    const optionsIndex = headers.indexOf('options');
-    const requiredIndex = headers.indexOf('required');
-    const minValueIndex = headers.findIndex(h => h === 'minvalue' || h === 'min');
-    const maxValueIndex = headers.findIndex(h => h === 'maxvalue' || h === 'max');
+    // Auto-map columns using intelligent matching
+    const columnMappings = autoMapColumns(rawHeaders);
+
+    // Build index lookup from auto-mapped results
+    const fieldIndex = (field: TargetField): number => {
+      const mapping = columnMappings.find(m => m.targetField === field);
+      return mapping ? mapping.headerIndex : -1;
+    };
+
+    const textIndex = fieldIndex('text');
+    const typeIndex = fieldIndex('type');
+    const optionsIndex = fieldIndex('options');
+    const requiredIndex = fieldIndex('required');
+    const minValueIndex = fieldIndex('minValue');
+    const maxValueIndex = fieldIndex('maxValue');
 
     if (textIndex === -1) {
-      errors.push('Missing required column: "text" or "question"');
-      return { questions: [], errors, warnings };
+      errors.push('Missing required column: "text" or "question". No column could be auto-mapped.');
+      return { questions: [], errors, warnings, invalidRows, columnMappings };
     }
+
+    // Log low-confidence mappings as warnings
+    columnMappings.forEach((m) => {
+      if (m.targetField && !isHighConfidence(m.confidence)) {
+        warnings.push(`Column "${m.headerText}" → "${m.targetField}" (${getConfidenceLabel(m.confidence)}) — verify mapping`);
+      }
+    });
 
     const questions: QuestionData[] = [];
     for (let i = 1; i < lines.length; i++) {
@@ -277,13 +311,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
       const text = values[textIndex]?.replace(/^["']|["']$/g, '').trim();
 
       if (!text) {
-        warnings.push(`Row ${i + 1}: Empty question text, skipping`);
+        invalidRows.push({ rowIndex: i + 1, reason: 'Empty question text', rawValues: values });
         continue;
       }
 
       const rawType = typeIndex !== -1 ? values[typeIndex]?.toLowerCase().trim() : 'text';
       const type = isValidQuestionType(rawType) ? rawType : 'text';
-      if (!isValidQuestionType(rawType)) {
+      if (typeIndex !== -1 && !isValidQuestionType(rawType)) {
         warnings.push(`Row ${i + 1}: Invalid type "${rawType}", using "text"`);
       }
 
@@ -297,6 +331,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
         }
       }
 
+      // Per-row validation: options required for multi-choice types
+      if (['radio', 'checkbox', 'dropdown'].includes(type) && options.length < 2) {
+        invalidRows.push({ rowIndex: i + 1, reason: `Type "${type}" requires at least 2 options`, rawValues: values });
+        continue;
+      }
+
       questions.push({
         id: `imported_${questions.length + 1}`,
         text,
@@ -308,7 +348,12 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
       });
     }
 
-    return { questions, warnings, errors };
+    // Surface invalid row count as a warning
+    if (invalidRows.length > 0) {
+      warnings.push(`${invalidRows.length} row(s) skipped due to validation errors`);
+    }
+
+    return { questions, warnings, errors, invalidRows, columnMappings };
   }, []);
 
   // ============================================================================
@@ -515,6 +560,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
   const renderPreview = () => {
     if (!parsedData) return null;
+    const { invalidRows = [], columnMappings = [] } = parsedData;
 
     return (
       <View style={styles.previewContainer}>
@@ -523,7 +569,34 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
         </Text>
         <Text style={[styles.stepDescription, { color: colors.textMuted }]}>
           {parsedData.questions.length} questions ready to import
+          {invalidRows.length > 0 ? ` (${invalidRows.length} skipped)` : ''}
         </Text>
+
+        {/* Auto-mapping summary (CSV/TSV only) */}
+        {columnMappings.length > 0 && (
+          <View style={[styles.mappingBox, { backgroundColor: withAlpha(colors.info, 0.06), borderColor: withAlpha(colors.info, 0.15) }]}>
+            <View style={styles.warningsHeader}>
+              <Check size={16} color={colors.info} />
+              <Text style={[styles.warningsTitle, { color: colors.info }]}>
+                Column Mapping
+              </Text>
+            </View>
+            {columnMappings.filter(m => m.targetField).map((m) => (
+              <View key={m.headerIndex} style={styles.mappingRow}>
+                <View style={[
+                  styles.confidenceDot,
+                  { backgroundColor: isHighConfidence(m.confidence) ? colors.success : colors.warning },
+                ]} />
+                <Text style={[styles.mappingText, { color: colors.text }]}>
+                  "{m.headerText}" → {m.targetField}
+                </Text>
+                <Text style={[styles.mappingConfidence, { color: isHighConfidence(m.confidence) ? colors.success : colors.warning }]}>
+                  {getConfidenceLabel(m.confidence)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Warnings */}
         {parsedData.warnings.length > 0 && (
@@ -542,6 +615,28 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
             {parsedData.warnings.length > 3 && (
               <Text style={[styles.warningText, { color: colors.warning }]}>
                 + {parsedData.warnings.length - 3} more
+              </Text>
+            )}
+          </View>
+        )}
+
+        {/* Invalid rows (partial import) */}
+        {invalidRows.length > 0 && (
+          <View style={[styles.invalidRowsBox, { backgroundColor: withAlpha(colors.error, 0.05), borderColor: withAlpha(colors.error, 0.15) }]}>
+            <View style={styles.warningsHeader}>
+              <X size={16} color={colors.error} />
+              <Text style={[styles.warningsTitle, { color: colors.error }]}>
+                {invalidRows.length} Skipped Row{invalidRows.length !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            {invalidRows.slice(0, 5).map((row) => (
+              <Text key={row.rowIndex} style={[styles.warningText, { color: colors.error }]}>
+                • Row {row.rowIndex}: {row.reason}
+              </Text>
+            ))}
+            {invalidRows.length > 5 && (
+              <Text style={[styles.warningText, { color: colors.error }]}>
+                + {invalidRows.length - 5} more
               </Text>
             )}
           </View>
@@ -891,6 +986,41 @@ const styles = StyleSheet.create({
   // Preview
   previewContainer: {
     flex: 1,
+  },
+  // Auto-mapping display
+  mappingBox: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  mappingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginLeft: SPACING.md,
+    marginTop: 2,
+  },
+  confidenceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  mappingText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    flex: 1,
+  },
+  mappingConfidence: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: 10,
+  },
+  // Invalid rows (partial import)
+  invalidRowsBox: {
+    padding: SPACING.md,
+    borderRadius: RADIUS.md,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
   },
   warningsBox: {
     padding: SPACING.md,

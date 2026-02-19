@@ -52,6 +52,7 @@ import {
   GripVertical,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { Upload } from 'lucide-react-native';
 import {
   SPACING,
   RADIUS,
@@ -60,35 +61,22 @@ import {
   useTheme,
   withAlpha,
 } from '@/utils/theme';
+import {
+  useSurveyBuilderStore,
+  selectQuestions,
+  type BuilderQuestionData,
+  type BuilderQuestionType,
+} from '@/store/SurveyBuilderStore';
+import { UndoRedoToolbar } from './UndoRedoToolbar';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ============================================================================
-// TYPES
+// TYPES — backed by SurveyBuilderStore
 // ============================================================================
 
-export type QuestionType =
-  | 'text'
-  | 'paragraph'
-  | 'radio'
-  | 'checkbox'
-  | 'dropdown'
-  | 'rating'
-  | 'boolean'
-  | 'date'
-  | 'time'
-  | 'number';
-
-export interface QuestionData {
-  id: string;
-  text: string;
-  type: QuestionType;
-  options: string[];
-  required: boolean;
-  placeholder?: string;
-  minValue?: number;
-  maxValue?: number;
-}
+export type QuestionType = BuilderQuestionType;
+export type QuestionData = BuilderQuestionData;
 
 interface ConversationalBuilderProps {
   initialQuestions?: QuestionData[];
@@ -185,29 +173,109 @@ const QUESTION_TYPES: QuestionTypeConfig[] = [
     hasOptions: false,
     hasScale: false,
   },
+  {
+    type: 'file_upload',
+    label: 'File Upload',
+    description: 'Respondent uploads files',
+    icon: <Upload size={20} />,
+    hasOptions: false,
+    hasScale: false,
+  },
 ];
 
 // ============================================================================
-// AI SUGGESTIONS (Mock - In production, connect to AI service)
+// AI SUGGESTIONS — Tone-aware curated templates
 // ============================================================================
 
-const AI_QUESTION_SUGGESTIONS: Record<string, string[]> = {
+type ToneStyle = 'formal' | 'casual';
+type DetailLevel = 'brief' | 'detailed';
+
+interface SuggestionTemplate {
+  formal: string;
+  casual: string;
+  brief: string;
+  detailed: string;
+}
+
+const SUGGESTION_TEMPLATES: Record<string, SuggestionTemplate[]> = {
   satisfaction: [
-    'How satisfied are you with our service?',
-    'Would you recommend us to a friend or colleague?',
-    'What could we do to improve your experience?',
+    {
+      formal: 'How would you rate your overall experience with our service?',
+      casual: 'How was your experience with us?',
+      brief: 'Rate our service',
+      detailed: 'On a scale of 1-5, how satisfied are you with the quality, timeliness, and value of our service?',
+    },
+    {
+      formal: 'How likely are you to recommend our services to a colleague?',
+      casual: 'Would you tell a friend about us?',
+      brief: 'Would you recommend us?',
+      detailed: 'Based on your experience, how likely are you to recommend us to a friend or colleague? Please explain.',
+    },
+    {
+      formal: 'What improvements would you suggest for our service offering?',
+      casual: 'What could we do better?',
+      brief: 'Suggestions for improvement?',
+      detailed: 'What specific aspects of our service could be improved, and what changes would make the biggest impact for you?',
+    },
   ],
   feedback: [
-    'What did you like most about your experience?',
-    'What challenges did you face?',
-    'How can we better meet your needs?',
+    {
+      formal: 'Which aspect of your experience was most satisfactory?',
+      casual: 'What did you like the most?',
+      brief: 'Best part?',
+      detailed: 'What specific aspect of your experience stood out as most positive, and why?',
+    },
+    {
+      formal: 'Were there any obstacles you encountered during the process?',
+      casual: 'Did anything give you trouble?',
+      brief: 'Any challenges?',
+      detailed: 'Please describe any challenges, confusion, or obstacles you faced during your experience.',
+    },
+    {
+      formal: 'How might we better accommodate your requirements?',
+      casual: 'How can we help you better?',
+      brief: 'How to improve?',
+      detailed: 'What unmet needs or expectations do you have that we could address to better serve you?',
+    },
   ],
   product: [
-    'How often do you use our product?',
-    'Which features do you find most valuable?',
-    'What features would you like to see added?',
+    {
+      formal: 'How frequently do you utilize our product in your workflow?',
+      casual: 'How often do you use our product?',
+      brief: 'Usage frequency?',
+      detailed: 'How often do you use our product (daily, weekly, monthly), and what are your primary use cases?',
+    },
+    {
+      formal: 'Which product features do you consider most valuable?',
+      casual: 'What features do you love most?',
+      brief: 'Favorite feature?',
+      detailed: 'Which specific features do you find most valuable, and how do they help you accomplish your goals?',
+    },
+    {
+      formal: 'What additional capabilities would enhance your experience?',
+      casual: 'What features are you wishing for?',
+      brief: 'Feature requests?',
+      detailed: 'What new features or capabilities would you like to see added, and how would they benefit your workflow?',
+    },
   ],
 };
+
+function getSuggestions(tone: ToneStyle, detail: DetailLevel, category: string): string[] {
+  const templates = SUGGESTION_TEMPLATES[category] || SUGGESTION_TEMPLATES.satisfaction;
+  // Pick the most relevant variant: tone takes priority, detail refines
+  return templates.map((t) => {
+    if (detail === 'detailed') return t.detailed;
+    if (detail === 'brief') return t.brief;
+    return t[tone];
+  });
+}
+
+function detectSuggestionCategory(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes('product') || lower.includes('feature') || lower.includes('use')) return 'product';
+  if (lower.includes('feedback') || lower.includes('like') || lower.includes('challenge')) return 'feedback';
+  return 'satisfaction';
+}
 
 // ============================================================================
 // MAIN COMPONENT
@@ -225,21 +293,42 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
   const insets = useSafeAreaInsets();
   const [reducedMotion, setReducedMotion] = useState(false);
 
-  // Questions state
-  const [questions, setQuestions] = useState<QuestionData[]>(
-    initialQuestions || [
-      {
-        id: 'q1',
-        text: '',
-        type: 'text',
-        options: [],
-        required: false,
-      },
-    ]
-  );
+  // Questions state — backed by SurveyBuilderStore for cross-mode persistence + undo
+  const questions = useSurveyBuilderStore(selectQuestions);
+  const storeActions = useSurveyBuilderStore((s) => ({
+    addQuestion: s.addQuestion,
+    removeQuestion: s.removeQuestion,
+    updateQuestion: s.updateQuestion,
+    loadQuestions: s.loadQuestions,
+    setSurveyTitle: s.setSurveyTitle,
+    checkBadges: s.checkBadges,
+  }));
+
+  // Load initial questions into store on mount (if provided and store is empty/default)
+  useEffect(() => {
+    if (initialQuestions && initialQuestions.length > 0) {
+      const currentQuestions = useSurveyBuilderStore.getState().questions;
+      // Only load if the store has the default single empty question
+      if (currentQuestions.length === 1 && !currentQuestions[0].text) {
+        storeActions.loadQuestions(initialQuestions);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sync title to store
+  useEffect(() => {
+    if (surveyTitle) {
+      storeActions.setSurveyTitle(surveyTitle);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [surveyTitle]);
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
   const [showAISuggestions, setShowAISuggestions] = useState(false);
+  const [suggestionTone, setSuggestionTone] = useState<ToneStyle>('casual');
+  const [suggestionDetail, setSuggestionDetail] = useState<DetailLevel>('brief');
 
   // Animation refs
   const slideAnim = useRef(new Animated.Value(0)).current;
@@ -363,27 +452,21 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
   // ============================================================================
 
   const updateQuestion = useCallback((updates: Partial<QuestionData>) => {
-    setQuestions((prev) =>
-      prev.map((q, idx) => (idx === currentIndex ? { ...q, ...updates } : q))
-    );
-  }, [currentIndex]);
+    const q = questions[currentIndex];
+    if (q) {
+      storeActions.updateQuestion(q.id, updates);
+      storeActions.checkBadges();
+    }
+  }, [currentIndex, questions, storeActions]);
 
   const addQuestion = useCallback(() => {
     if (!reducedMotion) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-
-    const newQuestion: QuestionData = {
-      id: `q${Date.now()}`,
-      text: '',
-      type: 'text',
-      options: [],
-      required: false,
-    };
-
-    setQuestions((prev) => [...prev, newQuestion]);
+    storeActions.addQuestion();
+    storeActions.checkBadges();
     animateTransition('next', () => setCurrentIndex(questions.length));
-  }, [questions.length, animateTransition, reducedMotion]);
+  }, [questions.length, animateTransition, reducedMotion, storeActions]);
 
   const deleteQuestion = useCallback(() => {
     if (questions.length === 1) {
@@ -403,7 +486,8 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
             if (!reducedMotion) {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             }
-            setQuestions((prev) => prev.filter((_, idx) => idx !== currentIndex));
+            const q = questions[currentIndex];
+            if (q) storeActions.removeQuestion(q.id);
             if (currentIndex >= questions.length - 1) {
               setCurrentIndex(Math.max(0, currentIndex - 1));
             }
@@ -411,7 +495,7 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
         },
       ]
     );
-  }, [questions.length, currentIndex, reducedMotion]);
+  }, [questions, currentIndex, reducedMotion, storeActions]);
 
   const setQuestionType = useCallback((type: QuestionType) => {
     if (!reducedMotion) {
@@ -577,8 +661,10 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
   );
 
   const renderAISuggestions = () => {
-    // Get suggestions based on question text keywords
-    const suggestions = AI_QUESTION_SUGGESTIONS.satisfaction;
+    // Detect category from current question text, then filter by tone/detail
+    const currentQuestion = questions[currentIndex];
+    const category = detectSuggestionCategory(currentQuestion?.text || '');
+    const suggestions = getSuggestions(suggestionTone, suggestionDetail, category);
 
     return (
       <View style={[styles.aiSuggestionsContainer, { backgroundColor: withAlpha(colors.secondary, 0.08) }]}>
@@ -588,9 +674,68 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
             AI Suggestions
           </Text>
         </View>
+
+        {/* Tone & Detail Controls */}
+        <View style={styles.toneControls}>
+          <View style={styles.toneRow}>
+            <Text style={[styles.toneLabel, { color: colors.textMuted }]}>Tone:</Text>
+            <TouchableOpacity
+              style={[
+                styles.toneChip,
+                { backgroundColor: suggestionTone === 'formal' ? colors.primary : withAlpha(colors.card, 0.8), borderColor: colors.border },
+              ]}
+              onPress={() => setSuggestionTone('formal')}
+              accessibilityRole="button"
+              accessibilityLabel="Formal tone"
+              accessibilityState={{ selected: suggestionTone === 'formal' }}
+            >
+              <Text style={[styles.toneChipText, { color: suggestionTone === 'formal' ? '#FFF' : colors.text }]}>Formal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toneChip,
+                { backgroundColor: suggestionTone === 'casual' ? colors.primary : withAlpha(colors.card, 0.8), borderColor: colors.border },
+              ]}
+              onPress={() => setSuggestionTone('casual')}
+              accessibilityRole="button"
+              accessibilityLabel="Casual tone"
+              accessibilityState={{ selected: suggestionTone === 'casual' }}
+            >
+              <Text style={[styles.toneChipText, { color: suggestionTone === 'casual' ? '#FFF' : colors.text }]}>Casual</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.toneRow}>
+            <Text style={[styles.toneLabel, { color: colors.textMuted }]}>Length:</Text>
+            <TouchableOpacity
+              style={[
+                styles.toneChip,
+                { backgroundColor: suggestionDetail === 'brief' ? colors.secondary : withAlpha(colors.card, 0.8), borderColor: colors.border },
+              ]}
+              onPress={() => setSuggestionDetail('brief')}
+              accessibilityRole="button"
+              accessibilityLabel="Brief suggestions"
+              accessibilityState={{ selected: suggestionDetail === 'brief' }}
+            >
+              <Text style={[styles.toneChipText, { color: suggestionDetail === 'brief' ? '#FFF' : colors.text }]}>Brief</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.toneChip,
+                { backgroundColor: suggestionDetail === 'detailed' ? colors.secondary : withAlpha(colors.card, 0.8), borderColor: colors.border },
+              ]}
+              onPress={() => setSuggestionDetail('detailed')}
+              accessibilityRole="button"
+              accessibilityLabel="Detailed suggestions"
+              accessibilityState={{ selected: suggestionDetail === 'detailed' }}
+            >
+              <Text style={[styles.toneChipText, { color: suggestionDetail === 'detailed' ? '#FFF' : colors.text }]}>Detailed</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {suggestions.slice(0, 3).map((suggestion, index) => (
           <TouchableOpacity
-            key={index}
+            key={`${suggestionTone}-${suggestionDetail}-${index}`}
             style={[styles.suggestionChip, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => {
               updateQuestion({ text: suggestion });
@@ -602,7 +747,7 @@ export const ConversationalBuilder: React.FC<ConversationalBuilderProps> = ({
             accessibilityRole="button"
             accessibilityLabel={`Use suggestion: ${suggestion}`}
           >
-            <Text style={[styles.suggestionText, { color: colors.text }]} numberOfLines={1}>
+            <Text style={[styles.suggestionText, { color: colors.text }]} numberOfLines={2}>
               {suggestion}
             </Text>
           </TouchableOpacity>
@@ -982,6 +1127,30 @@ const styles = StyleSheet.create({
   aiSuggestionsTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  toneControls: {
+    marginBottom: SPACING.sm,
+    gap: SPACING.xs,
+  },
+  toneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  toneLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    width: 48,
+  },
+  toneChip: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xxs,
+    borderRadius: RADIUS.base,
+    borderWidth: 1,
+  },
+  toneChipText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   suggestionChip: {
     padding: SPACING.sm,

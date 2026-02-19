@@ -36,3 +36,40 @@ export {
   CreationModeSelector,
   type CreationMode,
 } from './SurveyCreationFAB';
+
+// Undo/Redo Toolbar
+export { UndoRedoToolbar } from './UndoRedoToolbar';
+
+// Conditional Logic Editor
+export { ConditionalLogicEditor } from './ConditionalLogicEditor';
+
+// File Upload Question (respondent-facing)
+export { FileUploadQuestion } from './FileUploadQuestion';
+
+// Drag-to-Reorder Question List
+export { DraggableQuestionList } from './DraggableQuestionList';
+
+// Device Preview Frame
+export { DevicePreviewFrame } from './DevicePreviewFrame';
+
+// Shared Animation Configs
+export {
+  SPRING_QUICK,
+  SPRING_STANDARD,
+  SPRING_GENTLE,
+  SPRING_BOUNCY,
+  TIMING_FAST,
+  TIMING_STANDARD,
+  TIMING_SLOW,
+  SCALE_PRESSED,
+  SCALE_EMPHASIS,
+  SCALE_DRAG,
+  getAnimatedDuration,
+  getSpringConfig,
+} from './animations';
+
+// Webhook Setup Modal
+export { WebhookSetupModal } from './WebhookSetupModal';
+
+// Creation Progress Badges (gamification)
+export { CreationProgressBadges } from './CreationProgressBadges';

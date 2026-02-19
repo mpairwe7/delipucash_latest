@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
+import { dispatchWebhooks } from '../lib/webhookDispatcher.mjs';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -126,15 +127,16 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
       },
     });
 
-    // Format questions with userId and surveyId
+    // Format questions with userId and surveyId (including optional conditionalLogic)
     const formattedQuestions = questions.map((q) => ({
       text: q.text,
       type: q.type,
-      options: JSON.stringify(q.options || []),
+      options: typeof q.options === 'string' ? q.options : JSON.stringify(q.options || []),
       placeholder: q.placeholder || '',
       minValue: q.minValue || null,
       maxValue: q.maxValue || null,
       required: q.required ?? true,
+      conditionalLogic: q.conditionalLogic || null,
       userId,
       surveyId: newSurvey.id,
     }));
@@ -161,7 +163,7 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
     res.status(201).json({
       message: 'Survey and questions uploaded successfully.',
       questions: uploadedQuestions,
-      
+
     });
   } catch (error) {
     // Log the error
@@ -408,10 +410,46 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       });
     }
 
-    // Validate that all required questions have answers
-    const requiredQuestions = (survey.uploads || []).filter(q => q.required === true);
+    // Validate that all required AND visible questions have answers.
+    // Questions hidden by conditional logic are excluded from required validation.
+    const allQuestions = survey.uploads || [];
+    const requiredQuestions = allQuestions.filter(q => q.required === true);
     const answeredIds = Object.keys(responseData);
+
+    // Helper: evaluate if a question is visible given current answers and conditional logic
+    const isQuestionVisible = (question) => {
+      const logic = question.conditionalLogic;
+      if (!logic || !logic.rules || logic.rules.length === 0) return true;
+
+      const evaluateRule = (rule) => {
+        const answer = responseData[rule.sourceQuestionId];
+        switch (rule.operator) {
+          case 'is_empty':
+            return answer == null || answer === '' || (Array.isArray(answer) && answer.length === 0);
+          case 'is_not_empty':
+            return answer != null && answer !== '' && !(Array.isArray(answer) && answer.length === 0);
+          case 'equals':
+            return Array.isArray(answer) ? answer.includes(String(rule.value)) : String(answer) === String(rule.value);
+          case 'not_equals':
+            return Array.isArray(answer) ? !answer.includes(String(rule.value)) : String(answer) !== String(rule.value);
+          case 'contains':
+            return String(answer ?? '').toLowerCase().includes(String(rule.value).toLowerCase());
+          case 'greater_than':
+            return !isNaN(Number(answer)) && !isNaN(Number(rule.value)) && Number(answer) > Number(rule.value);
+          case 'less_than':
+            return !isNaN(Number(answer)) && !isNaN(Number(rule.value)) && Number(answer) < Number(rule.value);
+          default:
+            return true;
+        }
+      };
+
+      return logic.logicType === 'all'
+        ? logic.rules.every(evaluateRule)
+        : logic.rules.some(evaluateRule);
+    };
+
     const missingRequired = requiredQuestions
+      .filter(q => isQuestionVisible(q)) // Only check visible (non-hidden) questions
       .filter(q => !answeredIds.includes(q.id) || responseData[q.id] === '' || responseData[q.id] === null || responseData[q.id] === undefined)
       .map(q => q.id);
 
@@ -471,6 +509,14 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
         reward,
       }).catch(() => {});
     }
+
+    // Webhook: Fire response.submitted event
+    dispatchWebhooks(surveyId, 'response.submitted', {
+      surveyId,
+      responseId: surveyResponse.id,
+      respondentId: userId,
+      submittedAt: new Date().toISOString(),
+    }).catch(() => {});
 
     res.status(201).json({
       success: true,

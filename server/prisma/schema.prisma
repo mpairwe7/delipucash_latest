@@ -57,6 +57,8 @@ model AppUser {
   videoFeedback            VideoFeedback[]
   SurveyResponse           SurveyResponse[]
   rewardRedemptions        RewardRedemption[]
+  surveyFileUploads        SurveyFileUpload[]
+  surveyTemplates          SurveyTemplate[]
 }
 
 model Video {
@@ -192,9 +194,12 @@ model Survey {
   endDate        DateTime
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-  user           AppUser          @relation(fields: [userId], references: [id])
-  uploads        UploadSurvey[]
-  SurveyResponse SurveyResponse[]
+  user             AppUser            @relation(fields: [userId], references: [id])
+  uploads          UploadSurvey[]
+  SurveyResponse   SurveyResponse[]
+  surveyFileUploads  SurveyFileUpload[]
+  webhooks           SurveyWebhook[]
+  branding           Json?
 
   @@index([userId])
   @@index([startDate, endDate])
@@ -202,20 +207,80 @@ model Survey {
 }
 
 model UploadSurvey {
+  id               String   @id @default(uuid()) @db.Uuid
+  text             String
+  type             String
+  options          String
+  placeholder      String?
+  minValue         Int?
+  maxValue         Int?
+  required         Boolean  @default(true)
+  conditionalLogic Json?    // { rules: [{ sourceQuestionId, operator, value, action }], logicType: 'all' | 'any' }
+  userId           String   @db.Uuid
+  surveyId         String   @db.Uuid
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  survey           Survey   @relation(fields: [surveyId], references: [id])
+  user             AppUser  @relation(fields: [userId], references: [id])
+}
+
+model SurveyFileUpload {
+  id         String   @id @default(uuid()) @db.Uuid
+  surveyId   String   @db.Uuid
+  responseId String?  @db.Uuid
+  questionId String   @db.Uuid
+  userId     String   @db.Uuid
+  fileName   String
+  fileSize   Int
+  mimeType   String
+  r2Key      String
+  r2Etag     String?
+  status     String   @default("uploaded")
+  uploadedAt DateTime @default(now())
+
+  survey Survey  @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  user   AppUser @relation(fields: [userId], references: [id])
+
+  @@index([surveyId, questionId])
+  @@index([userId])
+  @@index([r2Key])
+}
+
+model SurveyWebhook {
+  id         String   @id @default(uuid()) @db.Uuid
+  surveyId   String   @db.Uuid
+  url        String
+  events     String[]
+  secret     String?
+  isActive   Boolean  @default(true)
+  lastFired  DateTime?
+  lastStatus Int?
+  failCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  survey Survey @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+
+  @@index([surveyId])
+}
+
+model SurveyTemplate {
   id          String   @id @default(uuid()) @db.Uuid
-  text        String
-  type        String
-  options     String
-  placeholder String?
-  minValue    Int?
-  maxValue    Int?
-  required    Boolean  @default(true)
   userId      String   @db.Uuid
-  surveyId    String   @db.Uuid
+  name        String
+  description String?
+  category    String?
+  questions   Json
+  branding    Json?
+  isPublic    Boolean  @default(false)
+  usageCount  Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  survey      Survey   @relation(fields: [surveyId], references: [id])
-  user        AppUser  @relation(fields: [userId], references: [id])
+
+  user AppUser @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isPublic])
 }
 
 model Ad {

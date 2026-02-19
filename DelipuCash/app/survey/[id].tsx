@@ -58,6 +58,9 @@ import {
   useTheme,
   withAlpha,
 } from "@/utils/theme";
+import { evaluateConditions } from "@/utils/conditionalLogic";
+import type { ConditionalLogicConfig } from "@/types";
+import { FileUploadQuestion } from "@/components/survey/FileUploadQuestion";
 
 // Unique ID for InputAccessoryView (iOS keyboard toolbar)
 const INPUT_ACCESSORY_VIEW_ID = "survey-input-accessory";
@@ -72,7 +75,8 @@ type QuestionType =
   | "boolean"
   | "date"
   | "time"
-  | "number";
+  | "number"
+  | "file_upload";
 
 type AnswerValue = string | number | string[];
 
@@ -101,6 +105,7 @@ interface SurveyQuestion {
   placeholder?: string | null;
   booleanLabels?: BooleanLabels;
   numberConstraints?: NumberConstraints;
+  conditionalLogic?: ConditionalLogicConfig | null;
 }
 
 interface SurveyDisplay {
@@ -271,6 +276,13 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clamp currentQuestionIndex if visible questions shrink (conditional logic hides a question)
+  useEffect(() => {
+    if (visibleQuestions.length > 0 && currentQuestionIndex >= visibleQuestions.length) {
+      storeSetCurrentIndex(visibleQuestions.length - 1);
+    }
+  }, [visibleQuestions.length, currentQuestionIndex, storeSetCurrentIndex]);
+
   // Check for reduced motion preference (accessibility - WCAG 2.1)
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setIsReducedMotion);
@@ -324,13 +336,23 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         placeholder: q.placeholder,
         booleanLabels: q.type === "boolean" ? getBooleanLabels(q) : undefined,
         numberConstraints: q.type === "number" ? getNumberConstraints(q) : undefined,
+        conditionalLogic: q.conditionalLogic ?? null,
       })),
     };
   }, [surveyData]);
 
-  const question = survey?.questions[currentQuestionIndex];
-  const isLastQuestion = survey ? currentQuestionIndex === survey.questions.length - 1 : false;
-  const progress = survey ? ((currentQuestionIndex + 1) / survey.questions.length) * 100 : 0;
+  // Filter questions based on conditional logic — hidden questions are skipped
+  const visibleQuestions = useMemo(() => {
+    if (!survey) return [];
+    return survey.questions.filter((q) => {
+      if (!q.conditionalLogic?.rules?.length) return true;
+      return evaluateConditions(q.conditionalLogic, answers);
+    });
+  }, [survey, answers]);
+
+  const question = visibleQuestions[currentQuestionIndex];
+  const isLastQuestion = visibleQuestions.length > 0 ? currentQuestionIndex === visibleQuestions.length - 1 : false;
+  const progress = visibleQuestions.length > 0 ? ((currentQuestionIndex + 1) / visibleQuestions.length) * 100 : 0;
 
   const getDefaultValue = (type: QuestionType): AnswerValue => {
     switch (type) {
@@ -368,6 +390,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         return typeof answer === "string" && answer.trim().length > 0;
       case "date":
       case "time":
+      case "file_upload":
         return typeof answer === "string" && answer.length > 0;
       case "number":
         return typeof answer === "string" && answer.trim().length > 0 && !isNaN(Number(answer));
@@ -381,11 +404,11 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     return isAnswerValid(question.type, currentAnswer);
   };
 
-  const answeredCount = survey?.questions.reduce((count, q) => {
+  const answeredCount = visibleQuestions.reduce((count, q) => {
     const value = answers[q.id];
     if (value === undefined || value === null) return count;
     return isAnswerValid(q.type, value) ? count + 1 : count;
-  }, 0) || 0;
+  }, 0);
 
   // Use store's setAnswer for auto-save
   const setAnswer = (value: AnswerValue): void => {
@@ -424,8 +447,8 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       return;
     }
 
-    // Validate all required questions are answered
-    const unanswered = survey.questions.filter(q => {
+    // Validate all required *visible* questions are answered (hidden questions are skipped)
+    const unanswered = visibleQuestions.filter(q => {
       if (!q.required) return false;
       const val = answers[q.id];
       if (val === undefined || val === null || val === '') return true;
@@ -433,7 +456,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     });
 
     if (unanswered.length > 0) {
-      const firstIdx = survey.questions.findIndex(q => q.id === unanswered[0].id);
+      const firstIdx = visibleQuestions.findIndex(q => q.id === unanswered[0].id);
       Alert.alert(
         "Incomplete Survey",
         `${unanswered.length} required question(s) need an answer. Tap OK to go to the first unanswered question.`,
@@ -1089,6 +1112,17 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           </View>
         );
 
+      case "file_upload":
+        return (
+          <FileUploadQuestion
+            surveyId={survey.id}
+            questionId={question.id}
+            currentFileId={typeof currentAnswer === "string" ? currentAnswer : null}
+            onFileUploaded={(fileId) => setAnswer(fileId)}
+            onFileDeleted={() => setAnswer("")}
+          />
+        );
+
       case "text":
       default:
         return (
@@ -1195,7 +1229,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             </View>
             <View style={[styles.rewardPill, { backgroundColor: colors.card, borderColor: withAlpha(colors.textMuted, 0.25) }]}>
               <ListChecks size={16} color={colors.text} strokeWidth={1.5} />
-              <Text style={[styles.rewardText, { color: colors.text }]}>Questions: {survey.questions.length}</Text>
+              <Text style={[styles.rewardText, { color: colors.text }]}>Questions: {visibleQuestions.length}</Text>
             </View>
           </View>
         </View>
@@ -1204,7 +1238,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
             <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress}%` }]} />
           </View>
-          <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Question {currentQuestionIndex + 1} of {survey.questions.length}</Text>
+          <Text style={[styles.progressLabel, { color: colors.textMuted }]}>Question {currentQuestionIndex + 1} of {visibleQuestions.length}</Text>
         </View>
 
         <ScrollView
@@ -1212,7 +1246,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: SPACING.base, gap: SPACING.sm, marginBottom: SPACING.lg }}
         >
-          {survey.questions.map((q, idx) => {
+          {visibleQuestions.map((q, idx) => {
             const answered = !!answers[q.id] && ((): boolean => {
               const value = answers[q.id];
               switch (q.type) {

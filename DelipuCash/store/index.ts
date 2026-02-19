@@ -119,6 +119,41 @@ export {
 } from './SurveyResponseUIStore';
 
 // ============================================================================
+// Survey Builder Store (2026 Enhancement)
+// Central builder state with undo/redo, cross-mode persistence
+// ============================================================================
+export {
+  useSurveyBuilderStore,
+  // Atomic selectors
+  selectQuestions as selectBuilderQuestions,
+  selectSurveyTitle as selectBuilderTitle,
+  selectSurveyDescription as selectBuilderDescription,
+  selectDraftId as selectBuilderDraftId,
+  selectExpandedQuestionId as selectBuilderExpandedQuestionId,
+  selectIsMultiSelectMode as selectBuilderMultiSelectMode,
+  selectSelectedQuestionIds as selectBuilderSelectedIds,
+  selectEarnedBadges,
+  selectQuestionsCount as selectBuilderQuestionsCount,
+  selectCanUndo as selectBuilderCanUndo,
+  selectCanRedo as selectBuilderCanRedo,
+  // Object selectors (use with useShallow)
+  selectBuilderMeta,
+  selectMultiSelectState,
+  // Convenience hooks (pre-wrapped with useShallow)
+  useBuilderMeta,
+  useMultiSelectState,
+} from './SurveyBuilderStore';
+export type {
+  BuilderQuestionType,
+  BuilderQuestionData,
+  ConditionalRule,
+  ConditionalLogicConfig,
+  FileUploadConfig,
+  SurveyBuilderState,
+  SurveyBuilderActions,
+} from './SurveyBuilderStore';
+
+// ============================================================================
 // Survey UI Store (NEW - Industry Standard)
 // Survey creation, builder, sharing, view preferences
 // ============================================================================

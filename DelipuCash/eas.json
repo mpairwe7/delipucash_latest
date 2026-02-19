@@ -13,6 +13,10 @@
     },
     "preview": {
       "distribution": "internal",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
+      },
       "env": {
         "NODE_ENV": "production"
       }
@@ -24,6 +28,14 @@
         "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
         "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
       },
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
+      }
+    },
+    "production-apk": {
+      "extends": "production",
+      "distribution": "internal",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"

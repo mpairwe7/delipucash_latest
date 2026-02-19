@@ -39,6 +39,7 @@ import {
   ChevronUp,
   Type,
   List,
+  Check,
   CheckSquare,
   Star,
   Calendar,
@@ -57,6 +58,7 @@ import {
   FileSpreadsheet,
   GripVertical,
   Sparkles,
+  GitBranch,
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -66,33 +68,27 @@ import { useTheme, SPACING, TYPOGRAPHY, RADIUS, BORDER_WIDTH, SHADOWS, withAlpha
 import { useCreateSurvey } from '@/services/hooks';
 import { UploadSurvey } from '@/types';
 import useUser from '@/utils/useUser';
+import {
+  useSurveyBuilderStore,
+  selectQuestions,
+  selectExpandedQuestionId,
+  selectIsMultiSelectMode,
+  selectSelectedQuestionIds,
+  type BuilderQuestionData,
+  type BuilderQuestionType,
+} from '@/store/SurveyBuilderStore';
+import { UndoRedoToolbar } from '@/components/survey/UndoRedoToolbar';
+import { ConditionalLogicEditor } from '@/components/survey/ConditionalLogicEditor';
+import { DraggableQuestionList } from '@/components/survey/DraggableQuestionList';
+import { DevicePreviewFrame } from '@/components/survey/DevicePreviewFrame';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-type QuestionType =
-  | 'text'           // Short answer
-  | 'paragraph'      // Long answer / multi-line text
-  | 'radio'          // Multiple choice (single selection)
-  | 'checkbox'       // Checkboxes (multiple selection)
-  | 'dropdown'       // Dropdown (single selection from list)
-  | 'rating'         // Star rating / Linear scale
-  | 'boolean'        // Yes/No toggle
-  | 'date'           // Date picker
-  | 'time'           // Time picker
-  | 'number';        // Numeric input
-
-interface QuestionData {
-  id: string;
-  text: string;
-  type: QuestionType;
-  options: string[];
-  minValue?: number;
-  maxValue?: number;
-  placeholder?: string;
-  required: boolean;
-}
+// Legacy local aliases — now backed by SurveyBuilderStore types
+type QuestionType = BuilderQuestionType;
+type QuestionData = BuilderQuestionData;
 
 interface SurveyFormProps {
   onSuccess?: () => void;
@@ -317,7 +313,7 @@ function detectFileTypeFromName(fileName: string): ImportFileType {
  * Validate question type
  */
 function isValidQuestionType(type: string): type is QuestionType {
-  const validTypes = ['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number'];
+  const validTypes = ['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number', 'file_upload'];
   return validTypes.includes(type?.toLowerCase());
 }
 
@@ -443,32 +439,49 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   const createSurveyMutation = useCreateSurvey();
   const { data: user } = useUser();
 
-  // Form state
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
+  // Form state — questions, title, description managed by SurveyBuilderStore
+  const questions = useSurveyBuilderStore(selectQuestions);
+  const expandedQuestion = useSurveyBuilderStore(selectExpandedQuestionId);
+  const isMultiSelectMode = useSurveyBuilderStore(selectIsMultiSelectMode);
+  const selectedQuestionIds = useSurveyBuilderStore(selectSelectedQuestionIds);
+  const builderActions = useSurveyBuilderStore((s) => ({
+    addQuestion: s.addQuestion,
+    removeQuestion: s.removeQuestion,
+    updateQuestion: s.updateQuestion,
+    reorderQuestions: s.reorderQuestions,
+    setExpandedQuestion: s.setExpandedQuestion,
+    addOption: s.addOption,
+    removeOption: s.removeOption,
+    updateOption: s.updateOption,
+    loadQuestions: s.loadQuestions,
+    setSurveyTitle: s.setSurveyTitle,
+    setSurveyDescription: s.setSurveyDescription,
+    checkBadges: s.checkBadges,
+    toggleMultiSelectMode: s.toggleMultiSelectMode,
+    toggleQuestionSelection: s.toggleQuestionSelection,
+  }));
+
+  // Local state for dates (not part of builder store since they're survey-level, not question-level)
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
-  const [questions, setQuestions] = useState<QuestionData[]>([
-    {
-      id: 'q1',
-      text: '',
-      type: 'text',
-      options: [],
-      placeholder: '',
-      required: false,
-    },
-  ]);
 
-  // UI state
+  // Title/description synced with builder store for cross-mode persistence
+  const title = useSurveyBuilderStore((s) => s.surveyTitle);
+  const description = useSurveyBuilderStore((s) => s.surveyDescription);
+  const setTitle = builderActions.setSurveyTitle;
+  const setDescription = builderActions.setSurveyDescription;
+
+  // UI state (expandedQuestion now in builder store)
+  const setExpandedQuestion = builderActions.setExpandedQuestion;
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
-  const [expandedQuestion, setExpandedQuestion] = useState<string | null>('q1');
   const [showImportModal, setShowImportModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [selectedImportType, setSelectedImportType] = useState<ImportFileType>('json');
   const [importError, setImportError] = useState<string | null>(null);
+  const [conditionalLogicQuestionId, setConditionalLogicQuestionId] = useState<string | null>(null);
   const hasAutoOpenedImport = useRef(false);
 
   // Animations
@@ -645,11 +658,10 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         throw new Error('No valid questions found. Each question must have text.');
       }
 
-      // Update form state
+      // Update form state via builder store
       if (surveyTitle) setTitle(surveyTitle);
       if (surveyDescription) setDescription(surveyDescription);
-      setQuestions(validQuestions.length > 0 ? validQuestions : questions);
-      setExpandedQuestion(validQuestions[0]?.id || 'q1');
+      builderActions.loadQuestions(validQuestions.length > 0 ? validQuestions : questions);
 
       setShowImportModal(false);
       Alert.alert(
@@ -667,59 +679,38 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
     }
   }, [questions]);
 
-  const addQuestion = () => {
+  // Question CRUD — delegated to SurveyBuilderStore (supports undo/redo)
+  const addQuestion = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    const newId = `q${questions.length + 1}`;
-    const newQuestion: QuestionData = {
-      id: newId,
-      text: '',
-      type: 'text',
-      options: [],
-      placeholder: '',
-      required: false,
-    };
-    setQuestions([...questions, newQuestion]);
-    setExpandedQuestion(newId);
-  };
+    builderActions.addQuestion();
+    builderActions.checkBadges();
+  }, [builderActions]);
 
-  const removeQuestion = (id: string) => {
-    if (questions.length > 1) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-      setQuestions(questions.filter(q => q.id !== id));
-      if (expandedQuestion === id) {
-        setExpandedQuestion(questions[0].id);
-      }
-    }
-  };
+  const removeQuestion = useCallback((id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    builderActions.removeQuestion(id);
+  }, [builderActions]);
 
-  const updateQuestion = (id: string, updates: Partial<QuestionData>) => {
-    setQuestions(questions.map(q => q.id === id ? { ...q, ...updates } : q));
-  };
+  const updateQuestion = useCallback((id: string, updates: Partial<QuestionData>) => {
+    builderActions.updateQuestion(id, updates);
+    builderActions.checkBadges();
+  }, [builderActions]);
 
-  const addOption = (questionId: string) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question && question.options.length < 10) {
-      const newOptions = [...question.options, `Option ${question.options.length + 1}`];
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
+  const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
+    builderActions.reorderQuestions(fromIndex, toIndex);
+  }, [builderActions]);
 
-  const removeOption = (questionId: string, optionIndex: number) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question) {
-      const newOptions = question.options.filter((_, i) => i !== optionIndex);
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
+  const addOption = useCallback((questionId: string) => {
+    builderActions.addOption(questionId);
+  }, [builderActions]);
 
-  const updateOption = (questionId: string, optionIndex: number, value: string) => {
-    const question = questions.find(q => q.id === questionId);
-    if (question) {
-      const newOptions = [...question.options];
-      newOptions[optionIndex] = value;
-      updateQuestion(questionId, { options: newOptions });
-    }
-  };
+  const removeOption = useCallback((questionId: string, optionIndex: number) => {
+    builderActions.removeOption(questionId, optionIndex);
+  }, [builderActions]);
+
+  const updateOption = useCallback((questionId: string, optionIndex: number, value: string) => {
+    builderActions.updateOption(questionId, optionIndex, value);
+  }, [builderActions]);
 
   const handleSave = async () => {
     // Validation
@@ -787,6 +778,13 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         case 'time':
           options = JSON.stringify({ format: 'HH:mm' });
           break;
+        case 'file_upload':
+          options = JSON.stringify(q.fileUploadConfig || {
+            allowedTypes: ['image/*', 'application/pdf'],
+            maxSizeBytes: 25 * 1024 * 1024,
+            maxFiles: 1,
+          });
+          break;
         case 'radio':
         case 'checkbox':
         case 'dropdown':
@@ -803,6 +801,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         minValue,
         maxValue,
         required: q.required,
+        ...(q.conditionalLogic ? { conditionalLogic: q.conditionalLogic } : {}),
       };
     });
 
@@ -836,6 +835,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       case 'date': return <Calendar size={size} color={colors.primary} />;
       case 'time': return <Clock size={size} color={colors.primary} />;
       case 'number': return <Hash size={size} color={colors.primary} />;
+      case 'file_upload': return <Upload size={size} color={colors.primary} />;
       default: return <FileText size={size} color={colors.primary} />;
     }
   };
@@ -853,12 +853,14 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       date: 'Date',
       time: 'Time',
       number: 'Number',
+      file_upload: 'File Upload',
     };
     return labels[type] || type;
   };
 
   const renderQuestionEditor = (question: QuestionData, questionIndex: number) => {
     const isExpanded = expandedQuestion === question.id;
+    const isSelected = selectedQuestionIds.includes(question.id);
 
     return (
       <View
@@ -867,9 +869,14 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
           styles.questionCard,
           {
             backgroundColor: colors.card,
-            borderColor: isExpanded ? withAlpha(colors.primary, 0.3) : colors.border,
+            borderColor: isMultiSelectMode && isSelected
+              ? colors.primary
+              : isExpanded
+                ? withAlpha(colors.primary, 0.3)
+                : colors.border,
           },
           isExpanded && SHADOWS.md,
+          isMultiSelectMode && isSelected && { backgroundColor: withAlpha(colors.primary, 0.04) },
         ]}
         role="group"
         accessibilityLabel={`Question ${questionIndex + 1}: ${question.text || 'Untitled'}`}
@@ -880,17 +887,44 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             pressed && { opacity: 0.85 },
           ]}
           onPress={() => {
+            if (isMultiSelectMode) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              builderActions.toggleQuestionSelection(question.id);
+              return;
+            }
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
             setExpandedQuestion(isExpanded ? null : question.id);
           }}
+          onLongPress={() => {
+            if (!isMultiSelectMode) {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+              builderActions.toggleMultiSelectMode();
+              builderActions.toggleQuestionSelection(question.id);
+            }
+          }}
+          delayLongPress={400}
           accessibilityRole="button"
-          accessibilityState={{ expanded: isExpanded }}
-          accessibilityHint={isExpanded ? 'Collapse question editor' : 'Expand question editor'}
+          accessibilityState={{ expanded: isExpanded, selected: isMultiSelectMode ? isSelected : undefined }}
+          accessibilityHint={isMultiSelectMode ? 'Tap to toggle selection' : isExpanded ? 'Collapse question editor' : 'Long press to select multiple'}
         >
           <View style={styles.questionTitleRow}>
-            <View style={[styles.questionNumberBadge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-              <Text style={[styles.questionNumber, { color: colors.primary }]}>{questionIndex + 1}</Text>
-            </View>
+            {isMultiSelectMode ? (
+              <View
+                style={[
+                  styles.selectionCheckbox,
+                  {
+                    borderColor: isSelected ? colors.primary : colors.border,
+                    backgroundColor: isSelected ? colors.primary : 'transparent',
+                  },
+                ]}
+              >
+                {isSelected && <Check size={12} color="#FFF" strokeWidth={3} />}
+              </View>
+            ) : (
+              <View style={[styles.questionNumberBadge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+                <Text style={[styles.questionNumber, { color: colors.primary }]}>{questionIndex + 1}</Text>
+              </View>
+            )}
             {renderQuestionTypeIcon(question.type)}
             <Text style={[styles.questionTitle, { color: colors.text }]} numberOfLines={isExpanded ? undefined : 1}>
               {question.text || 'Untitled Question'}
@@ -900,6 +934,24 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             )}
           </View>
           <View style={styles.questionActions}>
+            {/* Conditional Logic — only show if there are preceding questions */}
+            {questionIndex > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                  setConditionalLogicQuestionId(question.id);
+                }}
+                style={styles.actionButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Configure conditional logic for question ${questionIndex + 1}`}
+              >
+                <GitBranch
+                  size={16}
+                  color={question.conditionalLogic?.rules?.length ? colors.primary : colors.textMuted}
+                />
+              </TouchableOpacity>
+            )}
             {questions.length > 1 && (
               <TouchableOpacity
                 onPress={() => removeQuestion(question.id)}
@@ -936,7 +988,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Question Type</Text>
               <View style={styles.typeSelector}>
-                {(['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number'] as QuestionType[]).map((type) => (
+                {(['text', 'paragraph', 'radio', 'checkbox', 'dropdown', 'rating', 'boolean', 'date', 'time', 'number', 'file_upload'] as QuestionType[]).map((type) => (
                   <TouchableOpacity
                     key={type}
                     style={[
@@ -1217,7 +1269,15 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             </TouchableOpacity>
           </View>
 
-          {questions.map((q, idx) => renderQuestionEditor(q, idx))}
+          {/* Undo/Redo + Bulk Actions Toolbar */}
+          <UndoRedoToolbar showBulkActions />
+
+          <DraggableQuestionList
+            items={questions}
+            onReorder={handleReorder}
+            renderItem={(item, index) => renderQuestionEditor(item as QuestionData, index)}
+            dragEnabled={questions.length > 1}
+          />
         </View>
       </ScrollView>
 
@@ -1388,7 +1448,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
               {/* Error Display */}
               {importError && (
-                <View style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}>
+                <View
+                  style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}
+                  accessibilityLiveRegion="assertive"
+                  accessibilityRole="alert"
+                >
                   <Info size={16} color={colors.error} />
                   <Text style={[styles.errorText, { color: colors.error }]}>{importError}</Text>
                 </View>
@@ -1532,7 +1596,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         </View>
       </Modal>
 
-      {/* Preview Modal */}
+      {/* Preview Modal — uses DevicePreviewFrame for realistic mobile preview */}
       <Modal
         visible={showPreviewModal}
         animationType="slide"
@@ -1549,11 +1613,11 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 <View style={styles.modalHeaderText}>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>Survey Preview</Text>
                   <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
-                    How your survey will appear
+                    How your survey will appear on mobile
                   </Text>
                 </View>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => setShowPreviewModal(false)}
                 style={[styles.modalCloseBtn, { backgroundColor: withAlpha(colors.text, 0.08) }]}
               >
@@ -1561,121 +1625,136 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.previewBody} contentContainerStyle={styles.previewBodyContent}>
-              <Text style={[styles.previewTitle, { color: colors.text }]}>{title || 'Untitled Survey'}</Text>
-              {description ? (
-                <Text style={[styles.previewDescription, { color: colors.textMuted }]}>{description}</Text>
-              ) : null}
+            <View style={styles.previewBody}>
+              <DevicePreviewFrame title={title} description={description} scale={0.72}>
+                {questions.map((question, index) => (
+                  <View key={question.id} style={styles.previewQuestion}>
+                    <Text style={[styles.previewQuestionText, { color: colors.text }]}>
+                      {index + 1}. {question.text || 'Untitled Question'}
+                      {question.required && <Text style={{ color: colors.error }}> *</Text>}
+                    </Text>
 
-              {questions.map((question, index) => (
-                <View key={question.id} style={styles.previewQuestion}>
-                  <Text style={[styles.previewQuestionText, { color: colors.text }]}>
-                    {index + 1}. {question.text || 'Untitled Question'}
-                    {question.required && <Text style={{ color: colors.error }}> *</Text>}
-                  </Text>
+                    {question.type === 'text' && (
+                      <TextInput
+                        placeholder={question.placeholder || 'Your answer'}
+                        style={[styles.previewInput, { borderColor: colors.border, color: colors.text }]}
+                        editable={false}
+                      />
+                    )}
 
-                  {question.type === 'text' && (
-                    <TextInput
-                      placeholder={question.placeholder || 'Your answer'}
-                      style={[styles.previewInput, { borderColor: colors.border, color: colors.text }]}
-                      editable={false}
-                    />
-                  )}
+                    {question.type === 'paragraph' && (
+                      <TextInput
+                        placeholder={question.placeholder || 'Your long answer'}
+                        style={[styles.previewInput, styles.previewTextArea, { borderColor: colors.border, color: colors.text }]}
+                        editable={false}
+                        multiline
+                      />
+                    )}
 
-                  {question.type === 'paragraph' && (
-                    <TextInput
-                      placeholder={question.placeholder || 'Your long answer'}
-                      style={[styles.previewInput, styles.previewTextArea, { borderColor: colors.border, color: colors.text }]}
-                      editable={false}
-                      multiline
-                    />
-                  )}
+                    {(question.type === 'radio' || question.type === 'checkbox') && (
+                      <View style={styles.previewOptions}>
+                        {question.options.map((option, optIndex) => (
+                          <View key={optIndex} style={styles.previewOption}>
+                            <View style={[
+                              question.type === 'radio' ? styles.previewRadio : styles.previewCheckbox,
+                              { borderColor: colors.border }
+                            ]} />
+                            <Text style={[styles.previewOptionText, { color: colors.text }]}>{option}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
 
-                  {(question.type === 'radio' || question.type === 'checkbox') && (
-                    <View style={styles.previewOptions}>
-                      {question.options.map((option, optIndex) => (
-                        <View key={optIndex} style={styles.previewOption}>
-                          <View style={[
-                            question.type === 'radio' ? styles.previewRadio : styles.previewCheckbox,
-                            { borderColor: colors.border }
-                          ]} />
-                          <Text style={[styles.previewOptionText, { color: colors.text }]}>{option}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
+                    {question.type === 'dropdown' && (
+                      <View style={[styles.previewDropdown, { borderColor: colors.border }]}>
+                        <Text style={[styles.previewDropdownText, { color: colors.textMuted }]}>
+                          Select an option
+                        </Text>
+                        <ChevronDown size={16} color={colors.textMuted} />
+                      </View>
+                    )}
 
-                  {question.type === 'dropdown' && (
-                    <View style={[styles.previewDropdown, { borderColor: colors.border }]}>
-                      <Text style={[styles.previewDropdownText, { color: colors.textMuted }]}>
-                        Select an option
-                      </Text>
-                      <ChevronDown size={16} color={colors.textMuted} />
-                    </View>
-                  )}
+                    {question.type === 'rating' && (
+                      <View style={styles.previewRating}>
+                        {Array.from({ length: (question.maxValue || 5) - (question.minValue || 1) + 1 }, (_, i) => (
+                          <View key={i} style={styles.previewRatingItem}>
+                            <Text style={[styles.previewRatingNumber, { color: colors.textMuted }]}>
+                              {(question.minValue || 1) + i}
+                            </Text>
+                            <View style={[styles.previewRatingCircle, { borderColor: colors.border }]} />
+                          </View>
+                        ))}
+                      </View>
+                    )}
 
-                  {question.type === 'rating' && (
-                    <View style={styles.previewRating}>
-                      {Array.from({ length: (question.maxValue || 5) - (question.minValue || 1) + 1 }, (_, i) => (
-                        <View key={i} style={styles.previewRatingItem}>
-                          <Text style={[styles.previewRatingNumber, { color: colors.textMuted }]}>
-                            {(question.minValue || 1) + i}
+                    {question.type === 'boolean' && (
+                      <View style={styles.previewBoolean}>
+                        <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
+                          <View style={[styles.previewRadio, { borderColor: colors.border }]} />
+                          <Text style={[styles.previewOptionText, { color: colors.text }]}>
+                            {question.options[0] || 'Yes'}
                           </Text>
-                          <View style={[styles.previewRatingCircle, { borderColor: colors.border }]} />
                         </View>
-                      ))}
-                    </View>
-                  )}
+                        <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
+                          <View style={[styles.previewRadio, { borderColor: colors.border }]} />
+                          <Text style={[styles.previewOptionText, { color: colors.text }]}>
+                            {question.options[1] || 'No'}
+                          </Text>
+                        </View>
+                      </View>
+                    )}
 
-                  {question.type === 'boolean' && (
-                    <View style={styles.previewBoolean}>
-                      <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
-                        <View style={[styles.previewRadio, { borderColor: colors.border }]} />
-                        <Text style={[styles.previewOptionText, { color: colors.text }]}>
-                          {question.options[0] || 'Yes'}
+                    {question.type === 'date' && (
+                      <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
+                        <Calendar size={16} color={colors.textMuted} />
+                        <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
+                          Select a date
                         </Text>
                       </View>
-                      <View style={[styles.previewBooleanOption, { borderColor: colors.border }]}>
-                        <View style={[styles.previewRadio, { borderColor: colors.border }]} />
-                        <Text style={[styles.previewOptionText, { color: colors.text }]}>
-                          {question.options[1] || 'No'}
+                    )}
+
+                    {question.type === 'time' && (
+                      <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
+                        <Clock size={16} color={colors.textMuted} />
+                        <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
+                          Select a time
                         </Text>
                       </View>
-                    </View>
-                  )}
+                    )}
 
-                  {question.type === 'date' && (
-                    <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
-                      <Calendar size={16} color={colors.textMuted} />
-                      <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
-                        Select a date
-                      </Text>
-                    </View>
-                  )}
+                    {question.type === 'number' && (
+                      <TextInput
+                        placeholder={question.placeholder || 'Enter a number'}
+                        style={[styles.previewInput, { borderColor: colors.border, color: colors.text }]}
+                        editable={false}
+                        keyboardType="numeric"
+                      />
+                    )}
 
-                  {question.type === 'time' && (
-                    <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
-                      <Clock size={16} color={colors.textMuted} />
-                      <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
-                        Select a time
-                      </Text>
-                    </View>
-                  )}
-
-                  {question.type === 'number' && (
-                    <TextInput
-                      placeholder={question.placeholder || 'Enter a number'}
-                      style={[styles.previewInput, { borderColor: colors.border, color: colors.text }]}
-                      editable={false}
-                      keyboardType="numeric"
-                    />
-                  )}
-                </View>
-              ))}
-            </ScrollView>
+                    {question.type === 'file_upload' && (
+                      <View style={[styles.previewDateInput, { borderColor: colors.border }]}>
+                        <Upload size={16} color={colors.textMuted} />
+                        <Text style={[styles.previewDateText, { color: colors.textMuted }]}>
+                          Tap to upload a file
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </DevicePreviewFrame>
+            </View>
           </View>
         </View>
       </Modal>
+
+      {/* Conditional Logic Editor Modal */}
+      {conditionalLogicQuestionId && (
+        <ConditionalLogicEditor
+          questionId={conditionalLogicQuestionId}
+          questions={questions}
+          onClose={() => setConditionalLogicQuestionId(null)}
+        />
+      )}
     </View>
   );
 };
@@ -1773,6 +1852,15 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  selectionCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: RADIUS.sm,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
   },
   questionNumber: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -2324,10 +2412,9 @@ const styles = StyleSheet.create({
   },
   previewBody: {
     flex: 1,
-  },
-  previewBodyContent: {
-    padding: SPACING.lg,
-    paddingBottom: SPACING.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: SPACING.md,
   },
   previewTitle: {
     fontSize: TYPOGRAPHY.fontSize['2xl'],

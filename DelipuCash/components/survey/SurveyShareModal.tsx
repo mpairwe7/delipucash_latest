@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
+import { WebhookSetupModal } from './WebhookSetupModal';
 import {
   View,
   Text,
@@ -46,6 +47,7 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Zap,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
@@ -174,6 +176,7 @@ export const SurveyShareModal: React.FC<ShareModalProps> = ({
   // State
   const [copied, setCopied] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showWebhooks, setShowWebhooks] = useState(false);
   const [settings, setSettings] = useState<ShareSettings>({
     isPasswordProtected: initialPasswordProtected,
     password: '',
@@ -409,6 +412,22 @@ export const SurveyShareModal: React.FC<ShareModalProps> = ({
             </TouchableOpacity>
           </View>
 
+          {/* Webhooks */}
+          <View style={styles.embedSection}>
+            <TouchableOpacity
+              style={[styles.embedBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowWebhooks(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Configure webhooks"
+            >
+              <Zap size={18} color={colors.warning} />
+              <Text style={[styles.embedBtnText, { color: colors.text }]}>Configure Webhooks</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* Advanced Settings */}
           <TouchableOpacity
             style={[styles.advancedToggle, { borderTopColor: colors.border }]}
@@ -560,6 +579,13 @@ export const SurveyShareModal: React.FC<ShareModalProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Webhook Setup Modal */}
+      <WebhookSetupModal
+        visible={showWebhooks}
+        onClose={() => setShowWebhooks(false)}
+        surveyId={surveyId}
+      />
     </Modal>
   );
 };

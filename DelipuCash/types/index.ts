@@ -173,8 +173,24 @@ export interface UploadSurvey {
   surveyId: string;
   user?: AppUser;
   survey?: Survey;
+  /** Conditional display logic — when set, question is only shown if rules evaluate to true */
+  conditionalLogic?: ConditionalLogicConfig | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Conditional logic configuration for survey branching */
+export interface ConditionalLogicConfig {
+  rules: ConditionalRule[];
+  logicType: 'all' | 'any';
+}
+
+/** Single conditional display rule */
+export interface ConditionalRule {
+  sourceQuestionId: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'is_empty' | 'is_not_empty';
+  value?: string;
+  action?: 'show' | 'skip_to';
 }
 
 export interface Ad {
