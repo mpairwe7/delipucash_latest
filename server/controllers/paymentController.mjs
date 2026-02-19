@@ -376,6 +376,151 @@ const initiateAirtelCollection = async (token, amount, phoneNumber, referenceId)
   }
 };
 
+// ============================================================================
+// EXPORTED COLLECTION FUNCTIONS FOR SUBSCRIPTION PAYMENTS
+// These are called from surveyPaymentController for mobile money subscriptions
+// ============================================================================
+
+/**
+ * Process MTN Mobile Money collection (Request to Pay)
+ * Used for subscription payments — collects money FROM users
+ * @param {Object} params - Collection parameters
+ * @param {number} params.amount - Amount in UGX
+ * @param {string} params.phoneNumber - Payer phone number (will be formatted to 256XXXXXXXXX)
+ * @param {string} params.referenceId - Unique reference ID (UUID)
+ * @returns {Promise<{success: boolean, referenceId: string}>}
+ */
+export const processMtnCollection = async ({ amount, phoneNumber, referenceId }) => {
+  try {
+    console.log(`[MTN Collection] Processing request-to-pay: ${amount} UGX from ${phoneNumber}`);
+
+    // Format phone number for MTN
+    let formattedPhone = phoneNumber.replace(/[\s+]/g, '');
+    if (formattedPhone.startsWith('0')) {
+      formattedPhone = `256${formattedPhone.substring(1)}`;
+    } else if (!formattedPhone.startsWith('256')) {
+      formattedPhone = `256${formattedPhone}`;
+    }
+
+    const refId = referenceId || uuidv4();
+    const token = await getMtnToken('collection');
+
+    await initiateMtnCollection(token, amount, formattedPhone, refId);
+
+    // Wait for initial processing
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Check status with retries (max 10 attempts, 3s apart)
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        const statusResponse = await axios.get(
+          `https://sandbox.momodeveloper.mtn.com/collection/v1_0/requesttopay/${refId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'X-Target-Environment': 'sandbox',
+              'Ocp-Apim-Subscription-Key': process.env.MTN_PRIMARY_KEY,
+            },
+          }
+        );
+
+        const status = statusResponse.data.status;
+        console.log(`[MTN Collection] Attempt ${attempt}: status = ${status}`);
+
+        if (status === 'SUCCESSFUL') {
+          return { success: true, referenceId: refId };
+        } else if (status === 'FAILED' || status === 'REJECTED') {
+          return { success: false, referenceId: refId };
+        }
+        // Still PENDING — wait and retry
+        if (attempt < 10) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      } catch (err) {
+        console.error(`[MTN Collection] Status check attempt ${attempt} failed:`, err.message);
+        if (attempt < 10) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+    }
+
+    // Timed out
+    return { success: false, referenceId: refId };
+  } catch (error) {
+    console.error('[MTN Collection] Error:', error.message);
+    return { success: false, referenceId: referenceId || null };
+  }
+};
+
+/**
+ * Process Airtel Money collection (Payment)
+ * Used for subscription payments — collects money FROM users
+ * @param {Object} params - Collection parameters
+ * @param {number} params.amount - Amount in UGX
+ * @param {string} params.phoneNumber - Payer phone number
+ * @param {string} params.referenceId - Unique reference ID (UUID)
+ * @returns {Promise<{success: boolean, referenceId: string}>}
+ */
+export const processAirtelCollection = async ({ amount, phoneNumber, referenceId }) => {
+  try {
+    console.log(`[Airtel Collection] Processing payment: ${amount} UGX from ${phoneNumber}`);
+
+    // Format phone number for Airtel (remove leading 0 or +256)
+    let formattedPhone = phoneNumber.replace(/[\s+]/g, '');
+    if (formattedPhone.startsWith('256')) {
+      formattedPhone = formattedPhone.substring(3);
+    } else if (formattedPhone.startsWith('0')) {
+      formattedPhone = formattedPhone.substring(1);
+    }
+
+    const refId = referenceId || uuidv4();
+    const token = await getAirtelToken();
+
+    await initiateAirtelCollection(token, amount, formattedPhone, refId);
+
+    // Wait for initial processing
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Check status with retries
+    for (let attempt = 1; attempt <= 10; attempt++) {
+      try {
+        const statusResponse = await axios.get(
+          `https://openapiuat.airtel.africa/standard/v1/payments/${refId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'X-Country': 'UG',
+              'X-Currency': 'UGX',
+            },
+          }
+        );
+
+        const status = statusResponse.data.status || statusResponse.data.data?.status;
+        console.log(`[Airtel Collection] Attempt ${attempt}: status = ${status}`);
+
+        if (status === 'SUCCESSFUL' || status === 'SUCCESS') {
+          return { success: true, referenceId: refId };
+        } else if (status === 'FAILED') {
+          return { success: false, referenceId: refId };
+        }
+        if (attempt < 10) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      } catch (err) {
+        console.error(`[Airtel Collection] Status check attempt ${attempt} failed:`, err.message);
+        if (attempt < 10) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+    }
+
+    return { success: false, referenceId: refId };
+  } catch (error) {
+    console.error('[Airtel Collection] Error:', error.message);
+    return { success: false, referenceId: referenceId || null };
+  }
+};
+
 // Airtel Disbursement (Payout)
 // Uses /standard/v1/disbursements/ with payee/pin/reference/transaction format
 const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceId) => {

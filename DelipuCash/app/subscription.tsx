@@ -42,7 +42,7 @@ import {
 
 // Components
 import { PrimaryButton } from '@/components/PrimaryButton';
-import { SubscriptionPackageCard } from '@/components/payment';
+import { SubscriptionPackageCard, PaymentMethodSheet } from '@/components/payment';
 
 // Services & Hooks
 import {
@@ -250,6 +250,7 @@ const SubscriptionScreen: React.FC = () => {
   const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasPendingPurchase, setHasPendingPurchase] = useState(false);
+  const [showPaymentSheet, setShowPaymentSheet] = useState(false);
 
   // Show Google Play in-app messages on screen mount (grace period prompts, etc.)
   useEffect(() => {
@@ -761,7 +762,7 @@ const SubscriptionScreen: React.FC = () => {
           {!subscription?.isActive && packages.length > 0 && (
             <PrimaryButton
               title={isPurchasing ? 'Processing...' : 'Unlock All Features'}
-              onPress={handlePurchase}
+              onPress={() => setShowPaymentSheet(true)}
               disabled={isPurchasing || !selectedPackage || isNotConfigured}
               loading={isPurchasing}
               variant="primary"
@@ -798,6 +799,26 @@ const SubscriptionScreen: React.FC = () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Payment Method Selector Bottom Sheet */}
+      <PaymentMethodSheet
+        visible={showPaymentSheet}
+        onClose={() => setShowPaymentSheet(false)}
+        selectedPackage={selectedPackage}
+        selectedPlanType={selectedPackage?.packageType ?? 'MONTHLY'}
+        planPrice={selectedPackage ? parseFloat(selectedPackage.product.price.toString()) : 0}
+        planCurrency={selectedPackage?.product.currencyCode ?? 'UGX'}
+        onGooglePlayPurchase={handlePurchase}
+        onMoMoPurchaseComplete={() => {
+          setShowPaymentSheet(false);
+          refetchSubscription();
+          Alert.alert(
+            'Subscription Activated!',
+            'Your subscription is now active. Enjoy full access to all premium features.',
+            [{ text: 'OK' }],
+          );
+        }}
+      />
     </SafeAreaView>
   );
 };

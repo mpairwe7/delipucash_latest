@@ -13,7 +13,7 @@
  * - Bottom safe area padding for gesture navigation
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -137,6 +137,14 @@ const CreateSurveyScreen: React.FC = () => {
   // Admin bypass - admins can always create surveys
   const isAdmin = auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
   const hasActiveSubscription = isAdmin || canCreateSurvey;
+
+  // Compute remaining days from subscription expiration date
+  const remainingDays = useMemo(() => {
+    if (!subscriptionInfo?.expirationDate) return 0;
+    const now = new Date();
+    const exp = new Date(subscriptionInfo.expirationDate);
+    return Math.max(0, Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  }, [subscriptionInfo?.expirationDate]);
 
   // State
   const [activeTab, setActiveTab] = useState<TabKey>('build');

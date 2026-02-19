@@ -11,7 +11,7 @@ import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { v4 as uuidv4 } from 'uuid';
-import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
+import { processMtnCollection, processAirtelCollection } from './paymentController.mjs';
 
 // ============================================================================
 // SUBSCRIPTION PLANS CONFIGURATION
@@ -338,28 +338,27 @@ export const initiatePayment = asyncHandler(async (req, res) => {
 });
 
 /**
- * Trigger mobile money payment request
+ * Trigger mobile money collection request
  * Called asynchronously after creating payment record
+ * Uses COLLECTION APIs (request-to-pay), NOT disbursement
  */
 const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumber, transactionId) => {
-  console.log(`[SurveyPayment] Triggering ${provider} payment request...`);
+  console.log(`[SurveyPayment] Triggering ${provider} collection request...`);
 
   try {
     let result;
 
     if (provider === 'MTN') {
-      result = await processMtnPayment({
+      result = await processMtnCollection({
         amount,
         phoneNumber,
-        userId: transactionId,
-        reason: 'Survey subscription payment',
+        referenceId: transactionId,
       });
     } else if (provider === 'AIRTEL') {
-      result = await processAirtelPayment({
+      result = await processAirtelCollection({
         amount,
         phoneNumber,
-        userId: transactionId,
-        reason: 'Survey subscription payment',
+        referenceId: transactionId,
       });
     } else {
       console.error(`[SurveyPayment] Unknown provider: ${provider}`);
@@ -370,9 +369,7 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
     if (result.success) {
       await prisma.payment.update({
         where: { id: paymentId },
-        data: {
-          status: 'SUCCESSFUL',
-        },
+        data: { status: 'SUCCESSFUL' },
       });
 
       // Update user's subscription status
@@ -388,20 +385,16 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
     } else {
       await prisma.payment.update({
         where: { id: paymentId },
-        data: {
-          status: 'FAILED',
-        },
+        data: { status: 'FAILED' },
       });
       console.log(`[SurveyPayment] Payment ${paymentId} failed`);
     }
   } catch (error) {
-    console.error(`[SurveyPayment] Error processing ${provider} payment:`, error);
-    
+    console.error(`[SurveyPayment] Error processing ${provider} collection:`, error);
+
     await prisma.payment.update({
       where: { id: paymentId },
-      data: {
-        status: 'FAILED',
-      },
+      data: { status: 'FAILED' },
     });
   }
 };
@@ -589,9 +582,79 @@ const getStatusMessage = (status) => {
   }
 };
 
+/**
+ * Get unified subscription status
+ * Checks both MoMo payments (Payment table) and RevenueCat status
+ * Returns active if EITHER source has an active subscription
+ *
+ * @route GET /api/survey-payments/unified-status
+ */
+export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { surveysubscriptionStatus: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check latest successful MoMo payment with valid end date
+    const latestPayment = await prisma.payment.findFirst({
+      where: {
+        userId,
+        status: 'SUCCESSFUL',
+        endDate: { gt: new Date() },
+      },
+      orderBy: { endDate: 'desc' },
+    });
+
+    const momoActive = Boolean(latestPayment);
+    const now = new Date();
+    let remainingDays = 0;
+    let expirationDate = null;
+    let planType = null;
+
+    if (latestPayment) {
+      expirationDate = latestPayment.endDate.toISOString();
+      remainingDays = Math.ceil(
+        (latestPayment.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      planType = latestPayment.subscriptionType;
+    }
+
+    // Determine source — MoMo if we found an active payment,
+    // GOOGLE_PLAY if user status is ACTIVE but no MoMo payment (set by RevenueCat webhook or manual),
+    // NONE otherwise
+    const isActive = momoActive || user.surveysubscriptionStatus === 'ACTIVE';
+    let source = 'NONE';
+    if (momoActive) source = 'MOBILE_MONEY';
+    else if (user.surveysubscriptionStatus === 'ACTIVE') source = 'GOOGLE_PLAY';
+
+    res.json({
+      isActive,
+      source,
+      expirationDate,
+      remainingDays,
+      planType,
+    });
+  } catch (error) {
+    console.error('[SurveyPayment] Error checking unified subscription status:', error);
+    res.status(500).json({ error: 'Failed to check subscription status' });
+  }
+});
+
 export default {
   getPlans,
   getSubscriptionStatus,
+  getUnifiedSubscriptionStatus,
   initiatePayment,
   checkPaymentStatus,
   getPaymentHistory,

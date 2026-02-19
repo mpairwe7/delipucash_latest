@@ -538,3 +538,13 @@ export type {
   SSEState,
   SSEActions,
 } from './SSEStore';
+
+// ============================================================================
+// Payment Flow Store — Payment method preferences persistence
+// ============================================================================
+export {
+  usePaymentFlowStore,
+  selectPreferredMethod,
+  selectLastUsedPhone,
+  selectLastUsedProvider,
+} from './PaymentFlowStore';

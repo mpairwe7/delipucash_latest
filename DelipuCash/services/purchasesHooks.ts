@@ -111,6 +111,65 @@ export function useSurveyCreatorAccess() {
 }
 
 /**
+ * Unified subscription status combining RevenueCat + Mobile Money
+ *
+ * Returns active if EITHER source has an active subscription.
+ * Use this instead of `useSubscriptionStatus` when you need to
+ * account for MoMo-purchased subscriptions.
+ *
+ * @example
+ * ```tsx
+ * const { isActive, source, remainingDays } = useUnifiedSubscriptionStatus();
+ * ```
+ */
+export function useUnifiedSubscriptionStatus() {
+  const { data: revenueCatSub, isLoading: rcLoading } = useSubscriptionStatus();
+
+  // Lazy-import to avoid circular deps — the hook is only created when called
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { useUnifiedSubscription } = require('./subscriptionPaymentHooks');
+  const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+
+  const rcActive = revenueCatSub?.isActive ?? false;
+  const momoActive = momoSub?.isActive ?? false;
+
+  let source: 'GOOGLE_PLAY' | 'MOBILE_MONEY' | 'NONE' = 'NONE';
+  if (rcActive) source = 'GOOGLE_PLAY';
+  else if (momoActive) source = 'MOBILE_MONEY';
+
+  // Use the latest expiration between the two
+  let expirationDate: string | null = null;
+  let remainingDays = 0;
+
+  if (rcActive && revenueCatSub?.expirationDate) {
+    expirationDate = revenueCatSub.expirationDate instanceof Date
+      ? revenueCatSub.expirationDate.toISOString()
+      : String(revenueCatSub.expirationDate);
+    remainingDays = Math.max(0, Math.ceil(
+      (new Date(expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+    ));
+  }
+
+  if (momoActive && momoSub?.expirationDate) {
+    const momoExpiry = new Date(momoSub.expirationDate);
+    if (!expirationDate || momoExpiry.getTime() > new Date(expirationDate).getTime()) {
+      expirationDate = momoSub.expirationDate;
+      remainingDays = momoSub.remainingDays ?? 0;
+      source = 'MOBILE_MONEY';
+    }
+  }
+
+  return {
+    isActive: rcActive || momoActive,
+    isLoading: rcLoading || momoLoading,
+    source,
+    expirationDate,
+    remainingDays,
+    planType: momoSub?.planType ?? null,
+  };
+}
+
+/**
  * Hook to detect billing issues (grace period, account hold, pending purchases)
  *
  * Uses CustomerInfo from RevenueCat to determine if the user has a

@@ -11,6 +11,7 @@ import {
   initiatePayment,
   checkPaymentStatus,
   getPaymentHistory,
+  getUnifiedSubscriptionStatus,
 } from '../controllers/surveyPaymentController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
@@ -33,6 +34,13 @@ router.post('/initiate', verifyToken, initiatePayment);
  * @access  Private
  */
 router.get('/history', verifyToken, getPaymentHistory);
+
+/**
+ * @route   GET /api/survey-payments/unified-status
+ * @desc    Get unified subscription status (MoMo + Google Play)
+ * @access  Private
+ */
+router.get('/unified-status', verifyToken, getUnifiedSubscriptionStatus);
 
 /**
  * @route   GET /api/survey-payments/:paymentId/status

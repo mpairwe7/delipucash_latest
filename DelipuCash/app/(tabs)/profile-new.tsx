@@ -96,7 +96,7 @@ import {
   useUserStats,
   useVerify2FACode,
 } from '@/services/hooks';
-import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
+import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
@@ -349,7 +349,7 @@ export default function ProfileScreen(): React.ReactElement {
   const { data: unreadCount, refetch: refetchUnread } = useUnreadCount();
   const { data: userStats, isLoading: statsLoading, refetch: refetchStats } = useUserStats();
   const { data: sessions = [], refetch: refetchSessions } = useUserSessions();
-  const { data: surveySubscription, refetch: refetchSubscription } = useSurveySubscriptionStatus();
+  const { canCreateSurvey, refetch: refetchSubscription } = useSurveyCreatorAccess();
   const { data: transactions = [] } = useTransactions();
   
   // Mutations
@@ -373,8 +373,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Subscription status
-  const hasSurveySubscription = surveySubscription?.hasActiveSubscription ?? false;
+  // Subscription status (via RevenueCat entitlements)
+  const hasSurveySubscription = canCreateSurvey;
 
   // Admin check
   const isAdmin = useMemo(() => {
@@ -544,7 +544,7 @@ export default function ProfileScreen(): React.ReactElement {
         { text: 'Maybe Later', style: 'cancel' },
         {
           text: 'Subscribe',
-          onPress: () => router.push('/survey-payment' as Href),
+          onPress: () => router.push('/subscription' as Href),
           style: 'default',
         },
       ]
