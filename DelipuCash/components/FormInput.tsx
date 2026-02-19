@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, memo, forwardRef } from 'react';
 import {
   View,
   Text,
@@ -72,7 +72,7 @@ export interface FormInputProps extends Omit<TextInputProps, 'onBlur' | 'style'>
  * />
  * ```
  */
-export const FormInput = memo<FormInputProps>(({
+export const FormInput = memo(forwardRef<TextInput, FormInputProps>(({
   label,
   value,
   onChangeText,
@@ -94,7 +94,7 @@ export const FormInput = memo<FormInputProps>(({
   inputStyle,
   testID,
   ...props
-}) => {
+}, ref) => {
   const { colors } = useTheme();
   const [showPassword, setShowPassword] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -194,6 +194,7 @@ export const FormInput = memo<FormInputProps>(({
         {leftIcon && <View style={styles.leftIconContainer}>{leftIcon}</View>}
 
         <TextInput
+          ref={ref}
           value={value}
           onChangeText={onChangeText}
           onFocus={handleFocus}
@@ -238,7 +239,7 @@ export const FormInput = memo<FormInputProps>(({
       {hasError && <Text style={styles.errorText}>{error}</Text>}
     </View>
   );
-});
+}));
 
 FormInput.displayName = 'FormInput';
 

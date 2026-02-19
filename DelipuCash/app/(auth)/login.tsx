@@ -17,13 +17,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail } from "lucide-react-native";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
@@ -45,7 +46,7 @@ interface TouchedFields {
 
 const validationSchema: ValidationSchema = {
   email: [validators.required, validators.email],
-  password: [validators.required, validators.minLength(6)],
+  password: [validators.required, validators.minLength(8)],
 };
 
 /**
@@ -57,6 +58,7 @@ export default function LoginScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const { login, isLoading, isReady: authReady, isAuthenticated } = useAuth();
   const isNavigatingRef = React.useRef(false);
+  const passwordRef = useRef<TextInput>(null);
   const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState<FormData>({
@@ -269,10 +271,17 @@ export default function LoginScreen(): React.ReactElement {
               <ArrowLeft size={24} color={colors.text} />
             </TouchableOpacity>
 
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[styles.title, { color: colors.text }]}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={1.3}
+            >
               Welcome Back
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.subtitle, { color: colors.textSecondary }]}
+              maxFontSizeMultiplier={1.2}
+            >
               Sign in to continue earning rewards
             </Text>
           </View>
@@ -296,10 +305,15 @@ export default function LoginScreen(): React.ReactElement {
               autoComplete="email"
               autoCapitalize="none"
               editable={!isLoading}
+              autoFocus
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passwordRef.current?.focus()}
               leftIcon={<Mail size={20} color={colors.textMuted} />}
             />
 
             <FormInput
+              ref={passwordRef}
               label="Password"
               placeholder="Enter your password"
               value={formData.password}
@@ -310,6 +324,8 @@ export default function LoginScreen(): React.ReactElement {
               secureTextEntry
               autoComplete="password"
               editable={!isLoading}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
 
@@ -336,13 +352,6 @@ export default function LoginScreen(): React.ReactElement {
             accessibilityHint="Double tap to sign in to your account"
             style={styles.loginButton}
           />
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.textMuted }]}>or</Text>
-            <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          </View>
 
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
@@ -429,20 +438,6 @@ const styles = StyleSheet.create({
   },
   loginButton: {
     marginBottom: SPACING.lg,
-  },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: SPACING.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    marginHorizontal: SPACING.base,
   },
   signUpContainer: {
     flexDirection: "row",

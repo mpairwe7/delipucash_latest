@@ -30,7 +30,6 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
   Pressable,
   Share,
   Dimensions,
@@ -81,7 +80,9 @@ import {
   ICON_SIZE,
   Z_INDEX,
   RADIUS,
+  COMPONENT_SIZE,
 } from '@/utils/theme';
+import { useReducedMotion } from '@/utils/accessibility';
 import { useSystemBars, SYSTEM_BARS_PRESETS } from '@/hooks/useSystemBars';
 import { useUnreadCount } from '@/services/hooks';
 import {
@@ -164,13 +165,13 @@ const hasPlayableVideoUrl = (url: string | null | undefined): boolean =>
 const AnimatedTabPill = React.memo(({
   tab,
   isActive,
-  onPress,
+  onTabChange,
   label,
   icon,
 }: {
   tab: FeedTab;
   isActive: boolean;
-  onPress: () => void;
+  onTabChange: (tab: FeedTab) => void;
   label: string;
   icon?: React.ReactNode;
 }) => {
@@ -199,15 +200,17 @@ const AnimatedTabPill = React.memo(({
     transform: [{ scaleX: bgOpacity.value }],
   }));
 
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    scale.value = withSpring(0.95, { damping: 15 }, () => {
+      scale.value = withSpring(1);
+    });
+    onTabChange(tab);
+  }, [onTabChange, tab, scale]);
+
   return (
     <Pressable
-      onPress={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        scale.value = withSpring(0.95, { damping: 15 }, () => {
-          scale.value = withSpring(1);
-        });
-        onPress();
-      }}
+      onPress={handlePress}
       accessibilityRole="tab"
       accessibilityState={{ selected: isActive }}
       accessibilityLabel={`${label} tab`}
@@ -253,16 +256,17 @@ NetworkBadge.displayName = 'NetworkBadge';
 /** 2026 Standard: Live viewer count pulse indicator */
 const LiveViewerCount = React.memo(({ count }: { count: number }) => {
   const pulse = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    if (count <= 0) return;
+    if (count <= 0 || reduceMotion) return;
     const interval = setInterval(() => {
       pulse.value = withSpring(1.15, { damping: 10 }, () => {
         pulse.value = withSpring(1, { damping: 15 });
       });
     }, 3000);
     return () => clearInterval(interval);
-  }, [pulse, count]);
+  }, [pulse, count, reduceMotion]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulse.value }],
@@ -1272,21 +1276,21 @@ export default function VideosScreen(): React.ReactElement {
               <AnimatedTabPill
                 tab="following"
                 isActive={activeTab === 'following'}
-                onPress={() => handleTabChange('following')}
+                onTabChange={handleTabChange}
                 label="Following"
                 icon={followingIcon}
               />
               <AnimatedTabPill
                 tab="for-you"
                 isActive={activeTab === 'for-you'}
-                onPress={() => handleTabChange('for-you')}
+                onTabChange={handleTabChange}
                 label="For You"
                 icon={forYouIcon}
               />
               <AnimatedTabPill
                 tab="trending"
                 isActive={activeTab === 'trending'}
-                onPress={() => handleTabChange('trending')}
+                onTabChange={handleTabChange}
                 label="Trending"
                 icon={trendingIcon}
               />
@@ -1476,8 +1480,8 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   logoButton: {
-    width: 32,
-    height: 32,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
     borderRadius: 8,
     overflow: 'hidden',
     justifyContent: 'center',
@@ -1489,9 +1493,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   headerButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
@@ -1570,9 +1574,9 @@ const styles = StyleSheet.create({
 
   // ── NETWORK BADGE ──
   networkBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,

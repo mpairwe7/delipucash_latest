@@ -67,6 +67,7 @@ import {
   SHADOWS,
   Z_INDEX,
   ICON_SIZE,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { Comment } from '@/types';
@@ -567,8 +568,8 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: SPACING.xs,
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -630,8 +631,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
-    minWidth: 44,
-    minHeight: 44,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
     justifyContent: 'center',
   },
   commentActionText: {
@@ -681,9 +682,9 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
   },

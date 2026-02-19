@@ -27,6 +27,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   RADIUS,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 
@@ -54,7 +55,7 @@ export const CollapsibleSearchBar = React.memo(
     scrollProgress,
     placeholder = 'Search videos, creators...',
   }: CollapsibleSearchBarProps) => {
-    const { colors, isDark } = useTheme();
+    const { colors } = useTheme();
 
     // ──────────────────────────────────────────────────────────────
     // COLLAPSE STATE (bridged from UI thread via useDerivedValue)
@@ -128,8 +129,8 @@ export const CollapsibleSearchBar = React.memo(
         : 'Search videos';
     }, [query]);
 
-    // YouTube-style background: solid fill, no transparency
-    const pillBg = isDark ? '#272727' : '#F2F2F2';
+    // YouTube-style background: uses theme card color for dark mode support
+    const pillBg = colors.card;
 
     return (
       <Animated.View
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    height: 36,
+    height: COMPONENT_SIZE.touchTarget,
     borderRadius: RADIUS.full,
     gap: SPACING.xs,
     paddingVertical: SPACING.xs,
@@ -224,8 +225,8 @@ const styles = StyleSheet.create({
   iconButton: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 24,
-    height: 24,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
   },
 
   inputWrapper: {
@@ -246,7 +247,7 @@ const styles = StyleSheet.create({
   clearButton: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: 24,
-    height: 24,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
   },
 });

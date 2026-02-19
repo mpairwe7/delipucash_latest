@@ -62,6 +62,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { Video } from '@/types';
@@ -163,7 +164,7 @@ function InlineVideoPlayerComponent({
   // VIDEO PLAYER
   // ============================================================================
   
-  const player = useVideoPlayer(video.videoUrl || '', (player) => {
+  const player = useVideoPlayer(video.videoUrl || null, (player) => {
     try {
       player.loop = true;
       player.muted = isMuted;
@@ -685,9 +686,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
   },

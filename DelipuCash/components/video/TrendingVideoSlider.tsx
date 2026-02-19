@@ -55,6 +55,7 @@ import {
 import { Video } from '@/types';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
+import { useReducedMotion } from '@/utils/accessibility';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -364,6 +365,7 @@ function TrendingVideoSliderComponent({
   const { colors } = useTheme();
   const scrollViewRef = useRef<ScrollView>(null);
   const autoScrollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reduceMotion = useReducedMotion();
   
   const [activeIndex, setActiveIndex] = useState(0);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
@@ -396,7 +398,7 @@ function TrendingVideoSliderComponent({
 
   // Auto-scroll functionality
   useEffect(() => {
-    if (!autoScroll || isUserScrolling || displayVideos.length <= 1) {
+    if (!autoScroll || isUserScrolling || displayVideos.length <= 1 || reduceMotion) {
       if (autoScrollTimerRef.current) {
         clearInterval(autoScrollTimerRef.current);
         autoScrollTimerRef.current = null;

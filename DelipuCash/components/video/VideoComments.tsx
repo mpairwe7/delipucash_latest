@@ -52,6 +52,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   ICON_SIZE,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { Comment } from '@/types';
@@ -134,7 +135,7 @@ const CommentItem = memo<CommentItemProps>(({
 }) => {
   const { colors } = useTheme();
   const [isLiked, setIsLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(Math.floor(Math.random() * 100)); // Mock like count
+  const [likeCount, setLikeCount] = useState(comment.likes ?? 0);
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   const handleLike = useCallback(() => {
@@ -315,7 +316,7 @@ const EmptyState = memo<EmptyStateProps>(({ onRetry, isError }) => {
             accessibilityRole="button"
             accessibilityLabel="Retry loading comments"
           >
-            <RefreshCw size={ICON_SIZE.sm} color="#fff" strokeWidth={2} />
+            <RefreshCw size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={2} />
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         )}
@@ -414,7 +415,7 @@ export const VideoComments = memo<VideoCommentsProps>(({
 
   const handleLikeComment = useCallback((commentId: string) => {
     // Handle like - could add mutation here
-    console.log('Like comment:', commentId);
+    if (__DEV__) console.log('Like comment:', commentId);
   }, []);
 
   const handleReply = useCallback((comment: Comment) => {
@@ -424,7 +425,7 @@ export const VideoComments = memo<VideoCommentsProps>(({
 
   const handleMoreOptions = useCallback((comment: Comment) => {
     // Handle more options (report, delete, etc.)
-    console.log('More options for:', comment.id);
+    if (__DEV__) console.log('More options for:', comment.id);
   }, []);
 
   const handleCancelReply = useCallback(() => {
@@ -576,9 +577,9 @@ export const VideoComments = memo<VideoCommentsProps>(({
                 accessibilityState={{ disabled: !commentText.trim() }}
               >
                 {addCommentMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#fff" />
+                  <ActivityIndicator size="small" color={colors.primaryText} />
                 ) : (
-                  <Send size={ICON_SIZE.sm} color="#fff" strokeWidth={2} />
+                  <Send size={ICON_SIZE.sm} color={colors.primaryText} strokeWidth={2} />
                 )}
               </TouchableOpacity>
             </View>
@@ -748,7 +749,6 @@ const styles = StyleSheet.create({
   retryButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    color: '#fff',
   },
   replyIndicator: {
     flexDirection: 'row',
@@ -784,9 +784,9 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? SPACING.sm : 0,
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: SPACING.xs,

@@ -17,7 +17,7 @@ import { FormFieldValue, validateForm, ValidationSchema, validators } from "@/ut
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail, User } from "lucide-react-native";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     KeyboardAvoidingView,
     Linking,
@@ -25,6 +25,7 @@ import {
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
@@ -93,6 +94,12 @@ export default function SignupScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const { register, isLoading, isReady: authReady, isAuthenticated } = useAuth();
   const { showToast } = useToast();
+
+  // Refs for sequential keyboard navigation
+  const lastNameRef = useRef<TextInput>(null);
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+  const confirmPasswordRef = useRef<TextInput>(null);
 
   const [formData, setFormData] = useState<FormData>({
     firstName: "",
@@ -234,10 +241,17 @@ export default function SignupScreen(): React.ReactElement {
               <ArrowLeft size={24} color={colors.text} />
             </TouchableOpacity>
 
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[styles.title, { color: colors.text }]}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={1.3}
+            >
               Create Account
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.subtitle, { color: colors.textSecondary }]}
+              maxFontSizeMultiplier={1.2}
+            >
               Sign up to start earning rewards
             </Text>
           </View>
@@ -262,11 +276,16 @@ export default function SignupScreen(): React.ReactElement {
                   touched={touched.firstName}
                   autoCapitalize="words"
                   autoComplete="given-name"
+                  autoFocus
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => lastNameRef.current?.focus()}
                   leftIcon={<User size={20} color={colors.textMuted} />}
                 />
               </View>
               <View style={styles.nameField}>
                 <FormInput
+                  ref={lastNameRef}
                   label="Last Name"
                   placeholder="Doe"
                   value={formData.lastName}
@@ -276,6 +295,9 @@ export default function SignupScreen(): React.ReactElement {
                   touched={touched.lastName}
                   autoCapitalize="words"
                   autoComplete="family-name"
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onSubmitEditing={() => emailRef.current?.focus()}
                 />
               </View>
             </View>
@@ -291,6 +313,7 @@ export default function SignupScreen(): React.ReactElement {
             />
 
             <FormInput
+              ref={emailRef}
               label="Email Address"
               placeholder="john.doe@example.com"
               value={formData.email}
@@ -301,10 +324,14 @@ export default function SignupScreen(): React.ReactElement {
               keyboardType="email-address"
               autoComplete="email"
               autoCapitalize="none"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => passwordRef.current?.focus()}
               leftIcon={<Mail size={20} color={colors.textMuted} />}
             />
 
             <FormInput
+              ref={passwordRef}
               label="Password"
               placeholder="Create a strong password"
               value={formData.password}
@@ -314,12 +341,16 @@ export default function SignupScreen(): React.ReactElement {
               touched={touched.password}
               secureTextEntry
               autoComplete="new-password"
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => confirmPasswordRef.current?.focus()}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
 
             <PasswordStrengthIndicator password={formData.password} />
 
             <FormInput
+              ref={confirmPasswordRef}
               label="Confirm Password"
               placeholder="Confirm your password"
               value={formData.confirmPassword}
@@ -329,6 +360,8 @@ export default function SignupScreen(): React.ReactElement {
               touched={touched.confirmPassword}
               secureTextEntry
               autoComplete="new-password"
+              returnKeyType="done"
+              onSubmitEditing={handleSignup}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
 
@@ -343,14 +376,14 @@ export default function SignupScreen(): React.ReactElement {
                   I agree to the{" "}
                   <Text
                     style={{ color: colors.primary }}
-                    onPress={() => openLink("https://example.com/terms")}
+                    onPress={() => openLink("https://mpairwe7.github.io/delipucash_latest/terms.html")}
                   >
                     Terms of Service
                   </Text>{" "}
                   and{" "}
                   <Text
                     style={{ color: colors.primary }}
-                    onPress={() => openLink("https://example.com/privacy")}
+                    onPress={() => openLink("https://mpairwe7.github.io/delipucash_latest/privacy.html")}
                   >
                     Privacy Policy
                   </Text>

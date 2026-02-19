@@ -1,14 +1,15 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { SplashScreen, Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { AppState, LogBox, Platform, ErrorUtils } from 'react-native';
+import { SplashScreen, Stack, usePathname } from 'expo-router';
+import { StatusBar, setStatusBarHidden, setStatusBarStyle, setStatusBarTranslucent } from 'expo-status-bar';
+import { useEffect, useMemo } from 'react';
+import { AppState, LogBox, Platform, ErrorUtils, StyleSheet } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
 // expo-keep-awake disabled due to New Architecture incompatibility in Expo Go
 // import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts } from 'expo-font';
 import {
   Roboto_400Regular,
@@ -28,15 +29,15 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
-import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuthStore, initializeAuth } from '@/utils/auth/store';
-import { useThemeStore } from '@/utils/theme';
+import { useThemeStore, SYSTEM_BARS } from '@/utils/theme';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
 import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
 import { useUploadQueueProcessor } from '@/hooks/useUploadQueueProcessor';
 import { telemetry } from '@/services/telemetryApi';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Suppress Reanimated false-positive warning (all .value reads are inside useAnimatedStyle)
 LogBox.ignoreLogs(['Reading from `value` during component render']);
@@ -166,8 +167,73 @@ function GlobalProcessors() {
   return null;
 }
 
+/**
+ * Root-level system bars policy (2026 standard):
+ * - Edge-to-edge on Android/iOS
+ * - Theme-aware status bar icon color
+ * - Consistent top/bottom scrims so content never fights native icons
+ */
+function GlobalSystemBars({ isDark }: { isDark: boolean }) {
+  const insets = useSafeAreaInsets();
+  const pathname = usePathname();
+
+  // Full-bleed media route can opt into immersive mode.
+  const isImmersiveRoute = useMemo(
+    () => pathname.startsWith('/video/'),
+    [pathname]
+  );
+
+  const topOverlay = isDark
+    ? SYSTEM_BARS.statusBar.darkOverlay
+    : SYSTEM_BARS.statusBar.lightOverlay;
+
+  const bottomOverlay = isDark
+    ? 'rgba(0, 0, 0, 0.24)'
+    : 'rgba(255, 255, 255, 0.14)';
+
+  useEffect(() => {
+    setStatusBarStyle(isDark ? 'light' : 'dark', true);
+    setStatusBarHidden(isImmersiveRoute, 'fade');
+
+    if (Platform.OS === 'android') {
+      setStatusBarTranslucent(true);
+    }
+  }, [isDark, isImmersiveRoute]);
+
+  return (
+    <>
+      <StatusBar
+        style={isDark ? 'light' : 'dark'}
+        translucent
+        hidden={isImmersiveRoute}
+        animated
+      />
+
+      {!isImmersiveRoute && (
+        <>
+          <LinearGradient
+            pointerEvents="none"
+            colors={[topOverlay, 'transparent']}
+            style={[
+              styles.systemBarTopScrim,
+              { height: insets.top + 14 },
+            ]}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={['transparent', bottomOverlay]}
+            style={[
+              styles.systemBarBottomScrim,
+              { height: Math.max(insets.bottom + 12, SYSTEM_BARS.navigationBar.gestureHeight + 8) },
+            ]}
+          />
+        </>
+      )}
+    </>
+  );
+}
+
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   // Read isReady directly from Zustand — no TanStack dependency
   const isReady = useAuthStore(s => s.isReady);
   // Get theme state from custom theme store for StatusBar
@@ -272,7 +338,7 @@ export default function RootLayout() {
               <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
               <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
             </Stack>
-            <StatusBar style={isDark ? 'light' : 'dark'} translucent animated />
+            <GlobalSystemBars isDark={isDark} />
             </ToastProvider>
           </ThemeProvider>
         </NotificationProvider>
@@ -281,3 +347,20 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  systemBarTopScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2000,
+  },
+  systemBarBottomScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2000,
+  },
+});

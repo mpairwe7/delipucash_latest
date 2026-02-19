@@ -17,7 +17,7 @@ import React, { memo, useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Image,
 } from 'react-native';
@@ -78,16 +78,19 @@ export interface SearchResultsProps {
 
 interface SearchResultItemProps {
   video: Video;
-  onPress: () => void;
+  onVideoSelect: (video: Video) => void;
   colors: ReturnType<typeof useTheme>['colors'];
 }
 
-function SearchResultItem({ video, onPress, colors }: SearchResultItemProps) {
+const SearchResultItem = memo(function SearchResultItem({ video, onVideoSelect, colors }: SearchResultItemProps) {
+  const handlePress = useCallback(() => {
+    onVideoSelect(video);
+  }, [onVideoSelect, video]);
+
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={[styles.resultItem, { backgroundColor: colors.card }]}
+    <Pressable
+      onPress={handlePress}
+      style={({ pressed }) => [styles.resultItem, { backgroundColor: colors.card }, pressed && { opacity: 0.7 }]}
       accessibilityRole="button"
       accessibilityLabel={`${video.title}. ${formatViews(video.views)}`}
     >
@@ -107,9 +110,9 @@ function SearchResultItem({ video, onPress, colors }: SearchResultItemProps) {
           {formatViews(video.views)} • {formatTimeAgo(video.createdAt)}
         </Text>
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
-}
+});
 
 function SearchResultsComponent({
   query,
@@ -140,8 +143,8 @@ function SearchResultsComponent({
         <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
           {emptySubtitle || `Try searching for "${query}" with different keywords`}
         </Text>
-        <TouchableOpacity
-          style={[styles.clearButton, { backgroundColor: colors.primary }]}
+        <Pressable
+          style={({ pressed }) => [styles.clearButton, { backgroundColor: colors.primary }, pressed && { opacity: 0.7 }]}
           onPress={onClear}
           accessibilityLabel="Clear search"
           accessibilityRole="button"
@@ -149,7 +152,7 @@ function SearchResultsComponent({
           <Text style={[styles.clearButtonText, { color: colors.primaryText }]}>
             Clear Search
           </Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }
@@ -171,7 +174,7 @@ function SearchResultsComponent({
         <SearchResultItem
           key={video.id}
           video={video}
-          onPress={() => handleVideoPress(video)}
+          onVideoSelect={handleVideoPress}
           colors={colors}
         />
       ))}

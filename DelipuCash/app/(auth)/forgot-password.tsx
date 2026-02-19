@@ -208,10 +208,17 @@ export default function ForgotPasswordScreen(): React.ReactElement {
               <ArrowLeft size={24} color={colors.text} />
             </TouchableOpacity>
 
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[styles.title, { color: colors.text }]}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={1.3}
+            >
               Forgot Password?
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.subtitle, { color: colors.textSecondary }]}
+              maxFontSizeMultiplier={1.2}
+            >
               No worries! Enter your email address and we&apos;ll send you a link to
               reset your password.
             </Text>
@@ -235,6 +242,9 @@ export default function ForgotPasswordScreen(): React.ReactElement {
               keyboardType="email-address"
               autoComplete="email"
               autoCapitalize="none"
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleSubmit}
               leftIcon={<Mail size={20} color={colors.textMuted} />}
             />
           </View>

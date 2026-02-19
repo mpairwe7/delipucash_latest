@@ -19,7 +19,7 @@ import React, { memo, useState, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Image,
   ActivityIndicator,
@@ -34,6 +34,7 @@ import {
   SHADOWS,
   Z_INDEX,
   ICON_SIZE,
+  COMPONENT_SIZE,
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { ProgressBar } from '../ui/ProgressBar';
@@ -94,7 +95,7 @@ function MiniPlayerComponent({
           });
           setThumbnailUrl(generated || getPlaceholderImage('video'));
         } catch (error) {
-          console.error('[MiniPlayer] Failed to generate thumbnail:', error);
+          if (__DEV__) console.error('[MiniPlayer] Failed to generate thumbnail:', error);
           setThumbnailUrl(getPlaceholderImage('video'));
         } finally {
           setIsLoadingThumbnail(false);
@@ -128,10 +129,9 @@ function MiniPlayerComponent({
         },
       ]}
     >
-      <TouchableOpacity
+      <Pressable
         onPress={onExpand}
-        activeOpacity={0.95}
-        style={[styles.player, { backgroundColor: colors.card }]}
+        style={({ pressed }) => [styles.player, { backgroundColor: colors.card }, pressed && { opacity: 0.95 }]}
         accessibilityRole="button"
         accessibilityLabel={`Now playing: ${video.title}. Tap to expand`}
       >
@@ -182,9 +182,9 @@ function MiniPlayerComponent({
 
           {/* Controls */}
           <View style={styles.controls}>
-            <TouchableOpacity
+            <Pressable
               onPress={handlePlayPause}
-              style={[styles.controlButton, { backgroundColor: colors.background }]}
+              style={({ pressed }) => [styles.controlButton, { backgroundColor: colors.background }, pressed && { opacity: 0.7 }]}
               accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
               accessibilityRole="button"
             >
@@ -193,18 +193,18 @@ function MiniPlayerComponent({
               ) : (
                 <Play size={ICON_SIZE.base} color={colors.text} fill={colors.text} />
               )}
-            </TouchableOpacity>
-            <TouchableOpacity
+            </Pressable>
+            <Pressable
               onPress={handleClose}
-              style={[styles.controlButton, { backgroundColor: colors.background }]}
+              style={({ pressed }) => [styles.controlButton, { backgroundColor: colors.background }, pressed && { opacity: 0.7 }]}
               accessibilityLabel="Close mini player"
               accessibilityRole="button"
             >
               <X size={ICON_SIZE.base} color={colors.text} strokeWidth={2} />
-            </TouchableOpacity>
+            </Pressable>
           </View>
         </View>
-      </TouchableOpacity>
+      </Pressable>
     </View>
   );
 }
@@ -260,6 +260,10 @@ const styles = StyleSheet.create({
   controlButton: {
     padding: SPACING.sm,
     borderRadius: RADIUS.full,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
   loadingContainer: {
     justifyContent: 'center',

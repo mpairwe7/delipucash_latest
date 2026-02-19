@@ -18,7 +18,7 @@ import React, { memo, useCallback } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   type ViewStyle,
 } from 'react-native';
@@ -35,6 +35,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   ICON_SIZE,
+  COMPONENT_SIZE,
 } from '@/utils/theme';
 import { Video } from '@/types';
 
@@ -102,12 +103,13 @@ function ActionButton({
   }, [onPress]);
 
   return (
-    <TouchableOpacity
+    <Pressable
       onPress={handlePress}
-      style={styles.actionItem}
+      style={({ pressed }) => [styles.actionItem, pressed && { opacity: 0.7 }]}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: isActive }}
+      android_ripple={{ color: 'rgba(0,0,0,0.1)', borderless: true }}
     >
       {isActive && activeIcon ? activeIcon : icon}
       {showCount && count !== undefined && (
@@ -115,7 +117,7 @@ function ActionButton({
           {formatCount(count)}
         </Text>
       )}
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
@@ -151,7 +153,7 @@ function VideoActionsComponent({
     onBookmark(video);
   }, [video, onBookmark]);
 
-  const isLiked = video.isBookmarked; // Using isBookmarked as proxy for liked state
+  const isLiked = video.isLiked ?? false;
   const isBookmarked = video.isBookmarked;
 
   return (
@@ -228,6 +230,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: SPACING.xs,
     padding: SPACING.sm,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    justifyContent: 'center',
   },
   actionText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,

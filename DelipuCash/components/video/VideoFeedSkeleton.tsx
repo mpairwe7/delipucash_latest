@@ -31,6 +31,7 @@ import {
   RADIUS,
   withAlpha,
 } from '@/utils/theme';
+import { useReducedMotion } from '@/utils/accessibility';
 
 // ============================================================================
 // CONSTANTS
@@ -58,14 +59,16 @@ export interface VideoFeedSkeletonProps {
 
 const ShimmerOverlay = memo(({ width, height }: { width: number; height: number }) => {
   const shimmerPosition = useSharedValue(-1);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reduceMotion) return;
     shimmerPosition.value = withRepeat(
       withTiming(1, { duration: SHIMMER_DURATION }),
       -1,
       false
     );
-  }, [shimmerPosition]);
+  }, [shimmerPosition, reduceMotion]);
 
   const shimmerStyle = useAnimatedStyle(() => ({
     transform: [

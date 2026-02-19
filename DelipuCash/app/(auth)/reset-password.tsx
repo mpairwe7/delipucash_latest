@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, memo } from "react";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
@@ -152,6 +153,8 @@ export default function ResetPasswordScreen(): React.ReactElement {
 
   const validateTokenMutation = useValidateResetTokenMutation();
   const resetPasswordMutation = useResetPasswordMutation();
+
+  const confirmPasswordRef = useRef<TextInput>(null);
 
   const [formData, setFormData] = useState<FormData>({
     password: "",
@@ -354,10 +357,17 @@ export default function ResetPasswordScreen(): React.ReactElement {
               <ArrowLeft size={24} color={colors.text} />
             </TouchableOpacity>
 
-            <Text style={[styles.title, { color: colors.text }]}>
+            <Text
+              style={[styles.title, { color: colors.text }]}
+              accessibilityRole="header"
+              maxFontSizeMultiplier={1.3}
+            >
               Create New Password
             </Text>
-            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            <Text
+              style={[styles.subtitle, { color: colors.textSecondary }]}
+              maxFontSizeMultiplier={1.2}
+            >
               Enter a strong password for your account. Your password must be at
               least 8 characters long.
             </Text>
@@ -388,6 +398,10 @@ export default function ResetPasswordScreen(): React.ReactElement {
               error={errors.password}
               touched={touched.password}
               secureTextEntry
+              autoFocus
+              returnKeyType="next"
+              blurOnSubmit={false}
+              onSubmitEditing={() => confirmPasswordRef.current?.focus()}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
 
@@ -396,6 +410,7 @@ export default function ResetPasswordScreen(): React.ReactElement {
             )}
 
             <FormInput
+              ref={confirmPasswordRef}
               label="Confirm Password"
               placeholder="Confirm new password"
               value={formData.confirmPassword}
@@ -404,6 +419,8 @@ export default function ResetPasswordScreen(): React.ReactElement {
               error={errors.confirmPassword}
               touched={touched.confirmPassword}
               secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleSubmit}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
             />
           </View>

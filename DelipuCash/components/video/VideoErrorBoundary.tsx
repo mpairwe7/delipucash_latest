@@ -22,6 +22,14 @@ import {
   Pressable,
 } from 'react-native';
 import { RotateCcw, AlertTriangle } from 'lucide-react-native';
+import {
+  useTheme,
+  SPACING,
+  TYPOGRAPHY,
+  RADIUS,
+  COMPONENT_SIZE,
+  withAlpha,
+} from '@/utils/theme';
 
 // ============================================================================
 // TYPES
@@ -55,28 +63,32 @@ function DefaultErrorFallback({
   onRetry: () => void;
   itemHeight?: number;
 }) {
+  const { colors } = useTheme();
+
   return (
     <View
       style={[
         styles.container,
+        { backgroundColor: colors.background },
         itemHeight ? { height: itemHeight } : undefined,
       ]}
       accessibilityRole="alert"
       accessibilityLabel="Video failed to load"
     >
-      <AlertTriangle size={48} color="#FF6B6B" />
-      <Text style={styles.title}>Video unavailable</Text>
-      <Text style={styles.message}>
+      <AlertTriangle size={48} color={colors.error} />
+      <Text style={[styles.title, { color: colors.text }]}>Video unavailable</Text>
+      <Text style={[styles.message, { color: colors.textMuted }]}>
         {error?.message || 'Something went wrong loading this video'}
       </Text>
       <Pressable
         onPress={onRetry}
-        style={styles.retryButton}
+        style={[styles.retryButton, { backgroundColor: withAlpha(colors.text, 0.15) }]}
         accessibilityRole="button"
         accessibilityLabel="Retry loading video"
+        android_ripple={{ color: withAlpha(colors.text, 0.2) }}
       >
-        <RotateCcw size={18} color="#FFFFFF" />
-        <Text style={styles.retryText}>Try Again</Text>
+        <RotateCcw size={18} color={colors.text} />
+        <Text style={[styles.retryText, { color: colors.text }]}>Try Again</Text>
       </Pressable>
     </View>
   );
@@ -100,7 +112,7 @@ export class VideoErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.warn('[VideoErrorBoundary] Caught error:', error.message);
+    if (__DEV__) console.warn('[VideoErrorBoundary] Caught error:', error.message);
     this.props.onError?.(error, errorInfo);
   }
 
@@ -134,38 +146,34 @@ export class VideoErrorBoundary extends Component<
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1A1A1A',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    gap: 12,
+    paddingHorizontal: SPACING.xl,
+    gap: SPACING.sm,
   },
   title: {
-    fontSize: 18,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: '600',
-    color: '#FFFFFF',
-    marginTop: 8,
+    marginTop: SPACING.xs,
   },
   message: {
-    fontSize: 14,
-    color: '#999999',
+    fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
   },
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: 24,
-    marginTop: 8,
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.xl,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.full,
+    marginTop: SPACING.xs,
+    minHeight: COMPONENT_SIZE.touchTarget,
   },
   retryText: {
-    fontSize: 15,
+    fontSize: TYPOGRAPHY.fontSize.md,
     fontWeight: '500',
-    color: '#FFFFFF',
   },
 });
 

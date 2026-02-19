@@ -71,6 +71,7 @@ import {
   SHADOWS,
   Z_INDEX,
   ICON_SIZE,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { Video } from '@/types';
@@ -549,9 +550,9 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   controlButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
   },

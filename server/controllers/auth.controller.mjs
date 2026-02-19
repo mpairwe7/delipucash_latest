@@ -92,6 +92,14 @@ export const signup = asyncHandler(async (req, res, next) => {
     return res.status(409).send({ message: "User already registered" });
   }
 
+  // Server-side password validation (mirrors client-side rules)
+  if (!password || typeof password !== 'string' || password.length < 8) {
+    return res.status(400).json({ success: false, message: "Password must be at least 8 characters long" });
+  }
+  if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+    return res.status(400).json({ success: false, message: "Password must contain uppercase, lowercase, and a number" });
+  }
+
   // Hash the password
   const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -264,16 +272,16 @@ export const signin = asyncHandler(async (req, res, next) => {
   const validUser = await prisma.appUser.findUnique({ where: {email } });
 
   if (!validUser) {
-    return next(errorHandler(404, 'User not found!'));
+    return next(errorHandler(401, 'Invalid credentials'));
   }
 
   if (typeof validUser.password !== 'string') {
-    return next(errorHandler(500, 'Invalid password format!'));
+    return next(errorHandler(401, 'Invalid credentials'));
   }
 
   const validPassword = await bcrypt.compare(password, validUser.password);
   if (!validPassword) {
-    return next(errorHandler(401, 'Wrong credentials!'));
+    return next(errorHandler(401, 'Invalid credentials'));
   }
 
   // 2FA gate: if enabled, do NOT issue tokens — require code verification first

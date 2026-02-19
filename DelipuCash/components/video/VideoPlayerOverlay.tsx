@@ -18,7 +18,7 @@ import React, { memo, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
+  Pressable,
   StyleSheet,
   Animated,
 } from 'react-native';
@@ -42,6 +42,7 @@ import {
   ICON_SIZE,
   ANIMATION,
   Z_INDEX,
+  COMPONENT_SIZE,
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { IconButton } from '../ui/IconButton';
@@ -190,9 +191,9 @@ function VideoPlayerOverlayComponent({
       </View>
 
       {/* Center play/pause */}
-      <TouchableOpacity
+      <Pressable
         onPress={onPlayPause}
-        style={[styles.centerPlayButton, { backgroundColor: withAlpha(colors.primary, 0.9) }]}
+        style={({ pressed }) => [styles.centerPlayButton, { backgroundColor: withAlpha(colors.primary, 0.9) }, pressed && { opacity: 0.7 }]}
         accessibilityLabel={isPlaying ? 'Pause video' : 'Play video'}
         accessibilityRole="button"
       >
@@ -201,7 +202,7 @@ function VideoPlayerOverlayComponent({
         ) : (
           <Play size={32} color={colors.primaryText} fill={colors.primaryText} />
         )}
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Bottom controls */}
       <View style={styles.bottomControls}>
@@ -233,9 +234,9 @@ function VideoPlayerOverlayComponent({
 
         {/* Bottom actions */}
         <View style={styles.actions}>
-          <TouchableOpacity
+          <Pressable
             onPress={onMute}
-            style={styles.actionButton}
+            style={({ pressed }) => [styles.actionButton, pressed && { opacity: 0.7 }]}
             accessibilityLabel={isMuted ? 'Unmute' : 'Mute'}
             accessibilityRole="button"
           >
@@ -244,10 +245,10 @@ function VideoPlayerOverlayComponent({
             ) : (
               <Volume2 size={ICON_SIZE.lg} color="#FFFFFF" strokeWidth={2} />
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
+          </Pressable>
+          <Pressable
             onPress={onLike}
-            style={styles.actionButton}
+            style={({ pressed }) => [styles.actionButton, pressed && { opacity: 0.7 }]}
             accessibilityLabel="Like video"
             accessibilityRole="button"
           >
@@ -257,14 +258,14 @@ function VideoPlayerOverlayComponent({
               strokeWidth={2}
               fill={isLiked ? colors.error : 'transparent'}
             />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.actionButton}
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [styles.actionButton, pressed && { opacity: 0.7 }]}
             accessibilityLabel="Fullscreen"
             accessibilityRole="button"
           >
             <Maximize2 size={ICON_SIZE.lg} color="#FFFFFF" strokeWidth={2} />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </View>
     </Animated.View>
@@ -331,6 +332,10 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     padding: SPACING.sm,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
 });
 

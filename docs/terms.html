@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service - DelipuCash</title>
+  <meta name="description" content="Terms of Service for DelipuCash, a mobile rewards platform operated by IonaTech.">
+  <meta name="robots" content="index, follow">
+  <meta property="og:title" content="Terms of Service - DelipuCash">
+  <meta property="og:description" content="Terms of Service for DelipuCash, the mobile rewards platform by IonaTech.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://mpairwe7.github.io/delipucash_latest/terms.html">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --bg-secondary: #f8f9fa;
+      --text: #1a1a2e;
+      --text-secondary: #555555;
+      --primary: #4D4DFF;
+      --primary-light: rgba(77, 77, 255, 0.08);
+      --border: #e2e8f0;
+      --card: #ffffff;
+      --shadow: rgba(0, 0, 0, 0.06);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --bg-secondary: #111111;
+        --text: #f0f0f0;
+        --text-secondary: #a0a0a0;
+        --primary: #6B6BFF;
+        --primary-light: rgba(107, 107, 255, 0.12);
+        --border: #2a2a2a;
+        --card: #1a1a1a;
+        --shadow: rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 48px 0 40px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+
+    header h1 span {
+      color: var(--primary);
+    }
+
+    .meta {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 24px;
+    }
+
+    .meta .badge {
+      display: inline-block;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 500;
+      font-size: 0.8125rem;
+    }
+
+    main {
+      padding: 40px 0 80px;
+    }
+
+    .intro {
+      font-size: 1.0625rem;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section {
+      margin-bottom: 40px;
+    }
+
+    h2 {
+      font-size: 1.375rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: var(--text);
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--primary-light);
+    }
+
+    h3 {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin: 20px 0 10px;
+      color: var(--text);
+    }
+
+    p {
+      margin-bottom: 14px;
+      color: var(--text-secondary);
+    }
+
+    ul, ol {
+      margin: 12px 0 16px 24px;
+      color: var(--text-secondary);
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+
+    a:hover {
+      opacity: 0.8;
+      text-decoration: underline;
+    }
+
+    .highlight-box {
+      background: var(--primary-light);
+      border-left: 3px solid var(--primary);
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+    }
+
+    .highlight-box p {
+      margin-bottom: 0;
+      color: var(--text);
+    }
+
+    footer {
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+    }
+
+    footer p {
+      color: var(--text-secondary);
+      font-size: 0.875rem;
+    }
+
+    footer a {
+      font-weight: 600;
+    }
+
+    .footer-links {
+      margin-bottom: 16px;
+    }
+
+    .back-to-top {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-size: 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px var(--shadow);
+      opacity: 0;
+      transform: translateY(16px);
+      transition: opacity 0.3s, transform 0.3s;
+      z-index: 100;
+    }
+
+    .back-to-top.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media print {
+      header, footer { background: none; border: none; }
+      .back-to-top { display: none; }
+      body { font-size: 12pt; color: #000; }
+      a { color: #000; text-decoration: underline; }
+    }
+
+    @media (max-width: 480px) {
+      header { padding: 32px 0 28px; }
+      header h1 { font-size: 1.5rem; }
+      .container { padding: 0 16px; }
+      main { padding: 28px 0 60px; }
+      h2 { font-size: 1.1875rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1><span>DelipuCash</span> Terms of Service</h1>
+      <div class="meta">
+        <span class="badge">Effective: February 19, 2026</span>
+        <span>Operated by IonaTech</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <p class="intro">
+      Welcome to DelipuCash. Please read these Terms of Service ("Terms") carefully before using our mobile application and services. By creating an account or using the Service, you agree to be bound by these Terms.
+    </p>
+
+    <!-- 1 -->
+    <section id="definitions">
+      <h2>1. Definitions</h2>
+      <ul>
+        <li><strong>"Service"</strong> refers to the DelipuCash mobile application, website, and all related features, content, and services provided by IonaTech.</li>
+        <li><strong>"User," "you," "your"</strong> refers to any individual who creates an account or accesses the Service.</li>
+        <li><strong>"IonaTech," "we," "us," "our"</strong> refers to IonaTech, the company that operates DelipuCash.</li>
+        <li><strong>"Rewards" or "Points"</strong> refers to the virtual credits earned through participation in activities on the Service.</li>
+        <li><strong>"Mobile Money"</strong> refers to mobile payment services including MTN Mobile Money and Airtel Money used for reward redemptions.</li>
+        <li><strong>"Content"</strong> refers to any text, images, videos, audio, survey responses, questions, comments, or other materials submitted to or displayed on the Service.</li>
+      </ul>
+    </section>
+
+    <!-- 2 -->
+    <section id="eligibility">
+      <h2>2. Eligibility</h2>
+      <p>You must be at least <strong>18 years of age</strong> to use financial features of the Service, including earning and redeeming rewards via Mobile Money. Users between 13 and 17 may use non-financial features with parental or guardian consent.</p>
+      <p>By using the Service, you represent and warrant that you meet these age requirements and have the legal capacity to enter into these Terms. The Service is primarily available in Uganda, with additional regions at IonaTech's discretion.</p>
+    </section>
+
+    <!-- 3 -->
+    <section id="account">
+      <h2>3. Account Registration &amp; Security</h2>
+      <p>To access the Service, you must create an account by providing accurate and complete information, including your name, email address, and phone number.</p>
+      <ul>
+        <li>You are limited to <strong>one account per person</strong>. Creating multiple accounts to earn additional rewards is prohibited.</li>
+        <li>Your password must be at least 8 characters long and contain uppercase letters, lowercase letters, and numbers.</li>
+        <li>We offer <strong>two-factor authentication (2FA)</strong> to enhance account security. We strongly recommend enabling it.</li>
+        <li>You are responsible for maintaining the confidentiality of your login credentials and for all activities under your account.</li>
+        <li>Notify us immediately at <strong>support@ionatech.com</strong> if you suspect unauthorized access to your account.</li>
+      </ul>
+    </section>
+
+    <!-- 4 -->
+    <section id="rewards">
+      <h2>4. The Rewards System</h2>
+      <h3>4.1 Earning Rewards</h3>
+      <p>You can earn Rewards by participating in the following activities on the Service:</p>
+      <ul>
+        <li><strong>Questions:</strong> Answering daily questions and participating in question-and-answer forums.</li>
+        <li><strong>Surveys:</strong> Completing surveys created by other users or by IonaTech.</li>
+        <li><strong>Videos:</strong> Watching video content on the platform.</li>
+        <li><strong>Advertisements:</strong> Engaging with sponsored advertisements.</li>
+        <li><strong>Reward Questions:</strong> Correctly answering instant or regular reward questions.</li>
+      </ul>
+
+      <h3>4.2 Reward Valuation &amp; Rules</h3>
+      <ul>
+        <li>The value of Rewards is determined solely by IonaTech and may vary by activity, region, and time.</li>
+        <li>Rewards have no monetary value until successfully redeemed through an approved payment method.</li>
+        <li>IonaTech reserves the right to modify reward values, earning rates, and redemption thresholds at any time with reasonable notice.</li>
+        <li>Rewards are non-transferable between accounts and cannot be sold, bartered, or exchanged outside the Service.</li>
+      </ul>
+
+      <h3>4.3 Minimum Redemption Threshold</h3>
+      <p>A minimum balance is required to redeem rewards. The current threshold is displayed in the app and may be adjusted from time to time.</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="payments">
+      <h2>5. Payments &amp; Redemptions</h2>
+      <ul>
+        <li>Reward redemptions are processed via <strong>MTN Mobile Money</strong> or <strong>Airtel Money</strong> to the phone number associated with your account.</li>
+        <li>Processing times are typically <strong>24 to 72 hours</strong>, though delays may occur due to payment provider issues or verification requirements.</li>
+        <li>You are responsible for ensuring your Mobile Money details are accurate. IonaTech is not liable for payments sent to incorrect numbers provided by you.</li>
+        <li>All applicable taxes on redeemed rewards are your responsibility. IonaTech does not withhold taxes on your behalf unless required by law.</li>
+        <li>IonaTech reserves the right to withhold or reverse payments if fraud, Terms violations, or ineligible activity is detected.</li>
+      </ul>
+    </section>
+
+    <!-- 6 -->
+    <section id="user-content">
+      <h2>6. User Content</h2>
+      <p>You may submit Content to the Service, including but not limited to videos, questions, survey responses, and comments.</p>
+      <ul>
+        <li>You retain ownership of the Content you create. By submitting Content, you grant IonaTech a worldwide, non-exclusive, royalty-free, sublicensable license to use, reproduce, modify, display, and distribute your Content in connection with operating and improving the Service.</li>
+        <li>You represent that you have the right to submit all Content you provide, and that it does not infringe any third-party rights.</li>
+        <li>IonaTech reserves the right to review, moderate, edit, or remove any Content that violates these Terms or is otherwise objectionable, at our sole discretion.</li>
+      </ul>
+    </section>
+
+    <!-- 7 -->
+    <section id="advertising">
+      <h2>7. Advertising</h2>
+      <p>The Service displays advertisements from third-party advertisers and may allow users to create and manage advertising campaigns.</p>
+      <ul>
+        <li>IonaTech reserves the right to review and reject any advertising content at our sole discretion.</li>
+        <li>Advertisers are responsible for ensuring their content complies with all applicable laws and regulations.</li>
+        <li>IonaTech is not responsible for the accuracy, legality, or quality of third-party advertising content.</li>
+        <li>Ad engagement metrics (views, clicks, impressions) are tracked to calculate rewards and measure campaign performance.</li>
+      </ul>
+    </section>
+
+    <!-- 8 -->
+    <section id="surveys">
+      <h2>8. Surveys</h2>
+      <ul>
+        <li>Users may create and distribute surveys to other users on the platform.</li>
+        <li>Survey respondents must provide honest and accurate responses. Submitting false, random, or misleading survey data is a violation of these Terms.</li>
+        <li>Rewards for survey participation are contingent upon completing the survey in full and providing genuine responses.</li>
+        <li>Survey creators are responsible for the content of their surveys and must not solicit sensitive personal data (e.g., government ID numbers, financial credentials) without appropriate safeguards.</li>
+      </ul>
+    </section>
+
+    <!-- 9 -->
+    <section id="subscriptions">
+      <h2>9. Subscriptions</h2>
+      <p>The Service may offer optional subscription tiers (e.g., Daily, Weekly, Monthly, Yearly) that provide enhanced features or increased earning potential.</p>
+      <ul>
+        <li>Subscription fees and terms are displayed at the time of purchase.</li>
+        <li>Subscriptions auto-renew at the end of each billing period unless cancelled before renewal.</li>
+        <li>Cancellations take effect at the end of the current billing period. No prorated refunds are provided for early cancellation.</li>
+        <li>Subscription management is handled through the Apple App Store or Google Play Store, depending on your device platform.</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section id="prohibited-conduct">
+      <h2>10. Prohibited Conduct</h2>
+      <p>You agree not to engage in any of the following activities:</p>
+      <ul>
+        <li>Creating or operating multiple accounts to earn additional rewards.</li>
+        <li>Using automated tools, bots, scripts, or any form of artificial engagement to manipulate rewards or metrics.</li>
+        <li>Providing false, misleading, or inaccurate information during registration or while using the Service.</li>
+        <li>Attempting to exploit bugs, vulnerabilities, or system errors for personal gain.</li>
+        <li>Submitting spam, repetitive, or low-quality content.</li>
+        <li>Harassing, threatening, or abusing other users.</li>
+        <li>Circumventing security measures, including 2FA or rate limiting.</li>
+        <li>Using the Service for any illegal purpose or in violation of any applicable law.</li>
+      </ul>
+      <div class="highlight-box">
+        <p>Violation of these rules may result in immediate account suspension, forfeiture of all unredeemed rewards, and permanent ban from the Service.</p>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="intellectual-property">
+      <h2>11. Intellectual Property</h2>
+      <p>The Service, including its design, code, branding, logos, and proprietary content, is owned by IonaTech and protected by copyright, trademark, and other intellectual property laws.</p>
+      <p>You may not copy, modify, distribute, sell, or create derivative works based on the Service without IonaTech's prior written consent.</p>
+    </section>
+
+    <!-- 12 -->
+    <section id="termination">
+      <h2>12. Termination &amp; Suspension</h2>
+      <ul>
+        <li>IonaTech may suspend or terminate your account at any time if you violate these Terms or engage in conduct that is harmful to the Service or its users.</li>
+        <li>You may delete your account at any time through the app's settings.</li>
+        <li>Upon termination, all unredeemed Rewards are <strong>forfeited</strong> and cannot be recovered, unless the termination was due to IonaTech's error.</li>
+        <li>IonaTech may retain certain data after account deletion as required by law or for legitimate business purposes, as described in our <a href="privacy.html">Privacy Policy</a>.</li>
+      </ul>
+    </section>
+
+    <!-- 13 -->
+    <section id="disclaimers">
+      <h2>13. Disclaimers &amp; Limitation of Liability</h2>
+      <p>The Service is provided <strong>"as is"</strong> and <strong>"as available"</strong> without warranties of any kind, whether express or implied, including but not limited to implied warranties of merchantability, fitness for a particular purpose, or non-infringement.</p>
+      <ul>
+        <li>IonaTech does not guarantee any minimum level of earnings or that the Service will be available at all times without interruption.</li>
+        <li>IonaTech is not liable for any loss of rewards, earnings, or data resulting from technical issues, account suspension, or events beyond our control.</li>
+        <li>To the maximum extent permitted by law, IonaTech's total liability for any claim arising from these Terms or your use of the Service shall not exceed the total amount of rewards you have redeemed in the twelve (12) months preceding the claim.</li>
+      </ul>
+    </section>
+
+    <!-- 14 -->
+    <section id="dispute-resolution">
+      <h2>14. Dispute Resolution</h2>
+      <p>These Terms are governed by and construed in accordance with the laws of the <strong>Republic of Uganda</strong>.</p>
+      <p>Any disputes arising from these Terms or your use of the Service shall first be resolved through good-faith negotiation. If a resolution cannot be reached within 30 days, either party may submit the dispute to binding arbitration in Kampala, Uganda, in accordance with the rules of the Centre for Arbitration and Dispute Resolution (CADER).</p>
+      <p>Nothing in this section prevents either party from seeking injunctive or equitable relief in a court of competent jurisdiction.</p>
+    </section>
+
+    <!-- 15 -->
+    <section id="changes">
+      <h2>15. Changes to These Terms</h2>
+      <p>IonaTech reserves the right to modify these Terms at any time. Material changes will be communicated through:</p>
+      <ul>
+        <li>In-app notifications</li>
+        <li>Email to the address associated with your account</li>
+        <li>An updated "Effective Date" at the top of this page</li>
+      </ul>
+      <p>Your continued use of the Service after such changes constitutes your acceptance of the revised Terms. If you do not agree with the updated Terms, you must discontinue use of the Service.</p>
+    </section>
+
+    <!-- 16 -->
+    <section id="contact">
+      <h2>16. Contact Information</h2>
+      <p>If you have any questions about these Terms, please contact us:</p>
+      <ul>
+        <li><strong>Company:</strong> IonaTech</li>
+        <li><strong>Email:</strong> <a href="mailto:support@ionatech.com">support@ionatech.com</a></li>
+        <li><strong>App:</strong> DelipuCash</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p class="footer-links">
+        <a href="privacy.html">Privacy Policy</a>
+      </p>
+      <p>&copy; 2026 IonaTech. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <button class="back-to-top" id="backToTop" aria-label="Back to top" title="Back to top">&uarr;</button>
+
+  <script>
+    const btn = document.getElementById('backToTop');
+    window.addEventListener('scroll', () => {
+      btn.classList.toggle('visible', window.scrollY > 400);
+    });
+    btn.addEventListener('click', () => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  </script>
+</body>
+</html>

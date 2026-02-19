@@ -86,6 +86,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { Video } from '@/types';
@@ -398,7 +399,7 @@ function VideoFeedItemComponent({
       playerInstance.muted = isMuted;
       playerInstance.volume = isMuted ? 0 : 1;
     } catch (error) {
-      console.warn('[VideoFeedItem] Error configuring player:', error);
+      if (__DEV__) console.warn('[VideoFeedItem] Error configuring player:', error);
     }
   });
 
@@ -423,7 +424,7 @@ function VideoFeedItemComponent({
     try {
       return fn();
     } catch (error) {
-      console.warn('VideoFeedItem: Player call failed (likely released):', error);
+      if (__DEV__) console.warn('VideoFeedItem: Player call failed (likely released):', error);
       return fallback;
     }
   }, [player]);
@@ -552,7 +553,7 @@ function VideoFeedItemComponent({
           isPlayerReadyRef.current = false;
           setHasError(true);
           setIsBuffering(false);
-          console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, (event as any).error || 'Unknown error');
+          if (__DEV__) console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, (event as any).error || 'Unknown error');
         }
       });
 
@@ -561,7 +562,7 @@ function VideoFeedItemComponent({
         setIsPlaying(event.isPlaying);
       });
     } catch (error) {
-      console.warn('VideoFeedItem: Failed to add player listeners:', error);
+      if (__DEV__) console.warn('VideoFeedItem: Failed to add player listeners:', error);
     }
 
     return () => {
@@ -1413,7 +1414,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.sm,
     borderRadius: RADIUS.full,
     backgroundColor: '#FFFFFF',
-    minHeight: 36,
+    minHeight: COMPONENT_SIZE.touchTarget,
   },
   ctaButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -1470,8 +1471,8 @@ const styles = StyleSheet.create({
     padding: SPACING.xs,
     borderRadius: RADIUS.sm,
     backgroundColor: withAlpha('#FFFFFF', 0.15),
-    minWidth: 32,
-    minHeight: 32,
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
     alignItems: 'center',
     justifyContent: 'center',
   },
