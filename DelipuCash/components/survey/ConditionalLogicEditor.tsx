@@ -13,7 +13,7 @@
  * - Accessible: roles, labels, focus management
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -77,6 +77,7 @@ export const ConditionalLogicEditor: React.FC<ConditionalLogicEditorProps> = ({
   visible,
 }) => {
   const { colors } = useTheme();
+  const scrollViewRef = useRef<ScrollView>(null);
 
   // Local editing state
   const [rules, setRules] = useState<ConditionalRule[]>(config?.rules || []);
@@ -111,6 +112,10 @@ export const ConditionalLogicEditor: React.FC<ConditionalLogicEditorProps> = ({
         action: 'show',
       },
     ]);
+    // Scroll to the newly added rule after render
+    setTimeout(() => {
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }, 100);
   }, [availableSources]);
 
   const removeRule = useCallback((index: number) => {
@@ -322,7 +327,7 @@ export const ConditionalLogicEditor: React.FC<ConditionalLogicEditorProps> = ({
             </Text>
           </View>
 
-          <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+          <ScrollView ref={scrollViewRef} style={styles.body} contentContainerStyle={styles.bodyContent}>
             {/* Logic type toggle (AND/OR) */}
             {rules.length > 1 && (
               <View style={styles.logicToggle}>

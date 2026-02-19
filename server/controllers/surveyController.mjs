@@ -7,7 +7,12 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
-  const { surveyTitle, surveyDescription, questions, userId, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const { surveyTitle, surveyDescription, questions, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
 
   // Log the incoming request
   console.log('Incoming request: POST /surveys/create');
@@ -17,14 +22,25 @@ export const createSurvey = asyncHandler(async (req, res) => {
   console.log('User ID:', userId);
   console.log('Reward Amount:', rewardAmount);
 
-  // Check if the user exists
-  const userExists = await prisma.appUser.findUnique({
-    where: { id: userId },
-  });
+  // Validate dates
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return res.status(400).json({ message: 'Invalid date format for startDate or endDate' });
+  }
+  if (end <= start) {
+    return res.status(400).json({ message: 'End date must be after start date' });
+  }
 
-  if (!userExists) {
-    console.error('User not found:', userId);
-    return res.status(404).json({ message: 'User not found' });
+  // Validate question types
+  const VALID_QUESTION_TYPES = ['text', 'textarea', 'multiple_choice', 'checkbox', 'rating', 'nps', 'slider', 'dropdown', 'date', 'time', 'file_upload'];
+
+  const invalidQuestions = questions.filter(q => !VALID_QUESTION_TYPES.includes(q.type));
+  if (invalidQuestions.length > 0) {
+    return res.status(400).json({
+      message: `Invalid question type(s): ${invalidQuestions.map(q => q.type).join(', ')}`,
+      validTypes: VALID_QUESTION_TYPES,
+    });
   }
 
   try {
@@ -87,7 +103,8 @@ export const createSurvey = asyncHandler(async (req, res) => {
 
 
 export const uploadSurvey = asyncHandler(async (req, res) => {
-  const { title, description, questions, userId, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const { title, description, questions, startDate, endDate, rewardAmount, maxResponses } = req.body;
+  const userId = req.user?.id;
 
   // Log the incoming request
   console.log('Incoming request: POST /api/surveys/upload');
@@ -96,22 +113,6 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
   console.log('Title:', title);
   console.log('Description:', description);
   console.log('Questions:', JSON.stringify(questions, null, 2));
-
-  // Validate userId format (PostgreSQL UUID)
-  if (!userId || !UUID_REGEX.test(userId)) {
-    console.error('Invalid userId format:', userId);
-    return res.status(400).json({ message: 'Invalid userId format' });
-  }
-
-  // Check if the user exists
-  const userExists = await prisma.appUser.findUnique({
-    where: { id: userId },
-  });
-
-  if (!userExists) {
-    console.error('User not found:', userId);
-    return res.status(404).json({ message: 'User not found' });
-  }
 
   try {
     // Create the survey
@@ -206,10 +207,37 @@ export const getSurveyById = asyncHandler(async (req, res) => {
 export const updateSurvey = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
   const { title, description, startDate, endDate, questions, rewardAmount, maxResponses } = req.body;
+  const userId = req.user?.id;
 
   console.log('Updating survey:', surveyId);
 
   try {
+    // Verify ownership before allowing update
+    const existingSurvey = await prisma.survey.findUnique({
+      where: { id: surveyId },
+      select: { userId: true },
+    });
+
+    if (!existingSurvey) {
+      return res.status(404).json({ message: 'Survey not found' });
+    }
+
+    if (existingSurvey.userId !== userId) {
+      return res.status(403).json({ message: 'Access denied. You do not own this survey.' });
+    }
+
+    // Validate dates if provided
+    if (startDate !== undefined && endDate !== undefined) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return res.status(400).json({ message: 'Invalid date format' });
+      }
+      if (end <= start) {
+        return res.status(400).json({ message: 'End date must be after start date' });
+      }
+    }
+
     // Build update data dynamically to only update provided fields
     const updateData = {};
     if (title !== undefined) updateData.title = title;
@@ -274,11 +302,39 @@ export const updateSurvey = asyncHandler(async (req, res) => {
 // Delete a Survey
 export const deleteSurvey = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
+  const userId = req.user?.id;
 
   console.log('Deleting survey:', surveyId);
 
   try {
-    // Delete the survey and its related questions
+    // Verify ownership before allowing delete
+    const existingSurvey = await prisma.survey.findUnique({
+      where: { id: surveyId },
+      select: { userId: true },
+    });
+
+    if (!existingSurvey) {
+      return res.status(404).json({ message: 'Survey not found' });
+    }
+
+    if (existingSurvey.userId !== userId) {
+      return res.status(403).json({ message: 'Access denied. You do not own this survey.' });
+    }
+
+    // Clean up R2 file uploads before deleting survey
+    const fileUploads = await prisma.surveyFileUpload.findMany({
+      where: { surveyId },
+      select: { r2Key: true },
+    });
+
+    if (fileUploads.length > 0) {
+      const { deleteFile } = await import('../lib/r2.mjs');
+      await Promise.allSettled(
+        fileUploads.map(f => deleteFile(f.r2Key).catch(() => {}))
+      );
+    }
+
+    // Delete the survey and its related questions (cascades handle the rest)
     await prisma.uploadSurvey.deleteMany({
       where: { surveyId },
     });
@@ -301,12 +357,12 @@ export const deleteSurvey = asyncHandler(async (req, res) => {
  */
 export const checkSurveyAttempt = asyncHandler(async (req, res) => {
   const { surveyId } = req.params;
-  const { userId } = req.query;
+  const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(400).json({ 
-      message: 'User ID is required',
-      hasAttempted: false 
+    return res.status(401).json({
+      message: 'Authentication required',
+      hasAttempted: false
     });
   }
 

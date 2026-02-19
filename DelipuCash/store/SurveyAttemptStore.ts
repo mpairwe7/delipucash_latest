@@ -192,6 +192,16 @@ export const useSurveyAttemptStore = create<
         const draft = drafts[surveyId];
         if (!draft) return false;
 
+        // Auto-expire drafts older than 30 days
+        const DRAFT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+        if (draft && draft.startedAt) {
+          const age = Date.now() - new Date(draft.startedAt).getTime();
+          if (age > DRAFT_MAX_AGE_MS) {
+            get().clearDraft(surveyId);
+            return false;
+          }
+        }
+
         set({
           activeSurveyId: surveyId,
           answers: draft.answers,

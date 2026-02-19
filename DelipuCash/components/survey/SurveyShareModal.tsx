@@ -23,6 +23,7 @@ import {
   Modal,
   ScrollView,
   TextInput,
+  AccessibilityInfo,
   Alert,
   Share as RNShare,
   Clipboard,
@@ -197,6 +198,7 @@ export const SurveyShareModal: React.FC<ShareModalProps> = ({
       Clipboard.setString(shareUrl);
       setCopied(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Link copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
     } catch {
       Alert.alert('Error', 'Failed to copy link');

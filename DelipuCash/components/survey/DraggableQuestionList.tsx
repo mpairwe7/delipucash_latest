@@ -63,7 +63,7 @@ export const DraggableQuestionList: React.FC<DraggableQuestionListProps> = ({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       onReorder(index, index - 1);
       AccessibilityInfo.announceForAccessibility(
-        `Question moved up to position ${index}`,
+        `Moved to position ${index} of ${items.length}`,
       );
     },
     [onReorder],
@@ -75,7 +75,7 @@ export const DraggableQuestionList: React.FC<DraggableQuestionListProps> = ({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
       onReorder(index, index + 1);
       AccessibilityInfo.announceForAccessibility(
-        `Question moved down to position ${index + 2}`,
+        `Moved to position ${index + 2} of ${items.length}`,
       );
     },
     [onReorder, items.length],

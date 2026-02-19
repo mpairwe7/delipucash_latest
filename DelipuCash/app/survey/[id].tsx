@@ -1234,7 +1234,13 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           </View>
         </View>
 
-        <View style={[styles.progressContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[styles.progressContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Question ${currentQuestionIndex + 1} of ${visibleQuestions.length}`}
+          accessibilityValue={{ min: 0, max: 100, now: Math.round(progress) }}
+        >
           <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.textMuted, 0.12) }]}>
             <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress}%` }]} />
           </View>

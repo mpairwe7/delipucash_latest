@@ -139,8 +139,12 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
           },
         },
       );
-    } catch {
-      setError('Failed to pick file');
+    } catch (err: any) {
+      // DocumentPicker cancellation is not an error
+      if (err?.code === 'DOCUMENT_PICKER_CANCELED' || err?.message?.includes('cancel')) {
+        return;
+      }
+      setError('Failed to pick file. Please try again.');
     }
   }, [surveyId, questionId, uploadFile, onFileUploaded]);
 

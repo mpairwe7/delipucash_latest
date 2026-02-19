@@ -31,6 +31,7 @@ export function useSurveyWebhooks(surveyId: string) {
       return result.data ?? [];
     },
     enabled: !!surveyId,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

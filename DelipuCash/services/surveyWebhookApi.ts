@@ -20,6 +20,17 @@ function authHeaders(): Record<string, string> {
   };
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ── Types ──────────────────────────────────────────────────────────
 
 export interface SurveyWebhook {
@@ -55,7 +66,7 @@ export async function createWebhook(
   surveyId: string,
   payload: CreateWebhookPayload,
 ): Promise<{ success: boolean; data?: SurveyWebhook; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -66,7 +77,7 @@ export async function createWebhook(
 export async function listWebhooks(
   surveyId: string,
 ): Promise<{ success: boolean; data?: SurveyWebhook[]; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks`, {
     headers: authHeaders(),
   });
   return res.json();
@@ -77,7 +88,7 @@ export async function updateWebhook(
   webhookId: string,
   payload: UpdateWebhookPayload,
 ): Promise<{ success: boolean; data?: SurveyWebhook; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -89,7 +100,7 @@ export async function deleteWebhook(
   surveyId: string,
   webhookId: string,
 ): Promise<{ success: boolean; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
@@ -100,7 +111,7 @@ export async function testWebhook(
   surveyId: string,
   webhookId: string,
 ): Promise<{ success: boolean; status?: number; message?: string }> {
-  const res = await fetch(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}/test`, {
+  const res = await fetchWithTimeout(`${API_BASE_URL}/api/surveys/${surveyId}/webhooks/${webhookId}/test`, {
     method: 'POST',
     headers: authHeaders(),
   });

@@ -448,6 +448,25 @@ export const useSurveyBuilderStore = create<
       {
         name: 'survey-builder-storage',
         storage: createJSONStorage(() => AsyncStorage),
+        version: 1,
+        migrate: (persistedState: unknown, version: number) => {
+          const state = persistedState as Record<string, unknown>;
+          if (version === 0) {
+            // Ensure all questions have conditionalLogic and fileUploadConfig fields
+            if (Array.isArray(state.questions)) {
+              state.questions = (state.questions as any[]).map(q => ({
+                ...q,
+                conditionalLogic: q.conditionalLogic ?? null,
+                fileUploadConfig: q.fileUploadConfig ?? null,
+              }));
+            }
+            // Ensure earnedBadges exists
+            if (!state.earnedBadges) {
+              state.earnedBadges = [];
+            }
+          }
+          return state;
+        },
         partialize: (state) => ({
           // Persist: questions, metadata, badges — NOT undo history or UI ephemera
           surveyTitle: state.surveyTitle,
@@ -476,8 +495,8 @@ export const selectIsMultiSelectMode = (state: SurveyBuilderState) => state.isMu
 export const selectSelectedQuestionIds = (state: SurveyBuilderState) => state.selectedQuestionIds;
 export const selectEarnedBadges = (state: SurveyBuilderState) => state.earnedBadges;
 export const selectQuestionsCount = (state: SurveyBuilderState) => state.questions.length;
-export const selectCanUndo = (state: UndoActions) => state.canUndo;
-export const selectCanRedo = (state: UndoActions) => state.canRedo;
+export const selectCanUndo = (state: { canUndo: boolean }) => state.canUndo;
+export const selectCanRedo = (state: { canRedo: boolean }) => state.canRedo;
 
 // ============================================================================
 // OBJECT SELECTORS (use with useShallow)

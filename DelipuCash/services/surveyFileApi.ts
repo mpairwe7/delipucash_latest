@@ -20,6 +20,17 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 10000): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -111,7 +122,7 @@ export async function getSurveyFileDownloadUrl(
   fileId: string,
 ): Promise<{ success: boolean; data?: SurveyFileUploadResult; error?: string }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_BASE_URL}/api/surveys/${surveyId}/files/${fileId}`,
       { headers: authHeaders() },
     );
@@ -131,7 +142,7 @@ export async function deleteSurveyFile(
   fileId: string,
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${API_BASE_URL}/api/surveys/${surveyId}/files/${fileId}`,
       { method: 'DELETE', headers: authHeaders() },
     );

@@ -7,6 +7,34 @@ import { publishEvent } from '../lib/eventBus.mjs';
 // ---------------------------------------------------------------------------
 const activeSessions = new Map();
 
+// Session timeout in ms (30 minutes of inactivity)
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
+// Track last activity per user per survey
+const sessionActivity = new Map(); // `${surveyId}:${userId}` -> timestamp
+
+function touchSession(surveyId, userId) {
+  sessionActivity.set(`${surveyId}:${userId}`, Date.now());
+}
+
+// Periodic cleanup of stale sessions (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, lastActive] of sessionActivity.entries()) {
+    if (now - lastActive > SESSION_TTL_MS) {
+      const [surveyId, userId] = key.split(':');
+      const session = activeSessions.get(surveyId);
+      if (session) {
+        session.delete(userId);
+        if (session.size === 0) {
+          activeSessions.delete(surveyId);
+        }
+      }
+      sessionActivity.delete(key);
+    }
+  }
+}, 5 * 60 * 1000);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -121,6 +149,7 @@ export async function joinSession(req, res) {
       lockedQuestionId: null,
       joinedAt: new Date().toISOString(),
     });
+    touchSession(surveyId, userId);
 
     const editors = sessionToArray(session);
 
@@ -170,6 +199,7 @@ export async function leaveSession(req, res) {
     const releasedQuestionId = userData?.lockedQuestionId || null;
 
     session.delete(userId);
+    sessionActivity.delete(`${surveyId}:${userId}`);
 
     // Clean up empty sessions
     if (session.size === 0) {
@@ -351,6 +381,9 @@ export async function getActiveEditors(req, res) {
     if (!survey) return;
 
     const { surveyId } = req.params;
+    const userId = req.user.id;
+
+    touchSession(surveyId, userId);
 
     const session = activeSessions.get(surveyId);
     const editors = session ? sessionToArray(session) : [];

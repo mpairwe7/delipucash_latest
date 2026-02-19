@@ -83,12 +83,19 @@ export async function uploadSurveyFile(req, res) {
     }
 
     // Verify question exists and is file_upload type
-    if (survey.uploads.length === 0) {
-      return res.status(400).json({ success: false, error: 'Question not found in this survey' });
+    const question = survey.uploads?.[0];
+    if (!question) {
+      return res.status(404).json({
+        success: false,
+        error: 'Question not found in this survey'
+      });
     }
 
-    if (survey.uploads[0].type !== 'file_upload') {
-      return res.status(400).json({ success: false, error: 'Question is not a file upload type' });
+    if (question.type !== 'file_upload') {
+      return res.status(400).json({
+        success: false,
+        error: 'This question does not accept file uploads'
+      });
     }
 
     // Upload to R2

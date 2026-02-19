@@ -46,12 +46,14 @@ export async function dispatchWebhooks(surveyId, eventType, payload) {
  * @param {Object} payload - The event payload
  */
 async function deliverWebhook(webhook, eventType, payload) {
-  const body = JSON.stringify({
-    event: eventType,
+  const bodyObj = {
     data: payload,
+    event: eventType,
     timestamp: new Date().toISOString(),
     webhookId: webhook.id,
-  });
+  };
+  // Sort keys for deterministic HMAC signature verification by receivers
+  const body = JSON.stringify(bodyObj, Object.keys(bodyObj).sort());
 
   const headers = {
     'Content-Type': 'application/json',

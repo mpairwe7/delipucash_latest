@@ -2,6 +2,47 @@ import prisma from '../lib/prisma.mjs';
 
 const URL_REGEX = /^https?:\/\/.+/i;
 
+// Whitelist of valid webhook event types
+const VALID_WEBHOOK_EVENTS = [
+  'response.submitted',
+  'response.deleted',
+  'survey.updated',
+  'survey.deleted',
+  'survey.started',
+  'survey.ended',
+];
+
+// Hosts blocked to prevent SSRF attacks
+const BLOCKED_HOSTS = [
+  'localhost', '127.0.0.1', '0.0.0.0', '::1',
+  '169.254.169.254', // AWS/GCP metadata
+  'metadata.google.internal',
+];
+
+function validateWebhookUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+
+    // Block private/internal hosts
+    if (BLOCKED_HOSTS.includes(url.hostname)) {
+      return { valid: false, reason: 'This host is not allowed for webhook delivery' };
+    }
+
+    // Block private IP ranges
+    const ipMatch = url.hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipMatch) {
+      const [, a, b] = ipMatch.map(Number);
+      if (a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) {
+        return { valid: false, reason: 'Private IP addresses are not allowed' };
+      }
+    }
+
+    return { valid: true };
+  } catch {
+    return { valid: false, reason: 'Invalid URL format' };
+  }
+}
+
 /**
  * Verify that the requesting user owns the survey.
  * Returns the survey if ownership is confirmed, or null after sending an error response.
@@ -48,6 +89,25 @@ export async function createWebhook(req, res) {
       return res.status(400).json({
         success: false,
         message: 'At least one event type is required.',
+      });
+    }
+
+    // Validate event types against whitelist
+    const invalidEvents = events.filter(e => !VALID_WEBHOOK_EVENTS.includes(e));
+    if (invalidEvents.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid event type(s): ${invalidEvents.join(', ')}`,
+        validEvents: VALID_WEBHOOK_EVENTS,
+      });
+    }
+
+    // SSRF protection: validate webhook URL
+    const urlCheck = validateWebhookUrl(url);
+    if (!urlCheck.valid) {
+      return res.status(400).json({
+        success: false,
+        message: urlCheck.reason,
       });
     }
 
@@ -260,6 +320,15 @@ export async function testWebhook(req, res) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. You do not own this survey.',
+      });
+    }
+
+    // SSRF protection
+    const urlCheck = validateWebhookUrl(webhook.url);
+    if (!urlCheck.valid) {
+      return res.status(400).json({
+        success: false,
+        message: `Webhook URL is blocked: ${urlCheck.reason}`,
       });
     }
 

@@ -1031,11 +1031,6 @@ export default function SurveysScreen(): React.ReactElement {
         updateCellsBatchingPeriod={100}
         windowSize={5}
         initialNumToRender={8}
-        getItemLayout={(_data, index) => ({
-          length: 160, // Approximate item height
-          offset: 160 * index,
-          index,
-        })}
         // Grid layout for tablet
         numColumns={isTablet && cardViewStyle === 'grid' ? 2 : 1}
         key={isTablet && cardViewStyle === 'grid' ? 'grid' : 'list'} // Force re-render on layout change
@@ -1267,18 +1262,17 @@ const styles = StyleSheet.create({
   adCardWrapper: {
     position: 'relative',
   },
-  // Dismiss button — small, non-obtrusive, WCAG-compliant touch target (44×44)
+  // Dismiss button — WCAG-compliant touch target (44×44 minimum)
   adDismissBtn: {
     position: 'absolute',
     top: SPACING.xs,
     right: SPACING.xs,
     zIndex: 10,
-    width: 28,
-    height: 28,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS.full,
     alignItems: 'center',
     justifyContent: 'center',
-    // Ensure 44pt minimum touch target via hitSlop
   },
   // Ad Containers - Industry Standard: Non-intrusive, clearly labeled, smooth transitions
   adContainer: {
