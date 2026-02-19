@@ -371,6 +371,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     completeRedemption,
     cancelRedemption,
     addPendingSubmission,
+    pruneSessionQuestions,
   } = useInstantRewardStore(
     useShallow((s) => ({
       initializeAttemptHistory: s.initializeAttemptHistory,
@@ -387,6 +388,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       completeRedemption: s.completeRedemption,
       cancelRedemption: s.cancelRedemption,
       addPendingSubmission: s.addPendingSubmission,
+      pruneSessionQuestions: s.pruneSessionQuestions,
     }))
   );
 
@@ -419,14 +421,23 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }
   }, [userEmail, initializeAttemptHistory]);
 
-  // Initialize session if not already started (or if switching from a different session type)
+  // Initialize session with ONLY eligible questions:
+  // - instant reward, not completed, not already attempted, has open spots
+  // (Duolingo / Kahoot! pattern: never queue dead-end questions)
   useEffect(() => {
     if (allQuestions && allQuestions.length > 0 && (sessionState === 'IDLE' || sessionType !== 'instant')) {
-      const instantOnly = allQuestions.filter(q => q.isInstantReward);
-      const questionIds = instantOnly.map(q => q.id);
-      startSession(questionIds, 'instant');
+      const eligible = allQuestions.filter(q =>
+        q.isInstantReward &&
+        !q.isCompleted &&
+        !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+        q.maxWinners - q.winnersCount > 0
+      );
+      const questionIds = eligible.map(q => q.id);
+      if (questionIds.length > 0) {
+        startSession(questionIds, 'instant');
+      }
     }
-  }, [allQuestions, sessionState, sessionType, startSession]);
+  }, [allQuestions, sessionState, sessionType, startSession, attemptHistory]);
 
   // ── Reset ALL local state when navigating to a new question ──
   useEffect(() => {
@@ -445,6 +456,18 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   }, [questionId, transitionOpacity, transitionTranslateX, recordQuestionStart]);
 
   // Offline queue flush is handled globally by useOfflineQueueProcessor in _layout.tsx
+
+  // Reactively prune session queue when spots fill mid-session
+  // (e.g. another user claims the last spot while this user is answering)
+  useEffect(() => {
+    if (!allQuestions || sessionState === 'IDLE') return;
+    const deadIds = allQuestions
+      .filter(q => q.isCompleted || q.maxWinners - q.winnersCount <= 0)
+      .map(q => q.id);
+    if (deadIds.length > 0) {
+      pruneSessionQuestions(deadIds);
+    }
+  }, [allQuestions, sessionState, pruneSessionQuestions]);
 
   // Get unanswered questions for auto-transition (reactive via attemptHistory)
   // Excludes full/completed questions so transitions never land on a dead-end.
@@ -898,10 +921,34 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     setShowRedemptionModal(true);
   }, []);
 
-  const handleContinue = useCallback(() => {
+  // Continue after session summary: refetch fresh data, start new session
+  // if open questions exist, otherwise gracefully exit (Instagram/TikTok pattern)
+  const handleContinue = useCallback(async () => {
     setShowSessionSummary(false);
-    router.push('/instant-reward-questions');
-  }, []);
+
+    // Refetch to get latest winnersCount / completion data
+    const { data: freshQuestions } = await refetchAllQuestions();
+    const freshOpen = (freshQuestions || []).filter(q =>
+      q.isInstantReward &&
+      !q.isCompleted &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0
+    );
+
+    if (freshOpen.length > 0) {
+      // Start a fresh session with only eligible questions
+      const freshIds = freshOpen.map(q => q.id);
+      startSession(freshIds, 'instant');
+      router.replace(`/instant-reward-answer/${freshOpen[0].id}` as Href);
+    } else {
+      // All spots filled — graceful fallback to list with informative toast
+      showToast({
+        message: 'All spots are currently filled. Check back soon for new questions!',
+        type: 'info',
+      });
+      router.replace('/instant-reward-questions');
+    }
+  }, [refetchAllQuestions, attemptHistory, startSession, showToast]);
 
   const handleCloseSession = useCallback(() => {
     setShowSessionSummary(false);

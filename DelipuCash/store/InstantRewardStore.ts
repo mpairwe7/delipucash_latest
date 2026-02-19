@@ -185,6 +185,8 @@ export interface InstantRewardUIActions {
   getCurrentSessionQuestion: () => string | null;
   getSessionProgress: () => { current: number; total: number; remaining: number };
   hasMoreQuestions: () => boolean;
+  /** Remove questions that became ineligible mid-session (e.g. spots filled) */
+  pruneSessionQuestions: (deadIds: string[]) => void;
   setSessionState: (state: InstantRewardSessionState) => void;
   recordQuestionStart: () => void;
   updateSessionSummary: (isCorrect: boolean, rewardEarned: number) => void;
@@ -474,6 +476,25 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           }
         }
         return false;
+      },
+
+      pruneSessionQuestions: (deadIds) => {
+        if (deadIds.length === 0) return;
+        const deadSet = new Set(deadIds);
+        set(state => {
+          const pruned = state.sessionQuestionIds.filter(id => !deadSet.has(id));
+          // Adjust currentSessionIndex if items before it were removed
+          const currentId = state.sessionQuestionIds[state.currentSessionIndex];
+          const newIndex = currentId ? Math.max(0, pruned.indexOf(currentId)) : 0;
+          return {
+            sessionQuestionIds: pruned,
+            currentSessionIndex: newIndex,
+            sessionSummary: {
+              ...state.sessionSummary,
+              totalQuestions: pruned.length,
+            },
+          };
+        });
       },
 
       setSessionState: (state) => {

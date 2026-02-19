@@ -551,11 +551,10 @@ export function EditProfileModal({
     ]);
   }, []);
 
-  // Handle save
+  // Handle save — shows success animation then auto-closes (Instagram pattern)
   const handleSave = useCallback(async () => {
     if (!validateForm()) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      // Announce error to screen readers
       AccessibilityInfo.announceForAccessibility('Please fix the errors in the form before saving.');
       return;
     }
@@ -566,18 +565,19 @@ export function EditProfileModal({
       await onSave(formData);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-      // Brief success indicator before closing
+      // Show success animation, then auto-close so updated profile is visible
       setShowSuccessCheck(true);
       AccessibilityInfo.announceForAccessibility('Profile updated successfully.');
 
       setTimeout(() => {
         setShowSuccessCheck(false);
+        onClose();
       }, 1200);
     } catch {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       // Error handling is done in parent
     }
-  }, [formData, onSave, validateForm]);
+  }, [formData, onSave, onClose, validateForm]);
 
   // Handle close with unsaved changes warning
   const handleClose = useCallback(() => {

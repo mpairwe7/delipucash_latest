@@ -313,6 +313,9 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   );
   const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
   const endSession = useInstantRewardStore((s) => s.endSession);
+  const startSession = useInstantRewardStore((s) => s.startSession);
+  const resetSession = useInstantRewardStore((s) => s.resetSession);
+  const attemptHistory = useInstantRewardStore((s) => s.attemptHistory);
   const initiateRedemption = useInstantRewardStore((s) => s.initiateRedemption);
   const completeRedemption = useInstantRewardStore((s) => s.completeRedemption);
   const cancelRedemption = useInstantRewardStore((s) => s.cancelRedemption);
@@ -622,14 +625,40 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     setShowRedemptionModal(true);
   }, []);
 
-  const handleSessionContinue = useCallback(() => {
+  // Continue after session summary: refetch, navigate to first open question or
+  // show fallback toast if all spots filled (Duolingo "all caught up" pattern)
+  const handleSessionContinue = useCallback(async () => {
     setShowSessionSummary(false);
-  }, []);
+    sessionShownRef.current = false;
+
+    // Refetch to get latest winnersCount data
+    const { data: freshQuestions } = await refetch();
+    const freshOpen = (freshQuestions || []).filter(q =>
+      q.isInstantReward &&
+      !q.isCompleted &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0
+    );
+
+    if (freshOpen.length > 0) {
+      // Start a fresh session and navigate directly
+      const freshIds = freshOpen.map(q => q.id);
+      startSession(freshIds, 'instant');
+      router.push(`/instant-reward-answer/${freshOpen[0].id}` as Href);
+    } else {
+      // All spots filled — stay on list with informative toast
+      showToast({
+        message: 'All spots are currently filled. Check back soon for new questions!',
+        type: 'info',
+      });
+    }
+  }, [refetch, attemptHistory, startSession, showToast]);
 
   const handleSessionClose = useCallback(() => {
     setShowSessionSummary(false);
+    resetSession();
     router.back();
-  }, []);
+  }, [resetSession]);
 
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
@@ -671,13 +700,31 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     }
   }, [initiateRedemption, completeRedemption]);
 
-  // SessionClosedModal handlers
+  // SessionClosedModal handlers — refetch and navigate to first open question
   const handleSessionClosedContinue = useCallback(async () => {
     triggerHaptic('light');
     setShowSessionClosed(false);
-    sessionShownRef.current = false; // allow re-evaluation after fresh data
-    await handleRefresh();
-  }, [handleRefresh]);
+    sessionShownRef.current = false;
+
+    const { data: freshQuestions } = await refetch();
+    const freshOpen = (freshQuestions || []).filter(q =>
+      q.isInstantReward &&
+      !q.isCompleted &&
+      !attemptHistory?.attemptedQuestionIds.includes(q.id) &&
+      q.maxWinners - q.winnersCount > 0
+    );
+
+    if (freshOpen.length > 0) {
+      const freshIds = freshOpen.map(q => q.id);
+      startSession(freshIds, 'instant');
+      router.push(`/instant-reward-answer/${freshOpen[0].id}` as Href);
+    } else {
+      showToast({
+        message: 'All spots are still filled. Pull down to refresh when new questions appear!',
+        type: 'info',
+      });
+    }
+  }, [refetch, attemptHistory, startSession, showToast]);
 
   const handleSessionClosedRedeem = useCallback(() => {
     triggerHaptic('medium');

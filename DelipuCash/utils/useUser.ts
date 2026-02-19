@@ -215,7 +215,7 @@ export default function useUser(): UseUserResult {
       createdAt: u.createdAt,
       updatedAt: u.updatedAt,
     };
-  }, [auth?.user?.id, auth?.user?.updatedAt, auth?.user?.firstName, auth?.user?.lastName]);
+  }, [auth?.user?.id, auth?.user?.updatedAt, auth?.user?.firstName, auth?.user?.lastName, auth?.user?.avatar]);
 
   return {
     // Prefer fresh API data, fall back to persisted auth store data

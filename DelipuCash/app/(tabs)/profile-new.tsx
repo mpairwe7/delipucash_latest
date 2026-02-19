@@ -394,12 +394,17 @@ export default function ProfileScreen(): React.ReactElement {
   const profile = useMemo(() => {
     const trimOrEmpty = (v: string | null | undefined): string =>
       (v ?? '').trim();
+    // Cache-bust avatar URL so ExpoImage doesn't show stale image after update
+    const rawAvatar = user?.avatar || undefined;
+    const avatarUri = rawAvatar && user?.updatedAt && !rawAvatar.startsWith('file://')
+      ? `${rawAvatar}${rawAvatar.includes('?') ? '&' : '?'}v=${encodeURIComponent(user.updatedAt)}`
+      : rawAvatar;
     return {
       firstName: trimOrEmpty(user?.firstName),
       lastName: trimOrEmpty(user?.lastName),
       email: trimOrEmpty(user?.email),
       telephone: trimOrEmpty(user?.telephone ?? user?.phone),
-      avatarUri: user?.avatar || undefined,
+      avatarUri,
       walletBalance: user?.walletBalance ?? 0,
       totalEarnings: user?.totalEarnings || userStats?.totalEarnings || 0,
       totalRewards: user?.totalRewards || userStats?.totalRewards || 0,
@@ -559,8 +564,8 @@ export default function ProfileScreen(): React.ReactElement {
     lastName: profile.lastName,
     email: profile.email,
     telephone: profile.telephone,
-    avatarUri: user?.avatar || undefined,
-  }), [profile.firstName, profile.lastName, profile.email, profile.telephone, user?.avatar]);
+    avatarUri: profile.avatarUri,
+  }), [profile.firstName, profile.lastName, profile.email, profile.telephone, profile.avatarUri]);
 
   const handleEditProfile = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -582,9 +587,11 @@ export default function ProfileScreen(): React.ReactElement {
         phone,
         avatar: data.avatarUri ?? null,
       } as any);
+      // Refetch so the profile screen shows fresh data immediately when
+      // the modal's success animation finishes and auto-closes.
       await refetchUser();
-      setShowEditProfileModal(false);
-      Alert.alert('Success', 'Your profile has been updated!');
+      // Modal auto-closes after its 1200ms success animation (Instagram pattern).
+      // No manual setShowEditProfileModal(false) or Alert needed here.
     } catch (error) {
       Alert.alert('Error', error instanceof Error ? error.message : 'Failed to update profile. Please try again.');
       throw error;
@@ -854,8 +861,6 @@ export default function ProfileScreen(): React.ReactElement {
       label: 'Language',
       subtitle: 'English (Default)',
       icon: <Globe size={ICON_SIZE.base} color={colors.textMuted} />,
-      badge: 'Coming Soon',
-      badgeColor: colors.warning,
     },
   ], [isDark, colors, toggleTheme]);
 

@@ -193,22 +193,50 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
   );
 
   // --------------------------------------------------------------------------
+  // Tab routes already have solid-colored backgrounds and their own safe-area
+  // padding — scrims are unnecessary and in dark mode they create an overly
+  // dark band at the top that overshadows the status bar / content area.
+  // Only render scrims on non-tab standalone screens where content may scroll
+  // edge-to-edge under the status bar (e.g. question detail, reward screens).
+  // --------------------------------------------------------------------------
+  const TAB_ROUTES = [
+    '/home-redesigned',
+    '/questions-new',
+    '/videos-new',
+    '/surveys-new',
+    '/profile-new',
+    '/transactions',
+    '/withdraw',
+    '/explore',
+  ];
+
+  const isTabRoute = useMemo(
+    () => TAB_ROUTES.some((route) => pathname === route || pathname === `/(tabs)${route}`),
+    [pathname]
+  );
+
+  // --------------------------------------------------------------------------
   // Scrim colors — subtle gradient overlays that keep system bar icons
   // readable regardless of the content scrolling behind them.
   //
   // Dark mode: a gentle dark-to-transparent scrim (Instagram / TikTok style)
   //            prevents white status-bar icons from disappearing on bright
-  //            content cards.
+  //            content cards. Reduced opacity to avoid overshadowing content.
   // Light mode: a very subtle white-to-transparent scrim keeps dark icons
   //             legible on dark hero images.
   // --------------------------------------------------------------------------
   const topScrimColors: [string, string] = isDark
-    ? ['rgba(0, 0, 0, 0.45)', 'transparent']
-    : ['rgba(255, 255, 255, 0.35)', 'transparent'];
+    ? ['rgba(0, 0, 0, 0.25)', 'transparent']
+    : ['rgba(255, 255, 255, 0.25)', 'transparent'];
 
   const bottomScrimColors: [string, string] = isDark
-    ? ['transparent', 'rgba(0, 0, 0, 0.30)']
-    : ['transparent', 'rgba(255, 255, 255, 0.20)'];
+    ? ['transparent', 'rgba(0, 0, 0, 0.18)']
+    : ['transparent', 'rgba(255, 255, 255, 0.15)'];
+
+  // Whether scrims should be rendered:
+  // - Not on immersive routes (system bars are hidden)
+  // - Not on tab routes (they handle their own backgrounds & safe areas)
+  const showScrims = !isImmersiveRoute && !isTabRoute;
 
   // --------------------------------------------------------------------------
   // Apply system bar configuration imperatively (covers cases where the
@@ -246,7 +274,7 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
         animated
       />
 
-      {!isImmersiveRoute && (
+      {showScrims && (
         <>
           {/* Top scrim: protects status bar icons from being swallowed by
               bright/dark content scrolling underneath */}
