@@ -45,6 +45,8 @@ export interface AnswerResultOverlayProps {
   visible: boolean;
   isCorrect: boolean;
   earnedAmount: number;
+  /** Points earned for this answer (backend-driven) */
+  earnedPoints?: number;
   streakCount: number;
   onDismiss: () => void;
 }
@@ -172,6 +174,7 @@ export const AnswerResultOverlay: React.FC<AnswerResultOverlayProps> = ({
   visible,
   isCorrect,
   earnedAmount,
+  earnedPoints,
   streakCount,
   onDismiss,
 }) => {
@@ -187,8 +190,9 @@ export const AnswerResultOverlay: React.FC<AnswerResultOverlayProps> = ({
       opacity.value = withTiming(1, { duration: 220 });
 
       // Announce to screen readers
+      const pointsMsg = earnedPoints ? ` (${earnedPoints} points)` : '';
       const msg = isCorrect
-        ? `Correct! You earned ${earnedAmount} Ugandan shillings.${streakCount >= 2 ? ` ${streakCount} answer streak!` : ''}`
+        ? `Correct! You earned ${earnedAmount} Ugandan shillings${pointsMsg}.${streakCount >= 2 ? ` ${streakCount} answer streak!` : ''}`
         : 'Incorrect answer. Keep going!';
       setTimeout(() => AccessibilityInfo.announceForAccessibility(msg), 300);
 
@@ -212,7 +216,7 @@ export const AnswerResultOverlay: React.FC<AnswerResultOverlayProps> = ({
         timerRef.current = null;
       }
     };
-  }, [visible, isCorrect, earnedAmount, streakCount, onDismiss]);
+  }, [visible, isCorrect, earnedAmount, earnedPoints, streakCount, onDismiss]);
 
   const overlayStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -255,7 +259,7 @@ export const AnswerResultOverlay: React.FC<AnswerResultOverlayProps> = ({
         accessibilityLiveRegion="assertive"
         accessibilityLabel={
           isCorrect
-            ? `Correct! Earned ${formatCurrency(earnedAmount)}`
+            ? `Correct! Earned ${formatCurrency(earnedAmount)}${earnedPoints ? ` (${earnedPoints} points)` : ''}`
             : 'Incorrect answer'
         }
         accessibilityHint="Tap to continue"
@@ -296,7 +300,12 @@ export const AnswerResultOverlay: React.FC<AnswerResultOverlayProps> = ({
 
           {/* Earnings count-up (correct only) */}
           {isCorrect && earnedAmount > 0 && (
-            <AnimatedEarnings amount={earnedAmount} color="#fff" />
+            <>
+              <AnimatedEarnings amount={earnedAmount} color="#fff" />
+              {earnedPoints != null && earnedPoints > 0 && (
+                <Text style={styles.pointsText}>{earnedPoints} pts</Text>
+              )}
+            </>
           )}
 
           {/* Streak badge */}
@@ -369,6 +378,13 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize['2xl'],
     textAlign: 'center',
+  },
+  pointsText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: 'rgba(255, 255, 255, 0.85)',
+    textAlign: 'center',
+    marginTop: -SPACING.xs,
   },
   streakBadge: {
     flexDirection: 'row',

@@ -20,6 +20,7 @@ import { verifyToken } from '../utils/verifyUser.mjs';
 import {
   uploadVideoToR2,
   uploadThumbnailToR2,
+  uploadAvatarToR2,
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
   deleteVideoFromR2,
@@ -79,6 +80,29 @@ const thumbnailUpload = multer({
       'image/gif',
     ];
     
+    if (allowedImageTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid image type: ${file.mimetype}. Allowed: ${allowedImageTypes.join(', ')}`));
+    }
+  },
+});
+
+// Avatar upload config (profile photo)
+const avatarUpload = multer({
+  storage: memoryStorage,
+  limits: {
+    fileSize: 2 * 1024 * 1024, // 2MB max (already compressed client-side)
+    files: 1,
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedImageTypes = [
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/gif',
+    ];
+
     if (allowedImageTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -194,6 +218,22 @@ router.post(
   thumbnailUpload.single('thumbnail'),
   handleMulterError,
   uploadThumbnailToR2
+);
+
+/**
+ * POST /api/r2/upload/avatar
+ * Upload a profile avatar image to R2 and update user record
+ *
+ * Body (multipart/form-data):
+ * - avatar: Image file (JPEG, PNG, WebP, GIF — max 2MB)
+ * - No userId needed — uses JWT token
+ */
+router.post(
+  '/upload/avatar',
+  verifyToken,
+  avatarUpload.single('avatar'),
+  handleMulterError,
+  uploadAvatarToR2
 );
 
 /**

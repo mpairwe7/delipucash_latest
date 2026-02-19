@@ -97,6 +97,7 @@ import {
   useUserStats,
   useVerify2FACode,
 } from '@/services/hooks';
+import { uploadAvatarToR2 } from '@/services/r2UploadService';
 import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
@@ -580,14 +581,24 @@ export default function ProfileScreen(): React.ReactElement {
       const lastName = (data.lastName ?? '').trim();
       const phone = (data.telephone ?? '').trim();
 
+      // Upload avatar to R2 if it's a local file (file:// URI from image picker).
+      // If it's already an HTTP URL (existing avatar) or null, pass through as-is.
+      let avatarUrl: string | null = data.avatarUri ?? null;
+      if (data.avatarUri && data.avatarUri.startsWith('file://')) {
+        const uploadResult = await uploadAvatarToR2(data.avatarUri);
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error || 'Failed to upload profile photo');
+        }
+        avatarUrl = uploadResult.data.url;
+      }
+
       // Map telephone (UI field name) to phone (API/Prisma field name)
-      // Include avatar so photo changes are persisted to the backend
       await updateProfileMutation.mutateAsync({
         firstName,
         lastName,
         phone,
-        avatar: data.avatarUri ?? null,
-      } as any);
+        avatar: avatarUrl,
+      });
       // Refetch so the profile screen shows fresh data immediately when
       // the modal's success animation finishes and auto-closes.
       await refetchUser();

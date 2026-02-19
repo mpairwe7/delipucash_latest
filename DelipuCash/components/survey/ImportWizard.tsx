@@ -670,7 +670,10 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
                     </View>
                   )}
                   {(item.points ?? 0) > 0 && (
-                    <View style={[styles.typeBadge, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+                    <View
+                      style={[styles.typeBadge, { backgroundColor: withAlpha(colors.warning, 0.1) }]}
+                      accessibilityLabel={`${item.points} points`}
+                    >
                       <Text style={[styles.typeBadgeText, { color: colors.warning }]}>{item.points} pts</Text>
                     </View>
                   )}
@@ -1093,7 +1096,7 @@ const styles = StyleSheet.create({
   },
   typeBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: 10,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   requiredBadge: {
     paddingHorizontal: SPACING.xs,
@@ -1102,7 +1105,7 @@ const styles = StyleSheet.create({
   },
   requiredBadgeText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: 10,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   removeQuestionBtn: {
     width: 48,

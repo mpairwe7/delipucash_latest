@@ -136,12 +136,14 @@ export {
   selectQuestionsCount as selectBuilderQuestionsCount,
   selectCanUndo as selectBuilderCanUndo,
   selectCanRedo as selectBuilderCanRedo,
+  selectIsScoringEnabled,
   // Object selectors (use with useShallow)
   selectBuilderMeta,
   selectMultiSelectState,
   // Convenience hooks (pre-wrapped with useShallow)
   useBuilderMeta,
   useMultiSelectState,
+  useBuilderActions,
 } from './SurveyBuilderStore';
 export type {
   BuilderQuestionType,

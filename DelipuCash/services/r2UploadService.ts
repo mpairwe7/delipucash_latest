@@ -766,31 +766,101 @@ export async function uploadAdMediaToR2(
 }
 
 // ============================================================================
+// AVATAR UPLOAD
+// ============================================================================
+
+export interface AvatarUploadResult {
+  url: string;
+  key: string;
+  size: number;
+  mimeType: string;
+}
+
+/**
+ * Upload a profile avatar image to R2
+ *
+ * @param avatarUri - Local image file URI (from expo-image-picker/manipulator)
+ * @param options - Upload options (progress callback, etc.)
+ */
+export async function uploadAvatarToR2(
+  avatarUri: string,
+  options: UploadOptions = {}
+): Promise<ApiResponse<AvatarUploadResult>> {
+  try {
+    const fileName = avatarUri.split('/').pop() || 'avatar.jpg';
+    const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
+
+    const formData = new FormData();
+    formData.append('avatar', assetToFormData(avatarUri, fileName, mimeType) as unknown as Blob);
+
+    options.onStart?.();
+
+    const response = await createProgressRequest(
+      `${API_BASE_URL}/api/r2/upload/avatar`,
+      'POST',
+      formData,
+      options
+    );
+
+    const data = await safeParseJSON(response);
+
+    if (!response.ok) {
+      const errorMessage = data.message || data.error || 'Avatar upload failed';
+      const error = new Error(errorMessage);
+      options.onError?.(error);
+      return {
+        success: false,
+        data: data as AvatarUploadResult,
+        error: errorMessage,
+      };
+    }
+
+    options.onComplete?.();
+
+    return {
+      success: true,
+      data: data.avatar as AvatarUploadResult,
+    };
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error('Avatar upload failed');
+    options.onError?.(err);
+    return {
+      success: false,
+      data: {} as AvatarUploadResult,
+      error: err.message,
+    };
+  }
+}
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
 export const r2UploadService = {
   // Validation
   validateUpload,
-  
+
   // Video upload
   uploadVideoToR2,
   uploadMediaToR2,
-  
+
   // Thumbnail upload
   uploadThumbnailToR2,
-  
+
+  // Avatar upload
+  uploadAvatarToR2,
+
   // Ad media upload
   uploadAdMediaToR2,
 
   // Presigned URLs
   getPresignedUploadUrl,
   uploadToPresignedUrl,
-  
+
   // Livestream
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
-  
+
   // Playback
   getSignedPlaybackUrl,
 };

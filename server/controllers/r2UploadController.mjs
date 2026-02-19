@@ -24,6 +24,7 @@ import prisma from '../lib/prisma.mjs';
 import r2, {
   uploadVideo,
   uploadThumbnail,
+  uploadAvatar,
   uploadLivestreamRecording,
   getSignedUploadUrl,
   getSignedDownloadUrl,
@@ -874,9 +875,89 @@ export const deleteVideoFromR2 = asyncHandler(async (req, res) => {
   }
 });
 
+// ============================================================================
+// AVATAR UPLOAD
+// ============================================================================
+
+/**
+ * Upload a user avatar to R2 and update the user record atomically.
+ * Uses req.user.id from JWT — avatars are always self-uploads.
+ */
+export const uploadAvatarToR2 = asyncHandler(async (req, res) => {
+  const avatarFile = req.file;
+
+  if (!avatarFile) {
+    return res.status(400).json({
+      success: false,
+      error: 'NO_FILE',
+      message: 'No avatar file provided',
+    });
+  }
+
+  const userId = req.user.id;
+
+  try {
+    // Upload avatar to R2
+    const result = await uploadAvatar(
+      avatarFile.buffer,
+      avatarFile.originalname,
+      avatarFile.mimetype,
+      userId
+    );
+
+    console.log(`[R2Controller] Avatar uploaded: ${result.key} for user ${userId}`);
+
+    // Atomically update AppUser.avatar with the R2 public URL
+    const updatedUser = await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        avatar: result.url,
+        updatedAt: new Date(),
+      },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        avatar: true,
+        points: true,
+        role: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        twoFactorEnabled: true,
+        emailVerified: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Avatar uploaded successfully',
+      avatar: {
+        url: result.url,
+        key: result.key,
+        size: result.size,
+        mimeType: avatarFile.mimetype,
+      },
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error('[R2Controller] Avatar upload error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'UPLOAD_FAILED',
+      message: error.message || 'Failed to upload avatar',
+    });
+  }
+});
+
 export default {
   uploadVideoToR2,
   uploadThumbnailToR2,
+  uploadAvatarToR2,
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
   validateUploadRequest,

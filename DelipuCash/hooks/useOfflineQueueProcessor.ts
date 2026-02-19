@@ -92,6 +92,7 @@ export function useOfflineQueueProcessor() {
                 isCorrect: result.isCorrect,
                 selectedAnswer: submission.answer,
                 rewardEarned: rewardAmount,
+                pointsEarned: result.pointsAwarded ?? 0,
                 isWinner: result.isWinner || false,
                 position: result.position || null,
                 paymentStatus: result.paymentStatus || null,
@@ -101,7 +102,7 @@ export function useOfflineQueueProcessor() {
             // Reconcile: update session summary if a session is active
             const currentState = useInstantRewardStore.getState();
             if (currentState.sessionState !== 'IDLE' && currentState.sessionState !== 'COMPLETED') {
-              currentState.updateSessionSummary(result.isCorrect, rewardAmount);
+              currentState.updateSessionSummary(result.isCorrect, rewardAmount, result.pointsAwarded ?? 0);
             }
 
             // Reconcile: credit wallet if correct

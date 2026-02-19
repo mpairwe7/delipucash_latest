@@ -72,6 +72,8 @@ export interface AttemptedRewardQuestion {
   isCorrect: boolean;
   selectedAnswer: string;
   rewardEarned: number;
+  /** Points awarded by the backend (derived from rewardAmount / rate) */
+  pointsEarned: number;
   isWinner: boolean;
   position: number | null;
   paymentStatus: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | null;
@@ -105,6 +107,8 @@ export interface InstantRewardSessionSummary {
   correctAnswers: number;
   incorrectAnswers: number;
   totalEarned: number;
+  /** Accumulated points earned across the session (backend-driven) */
+  totalPointsEarned: number;
   accuracy: number;
   sessionStartedAt: string | null;
   sessionCompletedAt: string | null;
@@ -189,7 +193,7 @@ export interface InstantRewardUIActions {
   pruneSessionQuestions: (deadIds: string[]) => void;
   setSessionState: (state: InstantRewardSessionState) => void;
   recordQuestionStart: () => void;
-  updateSessionSummary: (isCorrect: boolean, rewardEarned: number) => void;
+  updateSessionSummary: (isCorrect: boolean, rewardEarned: number, pointsEarned?: number) => void;
 
   // Wallet Management
   updateWalletBalance: (balance: number) => void;
@@ -237,6 +241,7 @@ const initialSessionSummary: InstantRewardSessionSummary = {
   correctAnswers: 0,
   incorrectAnswers: 0,
   totalEarned: 0,
+  totalPointsEarned: 0,
   accuracy: 0,
   sessionStartedAt: null,
   sessionCompletedAt: null,
@@ -510,7 +515,7 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
         }));
       },
 
-      updateSessionSummary: (isCorrect, rewardEarned) => {
+      updateSessionSummary: (isCorrect, rewardEarned, pointsEarned) => {
         set(state => {
           const summary = state.sessionSummary;
           const now = Date.now();
@@ -524,6 +529,9 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           const newMaxStreak = Math.max(summary.maxStreak, newStreak);
           const bonusFromThisAnswer = isCorrect ? getStreakBonus(newStreak) : 0;
 
+          // Use backend-provided points, falling back to client conversion
+          const earnedPts = pointsEarned ?? cashToPoints(rewardEarned);
+
           return {
             sessionSummary: {
               ...summary,
@@ -531,6 +539,7 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
               correctAnswers: newCorrect,
               incorrectAnswers: isCorrect ? summary.incorrectAnswers : summary.incorrectAnswers + 1,
               totalEarned: summary.totalEarned + rewardEarned,
+              totalPointsEarned: summary.totalPointsEarned + earnedPts,
               accuracy: newAnswered > 0 ? Math.round((newCorrect / newAnswered) * 100) : 0,
               currentStreak: newStreak,
               maxStreak: newMaxStreak,

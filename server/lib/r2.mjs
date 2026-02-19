@@ -102,6 +102,7 @@ export const FILE_LIMITS = {
   FREE_VIDEO_MAX_SIZE: 40 * 1024 * 1024, // 40MB
   PREMIUM_VIDEO_MAX_SIZE: 500 * 1024 * 1024, // 500MB
   THUMBNAIL_MAX_SIZE: 5 * 1024 * 1024, // 5MB
+  AVATAR_MAX_SIZE: 2 * 1024 * 1024, // 2MB (already compressed client-side)
   LIVESTREAM_CHUNK_SIZE: 5 * 1024 * 1024, // 5MB per chunk
   MULTIPART_THRESHOLD: 10 * 1024 * 1024, // Use multipart for files > 10MB
 };
@@ -117,6 +118,7 @@ export const URL_EXPIRY = {
 export const STORAGE_PATHS = {
   VIDEOS: 'videos',
   THUMBNAILS: 'thumbnails',
+  AVATARS: 'avatars',
   LIVESTREAMS: 'livestreams',
   TEMP: 'temp',
 };
@@ -203,12 +205,14 @@ export function validateFileType(mimeType, type) {
  */
 export function validateFileSize(size, type, isPremium = false) {
   let maxSize;
-  
-  if (type === 'thumbnail') {
+
+  if (type === 'avatar') {
+    maxSize = FILE_LIMITS.AVATAR_MAX_SIZE;
+  } else if (type === 'thumbnail') {
     maxSize = FILE_LIMITS.THUMBNAIL_MAX_SIZE;
   } else {
-    maxSize = isPremium 
-      ? FILE_LIMITS.PREMIUM_VIDEO_MAX_SIZE 
+    maxSize = isPremium
+      ? FILE_LIMITS.PREMIUM_VIDEO_MAX_SIZE
       : FILE_LIMITS.FREE_VIDEO_MAX_SIZE;
   }
   
@@ -321,6 +325,29 @@ export async function uploadThumbnail(buffer, originalName, mimeType, userId = n
   }
   
   const key = generateObjectKey(STORAGE_PATHS.THUMBNAILS, originalName, userId);
+  return uploadFile(buffer, key, mimeType);
+}
+
+/**
+ * Upload a user avatar image
+ * @param {Buffer} buffer - Image data
+ * @param {string} originalName - Original filename
+ * @param {string} mimeType - File MIME type
+ * @param {string} userId - User ID for namespacing
+ * @returns {Promise<UploadResult>}
+ */
+export async function uploadAvatar(buffer, originalName, mimeType, userId) {
+  const typeValidation = validateFileType(mimeType, 'image');
+  if (!typeValidation.valid) {
+    throw new Error(typeValidation.error);
+  }
+
+  const sizeValidation = validateFileSize(buffer.length, 'avatar');
+  if (!sizeValidation.valid) {
+    throw new Error(sizeValidation.error);
+  }
+
+  const key = generateObjectKey(STORAGE_PATHS.AVATARS, originalName, userId);
   return uploadFile(buffer, key, mimeType);
 }
 

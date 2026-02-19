@@ -363,6 +363,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           isCorrect: sa.isCorrect,
           selectedAnswer: sa.selectedAnswer,
           rewardEarned: 0,
+          pointsEarned: 0,
           isWinner: false,
           position: null,
           paymentStatus: null,

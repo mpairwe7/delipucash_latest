@@ -1369,6 +1369,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                     placeholderTextColor={colors.textMuted}
                     style={[styles.pointsInput, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
                     accessibilityLabel={`Points for question ${questionIndex + 1}`}
+                    accessibilityHint="Enter the point value awarded for this question"
                   />
                   <Text style={[styles.pointsUnit, { color: colors.textMuted }]}>pts</Text>
                 </View>
@@ -1516,6 +1517,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               accessibilityLabel="Enable question scoring"
               accessibilityRole="switch"
               accessibilityState={{ checked: isScoringEnabled }}
+              accessibilityHint="Assign point values to each question for graded surveys"
             />
           </View>
 

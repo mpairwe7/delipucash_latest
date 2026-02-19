@@ -88,6 +88,8 @@ export interface RewardSessionSummaryProps {
   incorrectAnswers: number;
   totalEarned: number;
   sessionEarnings: number;
+  /** Points earned this session (backend-driven, accumulated from each answer) */
+  sessionPoints?: number;
   totalBalance: number;
   canRedeemRewards: boolean;
   onRedeemCash?: () => void;
@@ -813,6 +815,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   incorrectAnswers,
   totalEarned,
   sessionEarnings,
+  sessionPoints,
   totalBalance,
   canRedeemRewards,
   onRedeemCash,
@@ -839,13 +842,14 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   useEffect(() => {
     if (visible) {
       triggerHaptic(accuracy >= 75 ? 'success' : 'medium');
-      let msg = `Session complete. ${correctAnswers} out of ${totalQuestions} correct, ${accuracy} percent accuracy. ${tier.label} tier. You earned ${totalEarned} Ugandan shillings.`;
+      const ptsMsg = sessionPoints ? ` (${sessionPoints} points)` : '';
+      let msg = `Session complete. ${correctAnswers} out of ${totalQuestions} correct, ${accuracy} percent accuracy. ${tier.label} tier. You earned ${totalEarned} Ugandan shillings${ptsMsg}.`;
       if (showStreak) {
         msg += ` Best streak: ${maxStreak} in a row.`;
       }
       setTimeout(() => AccessibilityInfo.announceForAccessibility(msg), 600);
     }
-  }, [visible]);
+  }, [visible, correctAnswers, totalQuestions, accuracy, tier.label, totalEarned, sessionPoints, showStreak, maxStreak]);
 
   const handleShare = useCallback(async () => {
     triggerHaptic('selection');
@@ -1003,7 +1007,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
               ]}
               accessible
               accessibilityRole="summary"
-              accessibilityLabel={`Session earnings ${formatCurrency(sessionEarnings)}, total balance ${formatCurrency(totalBalance)}`}
+              accessibilityLabel={`Session earnings ${formatCurrency(sessionEarnings)}${sessionPoints ? ` (${sessionPoints} points)` : ''}, total balance ${formatCurrency(totalBalance)}`}
             >
               <View style={styles.earningsHeader}>
                 <Sparkles size={ICON_SIZE.base} color={colors.primary} strokeWidth={1.8} />
@@ -1015,9 +1019,16 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                   <Text style={[styles.earningsLabel, { color: colors.textMuted }]}>
                     This Session
                   </Text>
-                  <Text style={[styles.earningsValuePositive, { color: colors.success }]}>
-                    +{formatCurrency(sessionEarnings)}
-                  </Text>
+                  <View style={styles.totalCol}>
+                    <Text style={[styles.earningsValuePositive, { color: colors.success }]}>
+                      +{formatCurrency(sessionEarnings)}
+                    </Text>
+                    {sessionPoints != null && sessionPoints > 0 && (
+                      <Text style={[styles.pointsEquiv, { color: colors.textMuted }]}>
+                        {sessionPoints} pts
+                      </Text>
+                    )}
+                  </View>
                 </View>
 
                 {(bonusPoints ?? 0) > 0 && (

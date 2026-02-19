@@ -298,6 +298,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [showResultOverlay, setShowResultOverlay] = useState(false);
   const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
   const [overlayEarned, setOverlayEarned] = useState(0);
+  const [overlayEarnedPoints, setOverlayEarnedPoints] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
   const [isOptimisticLocked, setIsOptimisticLocked] = useState(false);
   const submitGuardRef = useRef(false);
@@ -323,7 +324,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Dynamic reward amount from question model ──
   const rewardAmount = question?.rewardAmount || REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT;
-  const rewardPoints = Math.round(rewardAmount / REWARD_CONSTANTS.POINTS_TO_UGX_RATE) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
+  const rewardPoints = cashToPoints(rewardAmount) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
 
   // ── Zustand: state via useShallow (grouped — prevents re-renders) ──
   const { walletBalance, sessionState, sessionType, sessionSummary } = useInstantRewardStore(
@@ -740,6 +741,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           }
 
           const earnedAmount = payload.isCorrect ? rewardAmount : 0;
+          // Prefer backend-provided points, fall back to client conversion
+          const earnedPts = payload.pointsAwarded ?? (payload.isCorrect ? rewardPoints : 0);
 
           // Mark question as attempted (persisted — single attempt enforcement)
           markQuestionAttempted({
@@ -747,17 +750,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             isCorrect: payload.isCorrect,
             selectedAnswer: answer,
             rewardEarned: earnedAmount,
+            pointsEarned: earnedPts,
             isWinner: payload.isWinner || false,
             position: payload.position || null,
             paymentStatus: payload.paymentStatus || null,
           });
 
-          // Update session statistics
-          updateSessionSummary(payload.isCorrect, earnedAmount);
+          // Update session statistics (with backend-driven points)
+          updateSessionSummary(payload.isCorrect, earnedAmount, earnedPts);
 
           // Show animated result overlay
           setOverlayIsCorrect(payload.isCorrect);
           setOverlayEarned(earnedAmount);
+          setOverlayEarnedPoints(earnedPts);
           setShowResultOverlay(true);
 
           if (payload.isCorrect) {
@@ -821,6 +826,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               isCorrect: false, // unknown — server didn't reveal
               selectedAnswer: answer || "",
               rewardEarned: 0,
+              pointsEarned: 0,
               isWinner: false,
               position: null,
               paymentStatus: null,
@@ -851,7 +857,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user]);
+  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, rewardPoints, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user]);
 
   // Handle redemption via real API
   const handleRedeem = useCallback(async (
@@ -1227,7 +1233,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               </Text>
               <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                 {previousAttempt.isCorrect
-                  ? `You earned ${formatCurrency(rewardAmount)} (${rewardPoints} points)`
+                  ? `You earned ${formatCurrency(previousAttempt.rewardEarned || rewardAmount)} (${previousAttempt.pointsEarned || rewardPoints} points)`
                   : "Each question can only be attempted once."}
               </Text>
             </View>
@@ -1293,7 +1299,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               </View>
               <Text style={[styles.feedbackText, { color: colors.text }]}>
                 {(result?.isCorrect || previousAttempt?.isCorrect)
-                  ? `You answered correctly and earned ${formatCurrency(rewardAmount)} (${rewardPoints} points)!`
+                  ? `You answered correctly and earned ${formatCurrency(result?.isCorrect ? rewardAmount : (previousAttempt?.rewardEarned || rewardAmount))} (${result?.pointsAwarded ?? previousAttempt?.pointsEarned ?? rewardPoints} points)!`
                   : result && !previousAttempt
                     ? (result.message || "That was not the correct answer. Better luck next time!")
                     : "Each question can only be attempted once."}
@@ -1303,7 +1309,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               )}
               {(result?.isCorrect || previousAttempt?.isCorrect) && (
                 <Text style={[styles.feedbackReward, { color: colors.success }]}>
-                  +{formatCurrency(rewardAmount)} ({rewardPoints} points)
+                  +{formatCurrency(result?.isCorrect ? rewardAmount : (previousAttempt?.rewardEarned || rewardAmount))} ({result?.pointsAwarded ?? previousAttempt?.pointsEarned ?? rewardPoints} points)
                 </Text>
               )}
             </Animated.View>
@@ -1362,6 +1368,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         visible={showResultOverlay}
         isCorrect={overlayIsCorrect}
         earnedAmount={overlayEarned}
+        earnedPoints={overlayEarnedPoints}
         streakCount={currentStreak}
         onDismiss={handleOverlayDismiss}
       />
@@ -1389,6 +1396,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         incorrectAnswers={sessionSummary.incorrectAnswers}
         totalEarned={sessionSummary.totalEarned}
         sessionEarnings={sessionSummary.totalEarned}
+        sessionPoints={sessionSummary.totalPointsEarned}
         totalBalance={walletBalance}
         canRedeemRewards={canRedeemRewards}
         onRedeemCash={handleRedeemCash}
