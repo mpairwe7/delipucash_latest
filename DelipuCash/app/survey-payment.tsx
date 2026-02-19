@@ -1,16 +1,27 @@
 /**
- * Survey Payment Screen — 2026 Mobile UI/UX Standards
- * 
- * Applied standards:
- * - Elevated section cards with depth hierarchy
- * - Haptic-synchronized provider & plan selection
- * - Optical typography with negative letter-spacing on headings
- * - 48px+ touch targets on all interactive elements
- * - WCAG 2.2 AAA accessible payment flow
- * - Generous whitespace and RADIUS['2xl'] card surfaces
- * - Spring-physics entrance animation
+ * Survey Payment Screen — DEPRECATED
+ *
+ * This screen previously handled direct mobile money payments for survey subscriptions.
+ * All subscription purchases are now handled through Google Play Billing via RevenueCat
+ * (see /subscription screen). This file redirects to the new subscription screen.
+ *
+ * Google Play policy requires digital goods to be purchased through Google Play Billing.
+ * In Uganda, users can pay with MTN/Airtel Mobile Money through Google Play's
+ * carrier billing integration.
  */
 
+import React, { useEffect } from 'react';
+import { useRouter, Redirect } from 'expo-router';
+
+export default function SurveyPaymentRedirect() {
+  return <Redirect href="/subscription" />;
+}
+
+// ============================================================================
+// LEGACY CODE BELOW — kept for reference, not rendered
+// ============================================================================
+
+/*
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
@@ -1063,4 +1074,5 @@ const SurveyPaymentScreen: React.FC = () => {
   );
 };
 
-export default SurveyPaymentScreen;
+// export default SurveyPaymentScreen;
+*/

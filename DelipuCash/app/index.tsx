@@ -5,7 +5,7 @@ import { RADIUS, SPACING, TYPOGRAPHY, useTheme, withAlpha } from "@/utils/theme"
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, router, useRootNavigationState } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from '@/hooks/useStatusBar';
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -418,6 +418,10 @@ export default function SplashScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
+
+  // Force light status bar icons — dark gradient background (#1a1a2e)
+  useStatusBar({ style: 'light' });
+
   const { isReady: authReady, isAuthenticated } = useAuth();
   const rootNavigationState = useRootNavigationState();
   const navigationReady = Boolean(rootNavigationState?.key);
@@ -469,7 +473,6 @@ export default function SplashScreen(): React.ReactElement {
 
   return (
     <View style={styles.container} accessible accessibilityRole="none">
-      <StatusBar style="light" />
 
       {/* Gradient Background */}
       <LinearGradient

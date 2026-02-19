@@ -26,6 +26,7 @@ import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform, StatusBar as RNStatusBar, StyleSheet, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { setStatusBarStyle, setStatusBarHidden, setStatusBarTranslucent } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import type { StatusBarStyle } from 'expo-status-bar';
 import { SYSTEM_BARS, type SystemBarsMode, useThemeStore } from '@/utils/theme';
 
@@ -276,17 +277,29 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
     // Configure status bar
     setStatusBarStyle(currentStyle, animated);
 
-    // Configure translucent mode (Android)
+    // Configure translucent mode (Android) + transparent navigation bar
     if (Platform.OS === 'android') {
       setStatusBarTranslucent(translucent);
       RNStatusBar.setBackgroundColor('transparent');
+
+      // Transparent gesture navigation bar (2026 edge-to-edge standard)
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
     }
 
     // Apply mode-specific settings
     if (mode === 'immersive') {
       hideSystemBars();
+      // Also hide Android navigation bar in immersive mode
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      }
     } else {
       showSystemBars();
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('visible').catch(() => {});
+      }
     }
 
     // Cleanup: restore previous state
@@ -295,8 +308,14 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
         setStatusBarStyle(previousStateRef.current.style, false);
         setStatusBarHidden(previousStateRef.current.hidden, 'none');
       }
+      // Restore Android navigation bar on unmount
+      if (restoreOnUnmount && Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('visible').catch(() => {});
+        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+        NavigationBar.setPositionAsync('absolute').catch(() => {});
+      }
     };
-  }, [mode, currentStyle, translucent, animated, restoreOnUnmount, hideSystemBars, showSystemBars]);
+  }, [mode, currentStyle, translucent, animated, restoreOnUnmount, hideSystemBars, showSystemBars, isDark]);
 
   // ============================================================================
   // RETURN VALUE

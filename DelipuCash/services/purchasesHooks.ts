@@ -89,11 +89,11 @@ export function useCustomerInfo() {
 
 /**
  * Hook to check if user has survey creator entitlement
- * 
+ *
  * @example
  * ```tsx
  * const { canCreateSurvey } = useSurveyCreatorAccess();
- * 
+ *
  * if (!canCreateSurvey) {
  *   return <SubscriptionPrompt />;
  * }
@@ -101,12 +101,57 @@ export function useCustomerInfo() {
  */
 export function useSurveyCreatorAccess() {
   const { data: subscription, isLoading, refetch } = useSubscriptionStatus();
-  
+
   return {
     canCreateSurvey: subscription?.isActive ?? false,
     isLoading,
     subscription,
     refetch,
+  };
+}
+
+/**
+ * Hook to detect billing issues (grace period, account hold, pending purchases)
+ *
+ * Uses CustomerInfo from RevenueCat to determine if the user has a
+ * billing issue that needs attention. Shows appropriate messaging.
+ */
+export function useBillingIssueDetection() {
+  const { data: customerInfo, isLoading } = useCustomerInfo();
+  const { data: subscription } = useSubscriptionStatus();
+
+  const billingIssue = (() => {
+    if (!customerInfo || !subscription) return null;
+
+    const surveyEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR];
+    if (!surveyEntitlement) return null;
+
+    // Grace period: subscription is active but billing retry is in progress
+    // The user still has access during this window
+    if (surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
+      return {
+        type: 'grace_period' as const,
+        detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
+        message: 'Your payment method needs updating. You still have access while we retry.',
+      };
+    }
+
+    // Expired with billing issue — account hold (no access)
+    if (!surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
+      return {
+        type: 'account_hold' as const,
+        detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
+        message: 'Your subscription is on hold due to a payment issue. Update your payment method to restore access.',
+      };
+    }
+
+    return null;
+  })();
+
+  return {
+    billingIssue,
+    hasBillingIssue: billingIssue !== null,
+    isLoading,
   };
 }
 

@@ -20,20 +20,24 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Linking,
+  Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PurchasesPackage } from 'react-native-purchases';
-import { 
-  CheckCircle, 
-  Shield, 
+import {
+  CheckCircle,
+  Shield,
   Zap,
   AlertTriangle,
   Crown,
   Video,
   Upload,
   Wifi,
+  ExternalLink,
+  Clock,
 } from 'lucide-react-native';
 
 // Components
@@ -47,6 +51,7 @@ import {
   usePurchase,
   useRestorePurchases,
   useSubscriptionListener,
+  useBillingIssueDetection,
 } from '@/services/purchasesHooks';
 import { purchasesService } from '@/services/purchasesService';
 
@@ -215,8 +220,8 @@ const SubscriptionScreen: React.FC = () => {
   const { colors, statusBarStyle } = useTheme();
 
   // RevenueCat Hooks
-  const { 
-    data: offerings, 
+  const {
+    data: offerings,
     isLoading: isLoadingOfferings,
     error: offeringsError,
     refetch: refetchOfferings,
@@ -228,25 +233,35 @@ const SubscriptionScreen: React.FC = () => {
     refetch: refetchSubscription,
   } = useSubscriptionStatus();
 
-  const { 
-    mutateAsync: purchase, 
+  const {
+    mutateAsync: purchase,
     isPending: isPurchasing,
   } = usePurchase();
 
-  const { 
-    mutateAsync: restorePurchases, 
+  const {
+    mutateAsync: restorePurchases,
     isPending: isRestoring,
   } = useRestorePurchases();
+
+  // Billing issue detection (grace period / account hold)
+  const { billingIssue } = useBillingIssueDetection();
 
   // Local state
   const [selectedPackage, setSelectedPackage] = useState<PurchasesPackage | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [hasPendingPurchase, setHasPendingPurchase] = useState(false);
+
+  // Show Google Play in-app messages on screen mount (grace period prompts, etc.)
+  useEffect(() => {
+    purchasesService.showInAppMessages();
+  }, []);
 
   // Listen for subscription changes
   useSubscriptionListener((isActive) => {
     if (isActive) {
+      setHasPendingPurchase(false);
       Alert.alert(
-        'Subscription Activated! 🎉',
+        'Subscription Activated!',
         'Thank you for subscribing! You now have access to all features.',
         [{ text: 'Continue', onPress: () => router.back() }]
       );
@@ -294,6 +309,9 @@ const SubscriptionScreen: React.FC = () => {
         // Success is handled by subscription listener
       } else if (result.userCancelled) {
         // User cancelled, no action needed
+      } else if (result.errorCode === 'PAYMENT_PENDING_ERROR') {
+        // Payment pending — carrier billing (MTN/Airtel) confirmation in progress
+        setHasPendingPurchase(true);
       } else {
         Alert.alert(
           'Purchase Failed',
@@ -310,15 +328,18 @@ const SubscriptionScreen: React.FC = () => {
     }
   }, [selectedPackage, purchase]);
 
-  // Restore handler
+  // Restore handler — differentiate found vs. not found
   const handleRestore = useCallback(async () => {
     try {
       await restorePurchases();
-      await refetchSubscription();
-      
+      const updated = await refetchSubscription();
+      const isActive = updated.data?.isActive ?? false;
+
       Alert.alert(
-        'Purchases Restored',
-        'Your purchases have been restored successfully.',
+        isActive ? 'Purchases Restored' : 'No Purchases Found',
+        isActive
+          ? 'Your subscription has been restored. You have full access.'
+          : 'We could not find any previous purchases linked to your account.',
         [{ text: 'OK' }]
       );
     } catch (error) {
@@ -329,6 +350,16 @@ const SubscriptionScreen: React.FC = () => {
       );
     }
   }, [restorePurchases, refetchSubscription]);
+
+  // Open Google Play subscription management
+  const handleManageSubscription = useCallback(() => {
+    if (Platform.OS === 'android') {
+      Linking.openURL('https://play.google.com/store/account/subscriptions');
+    } else {
+      // iOS — opens App Store subscription settings
+      Linking.openURL('https://apps.apple.com/account/subscriptions');
+    }
+  }, []);
 
   // Get badge for package (RevenueCat uses PACKAGE_TYPE enum)
   const getPackageBadge = (pkg: PurchasesPackage): 'popular' | 'best-value' | 'recommended' | undefined => {
@@ -540,6 +571,89 @@ const SubscriptionScreen: React.FC = () => {
           />
         )}
 
+        {/* Billing Issue Banner (Grace Period / Account Hold) */}
+        {billingIssue && (
+          <Pressable
+            onPress={handleManageSubscription}
+            style={{
+              backgroundColor: withAlpha(
+                billingIssue.type === 'grace_period' ? colors.warning : colors.error,
+                0.1
+              ),
+              borderRadius: RADIUS.lg,
+              padding: SPACING.lg,
+              borderWidth: BORDER_WIDTH.thin,
+              borderColor: withAlpha(
+                billingIssue.type === 'grace_period' ? colors.warning : colors.error,
+                0.3
+              ),
+              marginBottom: SPACING.xl,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: SPACING.base,
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`${billingIssue.message} Tap to manage subscription.`}
+          >
+            <AlertTriangle
+              size={24}
+              color={billingIssue.type === 'grace_period' ? colors.warning : colors.error}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontFamily: TYPOGRAPHY.fontFamily.bold,
+                fontSize: TYPOGRAPHY.fontSize.sm,
+                color: billingIssue.type === 'grace_period' ? colors.warning : colors.error,
+                marginBottom: 2,
+              }}>
+                {billingIssue.type === 'grace_period' ? 'Payment Issue' : 'Subscription On Hold'}
+              </Text>
+              <Text style={{
+                fontFamily: TYPOGRAPHY.fontFamily.regular,
+                fontSize: TYPOGRAPHY.fontSize.sm,
+                color: colors.textSecondary,
+              }}>
+                {billingIssue.message}
+              </Text>
+            </View>
+            <ExternalLink size={16} color={colors.textMuted} />
+          </Pressable>
+        )}
+
+        {/* Pending Purchase Banner */}
+        {hasPendingPurchase && (
+          <View style={{
+            backgroundColor: withAlpha(colors.primary, 0.1),
+            borderRadius: RADIUS.lg,
+            padding: SPACING.lg,
+            borderWidth: BORDER_WIDTH.thin,
+            borderColor: withAlpha(colors.primary, 0.3),
+            marginBottom: SPACING.xl,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: SPACING.base,
+          }}>
+            <Clock size={24} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={{
+                fontFamily: TYPOGRAPHY.fontFamily.bold,
+                fontSize: TYPOGRAPHY.fontSize.sm,
+                color: colors.primary,
+                marginBottom: 2,
+              }}>
+                Payment Pending
+              </Text>
+              <Text style={{
+                fontFamily: TYPOGRAPHY.fontFamily.regular,
+                fontSize: TYPOGRAPHY.fontSize.sm,
+                color: colors.textSecondary,
+              }}>
+                Please complete the payment confirmation on your phone. Your subscription will activate automatically once confirmed.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Not Configured Warning */}
         {isNotConfigured && (
           <View style={styles.errorContainer}>
@@ -646,11 +760,21 @@ const SubscriptionScreen: React.FC = () => {
         <View style={styles.footer}>
           {!subscription?.isActive && packages.length > 0 && (
             <PrimaryButton
-              title={isPurchasing ? 'Processing...' : 'Subscribe Now'}
+              title={isPurchasing ? 'Processing...' : 'Unlock All Features'}
               onPress={handlePurchase}
               disabled={isPurchasing || !selectedPackage || isNotConfigured}
               loading={isPurchasing}
               variant="primary"
+              size="large"
+            />
+          )}
+
+          {/* Manage Subscription — for active subscribers */}
+          {subscription?.isActive && (
+            <PrimaryButton
+              title="Manage Subscription"
+              onPress={handleManageSubscription}
+              variant="outline"
               size="large"
             />
           )}

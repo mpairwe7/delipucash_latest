@@ -58,7 +58,7 @@ import {
   withAlpha,
 } from '@/utils/theme';
 import { useAuth, useAuthModal } from '@/utils/auth';
-import { useSurveySubscriptionStatus } from '@/services/surveyPaymentHooks';
+import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
 import { UserRole } from '@/types';
 
 // ============================================================================
@@ -129,14 +129,14 @@ const CreateSurveyScreen: React.FC = () => {
   const { isAuthenticated, isReady: authReady, auth } = useAuth();
   const { open: openAuth } = useAuthModal();
   const {
-    data: subscriptionStatus,
-    isLoading: loadingSubscription
-  } = useSurveySubscriptionStatus();
+    canCreateSurvey,
+    isLoading: loadingSubscription,
+    subscription: subscriptionInfo,
+  } = useSurveyCreatorAccess();
 
-  // Admin bypass - admins have active subscription by default
+  // Admin bypass - admins can always create surveys
   const isAdmin = auth?.user?.role === UserRole.ADMIN || auth?.user?.role === UserRole.MODERATOR;
-  const hasActiveSubscription = isAdmin || (subscriptionStatus?.hasActiveSubscription ?? false);
-  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
+  const hasActiveSubscription = isAdmin || canCreateSurvey;
 
   // State
   const [activeTab, setActiveTab] = useState<TabKey>('build');
@@ -352,7 +352,7 @@ const CreateSurveyScreen: React.FC = () => {
               if (needsAuth) {
                 openAuth({ mode: "signin" });
               } else {
-                router.replace("/survey-payment" as Href);
+                router.replace("/subscription" as Href);
               }
             }}
             variant="primary"

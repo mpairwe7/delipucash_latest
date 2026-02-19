@@ -15,10 +15,10 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
-  StatusBar,
   Platform,
   Modal,
 } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Crown } from 'lucide-react-native';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -648,7 +648,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     // Camera view — the main recording/live screen
     content = (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <StatusBar style="light" translucent animated />
 
         <TouchableOpacity
           activeOpacity={1}

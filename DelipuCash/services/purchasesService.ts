@@ -339,6 +339,9 @@ class PurchasesService {
   /**
    * Add listener for customer info changes
    * Useful for real-time subscription status updates
+   *
+   * Returns an unsubscribe function that removes the native listener.
+   * RevenueCat v9: addCustomerInfoUpdateListener returns a remove function.
    */
   addCustomerInfoListener(
     callback: (customerInfo: CustomerInfo) => void
@@ -347,19 +350,30 @@ class PurchasesService {
       return () => {};
     }
 
-    // RevenueCat v9 API - the listener function returns void
-    // We need to track state manually
-    let isSubscribed = true;
-    
-    Purchases.addCustomerInfoUpdateListener((info) => {
-      if (isSubscribed) {
-        callback(info);
+    const removeListener = Purchases.addCustomerInfoUpdateListener(callback);
+
+    // RevenueCat v9 returns an unsubscribe function
+    return typeof removeListener === 'function' ? removeListener : () => {};
+  }
+
+  /**
+   * Show Google Play in-app messages (grace period, billing issues, etc.)
+   * Call this on app foreground or when entering subscription screens.
+   * Google Play renders native UI prompting users to fix payment issues.
+   */
+  async showInAppMessages(): Promise<void> {
+    if (!this.isInitialized) return;
+
+    try {
+      // RevenueCat v9: showInAppMessages shows pending billing messages
+      // from Google Play (e.g., grace period payment fix prompts)
+      if (typeof Purchases.showInAppMessages === 'function') {
+        await Purchases.showInAppMessages();
       }
-    });
-    
-    return () => {
-      isSubscribed = false;
-    };
+    } catch (error) {
+      // Non-critical — log and continue
+      console.warn('[Purchases] Failed to show in-app messages:', error);
+    }
   }
 
   /**

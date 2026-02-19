@@ -32,7 +32,7 @@ import {
   type CreationMode,
 } from "@/components/survey";
 import { useRunningSurveys, useUnreadCount, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
-import { useSurveySubscriptionStatus } from "@/services/surveyPaymentHooks";
+import { useSurveyCreatorAccess } from "@/services/purchasesHooks";
 import {
   useAdsForPlacement,
   useBannerAds,
@@ -201,15 +201,20 @@ export default function SurveysScreen(): React.ReactElement {
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
 
-  // Subscription status
+  // Subscription status (via RevenueCat / Google Play Billing)
   const {
-    data: subscriptionStatus,
+    canCreateSurvey: hasActiveSubscription,
     isLoading: loadingSubscription,
+    subscription: subscriptionStatus,
     refetch: refetchSubscription,
-  } = useSurveySubscriptionStatus();
+  } = useSurveyCreatorAccess();
 
-  const hasActiveSubscription = subscriptionStatus?.hasActiveSubscription ?? false;
-  const remainingDays = subscriptionStatus?.remainingDays ?? 0;
+  // Calculate remaining days from RevenueCat expiration date
+  const remainingDays = useMemo(() => {
+    if (!subscriptionStatus?.expirationDate) return 0;
+    const diff = subscriptionStatus.expirationDate.getTime() - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  }, [subscriptionStatus?.expirationDate]);
 
   // Check if user is admin
   const isAdmin = useMemo(() => {
@@ -565,7 +570,7 @@ export default function SurveysScreen(): React.ReactElement {
         "You need an active subscription to create surveys.",
         [
           { text: "Maybe Later", style: "cancel" },
-          { text: "Subscribe", onPress: () => router.push("/survey-payment" as Href) },
+          { text: "Subscribe", onPress: () => router.push("/subscription" as Href) },
         ]
       );
       return;
@@ -616,7 +621,7 @@ export default function SurveysScreen(): React.ReactElement {
       openAuth({ mode: "signin" });
       return;
     }
-    router.push("/survey-payment" as Href);
+    router.push("/subscription" as Href);
   }, [isAuthenticated, openAuth]);
 
   // Render list item — enhanced with WCAG 2.2 AA accessibility
@@ -904,7 +909,7 @@ export default function SurveysScreen(): React.ReactElement {
               maxFontSizeMultiplier={1.2}
             >
               {hasActiveSubscription
-                ? `${remainingDays} days remaining • ${subscriptionStatus?.subscription?.planType ?? 'Standard'} plan`
+                ? `${remainingDays} days remaining${subscriptionStatus?.willRenew ? ' • Auto-renewing' : ''}`
                 : "Subscribe to create unlimited surveys"
               }
             </Text>

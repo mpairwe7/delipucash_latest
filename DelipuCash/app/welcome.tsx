@@ -26,7 +26,7 @@ import {
   ViewToken,
 } from "react-native";
 import { router } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from '@/hooks/useStatusBar';
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
@@ -318,6 +318,10 @@ export default function WelcomeScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
+
+  // Force light status bar icons — dark gradient background (#1a1a2e)
+  useStatusBar({ style: 'light' });
+
   const { auth, isAuthenticated } = useAuth();
   const { requestPermissions, hasPermission } = usePushNotifications();
   const queryClient = useQueryClient();
@@ -412,7 +416,6 @@ export default function WelcomeScreen(): React.ReactElement {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
 
       {/* Gradient background matching splash */}
       <LinearGradient

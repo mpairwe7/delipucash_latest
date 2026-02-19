@@ -20,3 +20,7 @@ export {
 export {
   SubscriptionPackageCard,
 } from './SubscriptionPackageCard';
+
+export {
+  VideoPremiumPrompt,
+} from './VideoPremiumPrompt';

@@ -23,7 +23,7 @@ export const processMtnPayment = async ({ amount, phoneNumber, userId, reason })
   try {
     console.log(`[MTN Disbursement] Processing payment: ${amount} UGX to ${phoneNumber}`);
 
-    const token = await getMtnToken();
+    const token = await getMtnToken('disbursement');
     const referenceId = uuidv4();
 
     // Format phone number
@@ -189,20 +189,23 @@ const validateEnvironmentVariables = () => {
 // Initialize environment validation
 validateEnvironmentVariables();
 
-// Helper function to generate MTN API token
-const getMtnToken = async () => {
+// Helper function to generate MTN API token for a specific product
+// MTN requires separate tokens per product (Collection vs Disbursement)
+const getMtnToken = async (product = 'collection') => {
   const userId = process.env.MTN_USER_ID;
   const apiKey = process.env.MTN_API_KEY;
-  const subscriptionKey = process.env.MTN_PRIMARY_KEY;
+  const subscriptionKey = product === 'disbursement'
+    ? (process.env.MTN_DISBURSEMENT_KEY || process.env.MTN_PRIMARY_KEY)
+    : process.env.MTN_PRIMARY_KEY;
 
   if (!userId || !apiKey || !subscriptionKey) {
-    throw new Error('Missing required MTN API credentials');
+    throw new Error(`Missing required MTN API credentials for ${product}`);
   }
 
   try {
     const credentials = Buffer.from(`${userId}:${apiKey}`).toString('base64');
     const response = await axios.post(
-      'https://sandbox.momodeveloper.mtn.com/collection/token/',
+      `https://sandbox.momodeveloper.mtn.com/${product}/token/`,
       {},
       {
         headers: {
@@ -213,33 +216,35 @@ const getMtnToken = async () => {
     );
 
     const { access_token, expires_in } = response.data;
-    console.log(`MTN Token acquired: ${access_token.substring(0, 50)}...`);
+    console.log(`MTN ${product} token acquired: ${access_token.substring(0, 50)}...`);
     console.log(`Token expires in: ${expires_in} seconds`);
 
     return access_token;
   } catch (error) {
-    console.error('MTN Token Error:', {
+    console.error(`MTN ${product} Token Error:`, {
       status: error.response?.status,
       data: error.response?.data,
       message: error.message
     });
-    throw new Error(`MTN API Error: ${error.response?.data?.message || error.message}`);
+    throw new Error(`MTN API Error (${product}): ${error.response?.data?.message || error.message}`);
   }
 };
 
 // Helper function to generate Airtel API token
+// Airtel Africa OpenAPI requires application/json (not x-www-form-urlencoded)
 const getAirtelToken = async () => {
   try {
     const response = await axios.post(
       'https://openapiuat.airtel.africa/auth/oauth2/token',
-      new URLSearchParams({
-        grant_type: 'client_credentials',
+      {
         client_id: process.env.AIRTEL_CLIENT_ID,
         client_secret: process.env.AIRTEL_CLIENT_SECRET,
-      }),
+        grant_type: 'client_credentials',
+      },
       {
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'application/json',
+          'Accept': '*/*',
         },
       }
     );
@@ -260,13 +265,13 @@ const initiateMtnCollection = async (token, amount, phoneNumber, referenceId) =>
   try {
     console.log(`Initiating MTN collection for ${amount} EUR to ${phoneNumber}`);
     
-    // Convert UGX to EUR for sandbox (approximate conversion)
-    const eurAmount = Math.round(amount / 4000); // Rough conversion: 1 EUR ≈ 4000 UGX
-    
+    // Convert UGX to EUR for sandbox (MTN sandbox requires EUR)
+    const eurAmount = Math.max(1, Math.round(amount / 4000));
+
     const response = await axios.post(
       'https://sandbox.momodeveloper.mtn.com/collection/v1_0/requesttopay',
       {
-        amount: eurAmount,
+        amount: eurAmount.toString(),
         currency: 'EUR',
         externalId: referenceId,
         payer: {
@@ -299,13 +304,13 @@ const initiateMtnDisbursement = async (token, amount, phoneNumber, referenceId) 
   try {
     console.log(`Initiating MTN disbursement of ${amount} EUR to ${phoneNumber}`);
     
-    // Convert UGX to EUR for sandbox (approximate conversion)
-    const eurAmount = Math.round(amount / 4000); // Rough conversion: 1 EUR ≈ 4000 UGX
-    
+    // Convert UGX to EUR for sandbox (MTN sandbox requires EUR)
+    const eurAmount = Math.max(1, Math.round(amount / 4000));
+
     const response = await axios.post(
       'https://sandbox.momodeveloper.mtn.com/disbursement/v1_0/transfer',
       {
-        amount: eurAmount,
+        amount: eurAmount.toString(),
         currency: 'EUR',
         externalId: referenceId,
         payee: {
@@ -320,7 +325,7 @@ const initiateMtnDisbursement = async (token, amount, phoneNumber, referenceId) 
           Authorization: `Bearer ${token}`,
           'X-Reference-Id': referenceId,
           'X-Target-Environment': 'sandbox',
-          'Ocp-Apim-Subscription-Key': process.env.MTN_PRIMARY_KEY,
+          'Ocp-Apim-Subscription-Key': process.env.MTN_DISBURSEMENT_KEY || process.env.MTN_PRIMARY_KEY,
         },
       }
     );
@@ -372,23 +377,21 @@ const initiateAirtelCollection = async (token, amount, phoneNumber, referenceId)
 };
 
 // Airtel Disbursement (Payout)
+// Uses /standard/v1/disbursements/ with payee/pin/reference/transaction format
 const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceId) => {
   try {
     console.log(`Initiating Airtel disbursement of ${amount} UGX to ${phoneNumber}`);
-    
+
     const response = await axios.post(
-      'https://openapiuat.airtel.africa/merchant/v1/payouts/',
+      'https://openapiuat.airtel.africa/standard/v1/disbursements/',
       {
-        reference: referenceId,
-        subscriber: {
-          country: 'UG',
-          currency: 'UGX',
+        payee: {
           msisdn: phoneNumber,
         },
+        reference: referenceId,
+        pin: process.env.AIRTEL_PIN || '1234',
         transaction: {
           amount: amount,
-          country: 'UG',
-          currency: 'UGX',
           id: referenceId,
         },
       },
@@ -397,6 +400,7 @@ const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceI
           Authorization: `Bearer ${token}`,
           'X-Country': 'UG',
           'X-Currency': 'UGX',
+          'Content-Type': 'application/json',
         },
       }
     );
@@ -476,18 +480,18 @@ const checkPaymentStatusAndSave = async (referenceId, provider, token, phoneNumb
     } else if (operationType === 'disbursement') {
       console.log(`Checking MTN disbursement status for reference: ${referenceId}`);
       console.log(`MTN Disbursement Status URL: https://sandbox.momodeveloper.mtn.com/disbursement/v1_0/transfer/${referenceId}`);
-      
+
       statusResponse = await axios.get(
         `https://sandbox.momodeveloper.mtn.com/disbursement/v1_0/transfer/${referenceId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
             'X-Target-Environment': 'sandbox',
-            'Ocp-Apim-Subscription-Key': process.env.MTN_PRIMARY_KEY,
+            'Ocp-Apim-Subscription-Key': process.env.MTN_DISBURSEMENT_KEY || process.env.MTN_PRIMARY_KEY,
           },
         }
       );
-      
+
       console.log('MTN Disbursement Status Response:', statusResponse.data);
     }
   } else if (provider === 'AIRTEL') {
@@ -504,7 +508,7 @@ const checkPaymentStatusAndSave = async (referenceId, provider, token, phoneNumb
       );
     } else if (operationType === 'disbursement') {
       statusResponse = await axios.get(
-        `https://openapiuat.airtel.africa/standard/v1/payouts/${referenceId}`,
+        `https://openapiuat.airtel.africa/standard/v1/disbursements/${referenceId}`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -599,12 +603,12 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     console.log('Generated reference ID:', referenceId);
 
     if (provider === 'MTN') {
-      const token = await getMtnToken();
+      const token = await getMtnToken('collection');
 
-      // Use the original amount directly (no conversion needed for sandbox)
-      const finalAmount = amount;
+      // Convert UGX to EUR for sandbox (MTN sandbox uses EUR)
+      const finalAmount = Math.max(1, Math.round(amount / 4000));
       
-      console.log(`Using amount: ${finalAmount} UGX`);
+      console.log(`Using amount: ${finalAmount} EUR (converted from ${amount} UGX)`);
 
       // Format phone number for MTN (ensure it starts with country code)
       // MTN requires the phone number without the leading 0 and with country code
@@ -615,9 +619,8 @@ export const initiatePayment = asyncHandler(async (req, res) => {
         formattedPhoneNumber = `256${phoneNumber}`;
       }
 
-      // Use the original request body structure from your working code
       const requestBody = {
-        amount: finalAmount,
+        amount: finalAmount.toString(),
         currency: 'EUR',
         externalId: referenceId,
         payer: {
@@ -672,7 +675,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       const token = await getAirtelToken();
 
       paymentResponse = await axios.post(
-        'https://openapi.airtel.africa/merchant/v1/payments/',
+        'https://openapiuat.airtel.africa/merchant/v1/payments/',
         {
           reference: referenceId,
           subscriber: {
@@ -759,7 +762,7 @@ export const initiateDisbursement = asyncHandler(async (req, res) => {
     const referenceId = uuidv4();
 
     if (provider === 'MTN') {
-      const token = await getMtnToken();
+      const token = await getMtnToken('disbursement');
 
       // Use the dedicated disbursement function
       disbursementResponse = await initiateMtnDisbursement(token, amount, phoneNumber, referenceId);

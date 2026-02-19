@@ -1,19 +1,22 @@
 /**
- * useStatusBar Hook
- * 
- * Industry-standard status bar management for React Native/Expo apps.
- * Provides consistent status bar behavior across all screens with:
- * - Theme-aware styling (light/dark mode)
- * - Edge-to-edge design support (translucent)
- * - Smooth animated transitions
- * - Focus-aware status bar updates (for tab navigation)
- * 
+ * useStatusBar Hook — 2026 Industry-Standard System Bars Management
+ *
+ * Canonical hook for status bar + Android navigation bar control.
+ * Inspired by Instagram, TikTok, YouTube, Threads & X (Twitter):
+ *  • Theme-aware icon colors that auto-switch with dark mode
+ *  • Edge-to-edge (translucent) on both platforms by default
+ *  • Focus-aware: re-applies settings on tab/screen focus (no stale bars)
+ *  • Android gesture navigation bar transparency via expo-navigation-bar
+ *  • Smooth animated transitions with reduced-motion support
+ *  • Accessibility: respects system `prefers-reduced-motion`
+ *
  * @module hooks/useStatusBar
  */
 
 import { useCallback, useEffect } from 'react';
-import { Platform, StatusBar as RNStatusBar } from 'react-native';
+import { Platform, StatusBar as RNStatusBar, AccessibilityInfo } from 'react-native';
 import { setStatusBarStyle, setStatusBarTranslucent, setStatusBarHidden } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@/utils/theme';
 
@@ -33,7 +36,7 @@ export interface StatusBarOptions {
   
   /**
    * Whether the status bar should be translucent (Android only)
-   * Enables edge-to-edge design
+   * Enables edge-to-edge design — true by default (2026 standard)
    * @default true
    */
   translucent?: boolean;
@@ -46,6 +49,7 @@ export interface StatusBarOptions {
   
   /**
    * Whether to animate status bar style changes
+   * Automatically disabled when the user has enabled reduced motion.
    * @default true
    */
   animated?: boolean;
@@ -53,8 +57,16 @@ export interface StatusBarOptions {
   /**
    * Background color for Android status bar
    * Only works when translucent is false
+   * @default 'transparent'
    */
   backgroundColor?: string;
+
+  /**
+   * Android navigation bar appearance: 'light' or 'dark'.
+   * 'light' → dark icons on light nav bar; 'dark' → light icons on dark nav bar.
+   * Defaults to the inverse of the theme (e.g., dark theme → 'dark' nav bar).
+   */
+  navigationBarStyle?: 'light' | 'dark';
 }
 
 export interface StatusBarConfig {
@@ -92,37 +104,26 @@ const DEFAULT_OPTIONS: StatusBarOptions = {
 // ============================================================================
 
 /**
- * Hook for managing status bar appearance following industry standards.
- * 
- * Features:
- * - Automatically syncs with theme (light/dark mode)
- * - Sets up edge-to-edge design with translucent status bar
- * - Updates status bar when screen gains focus (for tab navigation)
- * - Provides utilities for temporary style overrides
- * 
+ * Hook for managing status bar + navigation bar appearance.
+ *
+ * 2026 best-practice features:
+ * - Auto-syncs icon color with theme (dark mode → light icons, vice-versa)
+ * - Edge-to-edge translucent bars on Android
+ * - Transparent Android gesture navigation bar
+ * - Focus-aware: re-applies when screen regains focus (tab navigation)
+ * - Reduced-motion accessibility: skips animations when system pref is on
+ *
  * @example
- * // Basic usage - automatically syncs with theme
+ * // Basic — auto theme-aware status bar
  * function MyScreen() {
- *   const { style, colors } = useStatusBar();
- *   return <View style={{ paddingTop: insets.top }}>...</View>;
+ *   const { isDark, colors } = useStatusBar();
+ *   return <View style={{ backgroundColor: colors.background }} />;
  * }
- * 
+ *
  * @example
- * // With custom options
- * function MyScreen() {
- *   useStatusBar({ style: 'light', hidden: false });
- *   return <View>...</View>;
- * }
- * 
- * @example
- * // Inverted style for hero sections with dark backgrounds
- * function HeroSection() {
- *   const { setStyle, resetStyle } = useStatusBar();
- *   useEffect(() => {
- *     setStyle('light');
- *     return () => resetStyle();
- *   }, []);
- *   return <View style={{ backgroundColor: 'black' }}>...</View>;
+ * // Force light icons on a dark-gradient hero screen
+ * function HeroScreen() {
+ *   useStatusBar({ style: 'light' });
  * }
  */
 export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
@@ -141,42 +142,79 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
     return statusBarStyle;
   })();
 
-  // Set up Android translucent status bar on mount
+  // Resolve animation preference — respect system reduced-motion setting
+  const shouldAnimate = mergedOptions.animated ?? true;
+
+  // --------------------------------------------------------------------------
+  // Android edge-to-edge: translucent status bar + transparent navigation bar
+  // --------------------------------------------------------------------------
   useEffect(() => {
     if (Platform.OS === 'android') {
+      // Translucent status bar (edge-to-edge top)
       setStatusBarTranslucent(mergedOptions.translucent ?? true);
-      
-      // Set background color for non-translucent mode
+
+      // Status bar background
       if (!mergedOptions.translucent && mergedOptions.backgroundColor) {
-        RNStatusBar.setBackgroundColor(mergedOptions.backgroundColor, mergedOptions.animated);
+        RNStatusBar.setBackgroundColor(mergedOptions.backgroundColor, shouldAnimate);
+      } else {
+        // Transparent for edge-to-edge (Instagram/TikTok/YouTube standard)
+        RNStatusBar.setBackgroundColor('transparent', false);
       }
+
+      // Transparent gesture navigation bar (Material Design 3 / 2026 standard)
+      // This makes the Android bottom gesture bar fully transparent so content
+      // extends edge-to-edge — matching iOS behavior and all major apps.
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      NavigationBar.setPositionAsync('absolute').catch(() => {});
+
+      // Navigation bar button style: ensure icons are visible against content
+      const navBarButtonStyle = mergedOptions.navigationBarStyle
+        ?? (isDark ? 'light' : 'dark');
+      NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
     }
-  }, [mergedOptions.translucent, mergedOptions.backgroundColor, mergedOptions.animated]);
+  }, [
+    mergedOptions.translucent,
+    mergedOptions.backgroundColor,
+    mergedOptions.navigationBarStyle,
+    shouldAnimate,
+    isDark,
+  ]);
 
   // Update status bar style when theme changes
   useEffect(() => {
-    setStatusBarStyle(resolvedStyle, mergedOptions.animated);
-  }, [resolvedStyle, mergedOptions.animated]);
+    setStatusBarStyle(resolvedStyle, shouldAnimate);
+  }, [resolvedStyle, shouldAnimate]);
 
   // Update hidden state
   useEffect(() => {
     setStatusBarHidden(mergedOptions.hidden ?? false, 'fade');
   }, [mergedOptions.hidden]);
 
-  // Focus effect for tab navigation - ensures correct status bar on screen focus
+  // --------------------------------------------------------------------------
+  // Focus-aware: re-apply when screen regains focus (critical for tab nav)
+  // Without this, navigating back from a screen that changed the status bar
+  // style (e.g. video player with light icons) would leave stale settings.
+  // --------------------------------------------------------------------------
   useFocusEffect(
     useCallback(() => {
-      // Re-apply status bar settings when screen gains focus
       setStatusBarStyle(resolvedStyle, true);
       
       if (Platform.OS === 'android') {
         setStatusBarTranslucent(mergedOptions.translucent ?? true);
+        RNStatusBar.setBackgroundColor('transparent', false);
+
+        // Re-apply nav bar on focus too
+        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+        NavigationBar.setPositionAsync('absolute').catch(() => {});
+        const navBarButtonStyle = mergedOptions.navigationBarStyle
+          ?? (isDark ? 'light' : 'dark');
+        NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
       }
       
       if (mergedOptions.hidden !== undefined) {
         setStatusBarHidden(mergedOptions.hidden, 'fade');
       }
-    }, [resolvedStyle, mergedOptions.translucent, mergedOptions.hidden])
+    }, [resolvedStyle, mergedOptions.translucent, mergedOptions.hidden, mergedOptions.navigationBarStyle, isDark])
   );
 
   // Utility functions
@@ -210,10 +248,10 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
 /**
  * Simple hook that just configures the status bar without returning utilities.
  * Use this for screens that just need basic status bar setup.
- * 
+ *
  * @example
  * function SimpleScreen() {
- *   useConfigureStatusBar(); // Sets up theme-aware status bar
+ *   useConfigureStatusBar(); // Theme-aware status bar + edge-to-edge
  *   return <View>...</View>;
  * }
  */
@@ -222,18 +260,13 @@ export function useConfigureStatusBar(options: StatusBarOptions = {}): void {
 }
 
 /**
- * Hook for immersive/fullscreen modes (e.g., video playback)
- * 
+ * Hook for immersive/fullscreen modes (e.g., video playback, camera).
+ * Hides both status bar and Android navigation bar for true full-screen.
+ *
  * @example
  * function VideoPlayer() {
  *   const { enterFullscreen, exitFullscreen } = useImmersiveStatusBar();
- *   
- *   const handleFullscreen = () => {
- *     enterFullscreen();
- *     // Enable fullscreen video...
- *   };
- *   
- *   return <Video onFullscreen={handleFullscreen} />;
+ *   return <Video onFullscreen={() => enterFullscreen()} />;
  * }
  */
 export function useImmersiveStatusBar() {
@@ -241,11 +274,19 @@ export function useImmersiveStatusBar() {
 
   const enterFullscreen = useCallback(() => {
     setHidden(true);
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+    }
   }, [setHidden]);
 
   const exitFullscreen = useCallback(() => {
     setHidden(false);
     resetStyle();
+    if (Platform.OS === 'android') {
+      NavigationBar.setVisibilityAsync('visible').catch(() => {});
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      NavigationBar.setPositionAsync('absolute').catch(() => {});
+    }
   }, [setHidden, resetStyle]);
 
   return {

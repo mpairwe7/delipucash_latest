@@ -10,6 +10,8 @@ import {
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useStatusBar } from '@/hooks/useStatusBar';
+import { useTheme } from '@/utils/theme';
 
 interface ParentSitemap {
   expoPages?: Array<{
@@ -21,6 +23,8 @@ interface ParentSitemap {
 }
 
 function NotFoundScreen() {
+  // Theme-aware status bar + edge-to-edge
+  const { colors, isDark } = useStatusBar();
   const router = useRouter();
   const params = useGlobalSearchParams();
   const expoSitemap = useSitemap();
@@ -111,18 +115,18 @@ function NotFoundScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Page Not Found', headerShown: false }} />
-      <SafeAreaView style={styles.safeArea}>
-        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <ScrollView style={[styles.container, { backgroundColor: colors.background }]} contentContainerStyle={styles.contentContainer}>
           <View style={styles.header}>
             <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={18} color="#666" />
+              <Ionicons name="arrow-back" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
-            <View style={styles.pathContainer}>
-              <View style={styles.pathPrefix}>
-                <Text style={styles.pathPrefixText}>/</Text>
+            <View style={[styles.pathContainer, { borderColor: colors.border, backgroundColor: isDark ? colors.elevated : '#f9f9f9' }]}>
+              <View style={[styles.pathPrefix, { borderRightColor: colors.border }]}>
+                <Text style={[styles.pathPrefixText, { color: colors.textSecondary }]}>/</Text>
               </View>
               <View style={styles.pathContent}>
-                <Text style={styles.pathText} numberOfLines={1}>
+                <Text style={[styles.pathText, { color: colors.textSecondary }]} numberOfLines={1}>
                   {missingPath}
                 </Text>
               </View>
@@ -130,19 +134,19 @@ function NotFoundScreen() {
           </View>
 
           <View style={styles.mainContent}>
-            <Text style={styles.title}>Uh-oh! This screen doesn't exist (yet).</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Uh-oh! This screen doesn't exist (yet).</Text>
 
-            <Text style={styles.subtitle}>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
               Looks like "<Text style={styles.boldText}>/{missingPath}</Text>" isn't part of your
               project. But no worries, you've got options!
             </Text>
 
             {typeof window !== 'undefined' && window.parent && window.parent !== window && (
               <View style={styles.createPageContainer}>
-                <View style={styles.createPageContent}>
+                <View style={[styles.createPageContent, { borderColor: colors.border, backgroundColor: colors.card }]}>
                   <View style={styles.createPageTextContainer}>
-                    <Text style={styles.createPageTitle}>Build it from scratch</Text>
-                    <Text style={styles.createPageDescription}>
+                    <Text style={[styles.createPageTitle, { color: colors.text }]}>Build it from scratch</Text>
+                    <Text style={[styles.createPageDescription, { color: colors.textSecondary }]}>
                       Create a new screen to live at "/{missingPath}"
                     </Text>
                   </View>
@@ -158,18 +162,18 @@ function NotFoundScreen() {
               </View>
             )}
 
-            <Text style={styles.routesLabel}>Check out all your project's routes here ↓</Text>
+            <Text style={[styles.routesLabel, { color: colors.textSecondary }]}>Check out all your project's routes here ↓</Text>
             {!isExpoSitemap && sitemap ? (
               <View style={styles.pagesContainer}>
                 <View style={styles.pagesListContainer}>
-                  <Text style={styles.pagesLabel}>MOBILE</Text>
+                  <Text style={[styles.pagesLabel, { color: colors.textMuted }]}>MOBILE</Text>
                   {((sitemap as ParentSitemap).expoPages || []).map((route, index: number) => (
                     <TouchableOpacity
                       key={route.id}
                       onPress={() => handleNavigate(route.cleanRoute || '')}
-                      style={styles.pageButton}
+                      style={[styles.pageButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                     >
-                      <Text style={styles.routeName}>{route.name}</Text>
+                      <Text style={[styles.routeName, { color: colors.text }]}>{route.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -177,7 +181,7 @@ function NotFoundScreen() {
             ) : (
               <View style={styles.pagesContainer}>
                 <View style={styles.pagesListContainer}>
-                  <Text style={styles.pagesLabel}>MOBILE</Text>
+                  <Text style={[styles.pagesLabel, { color: colors.textMuted }]}>MOBILE</Text>
                   {(availableRoutes as SitemapType[]).map((route: SitemapType, index: number) => {
                     const url =
                       typeof route.href === 'string' ? route.href : route.href?.pathname || '/';
@@ -196,9 +200,9 @@ function NotFoundScreen() {
                           <TouchableOpacity
                             key={childRoute.contextKey}
                             onPress={() => handleNavigate(childUrl)}
-                            style={styles.pageButton}
+                            style={[styles.pageButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                           >
-                            <Text style={styles.routeName}>{displayPath}</Text>
+                            <Text style={[styles.routeName, { color: colors.text }]}>{displayPath}</Text>
                           </TouchableOpacity>
                         );
                       });
@@ -210,9 +214,9 @@ function NotFoundScreen() {
                       <TouchableOpacity
                         key={route.contextKey}
                         onPress={() => handleNavigate(url)}
-                        style={styles.pageButton}
+                        style={[styles.pageButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                       >
-                        <Text style={styles.routeName}>{displayPath}</Text>
+                        <Text style={[styles.routeName, { color: colors.text }]}>{displayPath}</Text>
                       </TouchableOpacity>
                     );
                   })}

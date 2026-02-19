@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { SplashScreen, Stack, usePathname } from 'expo-router';
 import { StatusBar, setStatusBarHidden, setStatusBarStyle, setStatusBarTranslucent } from 'expo-status-bar';
+import * as NavigationBar from 'expo-navigation-bar';
 import { useEffect, useMemo } from 'react';
 import { AppState, LogBox, Platform, ErrorUtils, StyleSheet } from 'react-native';
 import type { AppStateStatus } from 'react-native';
@@ -168,40 +169,79 @@ function GlobalProcessors() {
 }
 
 /**
- * Root-level system bars policy (2026 standard):
- * - Edge-to-edge on Android/iOS
- * - Theme-aware status bar icon color
- * - Consistent top/bottom scrims so content never fights native icons
+ * Root-level system bars policy (2026 best-practice, inspired by
+ * Instagram, TikTok, YouTube, Threads & X):
+ *
+ * 1. Edge-to-edge on Android AND iOS — content flows under system bars.
+ * 2. Translucent status bar with theme-aware icon color.
+ * 3. Transparent Android gesture navigation bar via expo-navigation-bar.
+ * 4. Subtle scrim gradients overlaying the status bar / bottom area so
+ *    white status-bar icons stay legible against any background in dark
+ *    mode, and dark icons stay legible in light mode.
+ * 5. Immersive route detection: video routes auto-hide system bars.
+ * 6. This is the *baseline*; individual screens can override via the
+ *    focus-aware `useStatusBar()` hook when they need a different style.
  */
 function GlobalSystemBars({ isDark }: { isDark: boolean }) {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
 
-  // Full-bleed media route can opt into immersive mode.
+  // Full-bleed media routes opt into immersive (hidden) system bars.
   const isImmersiveRoute = useMemo(
     () => pathname.startsWith('/video/'),
     [pathname]
   );
 
-  const topOverlay = isDark
-    ? SYSTEM_BARS.statusBar.darkOverlay
-    : SYSTEM_BARS.statusBar.lightOverlay;
+  // --------------------------------------------------------------------------
+  // Scrim colors — subtle gradient overlays that keep system bar icons
+  // readable regardless of the content scrolling behind them.
+  //
+  // Dark mode: a gentle dark-to-transparent scrim (Instagram / TikTok style)
+  //            prevents white status-bar icons from disappearing on bright
+  //            content cards.
+  // Light mode: a very subtle white-to-transparent scrim keeps dark icons
+  //             legible on dark hero images.
+  // --------------------------------------------------------------------------
+  const topScrimColors: [string, string] = isDark
+    ? ['rgba(0, 0, 0, 0.45)', 'transparent']
+    : ['rgba(255, 255, 255, 0.35)', 'transparent'];
 
-  const bottomOverlay = isDark
-    ? 'rgba(0, 0, 0, 0.24)'
-    : 'rgba(255, 255, 255, 0.14)';
+  const bottomScrimColors: [string, string] = isDark
+    ? ['transparent', 'rgba(0, 0, 0, 0.30)']
+    : ['transparent', 'rgba(255, 255, 255, 0.20)'];
 
+  // --------------------------------------------------------------------------
+  // Apply system bar configuration imperatively (covers cases where the
+  // declarative <StatusBar> component might lag behind theme changes).
+  // --------------------------------------------------------------------------
   useEffect(() => {
+    // Status bar icon color: light (white) in dark mode, dark (black) in light
     setStatusBarStyle(isDark ? 'light' : 'dark', true);
     setStatusBarHidden(isImmersiveRoute, 'fade');
 
     if (Platform.OS === 'android') {
+      // Edge-to-edge status bar
       setStatusBarTranslucent(true);
+
+      // Transparent gesture navigation bar (Material Design 3 standard)
+      // — makes content extend behind the Android gesture pill, matching
+      //   the edge-to-edge behaviour users expect from all major 2026 apps.
+      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
+
+      // Immersive routes also hide the navigation bar
+      if (isImmersiveRoute) {
+        NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      } else {
+        NavigationBar.setVisibilityAsync('visible').catch(() => {});
+      }
     }
   }, [isDark, isImmersiveRoute]);
 
   return (
     <>
+      {/* Declarative StatusBar component — authoritative baseline for the app */}
       <StatusBar
         style={isDark ? 'light' : 'dark'}
         translucent
@@ -211,17 +251,20 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
 
       {!isImmersiveRoute && (
         <>
+          {/* Top scrim: protects status bar icons from being swallowed by
+              bright/dark content scrolling underneath */}
           <LinearGradient
             pointerEvents="none"
-            colors={[topOverlay, 'transparent']}
+            colors={topScrimColors}
             style={[
               styles.systemBarTopScrim,
               { height: insets.top + 14 },
             ]}
           />
+          {/* Bottom scrim: protects home indicator / gesture bar area */}
           <LinearGradient
             pointerEvents="none"
-            colors={['transparent', bottomOverlay]}
+            colors={bottomScrimColors}
             style={[
               styles.systemBarBottomScrim,
               { height: Math.max(insets.bottom + 12, SYSTEM_BARS.navigationBar.gestureHeight + 8) },
@@ -265,6 +308,9 @@ export default function RootLayout() {
     initializeAuth();
   }, []);
 
+  // Read auth state for RevenueCat user sync
+  const auth = useAuthStore(s => s.auth);
+
   // Initialize RevenueCat Purchases SDK
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -273,6 +319,23 @@ export default function RootLayout() {
       );
     }
   }, []);
+
+  // Sync RevenueCat user identity when auth state changes
+  // Login identifies user for cross-device subscription sync
+  // Logout resets to anonymous user
+  useEffect(() => {
+    if (Platform.OS === 'web' || !purchasesService.isReady()) return;
+
+    if (auth?.user?.id) {
+      purchasesService.login(auth.user.id).catch((err) =>
+        console.warn('Failed to identify RevenueCat user:', err)
+      );
+    } else {
+      purchasesService.logout().catch((err) =>
+        console.warn('Failed to logout RevenueCat user:', err)
+      );
+    }
+  }, [auth?.user?.id]);
 
   // Initialize Ad Frequency Manager (loads persisted caps/session from AsyncStorage)
   useEffect(() => {
