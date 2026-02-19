@@ -1552,6 +1552,21 @@ export function useClaimDailyReward(): UseMutationResult<{ points: number; messa
       const d = response.data as any;
       return { points: d.reward ?? 0, message: d.message ?? 'Daily reward claimed!' };
     },
+    onMutate: async () => {
+      // Cancel outgoing dailyReward queries to avoid overwriting optimistic update
+      await queryClient.cancelQueries({ queryKey: queryKeys.dailyReward });
+      // Snapshot previous data for rollback
+      const previousDailyReward = queryClient.getQueryData(queryKeys.dailyReward);
+      // Optimistically mark daily reward as unavailable
+      queryClient.setQueryData(queryKeys.dailyReward, (old: any) =>
+        old ? { ...old, isAvailable: false } : old
+      );
+      return { previousDailyReward };
+    },
+    onError: (_error, _variables, context) => {
+      // Rollback to previous daily reward state
+      queryClient.setQueryData(queryKeys.dailyReward, context?.previousDailyReward);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.dailyReward });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });

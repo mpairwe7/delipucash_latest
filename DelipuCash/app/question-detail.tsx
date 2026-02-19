@@ -23,7 +23,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { MessageSquare, RefreshCw, Send } from "lucide-react-native";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -66,6 +66,19 @@ export default function QuestionCommentsScreen(): React.ReactElement {
   const responses = useMemo(() => {
     return transformResponses(question?.responses);
   }, [question]);
+
+  // Sync like/dislike state from server when data changes (e.g. after refetch)
+  useEffect(() => {
+    if (!responses.length) return;
+    const serverLiked: Record<string, boolean> = {};
+    const serverDisliked: Record<string, boolean> = {};
+    for (const r of responses) {
+      if (r.isLikedByUser) serverLiked[r.id] = true;
+      if (r.isDislikedByUser) serverDisliked[r.id] = true;
+    }
+    setLiked(serverLiked);
+    setDisliked(serverDisliked);
+  }, [responses]);
 
   const handleBack = useCallback((): void => {
     triggerHaptic('light');
@@ -167,6 +180,8 @@ export default function QuestionCommentsScreen(): React.ReactElement {
         renderItem={renderResponse}
         style={styles.list}
         contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + COMPONENT_SIZE.input.large }}
+        accessibilityRole="list"
+        accessibilityLabel="Question responses"
         ListHeaderComponent={
           <QuestionHeroCard
             question={question}

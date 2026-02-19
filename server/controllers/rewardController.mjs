@@ -85,6 +85,155 @@ export const getRewardsByUserId = asyncHandler(async (req, res) => {
   }
 });
 
+// ---------- Daily Reward helpers ----------
+
+/** Return the start of today (UTC midnight) */
+function getUtcTodayStart() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+/** Hours remaining until the next UTC midnight */
+function hoursUntilMidnightUtc() {
+  const now = new Date();
+  const tomorrow = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+  return Math.ceil((tomorrow - now) / (1000 * 60 * 60));
+}
+
+/**
+ * Calculate the current daily-reward streak for a user.
+ * Counts consecutive days (going backwards from yesterday) that have at
+ * least one Reward with description 'daily_reward'.
+ */
+async function calculateStreak(userEmail) {
+  // Fetch daily reward records ordered by newest first
+  const rewards = await prisma.reward.findMany({
+    where: { userEmail, description: 'daily_reward' },
+    orderBy: { createdAt: 'desc' },
+    select: { createdAt: true },
+  });
+
+  if (rewards.length === 0) return 0;
+
+  // Build a Set of unique UTC date strings (YYYY-MM-DD) the user claimed
+  const claimedDates = new Set(
+    rewards.map((r) => {
+      const d = new Date(r.createdAt);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    }),
+  );
+
+  // Walk backwards from yesterday, counting consecutive claimed days
+  let streak = 0;
+  const cursor = new Date();
+  cursor.setUTCDate(cursor.getUTCDate() - 1); // start from yesterday
+
+  while (true) {
+    const key = `${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, '0')}-${String(cursor.getUTCDate()).padStart(2, '0')}`;
+    if (!claimedDates.has(key)) break;
+    streak++;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+
+  return streak;
+}
+
+// ---------- GET /api/rewards/daily ----------
+
+export const getDailyRewardStatus = asyncHandler(async (req, res) => {
+  const userEmail = req.user.email;
+
+  const todayStart = getUtcTodayStart();
+
+  // Check if a daily reward was already claimed today
+  const claimedToday = await prisma.reward.findFirst({
+    where: {
+      userEmail,
+      description: 'daily_reward',
+      createdAt: { gte: todayStart },
+    },
+  });
+
+  const currentStreak = await calculateStreak(userEmail);
+
+  if (claimedToday) {
+    return res.json({
+      isAvailable: false,
+      nextRewardIn: hoursUntilMidnightUtc(),
+      currentStreak,
+      todayReward: 0,
+      streakBonus: 0,
+    });
+  }
+
+  const baseReward = 25;
+  const streakBonus = Math.min(currentStreak * 5, 100);
+
+  return res.json({
+    isAvailable: true,
+    nextRewardIn: 0,
+    currentStreak,
+    todayReward: baseReward,
+    streakBonus,
+  });
+});
+
+// ---------- POST /api/rewards/daily ----------
+
+export const claimDailyReward = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const userEmail = req.user.email;
+
+  const todayStart = getUtcTodayStart();
+
+  // Prevent double-claim
+  const alreadyClaimed = await prisma.reward.findFirst({
+    where: {
+      userEmail,
+      description: 'daily_reward',
+      createdAt: { gte: todayStart },
+    },
+  });
+
+  if (alreadyClaimed) {
+    return res.status(400).json({
+      success: false,
+      error: 'Daily reward already claimed today.',
+    });
+  }
+
+  const streak = await calculateStreak(userEmail);
+  const baseReward = 25;
+  const streakBonus = Math.min(streak * 5, 100);
+  const totalReward = baseReward + streakBonus;
+
+  await prisma.$transaction([
+    prisma.reward.create({
+      data: {
+        userEmail,
+        points: totalReward,
+        description: 'daily_reward',
+      },
+    }),
+    prisma.appUser.update({
+      where: { id: userId },
+      data: { points: { increment: totalReward } },
+    }),
+  ]);
+
+  return res.json({
+    success: true,
+    data: {
+      reward: totalReward,
+      streak: streak + 1,
+      message: 'Daily reward claimed!',
+      isAvailable: false,
+      nextRewardIn: hoursUntilMidnightUtc(),
+      streakBonus,
+    },
+  });
+});
+
 // Redeem Rewards — convert points to cash/airtime via mobile money
 export const redeemRewards = asyncHandler(async (req, res) => {
   const userId = req.user.id;

@@ -23,6 +23,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  AccessibilityInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -160,9 +161,16 @@ export function ProfileUserCard({
   const editScale = useSharedValue(1);
   const badgePulse = useSharedValue(1);
 
-  // Pulse animation for verified badge
+  // Pulse animation for verified badge — respects reduced motion
+  const [reduceMotion, setReduceMotion] = React.useState(false);
   React.useEffect(() => {
-    if (isVerified) {
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => sub.remove();
+  }, []);
+
+  React.useEffect(() => {
+    if (isVerified && !reduceMotion) {
       badgePulse.value = withRepeat(
         withSequence(
           withTiming(1.15, { duration: 800 }),
@@ -171,8 +179,10 @@ export function ProfileUserCard({
         -1,
         true
       );
+    } else {
+      badgePulse.value = 1;
     }
-  }, [isVerified, badgePulse]);
+  }, [isVerified, badgePulse, reduceMotion]);
 
   const badgeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: badgePulse.value }],

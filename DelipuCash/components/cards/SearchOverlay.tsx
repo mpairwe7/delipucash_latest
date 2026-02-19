@@ -37,6 +37,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   RADIUS,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 
@@ -143,6 +144,7 @@ function SearchOverlayComponent({
   onClearHistory,
   suggestions = [],
   placeholder = 'Search...',
+  searchContext = 'content',
   trendingSearches = [],
 }: SearchOverlayProps): React.ReactElement | null {
   const { colors, isDark } = useTheme();
@@ -373,10 +375,10 @@ function SearchOverlayComponent({
               <View style={styles.emptyState}>
                 <Search size={36} color={withAlpha(colors.text, 0.2)} strokeWidth={1} />
                 <Text style={[styles.emptyTitle, { color: colors.text }]}>
-                  Search videos
+                  Search {searchContext.toLowerCase()}
                 </Text>
                 <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>
-                  Find videos, creators, and more
+                  Find {searchContext.toLowerCase()}, topics, and more
                 </Text>
               </View>
             )}
@@ -421,8 +423,8 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   backButton: {
-    width: 40,
-    height: 40,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -442,9 +444,9 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   micButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
   },

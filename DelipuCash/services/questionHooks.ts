@@ -237,8 +237,10 @@ function transformToFeedQuestion(
     followersCount: upvotes + totalAnswers,
     isHot: daysSinceCreation <= 1 && totalAnswers > 3,
     isTrending: daysSinceCreation <= 3 && (upvotes > 5 || totalAnswers > 5),
-    hasExpertAnswer: totalAnswers > 3,
-    hasAcceptedAnswer: totalAnswers > 0,
+    // Server doesn't yet provide these fields — derive conservatively.
+    // hasAcceptedAnswer requires a dedicated API field; default false to avoid false green checkmarks.
+    hasExpertAnswer: false,
+    hasAcceptedAnswer: false,
     userHasVoted: null,
   };
 }

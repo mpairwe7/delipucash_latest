@@ -7,7 +7,7 @@
  * ```tsx
  * <QuestionCard
  *   question={questionData}
- *   onPress={() => router.push(`/question/${question.id}`)}
+ *   onPress={() => router.push(`/question-answer/${question.id}`)}
  * />
  * ```
  */

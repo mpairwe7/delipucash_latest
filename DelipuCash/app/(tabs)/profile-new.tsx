@@ -37,6 +37,7 @@ import {
   Modal,
   RefreshControl,
   TextInput,
+  AccessibilityInfo,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -365,6 +366,9 @@ export default function ProfileScreen(): React.ReactElement {
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showDisable2FAPrompt, setShowDisable2FAPrompt] = useState(false);
   const [disable2FAPassword, setDisable2FAPassword] = useState('');
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -518,6 +522,7 @@ export default function ProfileScreen(): React.ReactElement {
       refetchSubscription(),
     ]);
     setIsRefreshing(false);
+    AccessibilityInfo.announceForAccessibility('Profile refreshed');
   }, [refetchUser, refetchSessions, refetchStats, refetchUnread, refetchSubscription]);
 
   const handleSignOut = useCallback(() => {
@@ -729,14 +734,35 @@ export default function ProfileScreen(): React.ReactElement {
         }, 'secure-text');
       }, 'secure-text');
     } else {
-      // Android: Alert.prompt not available — guide to forgot-password flow
-      Alert.alert(
-        'Change Password',
-        'To change your password on Android, use the "Forgot Password" option on the sign-in screen.',
-        [{ text: 'OK' }]
-      );
+      // Android: show inline password change modal
+      setCurrentPasswordInput('');
+      setNewPasswordInput('');
+      setShowChangePasswordModal(true);
     }
   }, [changePasswordMutation]);
+
+  const handleConfirmChangePassword = useCallback(() => {
+    if (!currentPasswordInput.trim()) {
+      Alert.alert('Error', 'Current password is required.');
+      return;
+    }
+    if (!newPasswordInput.trim() || newPasswordInput.length < 8) {
+      Alert.alert('Error', 'New password must be at least 8 characters.');
+      return;
+    }
+    changePasswordMutation.mutate(
+      { currentPassword: currentPasswordInput, newPassword: newPasswordInput },
+      {
+        onSuccess: () => {
+          setShowChangePasswordModal(false);
+          setCurrentPasswordInput('');
+          setNewPasswordInput('');
+          Alert.alert('Success', 'Password changed successfully!');
+        },
+        onError: (e) => Alert.alert('Error', e.message || 'Failed to change password.'),
+      }
+    );
+  }, [currentPasswordInput, newPasswordInput, changePasswordMutation]);
 
   const handleManageSessions = useCallback(() => {
     const activeSessions = sessions.filter(s => s.isActive);
@@ -1005,6 +1031,7 @@ export default function ProfileScreen(): React.ReactElement {
         transparent
         animationType="fade"
         onRequestClose={() => setShowDisable2FAPrompt(false)}
+        accessibilityViewIsModal
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
@@ -1073,6 +1100,85 @@ export default function ProfileScreen(): React.ReactElement {
         isVerifying={updateTwoFactorMutation.isPending}
         isResending={updateTwoFactorMutation.isPending}
       />
+
+      {/* Change Password Modal (Android) */}
+      <Modal
+        visible={showChangePasswordModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowChangePasswordModal(false)}
+        accessibilityViewIsModal
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+            <AccessibleText variant="h3" style={{ marginBottom: SPACING.sm }}>
+              Change Password
+            </AccessibleText>
+            <AccessibleText variant="body" color="textMuted" style={{ marginBottom: SPACING.md }}>
+              Enter your current and new password.
+            </AccessibleText>
+            <TextInput
+              value={currentPasswordInput}
+              onChangeText={setCurrentPasswordInput}
+              placeholder="Current password"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              autoFocus
+              returnKeyType="next"
+              style={[
+                styles.passwordInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              accessibilityLabel="Current password"
+            />
+            <TextInput
+              value={newPasswordInput}
+              onChangeText={setNewPasswordInput}
+              placeholder="New password (min 8 characters)"
+              placeholderTextColor={colors.textMuted}
+              secureTextEntry
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmChangePassword}
+              style={[
+                styles.passwordInput,
+                {
+                  color: colors.text,
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              accessibilityLabel="New password"
+              accessibilityHint="Minimum 8 characters"
+            />
+            <View style={styles.modalButtons}>
+              <AnimatedCard
+                variant="outlined"
+                onPress={() => {
+                  setShowChangePasswordModal(false);
+                  setCurrentPasswordInput('');
+                  setNewPasswordInput('');
+                }}
+                style={{ flex: 1, marginRight: SPACING.sm }}
+              >
+                <AccessibleText variant="body" style={{ textAlign: 'center' }}>Cancel</AccessibleText>
+              </AnimatedCard>
+              <AnimatedCard
+                variant="filled"
+                onPress={handleConfirmChangePassword}
+                style={{ flex: 1 }}
+              >
+                <AccessibleText variant="body" medium customColor="#FFFFFF" style={{ textAlign: 'center' }}>
+                  {changePasswordMutation.isPending ? 'Changing...' : 'Change'}
+                </AccessibleText>
+              </AnimatedCard>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Edit Profile Modal */}
       <EditProfileModal

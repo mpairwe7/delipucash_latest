@@ -720,6 +720,12 @@ export const surveysApi = {
 // ===========================================
 // Questions API
 // ===========================================
+/**
+ * @deprecated Unused — question data is fetched by `questionHooks.ts` which
+ * uses its own `fetchJson` with unified query keys, retry logic, and timeout.
+ * Kept for backwards compatibility; prefer `useInfiniteQuestionsFeed`,
+ * `useQuestionDetail`, `useSubmitQuestionResponse`, etc. from `questionHooks.ts`.
+ */
 export const questionsApi = {
   /**
    * Get all questions

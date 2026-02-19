@@ -26,7 +26,6 @@ import React, {
   memo,
 } from "react";
 import {
-  Alert,
   View,
   Text,
   StyleSheet,
@@ -39,6 +38,8 @@ import {
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  InteractionManager,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -266,7 +267,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
             streak={userStats?.currentStreak || 0}
             isActiveToday={(userStats?.questionsAnsweredToday ?? 0) > 0}
             size="compact"
-            onPress={() => console.log("Streak details")}
+            onPress={() => router.push("/(tabs)/withdraw" as Href)}
           />
           <PointsDisplay
             points={userStats?.totalEarnings || 0}
@@ -278,7 +279,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
             target={userStats?.dailyTarget || 10}
             label="Questions"
             size={50}
-            onPress={() => console.log("Daily goal details")}
+            onPress={undefined}
           />
         </Animated.View>
       ) : (
@@ -371,7 +372,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       <LeaderboardSnippet
         users={leaderboard?.users || []}
         currentUserRank={leaderboard?.currentUserRank || 0}
-        onPress={() => console.log("View full leaderboard")}
+        onPress={() => router.push("/leaderboard" as Href)}
       />
 
       {/* Featured Ad */}
@@ -622,13 +623,13 @@ export default function QuestionsScreen(): React.ReactElement {
       setSelectedTab(tabId as FeedTabId);
       triggerHaptic("light");
       impressedAdIds.current.clear();
-      // Restore scroll position for the new tab
-      setTimeout(() => {
+      // Restore scroll position after RN completes the layout pass
+      InteractionManager.runAfterInteractions(() => {
         flatListRef.current?.scrollToOffset({
           offset: scrollOffsets.current[tabId as FeedTabId] || 0,
           animated: false,
         });
-      }, 100);
+      });
     },
     [setSelectedTab]
   );
@@ -698,7 +699,7 @@ export default function QuestionsScreen(): React.ReactElement {
       recordAdClickMutate({
         adId: ad.id,
         placement: "question",
-        deviceInfo: { platform: "ios", version: "1.0" },
+        deviceInfo: { platform: Platform.OS, version: "1.0" },
       });
     },
     [recordAdClickMutate]

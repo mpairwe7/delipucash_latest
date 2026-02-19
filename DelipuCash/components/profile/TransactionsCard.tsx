@@ -32,6 +32,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Dimensions,
+  AccessibilityInfo,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import {
@@ -103,23 +104,25 @@ export interface TransactionsCardProps {
 /**
  * Format currency in Ugandan Shillings (UGX)
  */
+const ugxFormatter = new Intl.NumberFormat('en-UG', {
+  style: 'currency',
+  currency: 'UGX',
+  currencyDisplay: 'code',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+const ugxCompactFormatter = new Intl.NumberFormat('en-UG', {
+  style: 'currency',
+  currency: 'UGX',
+  currencyDisplay: 'code',
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
 function formatCurrency(amount: number, compact = false): string {
   if (compact && amount >= 1000) {
-    return new Intl.NumberFormat('en-UG', {
-      style: 'currency',
-      currency: 'UGX',
-      currencyDisplay: 'code',
-      notation: 'compact',
-      maximumFractionDigits: 1,
-    }).format(amount);
+    return ugxCompactFormatter.format(amount);
   }
-  return new Intl.NumberFormat('en-UG', {
-    style: 'currency',
-    currency: 'UGX',
-    currencyDisplay: 'code',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
+  return ugxFormatter.format(amount);
 }
 
 /**
@@ -197,9 +200,17 @@ export const TransactionsCard = memo(function TransactionsCard({
   const cardScale = useSharedValue(1);
   const flamePulse = useSharedValue(1);
 
-  // Flame pulse animation for active streaks
+  // Reduced motion check for ongoing animations
+  const [reduceMotion, setReduceMotion] = React.useState(false);
   React.useEffect(() => {
-    if (currentStreak > 0) {
+    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => sub.remove();
+  }, []);
+
+  // Flame pulse animation for active streaks — respects reduced motion
+  React.useEffect(() => {
+    if (currentStreak > 0 && !reduceMotion) {
       flamePulse.value = withRepeat(
         withSequence(
           withTiming(1.15, { duration: 800 }),
@@ -208,9 +219,11 @@ export const TransactionsCard = memo(function TransactionsCard({
         -1,
         true
       );
+    } else {
+      flamePulse.value = 1;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentStreak]);
+  }, [currentStreak, reduceMotion]);
 
   const cardAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: cardScale.value }],

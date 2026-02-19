@@ -108,6 +108,50 @@ export const updateUserProfile = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Calculate current daily-reward streak for a user.
+ * Walks backwards from yesterday counting consecutive days with a daily_reward.
+ */
+async function calculateCurrentStreak(userId) {
+  const todayStart = new Date();
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  let streak = 0;
+  let checkDate = new Date(todayStart);
+
+  // Check if user claimed today
+  const todayClaim = await prisma.reward.findFirst({
+    where: {
+      user: { id: userId },
+      description: 'daily_reward',
+      createdAt: { gte: todayStart },
+    },
+  });
+  if (todayClaim) streak = 1;
+
+  // Walk backwards from yesterday
+  checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+
+  while (true) {
+    const dayEnd = new Date(checkDate);
+    dayEnd.setUTCHours(23, 59, 59, 999);
+
+    const claim = await prisma.reward.findFirst({
+      where: {
+        user: { id: userId },
+        description: 'daily_reward',
+        createdAt: { gte: checkDate, lte: dayEnd },
+      },
+    });
+
+    if (!claim) break;
+    streak++;
+    checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+  }
+
+  return streak;
+}
+
+/**
  * Get user statistics
  * GET /api/users/stats
  */
@@ -125,6 +169,8 @@ export const getUserStats = asyncHandler(async (req, res) => {
       questionsAnswered,
       rewardsEarned,
       totalEarnings,
+      rewardsThisWeekAgg,
+      videosWatched,
       user
     ] = await Promise.all([
       // Count completed surveys (SurveyResponse has userId directly)
@@ -144,6 +190,18 @@ export const getUserStats = asyncHandler(async (req, res) => {
         where: { user: { id: userId } },
         _sum: { points: true },
       }),
+      // Sum rewards earned in the last 7 days
+      prisma.reward.aggregate({
+        where: {
+          user: { id: userId },
+          createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) },
+        },
+        _sum: { points: true },
+      }),
+      // Count videos watched (VideoEvent play_3s events for this user)
+      prisma.videoEvent.count({
+        where: { userId, eventType: 'play_3s' },
+      }),
       // Get user points
       prisma.appUser.findUnique({
         where: { id: userId },
@@ -151,14 +209,22 @@ export const getUserStats = asyncHandler(async (req, res) => {
       }),
     ]);
 
+    const currentStreak = await calculateCurrentStreak(userId);
+
     const stats = {
       surveysCompleted: surveysCompleted || 0,
       questionsAnswered: questionsAnswered || 0,
       rewardsEarned: rewardsEarned || 0,
       totalEarnings: totalEarnings._sum.points || 0,
+      rewardsThisWeek: rewardsThisWeekAgg._sum.points || 0,
       totalRewards: user?.points || 0,
       // Calculated fields
       totalPoints: user?.points || 0,
+      // Aliased fields expected by frontend useDashboardStats
+      totalAnswers: questionsAnswered || 0,
+      totalSurveysCompleted: surveysCompleted || 0,
+      totalVideosWatched: videosWatched || 0,
+      currentStreak,
     };
 
     console.log('✅ Stats retrieved for user ID:', userId, stats);

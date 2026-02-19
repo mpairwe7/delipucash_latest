@@ -16,10 +16,11 @@ import {
   View,
   Text,
   StyleSheet,
-  TouchableOpacity,
+  Pressable,
   AccessibilityInfo,
 } from 'react-native';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
+import { useTheme, SPACING, TYPOGRAPHY, RADIUS, COMPONENT_SIZE } from '@/utils/theme';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -80,30 +81,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
 
       return (
-        <View style={styles.container} accessibilityRole="alert">
-          <AlertTriangle size={48} color="#EF4444" strokeWidth={1.5} />
-          <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>
-            {screenName ? `Error in ${screenName}. ` : ''}
-            {errorCount > 2
-              ? 'This issue persists. Try restarting the app.'
-              : 'Please try again.'}
-          </Text>
-          {__DEV__ && error && (
-            <Text style={styles.debug} numberOfLines={3}>
-              {error.message}
-            </Text>
-          )}
-          <TouchableOpacity
-            style={styles.retryButton}
-            onPress={this.handleRetry}
-            accessibilityRole="button"
-            accessibilityLabel="Retry"
-          >
-            <RefreshCw size={18} color="#FFFFFF" strokeWidth={2} />
-            <Text style={styles.retryText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
+        <DefaultErrorFallback
+          screenName={screenName}
+          errorCount={errorCount}
+          error={error}
+          onRetry={this.handleRetry}
+        />
       );
     }
 
@@ -111,47 +94,86 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 }
 
+// ---------------------------------------------------------------------------
+// Theme-aware fallback UI (functional component so it can use useTheme hook)
+// ---------------------------------------------------------------------------
+interface DefaultErrorFallbackProps {
+  screenName?: string;
+  errorCount: number;
+  error: Error | null;
+  onRetry: () => void;
+}
+
+function DefaultErrorFallback({ screenName, errorCount, error, onRetry }: DefaultErrorFallbackProps) {
+  const { colors } = useTheme();
+
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]} accessibilityRole="alert">
+      <AlertTriangle size={48} color={colors.error} strokeWidth={1.5} />
+      <Text style={[styles.title, { color: colors.text }]}>Something went wrong</Text>
+      <Text style={[styles.message, { color: colors.textMuted }]}>
+        {screenName ? `Error in ${screenName}. ` : ''}
+        {errorCount > 2
+          ? 'This issue persists. Try restarting the app.'
+          : 'Please try again.'}
+      </Text>
+      {__DEV__ && error && (
+        <Text style={[styles.debug, { color: colors.textMuted }]} numberOfLines={3}>
+          {error.message}
+        </Text>
+      )}
+      <Pressable
+        style={[styles.retryButton, { backgroundColor: colors.primary }]}
+        onPress={onRetry}
+        accessibilityRole="button"
+        accessibilityLabel="Retry"
+        android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
+      >
+        <RefreshCw size={18} color="#FFFFFF" strokeWidth={2} />
+        <Text style={styles.retryText}>Try Again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 12,
+    padding: SPACING.xl,
+    gap: SPACING.sm,
   },
   title: {
-    fontSize: 20,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: '700',
-    color: '#1F2937',
-    marginTop: 8,
+    marginTop: SPACING.xs,
   },
   message: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
   },
   debug: {
     fontSize: 11,
-    color: '#9CA3AF',
     fontFamily: 'monospace',
     textAlign: 'center',
-    marginTop: 4,
-    paddingHorizontal: 16,
+    marginTop: SPACING.xs,
+    paddingHorizontal: SPACING.md,
   },
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#6366F1',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 10,
-    marginTop: 8,
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    marginTop: SPACING.xs,
+    minHeight: COMPONENT_SIZE.touchTarget,
   },
   retryText: {
     color: '#FFFFFF',
-    fontSize: 15,
+    fontSize: TYPOGRAPHY.fontSize.md,
     fontWeight: '600',
   },
 });

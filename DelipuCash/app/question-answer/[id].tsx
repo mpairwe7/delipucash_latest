@@ -100,6 +100,8 @@ const ResponseItem = memo(function ResponseItem({
         { borderColor: colors.border },
         isOptimistic && { opacity: 0.7, borderStyle: "dashed" as any },
       ]}
+      accessibilityRole="article"
+      accessibilityLabel={`Response by ${authorName}`}
     >
       <View style={styles.responseHeader}>
         <View style={styles.responseAuthorRow}>
@@ -556,6 +558,8 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             styles.card,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
+          accessibilityRole="list"
+          accessibilityLabel={`${responseCount} responses`}
         >
           <View style={styles.responsesHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>

@@ -106,8 +106,8 @@ const SPRING_CONFIG = {
 const TabButton = memo(function TabButton({
   tab,
   isSelected,
-  onPress,
-  onLayout,
+  onTabPress,
+  onTabLayout,
   variant,
   showIcon,
   colors,
@@ -115,8 +115,8 @@ const TabButton = memo(function TabButton({
 }: {
   tab: FeedTab;
   isSelected: boolean;
-  onPress: () => void;
-  onLayout: (event: LayoutChangeEvent) => void;
+  onTabPress: (tabId: string) => void;
+  onTabLayout: (tabId: string, event: LayoutChangeEvent) => void;
   variant: "pill" | "underline" | "minimal";
   showIcon: boolean;
   colors: ReturnType<typeof useTheme>["colors"];
@@ -128,6 +128,12 @@ const TabButton = memo(function TabButton({
 
   // Pre-compute the alpha color outside of worklet
   const selectedBgColor = withAlpha(selectedColor, 0.12);
+
+  const handlePress = useCallback(() => onTabPress(tab.id), [onTabPress, tab.id]);
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => onTabLayout(tab.id, event),
+    [onTabLayout, tab.id]
+  );
 
   const animatedBgStyle = useAnimatedStyle(() => {
     if (variant !== "pill") return {};
@@ -141,8 +147,8 @@ const TabButton = memo(function TabButton({
 
   return (
     <AnimatedPressable
-      onPress={onPress}
-      onLayout={onLayout}
+      onPress={handlePress}
+      onLayout={handleLayout}
       disabled={tab.disabled}
       style={[
         styles.tab,
@@ -293,8 +299,8 @@ function FeedTabsComponent({
             key={tab.id}
             tab={tab}
             isSelected={selectedTab === tab.id}
-            onPress={() => handleTabPress(tab.id)}
-            onLayout={(e) => handleTabLayout(tab.id, e)}
+            onTabPress={handleTabPress}
+            onTabLayout={handleTabLayout}
             variant={variant}
             showIcon={showIcons}
             colors={colors}

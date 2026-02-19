@@ -264,7 +264,6 @@ const VoteButton = memo(function VoteButton({
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityState={{ selected: isActive }}
-      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
     >
       <Icon
         size={ICON_SIZE.sm}

@@ -13,8 +13,8 @@
  * ```
  */
 
-import React, { useEffect } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Dimensions, AccessibilityInfo } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -44,14 +44,26 @@ function SkeletonBox({ width, height, borderRadius = RADIUS.md, style }: Skeleto
   const { colors } = useTheme();
   const shimmer = useSharedValue(0);
 
+  const [reduceMotion, setReduceMotion] = useState(false);
+
   useEffect(() => {
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceMotionChanged',
+      (isEnabled) => setReduceMotion(isEnabled)
+    );
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
     shimmer.value = withRepeat(
       withTiming(1, { duration: 1500, easing: Easing.bezier(0.4, 0, 0.2, 1) }),
       -1,
       false
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => {
     const translateX = interpolate(shimmer.value, [0, 1], [-SCREEN_WIDTH, SCREEN_WIDTH]);

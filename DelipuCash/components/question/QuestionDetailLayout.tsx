@@ -2,10 +2,10 @@
  * QuestionDetailLayout - Shared layout for question detail screens
  *
  * Consolidates common patterns across:
- * - question/[id].tsx (answer a question)
- * - question-answer/[id].tsx (answer variant)
+ * - question-answer/[id].tsx (canonical answer screen)
  * - question-detail.tsx (discussion/comments)
  * - reward-question/[id].tsx (reward question answering)
+ * - question/[id].tsx (legacy — redirects to question-answer)
  *
  * Inspired by:
  * - Stack Overflow: Accepted answers, vote counts, reputation badges
@@ -74,6 +74,10 @@ interface ResponseCardProps {
     likeCount: number;
     dislikeCount: number;
     isAccepted?: boolean;
+    /** Server-reported like state for the current user */
+    isLikedByUser?: boolean;
+    /** Server-reported dislike state for the current user */
+    isDislikedByUser?: boolean;
   };
   isLiked?: boolean;
   isDisliked?: boolean;
@@ -96,6 +100,8 @@ export const ResponseCard = memo<ResponseCardProps>(
           layoutStyles.responseCard,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
+        accessibilityRole="article"
+        accessibilityLabel={`Response by ${response.userName}. ${likeCount} likes, ${dislikeCount} dislikes${response.isAccepted ? '. Accepted answer' : ''}`}
       >
         <View style={layoutStyles.responseHeader}>
           <View style={layoutStyles.responseAuthorRow}>
@@ -229,6 +235,9 @@ export function transformResponses(responses: Response[] | undefined): ResponseC
     likeCount: r.likeCount ?? r.likesCount ?? 0,
     dislikeCount: r.dislikeCount ?? r.dislikesCount ?? 0,
     isAccepted: bestId !== null && r.id === bestId,
+    /** Server-reported like/dislike state for the current user */
+    isLikedByUser: r.isLiked ?? false,
+    isDislikedByUser: r.isDisliked ?? false,
   }));
 }
 

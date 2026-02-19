@@ -780,8 +780,17 @@ function CreateQuestionWizardComponent({
 
   const handleSubmit = useCallback(async () => {
     if (validateStep(currentStep)) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await onSubmit(formData);
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        await onSubmit(formData);
+      } catch (error) {
+        // Ensure wizard doesn't get stuck — surface error to user
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setErrors(prev => ({
+          ...prev,
+          submit: error instanceof Error ? error.message : 'Failed to submit. Please try again.',
+        }));
+      }
     }
   }, [currentStep, validateStep, formData, onSubmit]);
 

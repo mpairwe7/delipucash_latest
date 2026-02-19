@@ -706,6 +706,7 @@ export default function HomePage(): React.ReactElement {
                   <Text
                     style={styles.walletBalance}
                     accessibilityLabel={`Wallet balance: ${user?.walletBalance?.toLocaleString() || 0} Ugandan shillings`}
+                    accessibilityLiveRegion="polite"
                     allowFontScaling
                     maxFontSizeMultiplier={1.3}
                   >
@@ -1269,7 +1270,7 @@ const styles = StyleSheet.create({
   walletLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    color: "rgba(255, 255, 255, 0.85)",
+    color: "rgba(255, 255, 255, 0.95)",
     marginLeft: SPACING.sm,
   },
   walletBalance: {

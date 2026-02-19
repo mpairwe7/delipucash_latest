@@ -491,11 +491,10 @@ export const getResponsesForQuestion = asyncHandler(async (req, res) => {
 export const uploadQuestions = asyncHandler(async (req, res) => {
   const { questions, userId } = req.body;
 
-  // Log the incoming request
+  // Log the incoming request (never log tokens/credentials)
   console.log('Incoming request: POST /api/questions/loadquestions');
-  console.log('Token:', req.headers.authorization);
   console.log('User ID:', userId);
-  console.log('Questions:', JSON.stringify(questions, null, 2));
+  console.log('Questions count:', questions?.length || 0);
 
   // Check if the user exists
   const userExists = await prisma.appUser.findUnique({

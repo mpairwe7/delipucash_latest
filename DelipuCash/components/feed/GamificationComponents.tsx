@@ -55,6 +55,7 @@ import {
 } from "@/utils/theme";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle, Defs, LinearGradient, Stop } from "react-native-svg";
+import { useReducedMotion } from "@/utils/accessibility";
 
 // ============================================================================
 // STREAK COUNTER
@@ -78,12 +79,20 @@ function StreakCounterComponent({
   size = "default",
 }: StreakCounterProps): React.ReactElement {
   const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
   
   // Animation values
   const flameScale = useSharedValue(1);
   const flameRotation = useSharedValue(0);
 
   useEffect(() => {
+    if (reduceMotion) {
+      // Reset to static values when reduce motion is enabled
+      flameScale.value = 1;
+      flameRotation.value = 0;
+      return;
+    }
+
     if (isActiveToday && streak > 0) {
       // Subtle flame animation
       flameScale.value = withRepeat(
@@ -103,7 +112,7 @@ function StreakCounterComponent({
         true
       );
     }
-  }, [isActiveToday, streak, flameScale, flameRotation]);
+  }, [isActiveToday, streak, flameScale, flameRotation, reduceMotion]);
 
   const animatedFlameStyle = useAnimatedStyle(() => ({
     transform: [
