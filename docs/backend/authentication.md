@@ -19,7 +19,8 @@ DelipuCash uses JWT-based authentication with short-lived access tokens and long
 | Access Token | JWT, 15-minute expiry |
 | Refresh Token | 64-char hex string, 30-day expiry |
 | Password Hash | bcrypt (salt rounds: 10) |
-| 2FA | 6-digit OTP via email, SHA-256 stored |
+| 2FA | 6-digit OTP via email, SHA-256 stored, `crypto.timingSafeEqual` comparison |
+| OTP Generation | `crypto.randomInt(100000, 999999)` — cryptographically secure PRNG |
 | Token Storage | SHA-256 hashed in `LoginSession` table |
 | Client Storage | SecureStore (encrypted, native keychain) |
 
@@ -105,21 +106,41 @@ sequenceDiagram
     participant Email as SMTP
 
     App->>API: PUT /api/auth/two-factor { enabled: true }
-    API->>API: Generate 6-digit OTP
+    API->>API: crypto.randomInt(100000, 999999)
     API->>API: SHA-256 hash OTP
-    API->>Email: Send OTP email
-    API-->>App: { message: "Verification code sent" }
+    API->>Email: Send OTP email (code in body only, not subject)
+    API-->>App: { codeSent: true, expiresIn: 180 }
 
     App->>API: POST /api/auth/two-factor/verify { code: "123456" }
-    API->>API: SHA-256(input) === stored hash?
-    API->>API: Check expiry (10 minutes)
+    API->>API: crypto.timingSafeEqual(SHA-256(input), stored)
+    API->>API: Check expiry (3 minutes)
     alt Match
-        API-->>App: { message: "2FA enabled" }
+        API->>API: Invalidate OTHER sessions (keep current)
+        API-->>App: { enabled: true }
     else Wrong Code
         API->>API: Increment attempts (max 5)
         API-->>App: 400 error
     end
 ```
+
+### Disable 2FA
+
+Disabling requires password + OTP confirmation (2-step):
+
+1. `PUT /api/auth/two-factor { enabled: false, password }` → sends OTP email
+2. `PUT /api/auth/two-factor { enabled: false, password, code }` → verifies OTP, disables 2FA
+
+All other sessions are invalidated on disable (current session is preserved).
+
+### Security Measures
+
+| Measure | Implementation |
+|---------|---------------|
+| OTP generation | `crypto.randomInt()` — CSPRNG, not `Math.random()` |
+| Hash comparison | `crypto.timingSafeEqual()` — prevents timing side-channel attacks |
+| Email subject | Generic text only — OTP code never in subject (prevents notification preview leak) |
+| Rate limiting | 60-second cooldown between OTP send requests (all endpoints) |
+| Session handling | Only OTHER sessions invalidated on 2FA change — current device stays logged in |
 
 ### Brute-Force Protection
 
@@ -127,18 +148,22 @@ sequenceDiagram
 |-----------|-------|
 | Max attempts | 5 |
 | Lockout duration | 15 minutes |
-| Code expiry | 10 minutes |
+| Enable/Disable code expiry | 3 minutes |
+| Login code expiry | 10 minutes |
 | Lockout field | `twoFactorLockedUntil` |
-| Attempt counter | `twoFactorAttempts` (reset on success) |
+| Attempt counter | `twoFactorAttempts` (reset on new code or success) |
 
 ### Login with 2FA
 
 1. User submits email + password → `POST /api/auth/signin`
 2. Server validates credentials, sees `twoFactorEnabled: true`
-3. Returns `{ requires2FA: true }` (no tokens yet)
-4. Client shows OTP input screen
-5. User enters code → `POST /api/auth/two-factor/verify-login`
-6. Server validates OTP → issues token pair
+3. Returns `{ twoFactorRequired: true, maskedEmail }` (no tokens yet)
+4. Client calls `POST /api/auth/two-factor/send { email }` → server sends OTP (10-min expiry)
+5. Client shows OTP modal with countdown timer
+6. User enters code → `POST /api/auth/two-factor/verify-login { email, code }`
+7. Server validates OTP via `crypto.timingSafeEqual` → issues token pair
+
+> **Rate limiting:** The `/two-factor/send` endpoint enforces a 60-second cooldown between requests to prevent email spam.
 
 ## Password Reset
 

@@ -140,9 +140,30 @@ sequenceDiagram
 When a user correctly answers an instant reward question and the winner count reaches `maxWinners`:
 
 1. `submitRewardQuestionAnswer` creates `InstantRewardWinner` record
-2. Calls `processMtnPayment` or `processAirtelPayment` directly
+2. Calls `processInstantRewardPayment` with **automatic retry** (3 attempts, exponential backoff)
 3. Updates `InstantRewardWinner.paymentStatus` to SUCCESSFUL or FAILED
 4. Publishes SSE event for real-time notification
+
+#### Payment Retry Logic
+
+```text
+Attempt 1 → processPayment()
+  ├─ Success → paymentStatus = SUCCESSFUL, done
+  └─ Failure → wait 1s
+Attempt 2 → processPayment()
+  ├─ Success → paymentStatus = SUCCESSFUL, done
+  └─ Failure → wait 2s
+Attempt 3 → processPayment()
+  ├─ Success → paymentStatus = SUCCESSFUL, done
+  └─ Failure → paymentStatus = FAILED (all retries exhausted)
+```
+
+| Parameter | Value |
+|-----------|-------|
+| Max retries | 3 |
+| Backoff strategy | Exponential (1s, 2s, 4s) |
+| Retries on | Payment failure and transient errors |
+| Final state | FAILED only after all retries exhausted |
 
 ## Subscription Payments
 

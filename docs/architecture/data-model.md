@@ -48,6 +48,11 @@ erDiagram
 
     Survey ||--o{ UploadSurvey : "has questions"
     Survey ||--o{ SurveyResponse : "has responses"
+    Survey ||--o{ SurveyWebhook : "has webhooks"
+    Survey ||--o{ SurveyFileUpload : "has file uploads"
+    Survey ||--o{ SurveyTemplate : "saved as template"
+    AppUser ||--o{ SurveyTemplate : creates
+    AppUser ||--o{ SurveyFileUpload : uploads
 
     RewardQuestion ||--o{ RewardQuestionAttempt : "has attempts"
     RewardQuestion ||--o{ InstantRewardWinner : "has winners"
@@ -282,6 +287,7 @@ Both follow: `@@unique([userId, responseId])`
 | maxResponses | Int? | Optional cap |
 | startDate | DateTime | |
 | endDate | DateTime | |
+| branding | Json? | Logo, colors, header image for branded surveys |
 
 **Indexes:** `[userId, startDate, endDate, createdAt]`
 
@@ -294,6 +300,7 @@ Survey questions (template rows).
 | type | String | text, radio, checkbox, range, slider, rating |
 | options | String | JSON array of choices |
 | required | Boolean | Default: true |
+| conditionalLogic | Json? | Branching rules: `{ rules: [...], logicType: 'all' | 'any' }` |
 
 ### SurveyResponse
 

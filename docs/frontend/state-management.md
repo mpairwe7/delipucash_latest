@@ -89,12 +89,27 @@ The most complex store — orchestrates TikTok/Reels-style video playback.
 | State Group | Fields | Purpose |
 |-------------|--------|---------|
 | Session | questionsAnswered, correctAnswers, totalEarned, currentStreak, maxStreak, bonusPoints, totalTimeSpentMs | Live quiz session tracking |
-| Wallet | walletBalance | Earned rewards |
+| Wallet | walletBalance | Earned rewards (synced from server `user.points`) |
 | Redemption | status, provider, amount | Payout state |
 | Offline | pendingSubmissions, isOnline | Queue for offline answers |
 | History | attemptHistory | Which questions user attempted |
 
 Key selectors: `selectCanRedeem`, `selectSessionAccuracy`, `selectStreakInfo`
+
+#### Wallet Sync Pattern
+
+The wallet balance is synced from the server-side `user.points` field via a `useEffect` in the instant reward screens:
+
+```typescript
+// Sync wallet balance from server (Cash App pattern)
+useEffect(() => {
+  if (user?.points != null) {
+    updateWalletBalance(user.points * POINTS_TO_UGX_RATE);
+  }
+}, [user?.points]);
+```
+
+This prevents client-only balance drift where the Zustand wallet falls out of sync with the canonical server value.
 
 ### QuizStore
 

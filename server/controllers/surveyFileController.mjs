@@ -10,10 +10,8 @@
  * - DELETE /api/surveys/:surveyId/files/:fileId — Delete uploaded file
  */
 
-import { PrismaClient } from '@prisma/client';
 import { uploadFile, generateObjectKey, getSignedDownloadUrl, deleteFile } from '../lib/r2.mjs';
-
-const prisma = new PrismaClient();
+import prisma from '../lib/prisma.mjs';
 
 /** Max file size: 25 MB */
 const MAX_FILE_SIZE = 25 * 1024 * 1024;

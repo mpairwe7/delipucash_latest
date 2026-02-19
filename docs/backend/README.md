@@ -13,6 +13,10 @@ server/
 │   ├── questionController.mjs  # Questions CRUD, voting, responses
 │   ├── responseController.mjs  # Response likes, dislikes, replies
 │   ├── surveyController.mjs    # Survey CRUD, submissions, analytics
+│   ├── surveyWebhookController.mjs  # Survey webhook CRUD, test delivery
+│   ├── surveyFileController.mjs     # Survey file upload handler
+│   ├── surveyCollabController.mjs   # Real-time collaboration sessions
+│   ├── surveyTemplateController.mjs # Custom survey template CRUD
 │   ├── videoController.mjs     # Video CRUD, likes, bookmarks, livestream
 │   ├── rewardController.mjs    # Rewards, points, redemption
 │   ├── rewardQuestionController.mjs  # Reward questions, instant rewards
@@ -29,6 +33,7 @@ server/
 │   ├── questionRoutes.mjs      # /api/questions/*
 │   ├── responseRoutes.mjs      # /api/responses/*
 │   ├── surveyRoutes.mjs        # /api/surveys/*
+│   ├── surveyCollabRoutes.mjs  # /api/surveys/:surveyId/collab/*
 │   ├── videoRoutes.mjs         # /api/videos/*
 │   ├── rewardRoutes.mjs        # /api/rewards/*
 │   ├── rewardQuestionRoutes.mjs  # /api/reward-questions/*
@@ -48,6 +53,7 @@ server/
 │   ├── r2.mjs                  # Cloudflare R2 S3 client
 │   ├── emailService.mjs        # SMTP email (2FA, password reset)
 │   ├── eventBus.mjs            # SSE event publishing
+│   ├── webhookDispatcher.mjs   # Webhook delivery with HMAC-SHA256 signing
 │   ├── cacheStrategies.mjs     # Prisma cache tier configs
 │   └── queryStrategies.mjs     # Safe pagination, optimized queries
 ├── utils/

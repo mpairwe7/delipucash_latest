@@ -70,8 +70,49 @@ Complete reference for all REST API endpoints. Base URL: `https://delipucash-lat
 // Response 200 (without 2FA)
 { "accessToken": "eyJ...", "refreshToken": "a1b2c3...", "user": { ... } }
 
-// Response 200 (with 2FA)
-{ "requires2FA": true, "message": "Verification code sent to your email" }
+// Response 200 (with 2FA enabled)
+{ "twoFactorRequired": true, "maskedEmail": "us***@example.com" }
+```
+
+### PUT `/two-factor`
+
+```json
+// Request — Enable
+{ "enabled": true }
+// Response 200
+{ "success": true, "data": { "codeSent": true, "email": "us***@example.com", "expiresIn": 180 } }
+
+// Request — Disable step 1 (send OTP)
+{ "enabled": false, "password": "SecurePass123" }
+// Response 200
+{ "success": true, "data": { "codeSent": true, "email": "us***@example.com", "expiresIn": 180 } }
+
+// Request — Disable step 2 (verify OTP)
+{ "enabled": false, "password": "SecurePass123", "code": "123456" }
+// Response 200
+{ "success": true, "data": { "enabled": false } }
+```
+
+### POST `/two-factor/send`
+
+Rate limited: 60-second cooldown between requests.
+
+```json
+// Request
+{ "email": "user@example.com" }
+// Response 200
+{ "success": true, "data": { "codeSent": true, "email": "us***@example.com", "expiresIn": 600 } }
+// Response 429 (rate limited)
+{ "success": false, "error": "Please wait 45 seconds before requesting a new code" }
+```
+
+### POST `/two-factor/verify-login`
+
+```json
+// Request
+{ "email": "user@example.com", "code": "123456" }
+// Response 200
+{ "success": true, "user": { ... }, "token": "eyJ...", "refreshToken": "a1b2c3..." }
 ```
 
 ### POST `/refresh-token`
@@ -153,17 +194,86 @@ Query parameters:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/all` | - | All surveys |
-| GET | `/status/:status` | - | Surveys by status |
-| GET | `/:surveyId` | - | Single survey with questions |
-| GET | `/:surveyId/attempt` | - | Check if user attempted survey |
+| GET | `/all` | Optional | All surveys (personalized if auth) |
+| GET | `/status/:status` | Optional | Surveys by status |
+| GET | `/:surveyId` | Optional | Single survey with questions |
+| GET | `/:surveyId/attempt` | JWT | Check if user attempted survey |
 | GET | `/:surveyId/responses` | JWT | Survey responses (creator only) |
 | GET | `/:surveyId/analytics` | JWT | Survey analytics |
 | POST | `/create` | JWT | Create survey with questions |
 | POST | `/upload` | JWT | Upload survey questions |
 | POST | `/:surveyId/responses` | JWT | Submit survey response |
-| PUT | `/:surveyId` | JWT | Update survey |
-| DELETE | `/:surveyId` | JWT | Delete survey |
+| PUT | `/:surveyId` | JWT | Update survey (owner only) |
+| DELETE | `/:surveyId` | JWT | Delete survey (owner only, cleans up R2 files) |
+
+---
+
+## Survey Webhooks
+
+**Base:** `/api/surveys/:surveyId/webhooks` (via surveyRoutes)
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/:surveyId/webhooks` | JWT | Create webhook |
+| GET | `/:surveyId/webhooks` | JWT | List webhooks for survey |
+| PUT | `/:surveyId/webhooks/:id` | JWT | Update webhook |
+| DELETE | `/:surveyId/webhooks/:id` | JWT | Delete webhook |
+| POST | `/:surveyId/webhooks/:id/test` | JWT | Test fire webhook |
+
+### Webhook Events
+
+Supported event types: `response.submitted`, `response.deleted`, `survey.updated`, `survey.deleted`, `survey.started`, `survey.ended`
+
+### Security
+
+- HMAC-SHA256 signature in `X-Webhook-Signature` header (if secret configured)
+- Deterministic JSON body serialization (sorted keys) for reproducible signatures
+- SSRF protection: blocked hosts (localhost, 127.0.0.1, 169.254.169.254, etc.) and private IP ranges (10.x, 172.16-31.x, 192.168.x)
+- Auto-deactivation after 10 consecutive failures
+- 5-second delivery timeout per webhook
+
+---
+
+## Survey File Uploads
+
+**Base:** `/api/surveys`
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/:surveyId/upload` | JWT | Upload file for file_upload question |
+| GET | `/:surveyId/files/:fileId` | JWT | Get presigned download URL |
+| DELETE | `/:surveyId/files/:fileId` | JWT | Delete uploaded file |
+
+File validation: type check, max 25MB, question must be type `file_upload`.
+
+---
+
+## Survey Collaboration
+
+**Base:** `/api/surveys/:surveyId/collab`
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/:surveyId/collab/join` | JWT | Join editing session |
+| POST | `/:surveyId/collab/leave` | JWT | Leave editing session |
+| POST | `/:surveyId/collab/lock` | JWT | Lock a question for editing |
+| POST | `/:surveyId/collab/unlock` | JWT | Unlock a question |
+| GET | `/:surveyId/collab/editors` | JWT | Get active editors |
+
+Sessions auto-expire after 30 minutes of inactivity (5-minute cleanup sweep).
+
+---
+
+## Survey Templates
+
+**Base:** `/api/surveys/templates`
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/templates` | JWT | Save survey as template |
+| GET | `/templates` | JWT | List user's + public templates |
+| GET | `/templates/:id` | JWT | Get template by ID |
+| DELETE | `/templates/:id` | JWT | Delete template (owner only) |
 
 ---
 
