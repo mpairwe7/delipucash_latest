@@ -46,12 +46,30 @@ async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
       ...(init?.headers || {}),
     },
     ...init,
   });
 
-  const data = await response.json();
+  // Safely parse response — the server or a proxy (Vercel/Netlify) may return
+  // HTML or plain text instead of JSON (e.g. 502 gateway pages).
+  let data: any;
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    data = await response.json();
+  } else {
+    const text = await response.text();
+    // Try parsing anyway in case content-type header is missing/wrong
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new AuthApiError(
+        `Server returned non-JSON response (${response.status}): ${text.slice(0, 120)}`,
+        response.status,
+      );
+    }
+  }
 
   if (!response.ok) {
     throw new AuthApiError(

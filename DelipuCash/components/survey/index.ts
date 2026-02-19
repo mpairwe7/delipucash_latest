@@ -73,3 +73,6 @@ export { WebhookSetupModal } from './WebhookSetupModal';
 
 // Creation Progress Badges (gamification)
 export { CreationProgressBadges } from './CreationProgressBadges';
+
+// Collaborator Avatars (real-time presence)
+export { CollaboratorAvatars } from './CollaboratorAvatars';

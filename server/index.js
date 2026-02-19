@@ -29,6 +29,7 @@ import sseRoutes from './routes/sseRoutes.mjs';
 import surveyFileRoutes from './routes/surveyFileRoutes.mjs';
 import surveyWebhookRoutes from './routes/surveyWebhookRoutes.mjs';
 import surveyTemplateRoutes from './routes/surveyTemplateRoutes.mjs';
+import surveyCollabRoutes from './routes/surveyCollabRoutes.mjs';
 import { resetPasswordRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
 import { videoOgRedirect } from './controllers/ogController.mjs';
 
@@ -117,6 +118,7 @@ app.use('/api/r2', r2UploadRoutes); // Cloudflare R2 storage routes
 app.use('/api/surveys', surveyFileRoutes); // Survey file upload routes
 app.use('/api/surveys', surveyWebhookRoutes); // Survey webhook routes
 app.use('/api/surveys', surveyTemplateRoutes); // Survey template routes
+app.use('/api/surveys', surveyCollabRoutes); // Survey collaboration routes
 app.use('/api/sse', sseRoutes); // Server-Sent Events stream
 
 // Health check endpoint for Vercel

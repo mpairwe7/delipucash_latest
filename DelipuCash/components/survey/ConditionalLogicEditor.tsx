@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   headerTitle: {
-    fontSize: TYPOGRAPHY.sizes.lg,
+    fontSize: TYPOGRAPHY.fontSize.lg,
     fontWeight: '700',
   },
   targetBanner: {
@@ -454,12 +454,12 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
   },
   targetLabel: {
-    fontSize: TYPOGRAPHY.sizes.xs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: '500',
     marginBottom: 2,
   },
   targetText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '600',
   },
   body: {
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.sm,
   },
   logicLabel: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '500',
   },
   logicButton: {
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   logicButtonText: {
-    fontSize: TYPOGRAPHY.sizes.xs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: '600',
   },
   ruleCard: {
@@ -501,7 +501,7 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   ruleLabel: {
-    fontSize: TYPOGRAPHY.sizes.xs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: '700',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   pickerText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     flex: 1,
     marginRight: SPACING.xs,
   },
@@ -538,7 +538,7 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
   },
   dropdownText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     flex: 1,
   },
   optionChips: {
@@ -553,7 +553,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   optionChipText: {
-    fontSize: TYPOGRAPHY.sizes.xs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     fontWeight: '500',
   },
   valueInput: {
@@ -561,7 +561,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
     paddingHorizontal: SPACING.sm,
     paddingVertical: SPACING.xs + 2,
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     minHeight: 40,
   },
   errorBanner: {
@@ -570,7 +570,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   errorText: {
-    fontSize: TYPOGRAPHY.sizes.xs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   emptyState: {
     padding: SPACING.base,
@@ -578,7 +578,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: 'center',
     lineHeight: 20,
   },
@@ -593,7 +593,7 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
   },
   addRuleText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '600',
   },
   footer: {
@@ -612,7 +612,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   clearText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '600',
   },
   saveBtn: {
@@ -621,7 +621,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.sm,
   },
   saveText: {
-    fontSize: TYPOGRAPHY.sizes.sm,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     fontWeight: '700',
   },
 });

@@ -1029,8 +1029,8 @@ export default function SurveysScreen(): React.ReactElement {
         removeClippedSubviews
         maxToRenderPerBatch={5}
         updateCellsBatchingPeriod={100}
-        windowSize={7}
-        initialNumToRender={4}
+        windowSize={5}
+        initialNumToRender={8}
         getItemLayout={(_data, index) => ({
           length: 160, // Approximate item height
           offset: 160 * index,

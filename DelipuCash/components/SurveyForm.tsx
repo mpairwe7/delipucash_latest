@@ -80,6 +80,7 @@ import {
 import { UndoRedoToolbar } from '@/components/survey/UndoRedoToolbar';
 import { ConditionalLogicEditor } from '@/components/survey/ConditionalLogicEditor';
 import { DraggableQuestionList } from '@/components/survey/DraggableQuestionList';
+import { CreationProgressBadges } from '@/components/survey/CreationProgressBadges';
 import { DevicePreviewFrame } from '@/components/survey/DevicePreviewFrame';
 
 // ============================================================================
@@ -1271,6 +1272,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
           {/* Undo/Redo + Bulk Actions Toolbar */}
           <UndoRedoToolbar showBulkActions />
+          <CreationProgressBadges />
 
           <DraggableQuestionList
             items={questions}
