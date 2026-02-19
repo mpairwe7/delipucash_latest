@@ -309,6 +309,16 @@ class PurchasesService {
         };
       }
 
+      // Product already owned — treat as success since they already have it
+      if (purchaseError.code === PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR) {
+        console.log('[Purchases] Product already owned');
+        return {
+          success: false,
+          error: 'You already have an active subscription.',
+          errorCode: purchaseError.code,
+        };
+      }
+
       console.error('[Purchases] Purchase failed:', purchaseError);
       return {
         success: false,

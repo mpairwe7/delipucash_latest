@@ -594,12 +594,19 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           </View>
         )}
         {payoutInitiated && (
-          <Text style={[styles.stateText, { color: colors.success, textAlign: 'center', maxWidth: 300, marginTop: SPACING.sm }]}>
+          <Text
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+            style={[styles.stateText, { color: colors.success, textAlign: 'center', maxWidth: 300, marginTop: SPACING.sm }]}
+          >
             Mobile money payment is being sent to your phone.
           </Text>
         )}
         {!payoutInitiated && (submittedReward ?? 0) > 0 && (
-          <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300, marginTop: SPACING.xs, fontSize: TYPOGRAPHY.fontSize.xs }]}>
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300, marginTop: SPACING.xs, fontSize: TYPOGRAPHY.fontSize.xs }]}
+          >
             Points added to your account.
           </Text>
         )}

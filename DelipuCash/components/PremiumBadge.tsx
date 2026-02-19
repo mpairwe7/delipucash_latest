@@ -37,6 +37,8 @@ export const PremiumBadge = memo<PremiumBadgeProps>(({ size = 'sm' }) => {
 
   return (
     <View
+      accessible
+      accessibilityRole="text"
       style={[
         styles.container,
         {

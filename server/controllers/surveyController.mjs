@@ -139,6 +139,11 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
     if (parsedBudget < parsedReward) {
       return res.status(400).json({ message: 'Total budget must be at least equal to the reward amount per response' });
     }
+    if (maxResponses && parsedBudget < parsedReward * maxResponses) {
+      return res.status(400).json({
+        message: `Total budget (${parsedBudget}) is insufficient for ${maxResponses} responses at ${parsedReward} each. Minimum: ${parsedReward * maxResponses}`,
+      });
+    }
   }
 
   try {
@@ -582,8 +587,9 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     }
 
     // Auto-payout: disburse mobile money if survey has a budget
+    // Uses interactive $transaction with re-read to prevent race conditions
     let payoutInitiated = false;
-    if (reward > 0 && survey.totalBudget && survey.amountDisbursed + reward <= survey.totalBudget) {
+    if (reward > 0 && survey.totalBudget) {
       try {
         // Fetch respondent's phone info
         const respondent = await prisma.appUser.findUnique({
@@ -596,13 +602,21 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
         const provider = phone ? detectMoMoProvider(phone) : null;
 
         if (phone && provider) {
-          // Atomically increment amountDisbursed + mark response as PENDING
-          await prisma.$transaction([
-            prisma.survey.update({
+          // Atomic budget check + reserve: re-read survey inside transaction to prevent
+          // concurrent submissions from exceeding totalBudget
+          const reserved = await prisma.$transaction(async (tx) => {
+            const freshSurvey = await tx.survey.findUnique({
+              where: { id: surveyId },
+              select: { totalBudget: true, amountDisbursed: true },
+            });
+            if (!freshSurvey || !freshSurvey.totalBudget) return false;
+            if (freshSurvey.amountDisbursed + reward > freshSurvey.totalBudget) return false;
+
+            await tx.survey.update({
               where: { id: surveyId },
               data: { amountDisbursed: { increment: reward } },
-            }),
-            prisma.surveyResponse.update({
+            });
+            await tx.surveyResponse.update({
               where: { id: surveyResponse.id },
               data: {
                 amountAwarded: reward,
@@ -610,20 +624,23 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
                 paymentProvider: provider,
                 phoneNumber: phone,
               },
-            }),
-          ]);
+            });
+            return true;
+          });
 
-          payoutInitiated = true;
+          if (reserved) {
+            payoutInitiated = true;
 
-          // Fire-and-forget: process actual disbursement (non-blocking)
-          processSurveyPayout({
-            responseId: surveyResponse.id,
-            phone,
-            provider,
-            amount: reward,
-            userId,
-            surveyId,
-          }).catch((err) => console.error('Survey payout error (fire-and-forget):', err));
+            // Fire-and-forget: process actual disbursement (non-blocking)
+            processSurveyPayout({
+              responseId: surveyResponse.id,
+              phone,
+              provider,
+              amount: reward,
+              userId,
+              surveyId,
+            }).catch((err) => console.error('Survey payout error (fire-and-forget):', err));
+          }
         }
       } catch (payoutError) {
         console.error('Error initiating survey auto-payout:', payoutError);
@@ -1017,10 +1034,16 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
 // ── Survey Auto-Payout Helpers ──
 
 // Detect MoMo provider from Ugandan phone number
+// Handles: 07xxxxxxxx, 256xxxxxxxx, +256xxxxxxxx
 function detectMoMoProvider(phone) {
   const cleaned = phone.replace(/[^0-9]/g, '');
-  // Normalize to local format
-  const local = cleaned.startsWith('256') ? '0' + cleaned.slice(3) : cleaned;
+  // Normalize to local 10-digit format (0xxxxxxxxx)
+  let local = cleaned;
+  if (local.startsWith('256') && local.length >= 12) {
+    local = '0' + local.slice(3);
+  }
+  // Must be a valid 10-digit Ugandan number
+  if (local.length !== 10 || !local.startsWith('0')) return null;
   // MTN Uganda: 077x, 078x, 076x
   if (/^07[678]/.test(local)) return 'MTN';
   // Airtel Uganda: 075x, 070x
@@ -1084,17 +1107,8 @@ async function processSurveyPayout({ responseId, phone, provider, amount, userId
         return processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt + 1);
       }
 
-      // All retries exhausted
-      await prisma.surveyResponse.update({
-        where: { id: responseId },
-        data: { paymentStatus: 'FAILED' },
-      });
-
-      // Rollback the disbursed amount since payment failed
-      await prisma.survey.update({
-        where: { id: surveyId },
-        data: { amountDisbursed: { decrement: amount } },
-      });
+      // All retries exhausted — atomic rollback: mark FAILED + release budget
+      await rollbackPayoutBudget(responseId, surveyId, amount);
 
       console.log(`Survey payout failed after ${SURVEY_PAYOUT_MAX_RETRIES} attempts: response=${responseId}`);
 
@@ -1111,19 +1125,30 @@ async function processSurveyPayout({ responseId, phone, provider, amount, userId
       return processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt + 1);
     }
 
-    await prisma.surveyResponse.update({
-      where: { id: responseId },
-      data: { paymentStatus: 'FAILED' },
-    });
-
-    await prisma.survey.update({
-      where: { id: surveyId },
-      data: { amountDisbursed: { decrement: amount } },
-    });
+    // Atomic rollback: mark FAILED + release budget in single transaction
+    await rollbackPayoutBudget(responseId, surveyId, amount);
 
     publishEvent(userId, 'survey.payout.failed', { surveyId, amount, provider }).catch(() => {});
 
     return { status: 'FAILED', reference: null };
+  }
+}
+
+// Atomic rollback: mark response FAILED + decrement budget in one transaction
+async function rollbackPayoutBudget(responseId, surveyId, amount) {
+  try {
+    await prisma.$transaction([
+      prisma.surveyResponse.update({
+        where: { id: responseId },
+        data: { paymentStatus: 'FAILED' },
+      }),
+      prisma.survey.update({
+        where: { id: surveyId },
+        data: { amountDisbursed: { decrement: amount } },
+      }),
+    ]);
+  } catch (rollbackError) {
+    console.error(`Payout rollback failed: response=${responseId}`, rollbackError);
   }
 }
 

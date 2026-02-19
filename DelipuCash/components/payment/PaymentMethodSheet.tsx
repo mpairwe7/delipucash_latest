@@ -68,6 +68,7 @@ type Step = 'SELECT_METHOD' | 'ENTER_PHONE' | 'CONFIRM' | 'PROCESSING';
 
 // RevenueCat package type → backend plan type mapping
 const PACKAGE_TO_PLAN: Record<string, string> = {
+  DAILY: 'DAILY',
   WEEKLY: 'WEEKLY',
   MONTHLY: 'MONTHLY',
   TWO_MONTH: 'MONTHLY', // fallback
@@ -126,11 +127,14 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
     }
   }, [visible]);
 
-  // Watch MoMo flow status for completion
+  // Watch MoMo flow status for completion — brief dwell so user sees success
   useEffect(() => {
     if (momoFlow.status === 'SUCCESSFUL') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onMoMoPurchaseComplete();
+      const timer = setTimeout(() => {
+        onMoMoPurchaseComplete();
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, [momoFlow.status, onMoMoPurchaseComplete]);
 
@@ -151,9 +155,10 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   }, [selectedMethod, onClose, onGooglePlayPurchase]);
 
   const handleContinueFromPhone = useCallback(() => {
-    const cleanPhone = phoneNumber.replace(/[\s-]/g, '');
-    if (cleanPhone.length < 9) {
-      setPhoneError('Please enter a valid phone number');
+    const cleanPhone = phoneNumber.replace(/[\s\-+()]/g, '');
+    // Uganda numbers: 10 digits local (0700...) or 12 digits with 256 prefix
+    if (cleanPhone.length < 10 || cleanPhone.length > 13) {
+      setPhoneError('Enter a valid phone number (e.g., 0700123456 or 256700123456)');
       return;
     }
     setPhoneError(null);
@@ -202,7 +207,12 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
       transparent
       onRequestClose={step === 'PROCESSING' ? undefined : onClose}
     >
-      <Pressable style={styles.overlay} onPress={step === 'PROCESSING' ? undefined : onClose}>
+      <Pressable
+        style={styles.overlay}
+        onPress={step === 'PROCESSING' ? undefined : onClose}
+        disabled={step === 'PROCESSING'}
+        accessibilityLabel={step === 'PROCESSING' ? 'Processing payment, please wait' : 'Close payment sheet'}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.keyboardAvoid}
@@ -252,7 +262,13 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
             </View>
 
             {/* Step indicator */}
-            <View style={styles.stepIndicator}>
+            <View
+              style={styles.stepIndicator}
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={`Step ${stepIndex + 1} of ${totalSteps}: ${['Select payment method', 'Enter phone number', 'Confirm payment', 'Processing'][stepIndex]}`}
+              accessibilityValue={{ min: 0, max: totalSteps, now: stepIndex + 1 }}
+            >
               {Array.from({ length: totalSteps }).map((_, i) => (
                 <View
                   key={i}
@@ -318,7 +334,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
 
                   {/* Security note */}
                   <View style={styles.securityNote}>
-                    <Shield size={14} color={colors.textMuted} />
+                    <Shield size={14} color={colors.success} />
                     <Text style={[styles.securityText, { color: colors.textMuted }]}>
                       All payments are secure and encrypted
                     </Text>
@@ -339,9 +355,13 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                     onChangeText={setPhoneNumber}
                     error={phoneError}
                     touched={Boolean(phoneError)}
-                    placeholder="700 123 456"
+                    placeholder="0700 123 456"
                     defaultCountryCode="+256"
                   />
+
+                  <Text style={[styles.securityText, { color: colors.textMuted, textAlign: 'center', marginTop: SPACING.xs }]}>
+                    Use your registered {providerName} number (e.g., 0700 123 456)
+                  </Text>
 
                   <PrimaryButton
                     title="Continue"
@@ -393,7 +413,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                   />
 
                   <View style={styles.securityNote}>
-                    <Shield size={14} color={colors.textMuted} />
+                    <Shield size={14} color={colors.success} />
                     <Text style={[styles.securityText, { color: colors.textMuted }]}>
                       You will receive a prompt on your phone to confirm
                     </Text>

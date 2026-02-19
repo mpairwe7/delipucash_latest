@@ -23,7 +23,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PurchasesPackage } from 'react-native-purchases';
+import { PurchasesPackage, PURCHASES_ERROR_CODE } from 'react-native-purchases';
 import {
   CheckCircle,
   Shield,
@@ -293,10 +293,12 @@ const SubscriptionScreen: React.FC = () => {
     setIsRefreshing(false);
   }, [refetchOfferings, refetchSubscription]);
 
-  // Purchase handler
+  // Purchase handler (guarded against double-tap race condition)
   const handlePurchase = useCallback(async () => {
-    if (!selectedPackage) {
-      Alert.alert('Select a Plan', 'Please select a subscription plan to continue.');
+    if (!selectedPackage || isPurchasing) return;
+
+    if (!purchasesService.isReady()) {
+      Alert.alert('Not Ready', 'The purchase system is not yet initialized. Please try again.');
       return;
     }
 
@@ -307,14 +309,23 @@ const SubscriptionScreen: React.FC = () => {
         // Success is handled by subscription listener
       } else if (result.userCancelled) {
         // User cancelled, no action needed
-      } else if (result.errorCode === 'PAYMENT_PENDING_ERROR') {
+      } else if (result.errorCode === PURCHASES_ERROR_CODE.PAYMENT_PENDING_ERROR) {
         // Payment pending — carrier billing (MTN/Airtel) confirmation in progress
         setHasPendingPurchase(true);
+      } else if (result.errorCode === PURCHASES_ERROR_CODE.PRODUCT_ALREADY_PURCHASED_ERROR) {
+        Alert.alert(
+          'Already Subscribed',
+          'You already have an active subscription.',
+          [{ text: 'OK' }]
+        );
       } else {
         Alert.alert(
           'Purchase Failed',
           result.error || 'Something went wrong. Please try again.',
-          [{ text: 'OK' }]
+          [
+            { text: 'Try Again', onPress: () => setShowPaymentSheet(true) },
+            { text: 'Cancel', style: 'cancel' },
+          ]
         );
       }
     } catch (error) {
@@ -324,7 +335,7 @@ const SubscriptionScreen: React.FC = () => {
         [{ text: 'OK' }]
       );
     }
-  }, [selectedPackage, purchase]);
+  }, [selectedPackage, purchase, isPurchasing]);
 
   // Restore handler — differentiate found vs. not found
   const handleRestore = useCallback(async () => {
@@ -808,12 +819,22 @@ const SubscriptionScreen: React.FC = () => {
         onGooglePlayPurchase={handlePurchase}
         onMoMoPurchaseComplete={() => {
           setShowPaymentSheet(false);
-          refetchSubscription();
-          Alert.alert(
-            'Subscription Activated!',
-            'Your subscription is now active. Enjoy full access to all premium features.',
-            [{ text: 'OK' }],
-          );
+          refetchSubscription().then(({ data }) => {
+            const isActive = data?.isActive ?? false;
+            Alert.alert(
+              isActive ? 'Subscription Activated!' : 'Payment Received',
+              isActive
+                ? 'Your subscription is now active. Enjoy full access to all premium features.'
+                : 'Your payment was processed. Your subscription will activate shortly.',
+              [{ text: 'OK', onPress: () => router.back() }],
+            );
+          }).catch(() => {
+            Alert.alert(
+              'Payment Received',
+              'Your payment was processed. Your subscription will activate shortly.',
+              [{ text: 'OK', onPress: () => router.back() }],
+            );
+          });
         }}
       />
     </SafeAreaView>

@@ -11,7 +11,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useMemo } from 'react';
 import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { purchasesService, ENTITLEMENTS } from './purchasesService';
 
@@ -50,6 +50,8 @@ export function useOfferings() {
     staleTime: 1000 * 60 * 5, // 5 minutes
     retry: 3,
     retryDelay: 1000,
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -101,14 +103,19 @@ export function useCustomerInfo() {
  */
 export function useSurveyCreatorAccess() {
   const premium = usePremiumStatus();
-  const { refetch } = useSubscriptionStatus();
+  const { data: rcSub, refetch } = useSubscriptionStatus();
+
+  // Google Play subs have willRenew from RevenueCat; MoMo subs don't auto-renew
+  const willRenew = premium.source === 'GOOGLE_PLAY'
+    ? (rcSub?.willRenew ?? false)
+    : false;
 
   return {
     canCreateSurvey: premium.isPremium,
     isLoading: premium.isLoading,
     subscription: premium.expirationDate ? {
       expirationDate: new Date(premium.expirationDate),
-      willRenew: true,
+      willRenew,
       isActive: premium.isPremium,
     } : null,
     refetch,
@@ -159,7 +166,10 @@ export function useUnifiedSubscriptionStatus() {
     const momoExpiry = new Date(momoSub.expirationDate);
     if (!expirationDate || momoExpiry.getTime() > new Date(expirationDate).getTime()) {
       expirationDate = momoSub.expirationDate;
-      remainingDays = momoSub.remainingDays ?? 0;
+      // Calculate client-side for consistency with RevenueCat path
+      remainingDays = Math.max(0, Math.ceil(
+        (momoExpiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      ));
       source = 'MOBILE_MONEY';
     }
   }
@@ -188,14 +198,14 @@ export function useUnifiedSubscriptionStatus() {
 export function usePremiumStatus() {
   const unified = useUnifiedSubscriptionStatus();
 
-  return {
+  return useMemo(() => ({
     isPremium: unified.isActive,
     isLoading: unified.isLoading,
     source: unified.source,
     expirationDate: unified.expirationDate,
     remainingDays: unified.remainingDays,
     planType: unified.planType,
-  };
+  }), [unified.isActive, unified.isLoading, unified.source, unified.expirationDate, unified.remainingDays, unified.planType]);
 }
 
 /**
@@ -314,13 +324,19 @@ export function usePurchase() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (packageToBuy: PurchasesPackage) => 
+    mutationFn: (packageToBuy: PurchasesPackage) =>
       purchasesService.purchasePackage(packageToBuy),
     onSuccess: (result) => {
-      if (result.success) {
-        // Invalidate queries to refresh subscription status
+      if (result.success && result.customerInfo) {
+        // Optimistically update cache with returned customerInfo
+        queryClient.setQueryData(
+          purchasesQueryKeys.customerInfo(),
+          result.customerInfo
+        );
+        // Invalidate to refetch fresh data from both sources
         queryClient.invalidateQueries({ queryKey: purchasesQueryKeys.subscription() });
-        queryClient.invalidateQueries({ queryKey: purchasesQueryKeys.customerInfo() });
+        // Also invalidate MoMo unified cache so premium status updates immediately
+        queryClient.invalidateQueries({ queryKey: ['subscription-payment', 'unified'] });
       }
     },
   });
@@ -407,16 +423,21 @@ export function useSubscriptionListener(
         const isActive = Boolean(
           customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR]?.isActive
         );
-        
+
         // Update cache with new customer info
         queryClient.setQueryData(
           purchasesQueryKeys.customerInfo(),
           customerInfo
         );
-        
+
         // Invalidate subscription status to refetch
-        queryClient.invalidateQueries({ 
-          queryKey: purchasesQueryKeys.subscription() 
+        queryClient.invalidateQueries({
+          queryKey: purchasesQueryKeys.subscription()
+        });
+
+        // Cross-source invalidation: also refresh MoMo unified cache
+        queryClient.invalidateQueries({
+          queryKey: ['subscription-payment', 'unified']
         });
 
         // Notify callback
@@ -424,7 +445,7 @@ export function useSubscriptionListener(
       }
     );
 
-    return removeListener;
+    return typeof removeListener === 'function' ? removeListener : () => {};
   }, [queryClient, onSubscriptionChange]);
 }
 

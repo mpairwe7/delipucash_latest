@@ -119,7 +119,12 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
   // ── PENDING ──
   if (status === 'PENDING') {
     return (
-      <View style={styles.container}>
+      <View
+        style={styles.container}
+        accessible
+        accessibilityLiveRegion="polite"
+        accessibilityLabel={`Waiting for payment confirmation. Expires in ${formatTime(secondsLeft)}`}
+      >
         {/* Animated phone icon */}
         <View style={styles.iconWrapper}>
           <Animated.View
@@ -164,7 +169,13 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
   // ── SUCCESS ──
   if (status === 'SUCCESSFUL') {
     return (
-      <View style={styles.container}>
+      <View
+        style={styles.container}
+        accessible
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+        accessibilityLabel="Payment successful. Your subscription is now active."
+      >
         <View style={[styles.iconCircle, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
           <CheckCircle size={40} color={colors.success} />
         </View>
@@ -191,7 +202,13 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
 
   // ── FAILED / TIMEOUT ──
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible
+      accessibilityRole="alert"
+      accessibilityLiveRegion="assertive"
+      accessibilityLabel={status === 'TIMEOUT' ? 'Payment timed out. Please try again.' : 'Payment failed. Please try again or use a different payment method.'}
+    >
       <View style={[styles.iconCircle, { backgroundColor: withAlpha(colors.error, 0.15) }]}>
         <XCircle size={40} color={colors.error} />
       </View>

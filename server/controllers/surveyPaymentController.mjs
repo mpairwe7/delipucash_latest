@@ -277,6 +277,22 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Prevent concurrent payments — reject if a recent PENDING payment exists
+    const existingPending = await prisma.payment.findFirst({
+      where: {
+        userId: actualUserId,
+        status: 'PENDING',
+        createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) },
+      },
+    });
+
+    if (existingPending) {
+      return res.status(409).json({
+        error: 'A payment is already in progress. Please wait for it to complete or try again in a few minutes.',
+        existingPaymentId: existingPending.id,
+      });
+    }
+
     const now = new Date();
     const transactionId = generateTransactionId();
     const endDate = calculateEndDate(now, plan.durationDays);
@@ -365,21 +381,19 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
       return;
     }
 
-    // Update payment status based on result
+    // Update payment status based on result — atomically within a transaction
     if (result.success) {
-      await prisma.payment.update({
-        where: { id: paymentId },
-        data: { status: 'SUCCESSFUL' },
-      });
+      await prisma.$transaction(async (tx) => {
+        const payment = await tx.payment.update({
+          where: { id: paymentId },
+          data: { status: 'SUCCESSFUL' },
+        });
 
-      // Update user's subscription status
-      const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
-      if (payment) {
-        await prisma.appUser.update({
+        await tx.appUser.update({
           where: { id: payment.userId },
           data: { surveysubscriptionStatus: 'ACTIVE' },
         });
-      }
+      });
 
       console.log(`[SurveyPayment] Payment ${paymentId} completed successfully`);
     } else {

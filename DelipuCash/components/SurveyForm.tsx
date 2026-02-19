@@ -1312,6 +1312,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               onValueChange={setEnableMoMoPayout}
               trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
               thumbColor={enableMoMoPayout ? colors.primary : colors.textMuted}
+              accessibilityLabel="Enable Mobile Money Payouts"
+              accessibilityRole="switch"
+              accessibilityState={{ checked: enableMoMoPayout }}
             />
           </View>
 
@@ -1327,7 +1330,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                 style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
               />
               <Text style={[styles.helperText, { color: colors.textMuted }]}>
-                Maximum amount to disburse. Covers up to {totalBudget && parseFloat(rewardAmount) > 0 ? Math.floor(parseFloat(totalBudget) / parseFloat(rewardAmount)) : '—'} responses.
+                Maximum amount to disburse. Covers up to {totalBudget && !isNaN(parseFloat(totalBudget)) && parseFloat(rewardAmount) > 0 ? Math.floor(parseFloat(totalBudget) / parseFloat(rewardAmount)) : '—'} responses.
               </Text>
             </View>
           )}
