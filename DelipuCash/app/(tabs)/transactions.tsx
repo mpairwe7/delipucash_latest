@@ -12,6 +12,7 @@ import {
   LucideIcon,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from "@/hooks/useStatusBar";
 import {
   useTheme,
   ThemeColors,
@@ -211,7 +212,7 @@ const filters: FilterOption[] = [
  */
 export default function TransactionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useTheme();
+  const { colors, style: statusBarStyle } = useStatusBar(); // Focus-aware status bar management
   const [filter, setFilter] = useState<FilterType>("all");
   const { data: unreadCount } = useUnreadCount();
   const [refreshing, setRefreshing] = useState(false);
@@ -242,7 +243,7 @@ export default function TransactionsScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBar style={statusBarStyle} translucent animated />
 
       <ScrollView
         style={styles.scrollView}

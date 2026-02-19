@@ -19,6 +19,7 @@ import {
   CheckCircle,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from "@/hooks/useStatusBar";
 import {
   useTheme,
   ThemeColors,
@@ -101,7 +102,7 @@ PaymentMethodCard.displayName = "PaymentMethodCard";
  */
 export default function WithdrawScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useTheme();
+  const { colors, style: statusBarStyle } = useStatusBar(); // Focus-aware status bar management
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   
@@ -456,7 +457,7 @@ export default function WithdrawScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBar style={statusBarStyle} translucent animated />
 
       <ScrollView
         style={styles.scrollView}

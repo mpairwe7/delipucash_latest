@@ -61,6 +61,7 @@ import {
 } from "@/utils/theme";
 import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import { useStatusBar } from "@/hooks/useStatusBar";
 import {
   CheckCircle,
   Clock,
@@ -177,7 +178,7 @@ interface ListItem {
 
 export default function SurveysScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle } = useTheme();
+  const { colors, style: statusBarStyle } = useStatusBar(); // Focus-aware status bar management
   const { width } = useWindowDimensions();
   const isTablet = width >= 768;
 
@@ -1052,7 +1053,7 @@ export default function SurveysScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBar style={statusBarStyle} translucent animated />
 
       <FlatList
         ref={flatListRef}

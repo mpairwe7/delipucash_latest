@@ -241,6 +241,11 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
   // --------------------------------------------------------------------------
   // Apply system bar configuration imperatively (covers cases where the
   // declarative <StatusBar> component might lag behind theme changes).
+  //
+  // pathname is in the dep array so that the style is re-applied on EVERY
+  // navigation (tab switch, push, pop).  Without this, navigating away from
+  // a screen that changed the status bar style (e.g. video player → surveys)
+  // would leave stale settings because isDark/isImmersiveRoute didn't change.
   // --------------------------------------------------------------------------
   useEffect(() => {
     // Status bar icon color: light (white) in dark mode, dark (black) in light
@@ -262,7 +267,7 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
         NavigationBar.setVisibilityAsync('visible').catch(() => {});
       }
     }
-  }, [isDark, isImmersiveRoute]);
+  }, [isDark, isImmersiveRoute, pathname]);
 
   return (
     <>

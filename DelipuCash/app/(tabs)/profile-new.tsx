@@ -41,6 +41,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useStatusBar } from '@/hooks/useStatusBar';
 import { Href, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
@@ -340,7 +341,7 @@ const SignOutSection = memo(function SignOutSection({ onSignOut, colors }: SignO
 
 export default function ProfileScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { colors, statusBarStyle, isDark } = useTheme();
+  const { colors, style: statusBarStyle, isDark } = useStatusBar(); // Focus-aware status bar management
   const toggleTheme = useThemeStore(s => s.toggleTheme);
   const { signOut } = useAuth();
   
@@ -935,7 +936,7 @@ export default function ProfileScreen(): React.ReactElement {
   if (isLoading && !user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar style={statusBarStyle} />
+        <StatusBar style={statusBarStyle} translucent animated />
         <View
           style={[
             styles.content,
@@ -966,7 +967,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} />
+      <StatusBar style={statusBarStyle} translucent animated />
 
       {/* Notification Bell Header */}
       <Animated.View
