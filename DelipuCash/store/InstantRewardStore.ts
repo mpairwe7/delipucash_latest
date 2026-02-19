@@ -191,6 +191,7 @@ export interface InstantRewardUIActions {
 
   // Wallet Management
   updateWalletBalance: (balance: number) => void;
+  syncWalletFromServer: (serverBalance: number) => void;
   addPendingReward: (amount: number) => void;
   confirmReward: (amount: number) => void;
   
@@ -526,6 +527,10 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
 
       updateWalletBalance: (balance) => {
         set({ walletBalance: balance });
+      },
+
+      syncWalletFromServer: (serverBalance) => {
+        set({ walletBalance: serverBalance });
       },
 
       addPendingReward: (amount) => {

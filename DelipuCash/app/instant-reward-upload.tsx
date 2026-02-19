@@ -344,7 +344,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           <View style={styles.formGroup}>
             <Text style={[styles.label, { color: colors.text }]}>Payment Provider</Text>
             <View style={styles.paymentProviderRow}>
-              {["MTN", "Airtel", "Bank"].map((provider) => (
+              {(["MTN", "AIRTEL"] as const).map((provider) => (
                 <Pressable
                   key={provider}
                   style={[
@@ -363,7 +363,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
                     styles.paymentProviderText,
                     { color: paymentProvider === provider ? colors.primary : colors.text }
                   ]}>
-                    {provider}
+                    {provider === 'MTN' ? 'MTN' : 'Airtel'}
                   </Text>
                 </Pressable>
               ))}

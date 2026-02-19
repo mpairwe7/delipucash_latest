@@ -1366,7 +1366,6 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
       queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestion(variables.questionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
-      queryClient.invalidateQueries({ queryKey: queryKeys.user });
     },
   });
 }

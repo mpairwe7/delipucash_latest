@@ -326,11 +326,21 @@ export default function RewardQuestionsScreen(): React.ReactElement {
 
   const userEmail = auth?.user?.email || user?.email;
 
+  // Zustand: wallet sync action
+  const syncWalletFromServer = useInstantRewardStore((s) => s.syncWalletFromServer);
+
   useEffect(() => {
     if (userEmail) {
       initializeAttemptHistory(userEmail);
     }
   }, [userEmail, initializeAttemptHistory]);
+
+  // Sync Zustand wallet balance from server-side user points (prevents drift after app restart)
+  useEffect(() => {
+    if (user?.points != null) {
+      syncWalletFromServer(user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+    }
+  }, [user?.points, syncWalletFromServer]);
 
   // Hydrate local store from server-provided attempts so the UI stays in sync
   // even after app restarts or store clears.

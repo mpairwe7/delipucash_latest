@@ -7,13 +7,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Redirect, router, useRootNavigationState } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AccessibilityInfo,
   Pressable,
-    StyleSheet,
+  StyleSheet,
   Text,
-    View,
+  View,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
   Easing,
@@ -49,6 +50,15 @@ interface FeatureItem {
   accessibilityLabel: string;
 }
 
+interface LogoSizing {
+  containerSize: number;
+  imageSize: number;
+  glowSize: number;
+  glowScale: number;
+}
+
+type LogoSizingMode = "exact-match" | "responsive";
+
 // ============================================================================
 // CONSTANTS - Feature Teasers
 // ============================================================================
@@ -70,6 +80,48 @@ const FEATURES: FeatureItem[] = [
   },
 ];
 
+const SMALL_SCREEN_REFERENCE_WIDTH = 390;
+const MIN_SMALL_SCREEN_SCALE = 0.88;
+const BASE_LOGO_CONTAINER_SIZE = 80;
+const BASE_LOGO_IMAGE_SIZE = 48;
+const DEFAULT_NATIVE_SPLASH_IMAGE_WIDTH = 136; // Keep in sync with app.json expo-splash-screen.imageWidth
+const LOGO_SIZING_MODE: LogoSizingMode = "exact-match";
+
+// Preserve visual relationship between native splash mark and first in-app frame.
+// 48 / 136 ~= 0.353 and 80 / 48 ~= 1.667 (container-to-image ratio).
+const FIRST_FRAME_TO_NATIVE_SPLASH_RATIO = BASE_LOGO_IMAGE_SIZE / DEFAULT_NATIVE_SPLASH_IMAGE_WIDTH;
+const CONTAINER_TO_IMAGE_RATIO = BASE_LOGO_CONTAINER_SIZE / BASE_LOGO_IMAGE_SIZE;
+
+function getExactMatchLogoSizing(nativeSplashImageWidth: number): LogoSizing {
+  const imageSize = Math.round(nativeSplashImageWidth * FIRST_FRAME_TO_NATIVE_SPLASH_RATIO);
+  const containerSize = Math.round(imageSize * CONTAINER_TO_IMAGE_RATIO);
+  const glowSize = Math.round(containerSize * 1.3);
+
+  return {
+    containerSize,
+    imageSize,
+    glowSize,
+    glowScale: 1.35,
+  };
+}
+
+function getResponsiveLogoSizing(shortEdge: number): LogoSizing {
+  const normalizedScale = Math.min(
+    1,
+    Math.max(MIN_SMALL_SCREEN_SCALE, shortEdge / SMALL_SCREEN_REFERENCE_WIDTH)
+  );
+  const containerSize = Math.round(BASE_LOGO_CONTAINER_SIZE * normalizedScale);
+  const imageSize = Math.round(BASE_LOGO_IMAGE_SIZE * normalizedScale);
+  const glowSize = Math.round(containerSize * 1.3);
+
+  return {
+    containerSize,
+    imageSize,
+    glowSize,
+    glowScale: normalizedScale < 1 ? 1.25 : 1.35,
+  };
+}
+
 // ============================================================================
 // SUB-COMPONENTS
 // ============================================================================
@@ -82,6 +134,14 @@ const AnimatedLogo = React.memo(function AnimatedLogo({
   colors: ReturnType<typeof useTheme>["colors"];
   reduceMotion: boolean;
 }) {
+  const { width, height } = useWindowDimensions();
+  const logoSizing = useMemo(
+    () =>
+      LOGO_SIZING_MODE === "exact-match"
+        ? getExactMatchLogoSizing(DEFAULT_NATIVE_SPLASH_IMAGE_WIDTH)
+        : getResponsiveLogoSizing(Math.min(width, height)),
+    [width, height]
+  );
   const scale = useSharedValue(0.6);
   const opacity = useSharedValue(0);
   const glowOpacity = useSharedValue(0);
@@ -95,15 +155,22 @@ const AnimatedLogo = React.memo(function AnimatedLogo({
     }
     // Entrance animation
     opacity.value = withTiming(1, { duration: 400 });
-    scale.value = withSpring(1, { damping: 12, stiffness: 100 });
+    scale.value = withSpring(1, {
+      damping: 18,
+      stiffness: 180,
+      mass: 0.9,
+      overshootClamping: true,
+      restDisplacementThreshold: 0.001,
+      restSpeedThreshold: 0.001,
+    });
 
     // Subtle pulsing glow
     glowOpacity.value = withDelay(
       600,
       withRepeat(
         withSequence(
-          withTiming(0.4, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-          withTiming(0.15, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+          withTiming(0.28, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
+          withTiming(0.12, { duration: 1500, easing: Easing.inOut(Easing.ease) })
         ),
         -1,
         true
@@ -132,16 +199,38 @@ const AnimatedLogo = React.memo(function AnimatedLogo({
         pointerEvents="none"
         style={[
           styles.logoGlow,
-          { backgroundColor: colors.primary },
+          {
+            backgroundColor: colors.primary,
+            width: logoSizing.glowSize,
+            height: logoSizing.glowSize,
+            borderRadius: logoSizing.glowSize / 2,
+            transform: [{ scale: logoSizing.glowScale }],
+          },
           glowStyle,
         ]}
       />
 
       <Animated.View style={[styles.logoWrapper, logoStyle]}>
-        <View style={[styles.logoContainer, { borderColor: withAlpha(colors.primary, 0.3) }]}>
+        <View
+          style={[
+            styles.logoContainer,
+            {
+              borderColor: withAlpha(colors.primary, 0.3),
+              width: logoSizing.containerSize,
+              height: logoSizing.containerSize,
+              borderRadius: Math.round(logoSizing.containerSize * 0.25),
+            },
+          ]}
+        >
           <Image
             source={require("../assets/images/logo.png")}
-            style={styles.logo}
+            style={[
+              styles.logo,
+              {
+                width: logoSizing.imageSize,
+                height: logoSizing.imageSize,
+              },
+            ]}
             contentFit="contain"
             transition={200}
             placeholder={require("../assets/images/logo.png")}
@@ -492,18 +581,11 @@ const styles = StyleSheet.create({
   },
   logoGlow: {
     position: "absolute",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    transform: [{ scale: 2 }],
   },
   logoWrapper: {
     zIndex: 1,
   },
   logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: RADIUS.xl,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
@@ -515,8 +597,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   logo: {
-    width: 48,
-    height: 48,
   },
 
   // Headline Section

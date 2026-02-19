@@ -17,10 +17,11 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
 // ===========================================
 
 /**
- * Generate a 6-digit OTP code
+ * Generate a cryptographically secure 6-digit OTP code
+ * Uses crypto.randomInt instead of Math.random (CSPRNG)
  */
 const generateOTPCode = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 999999).toString();
 };
 
 /**
@@ -31,11 +32,16 @@ const hashOTPCode = (code) => {
 };
 
 /**
- * Verify OTP code against stored hash
+ * Verify OTP code against stored hash using timing-safe comparison
+ * Prevents timing side-channel attacks on hash comparison
  */
 const verifyOTPCode = (inputCode, hashedCode) => {
   const inputHash = hashOTPCode(inputCode);
-  return inputHash === hashedCode;
+  // Use timing-safe comparison to prevent timing attacks
+  const inputBuf = Buffer.from(inputHash, 'hex');
+  const storedBuf = Buffer.from(hashedCode, 'hex');
+  if (inputBuf.length !== storedBuf.length) return false;
+  return crypto.timingSafeEqual(inputBuf, storedBuf);
 };
 
 // ── 2FA brute-force protection ────────────────────────────────
@@ -68,16 +74,6 @@ const record2FAFailure = async (userId, currentAttempts) => {
   }
 
   await prisma.appUser.update({ where: { id: userId }, data });
-};
-
-/**
- * Reset 2FA attempts after a successful verification or when a new code is generated.
- */
-const reset2FAAttempts = async (userId) => {
-  await prisma.appUser.update({
-    where: { id: userId },
-    data: { twoFactorAttempts: 0, twoFactorLockedUntil: null },
-  });
 };
 
 // User Signup
@@ -605,9 +601,14 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
           },
         });
 
-        // Invalidate all other sessions (security-critical change)
+        // Invalidate all OTHER sessions (keep current device logged in)
+        const currentToken = req.headers['authorization']?.split(' ')[1];
         await prisma.loginSession.updateMany({
-          where: { userId, isActive: true },
+          where: {
+            userId,
+            isActive: true,
+            ...(currentToken ? { NOT: { sessionToken: currentToken } } : {}),
+          },
           data: { isActive: false, logoutTime: new Date() },
         });
 
@@ -634,7 +635,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         },
       });
 
-      const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
       if (!emailResult.success && process.env.NODE_ENV === 'production') {
         return res.status(500).json({
@@ -674,7 +675,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
       });
 
       // Send code via email
-      const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
       if (!emailResult.success && process.env.NODE_ENV === 'production') {
         console.error('❌ Failed to send 2FA email:', emailResult.error);
@@ -803,9 +804,14 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    // Invalidate all other sessions (security-critical change)
+    // Invalidate all OTHER sessions (keep current device logged in)
+    const currentToken = req.headers['authorization']?.split(' ')[1];
     await prisma.loginSession.updateMany({
-      where: { userId, isActive: true },
+      where: {
+        userId,
+        isActive: true,
+        ...(currentToken ? { NOT: { sessionToken: currentToken } } : {}),
+      },
       data: { isActive: false, logoutTime: new Date() },
     });
 
@@ -883,7 +889,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
     if (!emailResult.success && process.env.NODE_ENV === 'production') {
       return res.status(500).json({
@@ -898,7 +904,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       data: {
         codeSent: true,
         email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
-        expiresIn: 600,
+        expiresIn: 180, // 3 minutes — matches actual server-side code expiry
       },
       message: "New verification code sent",
       ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
@@ -935,6 +941,7 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
         email: true,
         firstName: true,
         twoFactorEnabled: true,
+        twoFactorCodeExpiry: true,
       },
     });
 
@@ -953,6 +960,19 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
       });
     }
 
+    // Rate limit: Allow resend only after 60 seconds (prevents email spam)
+    if (user.twoFactorCodeExpiry) {
+      const codeSentAt = user.twoFactorCodeExpiry.getTime() - 10 * 60 * 1000;
+      const timeSinceLastCode = Date.now() - codeSentAt;
+      if (timeSinceLastCode < 60 * 1000) {
+        const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${waitSeconds} seconds before requesting a new code`
+        });
+      }
+    }
+
     const otpCode = generateOTPCode();
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 10 * 60 * 1000);
@@ -968,7 +988,7 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    const emailResult = await send2FACode(user.email, otpCode, user.firstName);
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 10);
 
     if (!emailResult.success && process.env.NODE_ENV === 'production') {
       return res.status(500).json({

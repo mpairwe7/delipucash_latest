@@ -299,6 +299,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
   const [overlayEarned, setOverlayEarned] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
+  const [isOptimisticLocked, setIsOptimisticLocked] = useState(false);
+  const submitGuardRef = useRef(false);
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
@@ -358,9 +360,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     initializeAttemptHistory,
     markQuestionAttempted,
     confirmReward,
+    updateWalletBalance,
     startSession,
     endSession,
     goToNextQuestion,
+    getSessionProgress,
     recordQuestionStart,
     updateSessionSummary,
     initiateRedemption,
@@ -373,9 +377,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       initializeAttemptHistory: s.initializeAttemptHistory,
       markQuestionAttempted: s.markQuestionAttempted,
       confirmReward: s.confirmReward,
+      updateWalletBalance: s.updateWalletBalance,
       startSession: s.startSession,
       endSession: s.endSession,
       goToNextQuestion: s.goToNextQuestion,
+      getSessionProgress: s.getSessionProgress,
       recordQuestionStart: s.recordQuestionStart,
       updateSessionSummary: s.updateSessionSummary,
       initiateRedemption: s.initiateRedemption,
@@ -385,6 +391,15 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       removePendingSubmission: s.removePendingSubmission,
     }))
   );
+
+  // ── Sync Zustand wallet with server-side points to prevent drift ──
+  // (Duolingo/Cash App pattern: source of truth is always the server)
+  useEffect(() => {
+    if (user?.points != null) {
+      const serverBalanceUGX = user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+      updateWalletBalance(serverBalanceUGX);
+    }
+  }, [user?.points, updateWalletBalance]);
 
   // ── Soft auth check — user navigated from an auth-guarded screen,
   //    so only show a toast if auth expires mid-session (no hard redirect) ──
@@ -424,6 +439,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     setTimerExpired(false);
     setIsTransitioning(false);
     setShowResultOverlay(false);
+    setIsOptimisticLocked(false);
+    submitGuardRef.current = false;
     transitionOpacity.value = 1;
     transitionTranslateX.value = 0;
     recordQuestionStart();
@@ -550,9 +567,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           result?.isCorrect ||
           result?.isExpired ||
           result?.isCompleted ||
-          hasAlreadyAttempted
+          hasAlreadyAttempted ||
+          isOptimisticLocked
       ),
-    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted]
+    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted, isOptimisticLocked]
   );
 
   // ── Reanimated transition style (native thread) ──
@@ -604,10 +622,19 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     setSelectedOption(optionKey);
   }, [isClosed, hasAlreadyAttempted]);
 
+  // ── Session progress (Duolingo-style X of Y tracker) ──
+  const sessionProgress = useMemo(() => getSessionProgress(), [getSessionProgress, sessionSummary.questionsAnswered]);
+
   const handleSubmit = useCallback((): void => {
+    // Debounce guard: prevent double-tap rapid submissions (HQ Trivia / Swagbucks pattern)
+    if (submitGuardRef.current) return;
+    submitGuardRef.current = true;
+    // Release guard after 2s (safety net — also released on success/error)
+    setTimeout(() => { submitGuardRef.current = false; }, 2000);
+
     const answer = selectedOption || "";
 
-    if (!question) return;
+    if (!question) { submitGuardRef.current = false; return; }
 
     // Auth validation — checks Zustand auth state (synchronous, no race with profile fetch).
     // The server resolves userEmail from the JWT, so we only need auth presence here.
@@ -651,6 +678,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     }
 
     triggerHaptic('medium');
+
+    // Optimistic lock: disable options immediately (Kahoot! / HQ Trivia pattern)
+    // Prevents visual confusion while server round-trip is in flight
+    setIsOptimisticLocked(true);
 
     // Offline queue: save submission for later retry if network unavailable
     if (!isOnline) {
@@ -758,6 +789,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
         onError: (error) => {
           triggerHaptic('error');
+          submitGuardRef.current = false;
+          setIsOptimisticLocked(false);
           const errorMessage = error?.message || "Unable to submit your answer. Please try again.";
 
           if (errorMessage.includes("already attempted")) {
@@ -1013,6 +1046,26 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           <RefreshCcw size={ICON_SIZE.md} color={isFetching ? colors.primary : colors.text} strokeWidth={1.5} />
         </Pressable>
       </View>
+
+      {/* ── Session Progress Bar (Duolingo / Kahoot! style) ── */}
+      {sessionProgress.total > 1 && (
+        <View style={[styles.sessionProgressContainer, { borderBottomColor: colors.border }]}>
+          <View style={[styles.sessionProgressTrack, { backgroundColor: withAlpha(colors.border, 0.3) }]}>
+            <View
+              style={[
+                styles.sessionProgressFill,
+                {
+                  width: `${Math.min((sessionProgress.total - sessionProgress.remaining) / sessionProgress.total, 1) * 100}%`,
+                  backgroundColor: colors.primary,
+                },
+              ]}
+            />
+          </View>
+          <Text style={[styles.sessionProgressLabel, { color: colors.textMuted }]}>
+            {sessionProgress.total - sessionProgress.remaining} of {sessionProgress.total} answered
+          </Text>
+        </View>
+      )}
 
       {/* ── Content (animated for transitions) ── */}
       <Animated.View style={[{ flex: 1 }, transitionStyle]}>
@@ -1562,6 +1615,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: SPACING.md,
+  },
+  // Session progress bar (Duolingo / Kahoot! style)
+  sessionProgressContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: BORDER_WIDTH.hairline,
+    gap: SPACING.xs,
+  },
+  sessionProgressTrack: {
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden' as const,
+  },
+  sessionProgressFill: {
+    height: '100%' as unknown as number,
+    borderRadius: 2,
+  },
+  sessionProgressLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'center' as const,
   },
 });
 

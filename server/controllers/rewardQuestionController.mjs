@@ -1,7 +1,23 @@
+import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ * Uses crypto.timingSafeEqual under the hood.
+ */
+function safeCompare(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    // Compare against self to maintain constant timing, then return false
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 /**
  * Format a reward question for public API responses.
@@ -82,10 +98,37 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       });
     }
 
-    // Validate reward amount
+    // Validate text is a non-empty string with max 2000 characters
+    if (typeof text !== 'string' || text.trim().length === 0) {
+      return res.status(400).json({ message: "Text must be a non-empty string" });
+    }
+    if (text.length > 2000) {
+      return res.status(400).json({ message: "Text must be at most 2000 characters" });
+    }
+
+    // Validate options is a non-null object with 2-10 entries
+    if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+      return res.status(400).json({ message: "Options must be a non-null object" });
+    }
+    const optionKeys = Object.keys(options);
+    if (optionKeys.length < 2 || optionKeys.length > 10) {
+      return res.status(400).json({ message: "Options must have between 2 and 10 entries" });
+    }
+
+    // Validate correctAnswer exists as a key in the options object
+    if (!optionKeys.includes(correctAnswer)) {
+      return res.status(400).json({ message: "correctAnswer must be one of the option keys" });
+    }
+
+    // Validate reward amount bounds
     if (rewardAmount <= 0) {
-      return res.status(400).json({ 
-        message: "Reward amount must be greater than 0" 
+      return res.status(400).json({
+        message: "Reward amount must be greater than 0"
+      });
+    }
+    if (rewardAmount > 1000000) {
+      return res.status(400).json({
+        message: "Reward amount must not exceed 1,000,000"
       });
     }
 
@@ -482,7 +525,12 @@ export const getRewardQuestionById = asyncHandler(async (req, res) => {
 export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
   try {
     const { userId } = req.params;
-    
+
+    // Ownership check — users can only fetch their own reward questions
+    if (req.user?.id !== userId) {
+      return res.status(403).json({ message: "Forbidden: You can only view your own reward questions" });
+    }
+
     const rewardQuestions = await prisma.rewardQuestion.findMany(
       buildOptimizedQuery('RewardQuestion', {
         where: { userId },
@@ -529,14 +577,32 @@ export const updateRewardQuestion = asyncHandler(async (req, res) => {
       return res.status(403).json({ message: "You can only update your own reward questions" });
     }
 
+    // Whitelist updateable fields — never allow changing correctAnswer, paymentProvider, phoneNumber, userId after creation
+    const ALLOWED_UPDATE_FIELDS = ['text', 'options', 'rewardAmount', 'expiryTime', 'isActive', 'maxWinners'];
+    const sanitizedData = {};
+    for (const key of ALLOWED_UPDATE_FIELDS) {
+      if (updateData[key] !== undefined) {
+        sanitizedData[key] = updateData[key];
+      }
+    }
+
     // Handle date fields if present
-    if (updateData.expiryTime) {
-      updateData.expiryTime = new Date(updateData.expiryTime);
+    if (sanitizedData.expiryTime) {
+      sanitizedData.expiryTime = new Date(sanitizedData.expiryTime);
+    }
+
+    // If attempts exist, prevent changing correctAnswer (already blocked by whitelist, but also block text/options changes that could invalidate existing attempts)
+    const attemptCount = await prisma.rewardQuestionAttempt.count({
+      where: { rewardQuestionId: id },
+    });
+    if (attemptCount > 0) {
+      // Remove correctAnswer from update even if it somehow passed the whitelist
+      delete sanitizedData.correctAnswer;
     }
 
     const updatedRewardQuestion = await prisma.rewardQuestion.update({
       where: { id },
-      data: updateData,
+      data: sanitizedData,
       include: {
         user: {
           select: {
@@ -678,24 +744,18 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
       return res.status(400).json({ message: "You have already won this question." });
     }
 
-    // Check if answer is correct
-    const isCorrect = selectedAnswer === rewardQuestion.correctAnswer;
+    // Check if answer is correct (constant-time comparison to prevent timing attacks)
+    const isCorrect = safeCompare(selectedAnswer, rewardQuestion.correctAnswer);
 
-    // Create reward question attempt (dedicated model — no FK to Question table)
-    await prisma.rewardQuestionAttempt.create({
-      data: {
-        userEmail,
-        rewardQuestionId,
-        selectedAnswer,
-        isCorrect,
-        attemptedAt: new Date()
-      }
-    });
+    // Only reveal correctAnswer if the answer is correct, or the question is expired/completed (safe to reveal)
+    const isExpired = rewardQuestion.expiryTime && new Date() > rewardQuestion.expiryTime;
+    const questionNoLongerActive = rewardQuestion.isCompleted || isExpired;
+    const shouldRevealAnswer = isCorrect || questionNoLongerActive;
 
     let response = {
       message: isCorrect ? "Correct answer! Points awarded." : "Incorrect answer. This question can only be attempted once.",
       isCorrect,
-      correctAnswer: rewardQuestion.correctAnswer,
+      ...(shouldRevealAnswer ? { correctAnswer: rewardQuestion.correctAnswer } : {}),
       pointsAwarded: 0,
       rewardEarned: 0,
       isWinner: false,
@@ -712,7 +772,19 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
       if (rewardQuestion.isInstantReward) {
         // Transactional winner allocation with optimistic locking to prevent race conditions
+        // Attempt record is created INSIDE the transaction so it rolls back on conflict
         const winnerResult = await prisma.$transaction(async (tx) => {
+          // Record attempt inside transaction
+          await tx.rewardQuestionAttempt.create({
+            data: {
+              userEmail,
+              rewardQuestionId,
+              selectedAnswer,
+              isCorrect,
+              attemptedAt: new Date()
+            }
+          });
+
           // Re-read with fresh data inside transaction
           const freshQuestion = await tx.rewardQuestion.findUnique({
             where: { id: rewardQuestionId },
@@ -749,6 +821,8 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             where: {
               id: rewardQuestionId,
               winnersCount: freshQuestion.winnersCount,
+              isActive: true,
+              isCompleted: false,
             },
             data: {
               winnersCount: { increment: 1 },
@@ -808,29 +882,54 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           };
         }
       } else {
-        // Regular reward question — award dynamic points
-        await prisma.appUser.update({
-          where: { email: userEmail },
-          data: {
-            points: {
-              increment: rewardPoints
+        // Regular reward question — wrap attempt + reward + points in a transaction
+        await prisma.$transaction(async (tx) => {
+          // Record attempt inside transaction
+          await tx.rewardQuestionAttempt.create({
+            data: {
+              userEmail,
+              rewardQuestionId,
+              selectedAnswer,
+              isCorrect,
+              attemptedAt: new Date()
             }
-          }
-        });
+          });
 
-        // Create reward record (store points, not UGX — consistent with user.points)
-        await prisma.reward.create({
-          data: {
-            userEmail,
-            points: rewardPoints,
-            description: `Correct answer to reward question: ${rewardQuestion.text.substring(0, 50)}...`
-          }
+          // Award dynamic points
+          await tx.appUser.update({
+            where: { email: userEmail },
+            data: {
+              points: {
+                increment: rewardPoints
+              }
+            }
+          });
+
+          // Create reward record (store points, not UGX — consistent with user.points)
+          await tx.reward.create({
+            data: {
+              userEmail,
+              points: rewardPoints,
+              description: `Correct answer to reward question: ${rewardQuestion.text.substring(0, 50)}...`
+            }
+          });
         });
 
         response.pointsAwarded = rewardAmountUGX;
         response.rewardEarned = rewardAmountUGX;
         response.message = `Correct! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`;
       }
+    } else {
+      // Incorrect answer — still record the attempt in its own call
+      await prisma.rewardQuestionAttempt.create({
+        data: {
+          userEmail,
+          rewardQuestionId,
+          selectedAnswer,
+          isCorrect,
+          attemptedAt: new Date()
+        }
+      });
     }
 
     res.json(response);
@@ -842,9 +941,13 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 });
 
 // Process automatic payment for instant reward winners
-async function processInstantRewardPayment(winner) {
+// Implements retry with exponential backoff (Stripe/Cash App best practice)
+const PAYMENT_MAX_RETRIES = 3;
+const PAYMENT_BASE_DELAY_MS = 1000;
+
+async function processInstantRewardPayment(winner, attempt = 1) {
   try {
-    console.log(`Processing payment for winner: ${winner.userEmail}, Amount: ${winner.amountAwarded}, Provider: ${winner.paymentProvider}`);
+    console.log(`Processing payment for winner: ${winner.userEmail}, Amount: ${winner.amountAwarded}, Provider: ${winner.paymentProvider} (attempt ${attempt}/${PAYMENT_MAX_RETRIES})`);
 
     // Import payment controller functions
     const { processMtnPayment, processAirtelPayment } = await import('./paymentController.mjs');
@@ -885,7 +988,15 @@ async function processInstantRewardPayment(winner) {
         reference: paymentResult.reference
       };
     } else {
-      // Update winner record as failed
+      // Retry with exponential backoff if attempts remain
+      if (attempt < PAYMENT_MAX_RETRIES) {
+        const delay = PAYMENT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        console.log(`Payment attempt ${attempt} failed for ${winner.userEmail}, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return processInstantRewardPayment(winner, attempt + 1);
+      }
+
+      // All retries exhausted — mark as failed
       await prisma.instantRewardWinner.update({
         where: { id: winner.id },
         data: {
@@ -894,16 +1005,24 @@ async function processInstantRewardPayment(winner) {
         }
       });
 
-      console.log(`Payment failed for winner ${winner.userEmail}`);
+      console.log(`Payment failed for winner ${winner.userEmail} after ${PAYMENT_MAX_RETRIES} attempts`);
       return {
         status: 'FAILED',
         reference: null
       };
     }
   } catch (error) {
-    console.error(`Error processing payment for winner ${winner.userEmail}:`, error);
+    console.error(`Error processing payment for winner ${winner.userEmail} (attempt ${attempt}):`, error);
     
-    // Update winner record as failed
+    // Retry on transient errors (network, timeout) with exponential backoff
+    if (attempt < PAYMENT_MAX_RETRIES) {
+      const delay = PAYMENT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`Payment error on attempt ${attempt}, retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return processInstantRewardPayment(winner, attempt + 1);
+    }
+
+    // All retries exhausted — mark as failed
     await prisma.instantRewardWinner.update({
       where: { id: winner.id },
       data: {

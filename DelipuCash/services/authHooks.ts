@@ -14,7 +14,6 @@ import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-
 import { API_ROUTES } from './api';
 import {
   AuthData,
-  AuthResponse,
   LoginCredentials,
   SignupCredentials,
   useAuthStore,
@@ -41,6 +40,49 @@ class AuthApiError extends Error {
   }
 }
 
+function normalizeAuthErrorMessage(input: unknown, fallback: string): string {
+  if (typeof input === 'string') {
+    const trimmed = input.trim();
+    return trimmed || fallback;
+  }
+
+  if (input instanceof Error) {
+    const nested = normalizeAuthErrorMessage(input.message, '');
+    return nested || fallback;
+  }
+
+  if (Array.isArray(input)) {
+    const messages = input
+      .map((item) => normalizeAuthErrorMessage(item, ''))
+      .filter(Boolean);
+    return messages.length ? messages.join('; ') : fallback;
+  }
+
+  if (input && typeof input === 'object') {
+    const record = input as Record<string, unknown>;
+
+    const prioritizedKeys = ['message', 'error', 'detail', 'reason', 'title'];
+    for (const key of prioritizedKeys) {
+      if (key in record) {
+        const candidate = normalizeAuthErrorMessage(record[key], '');
+        if (candidate) return candidate;
+      }
+    }
+
+    if (record.errors) {
+      const errorsMessage = normalizeAuthErrorMessage(record.errors, '');
+      if (errorsMessage) return errorsMessage;
+    }
+
+    const values = Object.values(record)
+      .map((value) => normalizeAuthErrorMessage(value, ''))
+      .filter(Boolean);
+    if (values.length) return values.join('; ');
+  }
+
+  return fallback;
+}
+
 async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${AUTH_API_BASE}${path}`;
   const response = await fetch(url, {
@@ -64,8 +106,11 @@ async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       data = JSON.parse(text);
     } catch {
+      const compactText = text.replace(/\s+/g, ' ').trim();
       throw new AuthApiError(
-        `Server returned non-JSON response (${response.status}): ${text.slice(0, 120)}`,
+        compactText
+          ? `Server returned non-JSON response (${response.status}): ${compactText.slice(0, 120)}`
+          : `Server returned non-JSON response (${response.status})`,
         response.status,
       );
     }
@@ -73,7 +118,7 @@ async function authFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     throw new AuthApiError(
-      data?.message || data?.error || 'Request failed',
+      normalizeAuthErrorMessage(data, `Request failed (${response.status})`),
       response.status
     );
   }

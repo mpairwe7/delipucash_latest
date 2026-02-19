@@ -302,6 +302,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const hasAttemptedQuestion = useInstantRewardStore((s) => s.hasAttemptedQuestion);
   const getAttemptedQuestion = useInstantRewardStore((s) => s.getAttemptedQuestion);
   const markQuestionAttempted = useInstantRewardStore((s) => s.markQuestionAttempted);
+  const updateWalletBalance = useInstantRewardStore((s) => s.updateWalletBalance);
 
   // Session + wallet state for summary/redemption modals
   const { walletBalance, sessionSummary } = useInstantRewardStore(
@@ -340,6 +341,13 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       initializeAttemptHistory(userEmail);
     }
   }, [userEmail, initializeAttemptHistory]);
+
+  // Sync Zustand wallet balance from server-side user points (prevents drift)
+  useEffect(() => {
+    if (user?.points != null) {
+      updateWalletBalance(user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+    }
+  }, [user?.points, updateWalletBalance]);
 
   // Hydrate local store from server-provided attempts so the UI stays in sync
   // even after app restarts or store clears.

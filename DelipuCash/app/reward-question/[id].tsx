@@ -385,6 +385,17 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Zustand: current streak for overlay ──
   const currentStreak = useInstantRewardStore((s) => s.sessionSummary.currentStreak);
 
+  // ── Zustand: wallet sync action ──
+  const syncWalletFromServer = useInstantRewardStore((s) => s.syncWalletFromServer);
+
+  // ── Sync Zustand wallet with server-side points to prevent drift ──
+  // (Duolingo/Cash App pattern: source of truth is always the server)
+  useEffect(() => {
+    if (user?.points != null) {
+      syncWalletFromServer(user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+    }
+  }, [user?.points, syncWalletFromServer]);
+
   // ── Soft auth check — user navigated from an auth-guarded screen,
   //    so only show a toast if auth expires mid-session (no hard redirect) ──
   useEffect(() => {

@@ -45,6 +45,37 @@ export interface UseAuthResult {
   initError: string | null;
 }
 
+function toAuthErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error) {
+    const message = error.message?.trim();
+    if (message && message !== '[object Object]') {
+      return message;
+    }
+  }
+
+  if (typeof error === 'string') {
+    const message = error.trim();
+    if (message && message !== '[object Object]') {
+      return message;
+    }
+  }
+
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>;
+    for (const key of ['message', 'error', 'detail', 'reason']) {
+      const value = record[key];
+      if (typeof value === 'string') {
+        const message = value.trim();
+        if (message && message !== '[object Object]') {
+          return message;
+        }
+      }
+    }
+  }
+
+  return fallback;
+}
+
 /**
  * Authentication hook providing sign in/out functionality
  * 
@@ -183,7 +214,7 @@ export const useAuth = (): UseAuthResult => {
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Login failed. Please try again.',
+          error: toAuthErrorMessage(error, 'Login failed. Please try again.'),
         };
       }
     },
@@ -204,7 +235,7 @@ export const useAuth = (): UseAuthResult => {
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : 'Registration failed. Please try again.',
+          error: toAuthErrorMessage(error, 'Registration failed. Please try again.'),
         };
       }
     },

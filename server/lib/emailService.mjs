@@ -228,9 +228,10 @@ const generatePasswordResetTemplate = (resetLink, userName, expiryMinutes = 30) 
  * @param {string} to - Recipient email address
  * @param {string} code - 6-digit OTP code
  * @param {string} userName - User's name for personalization
+ * @param {number} expiryMinutes - Code expiry in minutes (default 10, should match server-side expiry)
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
-export const send2FACode = async (to, code, userName = '') => {
+export const send2FACode = async (to, code, userName = '', expiryMinutes = 10) => {
   console.log(`📧 Sending 2FA code to: ${to}`);
   
   if (!transporter) {
@@ -247,9 +248,9 @@ export const send2FACode = async (to, code, userName = '') => {
     const info = await transporter.sendMail({
       from: `"${APP_NAME}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to,
-      subject: `${code} is your ${APP_NAME} verification code`,
-      text: `Your ${APP_NAME} verification code is: ${code}\n\nThis code expires in 10 minutes.\n\nIf you didn't request this code, please ignore this email.`,
-      html: generate2FAEmailTemplate(code, userName, 10),
+      subject: `Your ${APP_NAME} verification code`,
+      text: `Your ${APP_NAME} verification code is: ${code}\n\nThis code expires in ${expiryMinutes} minutes.\n\nIf you didn't request this code, please ignore this email.`,
+      html: generate2FAEmailTemplate(code, userName, expiryMinutes),
     });
 
     console.log('✅ 2FA email sent:', info.messageId);
