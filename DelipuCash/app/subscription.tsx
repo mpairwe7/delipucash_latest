@@ -7,7 +7,7 @@
  * @module app/subscription
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,7 +21,7 @@ import {
   Pressable,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PurchasesPackage, PURCHASES_ERROR_CODE } from 'react-native-purchases';
 import {
@@ -249,10 +249,12 @@ const SubscriptionScreen: React.FC = () => {
   const [hasPendingPurchase, setHasPendingPurchase] = useState(false);
   const [showPaymentSheet, setShowPaymentSheet] = useState(false);
 
-  // Show Google Play in-app messages on screen mount (grace period prompts, etc.)
-  useEffect(() => {
-    purchasesService.showInAppMessages();
-  }, []);
+  // Show Google Play in-app messages on every screen focus (grace period prompts, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      purchasesService.showInAppMessages();
+    }, [])
+  );
 
   // Listen for subscription changes
   useSubscriptionListener((isActive) => {
@@ -580,10 +582,10 @@ const SubscriptionScreen: React.FC = () => {
           />
         )}
 
-        {/* Billing Issue Banner (Grace Period / Account Hold) */}
+        {/* Billing Issue Banner (Grace Period / Account Hold / MoMo Expired) */}
         {billingIssue && (
           <Pressable
-            onPress={handleManageSubscription}
+            onPress={billingIssue.source === 'MOBILE_MONEY' ? () => setShowPaymentSheet(true) : handleManageSubscription}
             style={{
               backgroundColor: withAlpha(
                 billingIssue.type === 'grace_period' ? colors.warning : colors.error,
@@ -602,7 +604,7 @@ const SubscriptionScreen: React.FC = () => {
               gap: SPACING.base,
             }}
             accessibilityRole="button"
-            accessibilityLabel={`${billingIssue.message} Tap to manage subscription.`}
+            accessibilityLabel={`${billingIssue.message} Tap to ${billingIssue.source === 'MOBILE_MONEY' ? 'renew' : 'manage subscription'}.`}
           >
             <AlertTriangle
               size={24}
@@ -615,7 +617,11 @@ const SubscriptionScreen: React.FC = () => {
                 color: billingIssue.type === 'grace_period' ? colors.warning : colors.error,
                 marginBottom: 2,
               }}>
-                {billingIssue.type === 'grace_period' ? 'Payment Issue' : 'Subscription On Hold'}
+                {billingIssue.type === 'grace_period'
+                  ? 'Payment Issue'
+                  : billingIssue.type === 'expired'
+                    ? 'Subscription Expired'
+                    : 'Subscription On Hold'}
               </Text>
               <Text style={{
                 fontFamily: TYPOGRAPHY.fontFamily.regular,
@@ -768,14 +774,29 @@ const SubscriptionScreen: React.FC = () => {
         {/* Action Buttons */}
         <View style={styles.footer}>
           {!subscription?.isActive && packages.length > 0 && (
-            <PrimaryButton
-              title={isPurchasing ? 'Processing...' : 'Unlock All Features'}
-              onPress={() => setShowPaymentSheet(true)}
-              disabled={isPurchasing || !selectedPackage || isNotConfigured}
-              loading={isPurchasing}
-              variant="primary"
-              size="large"
-            />
+            <>
+              <PrimaryButton
+                title={isPurchasing ? 'Processing...' : 'Unlock All Features'}
+                onPress={() => setShowPaymentSheet(true)}
+                disabled={isPurchasing || !selectedPackage || isNotConfigured}
+                loading={isPurchasing}
+                variant="primary"
+                size="large"
+              />
+              {selectedPackage && selectedPackage.packageType !== 'LIFETIME' && (
+                <Text style={{
+                  fontFamily: TYPOGRAPHY.fontFamily.regular,
+                  fontSize: TYPOGRAPHY.fontSize.xs,
+                  color: colors.textMuted,
+                  textAlign: 'center',
+                  marginTop: SPACING.sm,
+                  paddingHorizontal: SPACING.base,
+                  lineHeight: TYPOGRAPHY.fontSize.xs * 1.5,
+                }}>
+                  Auto-renewing subscription. Cancel anytime in your device settings. Payment will be charged at confirmation.
+                </Text>
+              )}
+            </>
           )}
 
           {/* Manage Subscription — for active subscribers */}

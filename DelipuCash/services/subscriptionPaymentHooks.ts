@@ -11,9 +11,9 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from './api';
-import { purchasesQueryKeys } from './purchasesHooks';
+import { purchasesQueryKeys } from './purchasesQueryKeys';
 
 // ============================================================================
 // TYPES
@@ -107,7 +107,19 @@ export const subscriptionPaymentKeys = {
  * });
  * ```
  */
+/**
+ * Generate a client-side idempotency key.
+ * Uses timestamp + random suffix — unique per payment attempt.
+ */
+function generateIdempotencyKey(): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).substring(2, 10);
+  return `idk_${ts}_${rand}`;
+}
+
 export function useMoMoPaymentInitiate() {
+  const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
+
   return useMutation({
     mutationFn: async (data: {
       phoneNumber: string;
@@ -116,9 +128,13 @@ export function useMoMoPaymentInitiate() {
     }) => {
       const response = await api.post<MoMoPaymentInitiation>(
         '/api/survey-payments/initiate',
-        data,
+        { ...data, idempotencyKey: idempotencyKeyRef.current },
       );
       return response.data;
+    },
+    onSettled: () => {
+      // Generate a fresh key for the next attempt (retry or new payment)
+      idempotencyKeyRef.current = generateIdempotencyKey();
     },
   });
 }
@@ -203,13 +219,14 @@ export function useMoMoPaymentFlow() {
   const initiateMutation = useMoMoPaymentInitiate();
   const statusQuery = useMoMoPaymentStatus(timedOut ? null : paymentId);
 
-  // 5-minute timeout
+  // 5-minute timeout — also clears paymentId to stop background polling
   useEffect(() => {
     if (!paymentId) return;
     setTimedOut(false);
 
     const timer = setTimeout(() => {
       setTimedOut(true);
+      setPaymentId(null); // Stop polling query by disabling it
     }, 5 * 60 * 1000);
 
     return () => clearTimeout(timer);
@@ -259,5 +276,6 @@ export function useMoMoPaymentFlow() {
     paymentData: statusQuery.data,
     initiationMessage: initiateMutation.data?.message ?? null,
     initiationError: initiateMutation.error,
+    networkError: statusQuery.error, // Expose polling errors for UI feedback
   };
 }

@@ -11,7 +11,12 @@ import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { v4 as uuidv4 } from 'uuid';
-import { processMtnCollection, processAirtelCollection } from './paymentController.mjs';
+import {
+  processMtnCollection,
+  processAirtelCollection,
+  checkMtnCollectionStatus,
+  checkAirtelCollectionStatus,
+} from './paymentController.mjs';
 
 // ============================================================================
 // SUBSCRIPTION PLANS CONFIGURATION
@@ -241,6 +246,7 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
  */
 export const initiatePayment = asyncHandler(async (req, res) => {
   const { phoneNumber, provider, planType } = req.body;
+  const idempotencyKey = req.headers['x-idempotency-key'] || req.body.idempotencyKey;
   const actualUserId = req.user?.id;
 
   // Validation
@@ -277,6 +283,45 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // ── Idempotency check ──
+    // If the client sent an idempotency key and a payment with that key already
+    // exists, return the existing payment instead of creating a duplicate charge.
+    if (idempotencyKey) {
+      const existingByKey = await prisma.payment.findUnique({
+        where: { idempotencyKey },
+      });
+
+      if (existingByKey) {
+        console.log(`[SurveyPayment] Idempotency hit for key: ${idempotencyKey}, returning existing payment: ${existingByKey.id}`);
+        const existingPlan = getPlanByType(existingByKey.subscriptionType);
+        return res.status(200).json({
+          payment: {
+            id: existingByKey.id,
+            userId: existingByKey.userId,
+            amount: existingByKey.amount,
+            currency: existingPlan?.currency || 'UGX',
+            phoneNumber: existingByKey.phoneNumber,
+            provider: existingByKey.provider,
+            planType: existingByKey.subscriptionType,
+            transactionId: existingByKey.TransactionId,
+            externalReference: null,
+            status: existingByKey.status,
+            statusMessage: getStatusMessage(existingByKey.status),
+            subscriptionId: existingByKey.status === 'SUCCESSFUL' ? existingByKey.id : null,
+            initiatedAt: existingByKey.createdAt.toISOString(),
+            completedAt: existingByKey.status === 'SUCCESSFUL' ? existingByKey.updatedAt.toISOString() : null,
+            failedAt: existingByKey.status === 'FAILED' ? existingByKey.updatedAt.toISOString() : null,
+            createdAt: existingByKey.createdAt.toISOString(),
+            updatedAt: existingByKey.updatedAt.toISOString(),
+          },
+          message: 'Payment already initiated.',
+          requiresConfirmation: existingByKey.status === 'PENDING',
+          expiresAt: new Date(existingByKey.createdAt.getTime() + 5 * 60 * 1000).toISOString(),
+          idempotent: true,
+        });
+      }
+    }
+
     // Prevent concurrent payments — reject if a recent PENDING payment exists
     const existingPending = await prisma.payment.findFirst({
       where: {
@@ -304,6 +349,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
         phoneNumber: cleanPhone,
         provider: provider,
         TransactionId: transactionId,
+        idempotencyKey: idempotencyKey || null,
         status: 'PENDING',
         subscriptionType: planType,
         startDate: now,
@@ -451,6 +497,51 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
       });
       if (!requestingUser || !['ADMIN', 'MODERATOR'].includes(requestingUser.role)) {
         return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
+    // ── Live provider re-check for stale PENDING payments ──
+    // If the payment is still PENDING and was created > 30s ago, query the
+    // MoMo provider API directly. This catches cases where the async
+    // triggerMobileMoneyRequest crashed or the server restarted.
+    if (payment.status === 'PENDING') {
+      const ageMs = Date.now() - new Date(payment.createdAt).getTime();
+      if (ageMs > 30_000 && payment.TransactionId) {
+        try {
+          let liveStatus = 'PENDING';
+          if (payment.provider === 'MTN') {
+            liveStatus = await checkMtnCollectionStatus(payment.TransactionId);
+          } else if (payment.provider === 'AIRTEL') {
+            liveStatus = await checkAirtelCollectionStatus(payment.TransactionId);
+          }
+
+          if (liveStatus !== 'PENDING') {
+            // Update DB to match provider reality
+            if (liveStatus === 'SUCCESSFUL') {
+              await prisma.$transaction(async (tx) => {
+                await tx.payment.update({
+                  where: { id: paymentId },
+                  data: { status: 'SUCCESSFUL' },
+                });
+                await tx.appUser.update({
+                  where: { id: payment.userId },
+                  data: { surveysubscriptionStatus: 'ACTIVE' },
+                });
+              });
+              payment.status = 'SUCCESSFUL';
+            } else {
+              await prisma.payment.update({
+                where: { id: paymentId },
+                data: { status: 'FAILED' },
+              });
+              payment.status = 'FAILED';
+            }
+            console.log(`[SurveyPayment] Live re-check resolved payment ${paymentId} to ${liveStatus}`);
+          }
+        } catch (err) {
+          // Non-fatal — fall through with DB status
+          console.error(`[SurveyPayment] Live status re-check failed for ${paymentId}:`, err.message);
+        }
       }
     }
 
@@ -665,6 +756,43 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
   }
 });
 
+/**
+ * Clean up stale PENDING payments
+ *
+ * Marks payments stuck in PENDING for over 15 minutes as FAILED.
+ * Prevents ghost payments from blocking new payment initiation.
+ * Can be called from a cron job or admin endpoint.
+ *
+ * @route POST /api/survey-payments/cleanup-stale
+ */
+export const cleanupStalePayments = asyncHandler(async (req, res) => {
+  const cutoff = new Date(Date.now() - 15 * 60 * 1000); // 15 minutes ago
+
+  console.log(`[SurveyPayment] Cleaning up stale PENDING payments older than ${cutoff.toISOString()}`);
+
+  try {
+    const result = await prisma.payment.updateMany({
+      where: {
+        status: 'PENDING',
+        createdAt: { lt: cutoff },
+      },
+      data: {
+        status: 'FAILED',
+      },
+    });
+
+    console.log(`[SurveyPayment] Cleaned up ${result.count} stale payments`);
+
+    res.json({
+      cleaned: result.count,
+      cutoffTime: cutoff.toISOString(),
+    });
+  } catch (error) {
+    console.error('[SurveyPayment] Error cleaning up stale payments:', error);
+    res.status(500).json({ error: 'Failed to clean up stale payments' });
+  }
+});
+
 export default {
   getPlans,
   getSubscriptionStatus,
@@ -673,4 +801,5 @@ export default {
   checkPaymentStatus,
   getPaymentHistory,
   cancelSubscription,
+  cleanupStalePayments,
 };

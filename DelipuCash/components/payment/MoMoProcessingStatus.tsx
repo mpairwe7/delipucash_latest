@@ -8,7 +8,8 @@
  */
 
 import React, { useEffect, useState, memo } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, AccessibilityInfo } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -82,15 +83,21 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
     }
   }, [status, pulseScale, pulseOpacity]);
 
-  // Countdown timer
+  // Countdown timer with haptic + a11y feedback at key milestones
   useEffect(() => {
     if (status !== 'PENDING') return;
     setSecondsLeft(TIMEOUT_SECONDS);
 
     const interval = setInterval(() => {
       setSecondsLeft((prev) => {
+        if (prev === 61) {
+          // Warn at 1 minute remaining
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+          AccessibilityInfo.announceForAccessibility('1 minute remaining');
+        }
         if (prev <= 1) {
           clearInterval(interval);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
           return 0;
         }
         return prev - 1;

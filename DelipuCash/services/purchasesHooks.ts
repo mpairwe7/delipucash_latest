@@ -14,17 +14,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useCallback, useMemo } from 'react';
 import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { purchasesService, ENTITLEMENTS } from './purchasesService';
+import { purchasesQueryKeys } from './purchasesQueryKeys';
+import { useUnifiedSubscription } from './subscriptionPaymentHooks';
 
-// ============================================================================
-// QUERY KEYS
-// ============================================================================
-
-export const purchasesQueryKeys = {
-  all: ['purchases'] as const,
-  offerings: () => [...purchasesQueryKeys.all, 'offerings'] as const,
-  subscription: () => [...purchasesQueryKeys.all, 'subscription'] as const,
-  customerInfo: () => [...purchasesQueryKeys.all, 'customerInfo'] as const,
-};
+// Re-export query keys for backwards compatibility
+export { purchasesQueryKeys } from './purchasesQueryKeys';
 
 // ============================================================================
 // HOOKS
@@ -137,9 +131,6 @@ export function useSurveyCreatorAccess() {
 export function useUnifiedSubscriptionStatus() {
   const { data: revenueCatSub, isLoading: rcLoading } = useSubscriptionStatus();
 
-  // Lazy-import to avoid circular deps — the hook is only created when called
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { useUnifiedSubscription } = require('./subscriptionPaymentHooks');
   const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
 
   const rcActive = revenueCatSub?.isActive ?? false;
@@ -211,35 +202,52 @@ export function usePremiumStatus() {
 /**
  * Hook to detect billing issues (grace period, account hold, pending purchases)
  *
- * Uses CustomerInfo from RevenueCat to determine if the user has a
- * billing issue that needs attention. Shows appropriate messaging.
+ * Checks BOTH RevenueCat (Google Play) and MoMo subscription sources.
+ * RevenueCat: uses CustomerInfo entitlements for grace period / account hold.
+ * MoMo: checks unified subscription for expired-with-prior-payment scenarios.
  */
 export function useBillingIssueDetection() {
-  const { data: customerInfo, isLoading } = useCustomerInfo();
+  const { data: customerInfo, isLoading: rcLoading } = useCustomerInfo();
   const { data: subscription } = useSubscriptionStatus();
 
+  const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+
   const billingIssue = (() => {
-    if (!customerInfo || !subscription) return null;
+    // ── RevenueCat (Google Play) billing issues ──
+    if (customerInfo && subscription) {
+      const surveyEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR];
+      if (surveyEntitlement) {
+        // Grace period: subscription is active but billing retry is in progress
+        if (surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
+          return {
+            type: 'grace_period' as const,
+            source: 'GOOGLE_PLAY' as const,
+            detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
+            message: 'Your payment method needs updating. You still have access while we retry.',
+          };
+        }
 
-    const surveyEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR];
-    if (!surveyEntitlement) return null;
-
-    // Grace period: subscription is active but billing retry is in progress
-    // The user still has access during this window
-    if (surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
-      return {
-        type: 'grace_period' as const,
-        detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
-        message: 'Your payment method needs updating. You still have access while we retry.',
-      };
+        // Expired with billing issue — account hold (no access)
+        if (!surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
+          return {
+            type: 'account_hold' as const,
+            source: 'GOOGLE_PLAY' as const,
+            detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
+            message: 'Your subscription is on hold due to a payment issue. Update your payment method to restore access.',
+          };
+        }
+      }
     }
 
-    // Expired with billing issue — account hold (no access)
-    if (!surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
+    // ── MoMo billing issues ──
+    // If MoMo subscription data exists (user had a plan) but is no longer active,
+    // it means their MoMo subscription expired and needs renewal.
+    if (momoSub && momoSub.planType && !momoSub.isActive) {
       return {
-        type: 'account_hold' as const,
-        detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
-        message: 'Your subscription is on hold due to a payment issue. Update your payment method to restore access.',
+        type: 'expired' as const,
+        source: 'MOBILE_MONEY' as const,
+        detectedAt: momoSub.expirationDate ? new Date(momoSub.expirationDate) : null,
+        message: 'Your mobile money subscription has expired. Renew to restore access to all premium features.',
       };
     }
 
@@ -249,7 +257,7 @@ export function useBillingIssueDetection() {
   return {
     billingIssue,
     hasBillingIssue: billingIssue !== null,
-    isLoading,
+    isLoading: rcLoading || momoLoading,
   };
 }
 

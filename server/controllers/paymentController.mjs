@@ -521,6 +521,63 @@ export const processAirtelCollection = async ({ amount, phoneNumber, referenceId
   }
 };
 
+/**
+ * Check MTN collection status (single query, no retries)
+ * Used to re-check a PENDING payment against the provider API.
+ * @param {string} referenceId - The MTN reference/transaction ID
+ * @returns {Promise<'PENDING'|'SUCCESSFUL'|'FAILED'>}
+ */
+export const checkMtnCollectionStatus = async (referenceId) => {
+  try {
+    const token = await getMtnToken('collection');
+    const response = await axios.get(
+      `https://sandbox.momodeveloper.mtn.com/collection/v1_0/requesttopay/${referenceId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Target-Environment': 'sandbox',
+          'Ocp-Apim-Subscription-Key': process.env.MTN_PRIMARY_KEY,
+        },
+      }
+    );
+    const status = response.data.status;
+    if (status === 'SUCCESSFUL') return 'SUCCESSFUL';
+    if (status === 'FAILED' || status === 'REJECTED') return 'FAILED';
+    return 'PENDING';
+  } catch (error) {
+    console.error('[MTN Collection] Status check error:', error.message);
+    return 'PENDING'; // Can't determine — treat as still pending
+  }
+};
+
+/**
+ * Check Airtel collection status (single query, no retries)
+ * @param {string} referenceId - The Airtel reference/transaction ID
+ * @returns {Promise<'PENDING'|'SUCCESSFUL'|'FAILED'>}
+ */
+export const checkAirtelCollectionStatus = async (referenceId) => {
+  try {
+    const token = await getAirtelToken();
+    const response = await axios.get(
+      `https://openapiuat.airtel.africa/standard/v1/payments/${referenceId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'X-Country': 'UG',
+          'X-Currency': 'UGX',
+        },
+      }
+    );
+    const status = response.data.status || response.data.data?.status;
+    if (status === 'SUCCESSFUL' || status === 'SUCCESS') return 'SUCCESSFUL';
+    if (status === 'FAILED') return 'FAILED';
+    return 'PENDING';
+  } catch (error) {
+    console.error('[Airtel Collection] Status check error:', error.message);
+    return 'PENDING';
+  }
+};
+
 // Airtel Disbursement (Payout)
 // Uses /standard/v1/disbursements/ with payee/pin/reference/transaction format
 const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceId) => {

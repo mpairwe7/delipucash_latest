@@ -613,6 +613,7 @@ model Payment {
   phoneNumber      String
   provider         String
   TransactionId    String           @unique
+  idempotencyKey   String?          @unique
   status           PaymentStatus    @default(PENDING)
   subscriptionType SubscriptionType
   startDate        DateTime

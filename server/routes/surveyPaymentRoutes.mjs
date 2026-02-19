@@ -12,6 +12,7 @@ import {
   checkPaymentStatus,
   getPaymentHistory,
   getUnifiedSubscriptionStatus,
+  cleanupStalePayments,
 } from '../controllers/surveyPaymentController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
@@ -41,6 +42,13 @@ router.get('/history', verifyToken, getPaymentHistory);
  * @access  Private
  */
 router.get('/unified-status', verifyToken, getUnifiedSubscriptionStatus);
+
+/**
+ * @route   POST /api/survey-payments/cleanup-stale
+ * @desc    Mark stale PENDING payments (>15 min) as FAILED
+ * @access  Private (admin/cron)
+ */
+router.post('/cleanup-stale', verifyToken, cleanupStalePayments);
 
 /**
  * @route   GET /api/survey-payments/:paymentId/status
