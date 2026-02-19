@@ -282,9 +282,8 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
       setStatusBarTranslucent(translucent);
       RNStatusBar.setBackgroundColor('transparent');
 
-      // Transparent gesture navigation bar (2026 edge-to-edge standard)
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
       NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
     }
 
@@ -311,8 +310,8 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
       // Restore Android navigation bar on unmount
       if (restoreOnUnmount && Platform.OS === 'android') {
         NavigationBar.setVisibilityAsync('visible').catch(() => {});
-        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-        NavigationBar.setPositionAsync('absolute').catch(() => {});
+        // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+        // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
       }
     };
   }, [mode, currentStyle, translucent, animated, restoreOnUnmount, hideSystemBars, showSystemBars, isDark]);

@@ -161,11 +161,8 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
         RNStatusBar.setBackgroundColor('transparent', false);
       }
 
-      // Transparent gesture navigation bar (Material Design 3 / 2026 standard)
-      // This makes the Android bottom gesture bar fully transparent so content
-      // extends edge-to-edge — matching iOS behavior and all major apps.
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
 
       // Navigation bar button style: ensure icons are visible against content
       const navBarButtonStyle = mergedOptions.navigationBarStyle
@@ -203,9 +200,8 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
         setStatusBarTranslucent(mergedOptions.translucent ?? true);
         RNStatusBar.setBackgroundColor('transparent', false);
 
-        // Re-apply nav bar on focus too
-        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-        NavigationBar.setPositionAsync('absolute').catch(() => {});
+        // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+        // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
         const navBarButtonStyle = mergedOptions.navigationBarStyle
           ?? (isDark ? 'light' : 'dark');
         NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
@@ -284,8 +280,8 @@ export function useImmersiveStatusBar() {
     resetStyle();
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('visible').catch(() => {});
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
     }
   }, [setHidden, resetStyle]);
 

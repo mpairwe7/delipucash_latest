@@ -872,6 +872,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
           />
         }
         maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
         windowSize={5}
         removeClippedSubviews
         initialNumToRender={8}

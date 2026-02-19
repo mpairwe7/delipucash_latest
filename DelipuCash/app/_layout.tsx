@@ -223,11 +223,8 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
       // Edge-to-edge status bar
       setStatusBarTranslucent(true);
 
-      // Transparent gesture navigation bar (Material Design 3 standard)
-      // — makes content extend behind the Android gesture pill, matching
-      //   the edge-to-edge behaviour users expect from all major 2026 apps.
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-      NavigationBar.setPositionAsync('absolute').catch(() => {});
+      // Note: setBackgroundColorAsync / setPositionAsync removed — handled
+      // natively by edgeToEdgeEnabled: true in app.json (Expo SDK 54+).
       NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
 
       // Immersive routes also hide the navigation bar

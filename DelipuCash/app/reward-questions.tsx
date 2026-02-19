@@ -47,7 +47,7 @@ import {
   XCircle,
   Zap,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -287,6 +287,59 @@ const AttemptedCard = memo(function AttemptedCard({
   );
 });
 
+// ─── Memoized Available Question Item ─────────────────────────────────────
+// Extracted from renderItem to prevent re-creation of question object and onPress
+// closure on every FlatList render cycle. Props are shallow-compared by memo.
+
+interface AvailableQuestionItemProps {
+  item: RewardListItem;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onPress: (id: string) => void;
+}
+
+const dimmedItemStyle = { opacity: 0.55 } as const;
+
+const AvailableQuestionItem = memo(function AvailableQuestionItem({
+  item,
+  colors,
+  onPress,
+}: AvailableQuestionItemProps) {
+  const question = useMemo(
+    () => ({
+      id: item.id,
+      text: item.text,
+      userId: null,
+      createdAt: item.createdAt,
+      updatedAt: item.createdAt,
+      rewardAmount: item.rewardAmount,
+      isInstantReward: false,
+      totalAnswers: item.winnersCount,
+      category: "Rewards",
+    }),
+    [item.id, item.text, item.createdAt, item.rewardAmount, item.winnersCount]
+  );
+
+  const handlePress = useCallback(() => onPress(item.id), [onPress, item.id]);
+
+  return (
+    <View style={item.isFull ? dimmedItemStyle : undefined}>
+      <QuestionCard
+        question={question}
+        variant="default"
+        onPress={handlePress}
+      />
+      <SpotsIndicator
+        spotsLeft={item.spotsLeft}
+        maxWinners={item.maxWinners}
+        winnersCount={item.winnersCount}
+        isFull={item.isFull}
+        isExpiringSoon={item.isExpiringSoon}
+        colors={colors}
+      />
+    </View>
+  );
+});
+
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 
 export default function RewardQuestionsScreen(): React.ReactElement {
@@ -423,6 +476,13 @@ export default function RewardQuestionsScreen(): React.ReactElement {
     [activeTab, availableQuestions, attemptedQuestions]
   );
 
+  // Refs for stable callback access — avoids recreating handleOpenQuestion
+  // on every data refetch (same pattern as instant-reward-questions.tsx)
+  const allItemsRef = useRef(allItems);
+  allItemsRef.current = allItems;
+  const openQuestionsRef = useRef(openQuestions);
+  openQuestionsRef.current = openQuestions;
+
   // ── Handlers ──
   const handleRefresh = useCallback(async () => {
     triggerHaptic("light");
@@ -434,6 +494,9 @@ export default function RewardQuestionsScreen(): React.ReactElement {
     router.back();
   }, []);
 
+  // Stable callback — reads data from refs so it doesn't recreate on every refetch.
+  // This is the #1 fix: previously, allItems/openQuestions in deps caused
+  // handleOpenQuestion → renderItem → ALL items to re-render on every data change.
   const handleOpenQuestion = useCallback(
     (id: string) => {
       if (!authReady) return;
@@ -442,11 +505,11 @@ export default function RewardQuestionsScreen(): React.ReactElement {
         router.push("/(auth)/login" as Href);
         return;
       }
-      // Intercept full questions — show alert instead of navigating
-      const item = allItems.find(q => q.id === id);
+      // Intercept full questions — show alert instead of navigating (read from ref for latest data)
+      const item = allItemsRef.current.find(q => q.id === id);
       if (item?.isFull && !item.isAnswered) {
         triggerHaptic("warning");
-        const nextOpen = openQuestions.find(q => q.id !== id);
+        const nextOpen = openQuestionsRef.current.find(q => q.id !== id);
         Alert.alert(
           "No Spots Left",
           "All winner spots have been filled for this question.",
@@ -464,7 +527,7 @@ export default function RewardQuestionsScreen(): React.ReactElement {
       }
       router.push(`/reward-question/${id}` as Href);
     },
-    [authReady, isAuthenticated, allItems, openQuestions]
+    [authReady, isAuthenticated]
   );
 
   const handleSelectAvailable = useCallback(() => {
@@ -487,35 +550,18 @@ export default function RewardQuestionsScreen(): React.ReactElement {
   const keyExtractor = useCallback((item: RewardListItem) => item.id, []);
 
   // ── Render item ──
+  // Use item.isAnswered instead of activeTab — displayedQuestions already
+  // filters by tab, so this avoids recreating renderItem on tab switch
+  // (which would force every visible cell to re-render).
   const renderItem = useCallback(
     ({ item }: { item: RewardListItem }) => {
-      if (activeTab === "available") {
+      if (!item.isAnswered) {
         return (
-          <View style={{ opacity: item.isFull ? 0.55 : 1 }}>
-            <QuestionCard
-              question={{
-                id: item.id,
-                text: item.text,
-                userId: null,
-                createdAt: item.createdAt,
-                updatedAt: item.createdAt,
-                rewardAmount: item.rewardAmount,
-                isInstantReward: false,
-                totalAnswers: item.winnersCount,
-                category: "Rewards",
-              }}
-              variant="default"
-              onPress={() => handleOpenQuestion(item.id)}
-            />
-            <SpotsIndicator
-              spotsLeft={item.spotsLeft}
-              maxWinners={item.maxWinners}
-              winnersCount={item.winnersCount}
-              isFull={item.isFull}
-              isExpiringSoon={item.isExpiringSoon}
-              colors={colors}
-            />
-          </View>
+          <AvailableQuestionItem
+            item={item}
+            colors={colors}
+            onPress={handleOpenQuestion}
+          />
         );
       }
 
@@ -527,7 +573,7 @@ export default function RewardQuestionsScreen(): React.ReactElement {
         />
       );
     },
-    [activeTab, handleOpenQuestion, colors]
+    [handleOpenQuestion, colors]
   );
 
   // ── List header ──
@@ -868,6 +914,7 @@ export default function RewardQuestionsScreen(): React.ReactElement {
           />
         }
         maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
         windowSize={5}
         removeClippedSubviews
         initialNumToRender={6}

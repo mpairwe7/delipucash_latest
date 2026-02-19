@@ -1263,7 +1263,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           )}
         </View>
 
-        {/* Winners — memoized with internal FlatList */}
+        {/* Winners — memoized, uses .map() (bounded to maxWinners) */}
         <WinnersSection winners={question.winners || []} colors={colors} />
 
         {/* Trust & Fairness — static memo, never re-renders */}
