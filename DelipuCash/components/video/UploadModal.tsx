@@ -37,7 +37,10 @@ import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as VideoThumbnails from 'expo-video-thumbnails';
+import { StatusBar } from 'expo-status-bar';
 import { router, Href } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useStatusBar } from '@/hooks/useStatusBar';
 import {
   useTheme,
   SPACING,
@@ -83,6 +86,30 @@ interface SelectedThumbnail {
   type: string;
 }
 
+const NON_RETRYABLE_UPLOAD_ERROR_PATTERNS = [
+  'validation',
+  'authentication',
+  'auth_required',
+  'missing_user_id',
+  'user_not_found',
+  'user_mismatch',
+  'file too large',
+  'invalid file type',
+  'invalid file',
+  'user id is required',
+  'user not found',
+  'authenticated user does not match requested user',
+  'unauthorized',
+  'forbidden',
+  'token expired',
+  'not signed in',
+];
+
+function isNonRetryableUploadError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return NON_RETRYABLE_UPLOAD_ERROR_PATTERNS.some(pattern => normalized.includes(pattern));
+}
+
 /**
  * Props for the UploadModal component
  */
@@ -113,6 +140,8 @@ function UploadModalComponent({
   testID,
 }: UploadModalProps): React.ReactElement {
   const { colors } = useTheme();
+  const { style: statusBarStyle } = useStatusBar();
+  const insets = useSafeAreaInsets();
   const { hasVideoPremium, maxUploadSize } = useVideoPremiumAccess();
 
   // Auth
@@ -259,24 +288,26 @@ function UploadModalComponent({
         return;
       }
 
-      // Server-side validation (tier + type + size)
-      try {
-        const validation = await validateR2Mutation.mutateAsync({
-          userId: userId || '',
-          fileSize,
-          mimeType,
-          fileName,
-          type: 'video',
-        });
+      // Server-side validation (tier + type + size) when auth context is available.
+      if (userId) {
+        try {
+          const validation = await validateR2Mutation.mutateAsync({
+            userId,
+            fileSize,
+            mimeType,
+            fileName,
+            type: 'video',
+          });
 
-        if (!validation.success || !validation.data?.valid) {
-          setFileSizeError(validation.data?.message || validation.error || 'File validation failed');
-          setSelectedFile(null);
-          return;
+          if (!validation.success || !validation.data?.valid) {
+            setFileSizeError(validation.data?.message || validation.error || 'File validation failed');
+            setSelectedFile(null);
+            return;
+          }
+        } catch {
+          // Offline fallback — client validation already passed
+          if (__DEV__) console.warn('Server validation unavailable, using client-side only');
         }
-      } catch {
-        // Offline fallback — client validation already passed
-        if (__DEV__) console.warn('Server validation unavailable, using client-side only');
       }
 
       setFileSizeError(null);
@@ -451,10 +482,7 @@ function UploadModalComponent({
         attempt++;
 
         // Non-retryable errors — break immediately
-        if (lastError.message.includes('Validation') ||
-            lastError.message.includes('Authentication') ||
-            lastError.message.includes('File too large') ||
-            lastError.message.includes('Invalid file type')) {
+        if (isNonRetryableUploadError(lastError.message)) {
           break;
         }
 
@@ -480,7 +508,7 @@ function UploadModalComponent({
       { text: 'OK', style: 'cancel' }
     ];
 
-    if (message.includes('Network') || message.includes('timeout')) {
+    if (message.includes('Network') || message.toLowerCase().includes('timeout') || message.toLowerCase().includes('timed out')) {
       userMessage = 'Upload failed due to network issues. Please check your connection and try again.';
       actions = [
         { text: 'Cancel', style: 'cancel' },
@@ -565,8 +593,9 @@ function UploadModalComponent({
         style={[styles.container, { backgroundColor: colors.background }]}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
+        <StatusBar style={statusBarStyle} animated />
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + SPACING.base }]}>
           <TouchableOpacity
             onPress={handleClose}
             style={styles.closeButton}

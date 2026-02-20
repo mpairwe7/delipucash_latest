@@ -55,6 +55,7 @@ model AppUser {
   videoBookmarks           VideoBookmark[]
   videoEvents              VideoEvent[]
   videoFeedback            VideoFeedback[]
+  videoShares              VideoShare[]
   SurveyResponse           SurveyResponse[]
   rewardRedemptions        RewardRedemption[]
   surveyFileUploads        SurveyFileUpload[]
@@ -99,6 +100,7 @@ model Video {
   comments       Comment[]
   videoLikes     VideoLike[]
   videoBookmarks VideoBookmark[]
+  videoShares    VideoShare[]
   events         VideoEvent[]
   feedback       VideoFeedback[]
   user           AppUser   @relation(fields: [userId], references: [id])
@@ -130,6 +132,21 @@ model VideoBookmark {
 
   @@unique([userId, videoId])
   @@index([videoId])
+}
+
+model VideoShare {
+  id        String   @id @default(uuid()) @db.Uuid
+  videoId   String   @db.Uuid
+  userId    String?  @db.Uuid
+  platform  String   // copy, twitter, facebook, whatsapp, instagram, telegram, email, sms, other
+  createdAt DateTime @default(now())
+
+  video Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user  AppUser? @relation(fields: [userId], references: [id])
+
+  @@index([videoId])
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model Livestream {

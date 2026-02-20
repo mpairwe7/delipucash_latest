@@ -106,6 +106,8 @@ export interface RewardSessionSummaryProps {
   lastRedemption?: { provider: PaymentProvider; phoneNumber: string } | null;
   /** Quick-redeem handler — bypasses the full wizard */
   onQuickRedeem?: (provider: PaymentProvider, phoneNumber: string) => void;
+  /** Optional ad slot rendered between earnings breakdown and redemption CTA */
+  adSlot?: React.ReactNode;
 }
 
 // ─── Performance-tier system ─────────────────────────────────────────────────
@@ -827,6 +829,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
   averageTime,
   lastRedemption,
   onQuickRedeem,
+  adSlot,
 }) => {
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
@@ -1078,6 +1081,9 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                 </View>
               </View>
             </Animated.View>
+
+            {/* ── Session Ad (between earnings and CTA — natural break) ── */}
+            {adSlot}
 
             {/* ── Redemption CTA ──────────────────────────────── */}
             {canRedeemRewards ? (

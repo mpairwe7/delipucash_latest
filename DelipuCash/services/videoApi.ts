@@ -572,7 +572,7 @@ export const videoApi = {
     const response = await fetchJson<{ data: { shared: boolean; platform: string } }>(VIDEO_ROUTES.share(videoId), {
       method: "POST",
       body: JSON.stringify({ platform }),
-    });
+    }, getAuthToken());
     return { success: response.success, data: response.data?.data || { shared: true, platform }, error: response.error };
   },
 

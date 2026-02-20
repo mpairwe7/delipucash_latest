@@ -87,13 +87,25 @@ export const uploadVideoToR2 = asyncHandler(async (req, res) => {
     });
   }
   
-  const { userId, title, description, duration } = req.body;
-  
+  const { userId: bodyUserId, title, description, duration } = req.body;
+  const authUserId = req.user?.id ? String(req.user.id).trim() : '';
+  const requestedUserId = bodyUserId ? String(bodyUserId).trim() : '';
+  const userId = authUserId || requestedUserId;
+
   if (!userId) {
-    return res.status(400).json({
+    return res.status(401).json({
       success: false,
-      error: 'MISSING_USER_ID',
-      message: 'User ID is required',
+      error: 'AUTH_REQUIRED',
+      message: 'Authentication is required',
+    });
+  }
+
+  // Prevent cross-account uploads when client sends a conflicting userId.
+  if (requestedUserId && authUserId && requestedUserId !== authUserId) {
+    return res.status(403).json({
+      success: false,
+      error: 'USER_MISMATCH',
+      message: 'Authenticated user does not match requested user',
     });
   }
   
@@ -446,13 +458,25 @@ export const getPresignedDownloadUrl = asyncHandler(async (req, res) => {
  * Check file size and type against user's limits
  */
 export const validateUploadRequest = asyncHandler(async (req, res) => {
-  const { userId, fileSize, fileName, mimeType, type = 'video' } = req.body;
-  
+  const { userId: bodyUserId, fileSize, fileName, mimeType, type = 'video' } = req.body;
+  const authUserId = req.user?.id ? String(req.user.id).trim() : '';
+  const requestedUserId = bodyUserId ? String(bodyUserId).trim() : '';
+  const userId = authUserId || requestedUserId;
+
   if (!userId || fileSize === undefined) {
     return res.status(400).json({
       success: false,
       error: 'MISSING_PARAMS',
       message: 'userId and fileSize are required',
+    });
+  }
+
+  if (requestedUserId && authUserId && requestedUserId !== authUserId) {
+    return res.status(403).json({
+      success: false,
+      valid: false,
+      error: 'USER_MISMATCH',
+      message: 'Authenticated user does not match requested user',
     });
   }
   

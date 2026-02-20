@@ -13,15 +13,21 @@
  */
 
 import prisma from '../lib/prisma.mjs';
-import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+import { getPublicUrl } from '../lib/r2.mjs';
 
 const APP_NAME = 'DelipuCash';
 const APP_SCHEME = process.env.MOBILE_APP_SCHEME || 'delipucash';
-const OG_BASE_URL = process.env.FRONTEND_URL || 'https://delipucashserver.vercel.app';
+const OG_BASE_URL = process.env.PUBLIC_SHARE_BASE_URL || process.env.FRONTEND_URL || 'https://delipucash-latest.vercel.app';
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@delipucash.com';
 
-// Fallback OG image when video has no thumbnail
-const FALLBACK_OG_IMAGE = `${OG_BASE_URL}/api/r2/public/logo.png`;
+// Fallback OG image when video has no thumbnail.
+// Prefer R2 public URL (permanent CDN); fall back to /public/logo.png for local dev.
+const FALLBACK_OG_IMAGE = process.env.OG_FALLBACK_IMAGE_URL
+  || (process.env.R2_PUBLIC_URL ? `${process.env.R2_PUBLIC_URL}/public/logo.png` : `${OG_BASE_URL}/public/logo.png`);
+
+// App store links for fallback UX (replace placeholders once published)
+const GOOGLE_PLAY_URL = process.env.GOOGLE_PLAY_URL || 'https://play.google.com/store/apps/details?id=com.arolainc.DelipuCash';
+const APP_STORE_URL = process.env.APP_STORE_URL || 'https://apps.apple.com/app/delipucash/id0000000000';
 
 // ===========================================================================
 // Route Handler
@@ -37,7 +43,7 @@ export const videoOgRedirect = async (req, res) => {
   const { id } = req.params;
 
   // Validate UUID format to avoid unnecessary DB queries
-  if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return res.status(400).send(generateErrorPage('Invalid video link.'));
   }
 
@@ -59,18 +65,13 @@ export const videoOgRedirect = async (req, res) => {
       return res.status(404).send(generateErrorPage('This video is no longer available.'));
     }
 
-    // Generate a signed thumbnail URL for the OG image.
-    // DOWNLOAD_URL_EXPIRY is 24 hours — sufficient for crawler fetch + caching.
-    let thumbnailUrl = video.thumbnail || FALLBACK_OG_IMAGE;
+    // Use permanent public R2 URLs for OG images — social crawlers cache for
+    // days/weeks, so signed URLs (24h expiry) break cached previews.
+    let thumbnailUrl = FALLBACK_OG_IMAGE;
     if (video.r2ThumbnailKey) {
-      try {
-        thumbnailUrl = await getSignedDownloadUrl(
-          video.r2ThumbnailKey,
-          URL_EXPIRY.DOWNLOAD_URL_EXPIRY
-        );
-      } catch {
-        // Fall back to stored thumbnail URL
-      }
+      thumbnailUrl = getPublicUrl(video.r2ThumbnailKey);
+    } else if (video.thumbnail) {
+      thumbnailUrl = video.thumbnail;
     }
 
     const safeTitle = escapeHtml(video.title || 'Untitled Video');
@@ -92,7 +93,9 @@ export const videoOgRedirect = async (req, res) => {
 
     // Cache OG page for 5 minutes — crawlers re-fetch periodically
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=300');
+    // OG images are now permanent public URLs — safe to cache longer.
+    // s-maxage: CDN caches for 24h; max-age: browsers revalidate after 1h.
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400');
 
     res.send(
       generateVideoOgPage({
@@ -106,6 +109,7 @@ export const videoOgRedirect = async (req, res) => {
         views: video.views || 0,
         likes: video.likes || 0,
         duration: video.duration || 0,
+        createdAt: video.createdAt,
       })
     );
   } catch (error) {
@@ -140,6 +144,46 @@ function formatDuration(seconds) {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+/** ISO 8601 duration (handles hours correctly for videos > 60 min) */
+function toIsoDuration(seconds) {
+  if (!seconds || seconds <= 0) return '';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  let iso = 'PT';
+  if (h) iso += `${h}H`;
+  if (m) iso += `${m}M`;
+  if (s || (!h && !m)) iso += `${s}S`;
+  return iso;
+}
+
+/** Build JSON-LD VideoObject — uses JSON.stringify for safe escaping */
+function buildJsonLd({ safeTitle, ogDescription, thumbnailUrl, views, likes, duration, createdAt }) {
+  const obj = {
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: safeTitle,
+    description: ogDescription,
+    thumbnailUrl,
+    interactionStatistic: [
+      {
+        '@type': 'InteractionCounter',
+        interactionType: { '@type': 'WatchAction' },
+        userInteractionCount: views,
+      },
+      {
+        '@type': 'InteractionCounter',
+        interactionType: { '@type': 'LikeAction' },
+        userInteractionCount: likes,
+      },
+    ],
+  };
+  if (createdAt) obj.uploadDate = new Date(createdAt).toISOString();
+  const iso = toIsoDuration(duration);
+  if (iso) obj.duration = iso;
+  return JSON.stringify(obj, null, 2);
+}
+
 function generateVideoOgPage({
   ogTitle,
   ogDescription,
@@ -151,8 +195,10 @@ function generateVideoOgPage({
   views,
   likes,
   duration,
+  createdAt,
 }) {
   const durationStr = formatDuration(duration);
+  const jsonLd = buildJsonLd({ safeTitle, ogDescription, thumbnailUrl, views, likes, duration, createdAt });
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -160,6 +206,7 @@ function generateVideoOgPage({
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>${ogTitle}</title>
+  <link rel="canonical" href="${escapeHtml(pageUrl)}">
 
   <!-- Open Graph -->
   <meta property="og:title" content="${ogTitle}">
@@ -167,15 +214,18 @@ function generateVideoOgPage({
   <meta property="og:image" content="${escapeHtml(thumbnailUrl)}">
   <meta property="og:image:width" content="1280">
   <meta property="og:image:height" content="720">
+  <meta property="og:image:alt" content="${ogDescription}">
   <meta property="og:type" content="video.other">
   <meta property="og:url" content="${escapeHtml(pageUrl)}">
   <meta property="og:site_name" content="${APP_NAME}">
+  <meta property="og:locale" content="en_US">
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${ogTitle}">
   <meta name="twitter:description" content="${ogDescription}">
   <meta name="twitter:image" content="${escapeHtml(thumbnailUrl)}">
+  <meta name="twitter:image:alt" content="${ogDescription}">
 
   <!-- App deep link hints (for platforms that support them) -->
   <meta property="al:ios:app_name" content="${APP_NAME}">
@@ -183,6 +233,11 @@ function generateVideoOgPage({
   <meta property="al:android:app_name" content="${APP_NAME}">
   <meta property="al:android:url" content="${escapeHtml(deepLink)}">
   <meta property="al:android:package" content="com.arolainc.DelipuCash">
+
+  <!-- JSON-LD Structured Data for Google Video SEO -->
+  <script type="application/ld+json">
+  ${jsonLd}
+  </script>
 
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -326,9 +381,9 @@ function generateVideoOgPage({
       <!-- Phase 2: Fallback (shown if auto-redirect fails) -->
       <div id="phase-fallback" class="hidden">
         <a href="${escapeHtml(deepLink)}" class="btn btn-primary">Open in ${APP_NAME} App</a>
-        <a href="${escapeHtml(pageUrl)}" class="btn btn-secondary">Watch in Browser</a>
+        <a id="store-link" href="${escapeHtml(GOOGLE_PLAY_URL)}" class="btn btn-secondary">Get the App</a>
         <p style="text-align:center; color:rgba(255,255,255,0.35); font-size:12px; margin-top:8px;">
-          Make sure ${APP_NAME} is installed on your device.
+          Don't have ${APP_NAME}? Download it to watch this video.
         </p>
       </div>
     </div>
@@ -344,6 +399,16 @@ function generateVideoOgPage({
       var deepLink = ${JSON.stringify(deepLink)};
       var fallback = document.getElementById('phase-fallback');
       var loading  = document.getElementById('phase-loading');
+
+      // Detect platform and set the correct store link
+      var storeLink = document.getElementById('store-link');
+      var ua = navigator.userAgent || '';
+      if (/iPhone|iPad|iPod/i.test(ua)) {
+        storeLink.href = ${JSON.stringify(APP_STORE_URL)};
+        storeLink.textContent = 'Get on App Store';
+      } else {
+        storeLink.textContent = 'Get on Google Play';
+      }
 
       // Attempt 1: Hidden iframe (works on many Android browsers)
       try {

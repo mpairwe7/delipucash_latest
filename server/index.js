@@ -3,6 +3,7 @@ import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import bodyParser from 'body-parser';
 import connectDB from './config/db.mjs';
 import { ensureDefaultAdminExists } from './utils/adminInit.mjs';
@@ -87,6 +88,13 @@ if (process.env.NODE_ENV !== 'production') {
     next();
   });
 }
+
+// Serve static assets (logo fallback for OG images, etc.)
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+app.use('/public', express.static(path.join(__dirname, 'public'), {
+  maxAge: '7d',
+  immutable: true,
+}));
 
 // =============================================
 // Deep Link & Domain Verification Routes

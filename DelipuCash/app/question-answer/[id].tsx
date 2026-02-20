@@ -38,6 +38,8 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { triggerHaptic } from "@/utils/quiz-utils";
+import { PostQuestionAdSlot } from "@/components/ads/PostQuestionAdSlot";
+import { useQuizAdPlacement } from "@/hooks/useQuizAdPlacement";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
@@ -224,6 +226,17 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const markSubmitted = useQuestionAnswerStore((s) => s.markSubmitted);
   const setActiveQuestion = useQuestionAnswerStore((s) => s.setActiveQuestion);
 
+  // ── Quiz ad placement (post-submission ad below responses) ──
+  const {
+    postAnswerAd,
+    shouldShowPostAnswerAd,
+    recordQuestionAnswered,
+    trackPostAnswerImpression,
+  } = useQuizAdPlacement({
+    contextType: 'questions',
+    hasSubmitted: wasSubmitted,
+  });
+
   // ── Server state (unified query keys — syncs with feed cache) ──
   const {
     data: question,
@@ -300,6 +313,9 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           markSubmitted(question.id);
           submitDebounceRef.current = false;
 
+          // Track question answered for ad frequency capping
+          recordQuestionAnswered();
+
           // Scroll to bottom to see the new response
           scrollRef.current?.scrollToEnd({ animated: true });
 
@@ -334,6 +350,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     submitResponse,
     markSubmitted,
     showToast,
+    recordQuestionAnswered,
   ]);
 
   const onRefresh = useCallback(async () => {
@@ -591,6 +608,14 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             </View>
           ))}
         </View>
+
+        {/* Post-Submission Ad — shown after user submits their answer */}
+        {wasSubmitted && shouldShowPostAnswerAd && (
+          <PostQuestionAdSlot
+            ad={postAnswerAd}
+            onImpression={trackPostAnswerImpression}
+          />
+        )}
 
         {/* View full discussion link */}
         <Pressable

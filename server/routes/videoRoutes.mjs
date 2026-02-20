@@ -79,7 +79,7 @@ router.post('/create', verifyToken, createVideo);
 router.post('/:id/like', verifyToken, likeVideo);
 router.post('/:id/unlike', verifyToken, unlikeVideo);
 router.post('/:id/comments', verifyToken, commentPost);
-router.post('/:id/share', shareVideo);
+router.post('/:id/share', optionalAuth, shareVideo);
 router.post('/:id/bookmark', verifyToken, bookmarkVideo);
 router.get('/:id/status', verifyToken, getVideoStatus);
 router.post('/:id/views', incrementVideoViews);

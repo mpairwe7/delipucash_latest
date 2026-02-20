@@ -522,8 +522,17 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
           >
             <AlertCircle size={ICON_SIZE.lg} color={colors.warning} strokeWidth={1.5} />
             <Text style={[styles.noOptionsText, { color: colors.text }]}>
-              You need at least {REWARD_CONSTANTS.MIN_REDEMPTION_POINTS} points to redeem
+              You need {REWARD_CONSTANTS.MIN_REDEMPTION_POINTS - availablePoints} more points to redeem
             </Text>
+            <Text style={[styles.noOptionsHint, { color: colors.textMuted }]}>
+              Answer more questions to earn rewards!
+            </Text>
+            <PrimaryButton
+              title="Earn More"
+              onPress={handleClose}
+              variant="secondary"
+              style={{ marginTop: SPACING.sm }}
+            />
           </View>
         )}
       </View>
@@ -973,9 +982,14 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   noOptionsText: {
-    flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.base,
+    textAlign: 'center',
+  },
+  noOptionsHint: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: 'center',
   },
 
   // Enter details

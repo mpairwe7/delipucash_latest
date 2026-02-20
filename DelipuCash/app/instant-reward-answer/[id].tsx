@@ -24,6 +24,9 @@ import {
 } from "@/utils/quiz-utils";
 import { lockPortrait } from "@/hooks/useScreenOrientation";
 import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay, QuestionTimer, SessionClosedModal } from "@/components/quiz";
+import { PostQuestionAdSlot } from "@/components/ads/PostQuestionAdSlot";
+import { SessionSummaryAd } from "@/components/ads/SessionSummaryAd";
+import { useQuizAdPlacement } from "@/hooks/useQuizAdPlacement";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -320,7 +323,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   // ── TanStack Query — server state ──
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions, refetch: refetchAllQuestions } = useInstantRewardQuestions();
-  const { data: user } = useUserProfile();
+  const { data: user, refetch: refetchProfile } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   const userEmail = user?.email ?? auth?.user?.email ?? null;
@@ -498,6 +501,21 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const hasAlreadyAttempted = useMemo(() => {
     return attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
   }, [questionId, attemptHistory]);
+
+  // ── Quiz ad placement (post-answer + session summary ads) ──
+  const hasSubmittedOrAttempted = Boolean(result || hasAlreadyAttempted);
+  const {
+    postAnswerAd,
+    sessionSummaryAd,
+    shouldShowPostAnswerAd,
+    shouldShowSessionAd,
+    recordQuestionAnswered: recordAdQuestionAnswered,
+    trackPostAnswerImpression,
+    trackSessionImpression,
+  } = useQuizAdPlacement({
+    contextType: 'rewards',
+    hasSubmitted: hasSubmittedOrAttempted,
+  });
 
   const spotsLeft = useMemo(() => {
     if (!question) return 0;
@@ -744,9 +762,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             setRevealedCorrectAnswer(payload.correctAnswer);
           }
 
-          const earnedAmount = payload.isCorrect ? rewardAmount : 0;
-          // Prefer backend-provided points, fall back to client conversion
-          const earnedPts = payload.pointsAwarded ?? (payload.isCorrect ? rewardPoints : 0);
+          // Server always sends pointsAwarded (UGX value, despite the name).
+          // Use server values as single source of truth — no client fallback.
+          const earnedAmount = payload.rewardEarned ?? (payload.isCorrect ? rewardAmount : 0);
+          const earnedPts = payload.pointsAwarded ?? 0;
 
           // Mark question as attempted (persisted — single attempt enforcement)
           markQuestionAttempted({
@@ -762,6 +781,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
           // Update session statistics (with backend-driven points)
           updateSessionSummary(payload.isCorrect, earnedAmount, earnedPts);
+
+          // Track question answered for ad frequency capping
+          recordAdQuestionAnswered();
 
           // Show animated result overlay
           setOverlayIsCorrect(payload.isCorrect);
@@ -861,7 +883,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         },
       }
     );
-  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, rewardPoints, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user]);
+  }, [question, selectedOption, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, rewardPoints, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user, recordAdQuestionAnswered]);
 
   // Handle redemption via real API
   const handleRedeem = useCallback(async (
@@ -883,6 +905,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
       if (response.data?.success) {
         completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+        // Re-sync wallet from server after successful payout (Robinhood pattern)
+        refetchProfile();
         return {
           success: true,
           message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
@@ -897,7 +921,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       completeRedemption('', false, errorMsg);
       return { success: false, message: errorMsg };
     }
-  }, [initiateRedemption, completeRedemption]);
+  }, [initiateRedemption, completeRedemption, refetchProfile]);
 
   // ── Stable modal callbacks (avoid inline arrow fns in JSX) ──
   const handleRefresh = useCallback(async () => {
@@ -1104,7 +1128,17 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
       {/* ── Session Progress Bar (Duolingo / Kahoot! style) ── */}
       {sessionProgress.total > 1 && (
-        <View style={[styles.sessionProgressContainer, { borderBottomColor: colors.border }]}>
+        <View
+          style={[styles.sessionProgressContainer, { borderBottomColor: colors.border }]}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Question progress: ${sessionProgress.total - sessionProgress.remaining} of ${sessionProgress.total} answered`}
+          accessibilityValue={{
+            min: 0,
+            max: sessionProgress.total,
+            now: sessionProgress.total - sessionProgress.remaining,
+          }}
+        >
           <View style={[styles.sessionProgressTrack, { backgroundColor: withAlpha(colors.border, 0.3) }]}>
             <View
               style={[
@@ -1190,7 +1224,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           </View>
         </LinearGradient>
 
-        {/* No Spots Left Banner (full but not attempted) */}
+        {/* No Spots Left Banner (full but not attempted) — always has a forward CTA */}
         {isClosed && !hasAlreadyAttempted && spotsLeft <= 0 && !result && (
           <Animated.View
             entering={FadeIn.duration(300)}
@@ -1213,6 +1247,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               </Text>
               <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                 All {question.maxWinners} winner spots have been filled.
+                {unansweredQuestions.length > 0
+                  ? ' Try the next question instead!'
+                  : ' Check back soon for new questions.'}
               </Text>
             </View>
           </Animated.View>
@@ -1320,6 +1357,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           )}
         </View>
 
+        {/* Post-Answer Ad Slot — shown after submission, frequency-capped */}
+        {shouldShowPostAnswerAd && (
+          <PostQuestionAdSlot
+            ad={postAnswerAd}
+            onImpression={trackPostAnswerImpression}
+          />
+        )}
+
         {/* Winners — memoized, uses .map() (bounded to maxWinners) */}
         <WinnersSection winners={question.winners || []} colors={colors} />
 
@@ -1412,6 +1457,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         averageTime={averageTimeSeconds}
         lastRedemption={lastRedemption}
         onQuickRedeem={handleQuickRedeem}
+        adSlot={
+          shouldShowSessionAd ? (
+            <SessionSummaryAd
+              ad={sessionSummaryAd}
+              onImpression={trackSessionImpression}
+            />
+          ) : undefined
+        }
       />
 
       {/* Redemption Modal */}

@@ -811,42 +811,38 @@ export const incrementVideoViews = asyncHandler(async (req, res) => {
 export const shareVideo = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const { platform, userId } = req.body;
+    const { platform } = req.body;
+    // Use authenticated user from optionalAuth (JWT), never from request body
+    const userId = req.user?.id || null;
 
     // Validate platform
-    const validPlatforms = ['copy', 'twitter', 'facebook', 'whatsapp', 'instagram', 'telegram', 'email', 'sms'];
+    const validPlatforms = ['copy', 'twitter', 'facebook', 'whatsapp', 'instagram', 'telegram', 'email', 'sms', 'other'];
     if (!platform || !validPlatforms.includes(platform)) {
-      return res.status(400).json({ 
-        message: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}` 
+      return res.status(400).json({
+        message: `Invalid platform. Must be one of: ${validPlatforms.join(', ')}`
       });
     }
 
-    // Check if video exists
+    // Check if video exists (lightweight select)
     const video = await prisma.video.findUnique({
       where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      }
+      select: { id: true, title: true },
     });
 
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Log share event and increment denormalized counter
-    console.log(`Video ${id} shared via ${platform} by user ${userId || 'anonymous'}`);
-
-    await prisma.video.update({
-      where: { id },
-      data: { sharesCount: { increment: 1 } },
-    });
+    // Create individual share record + increment denormalized counter atomically
+    await prisma.$transaction([
+      prisma.videoShare.create({
+        data: { videoId: id, userId, platform },
+      }),
+      prisma.video.update({
+        where: { id },
+        data: { sharesCount: { increment: 1 } },
+      }),
+    ]);
 
     res.json({
       success: true,

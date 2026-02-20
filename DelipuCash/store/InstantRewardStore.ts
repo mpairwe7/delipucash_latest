@@ -629,14 +629,14 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       },
 
       canRedeem: () => {
-        const { attemptHistory } = get();
-        const totalPoints = (attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+        const { walletBalance } = get();
+        const totalPoints = Math.floor(walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
         return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
       },
 
       getRedemptionOptions: () => {
-        const { attemptHistory } = get();
-        const totalPoints = (attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+        const { walletBalance } = get();
+        const totalPoints = Math.floor(walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
         return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= totalPoints);
       },
 
@@ -818,9 +818,9 @@ export const selectAttemptedCount = (state: InstantRewardUIState) =>
 export const selectTotalRewardsEarned = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalRewardsEarned ?? 0;
 
-/** Reactive selector for canRedeem — subscribes to state changes unlike the imperative action */
+/** Reactive selector for canRedeem — uses server-synced walletBalance as single source of truth */
 export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
-  const totalPoints = (state.attemptHistory?.totalRewardsEarned || 0) / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  const totalPoints = Math.floor(state.walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
   return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
 };
 

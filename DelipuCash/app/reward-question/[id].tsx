@@ -20,6 +20,9 @@ import { PrimaryButton, StatCard } from "@/components";
 import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons";
 import { useToast } from "@/components/ui/Toast";
 import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay } from "@/components/quiz";
+import { PostQuestionAdSlot } from "@/components/ads/PostQuestionAdSlot";
+import { SessionSummaryAd } from "@/components/ads/SessionSummaryAd";
+import { useQuizAdPlacement } from "@/hooks/useQuizAdPlacement";
 import { formatCurrency, rewardsApi } from "@/services/api";
 import {
   useRewardQuestion,
@@ -327,7 +330,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   } = useRewardQuestion(questionId);
   // Server-side filtered — only non-instant reward questions
   const { data: rewardQuestionsOnly = [] } = useRegularRewardQuestions();
-  const { data: user } = useUserProfile();
+  const { data: user, refetch: refetchProfile } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   // ── User data — auth store (instant) with profile enrichment (network) ──
@@ -484,6 +487,21 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     return attemptHistory.attemptedQuestionIds.includes(questionId);
   }, [questionId, attemptHistory]);
 
+  // ── Quiz ad placement (post-answer + session summary ads) ──
+  const hasSubmittedOrAttempted = Boolean(result || hasAlreadyAttempted);
+  const {
+    postAnswerAd,
+    sessionSummaryAd,
+    shouldShowPostAnswerAd,
+    shouldShowSessionAd,
+    recordQuestionAnswered: recordAdQuestionAnswered,
+    trackPostAnswerImpression,
+    trackSessionImpression,
+  } = useQuizAdPlacement({
+    contextType: 'rewards',
+    hasSubmitted: hasSubmittedOrAttempted,
+  });
+
   // ── Stable callback for CountdownTimer to signal expiry ──
   const handleTimerExpired = useCallback(() => setIsExpired(true), []);
 
@@ -634,9 +652,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
             setRevealedCorrectAnswer(payload.correctAnswer);
           }
 
-          const earnedAmount = payload.isCorrect ? rewardAmount : 0;
-          // Prefer backend-provided points, fall back to client conversion
-          const earnedPts = payload.pointsAwarded ?? (payload.isCorrect ? rewardPoints : 0);
+          // Server always sends pointsAwarded (UGX value, despite the name).
+          // Use server values as single source of truth — no client fallback.
+          const earnedAmount = payload.rewardEarned ?? (payload.isCorrect ? rewardAmount : 0);
+          const earnedPts = payload.pointsAwarded ?? 0;
 
           // Mark question as attempted (persisted — single attempt enforcement)
           markQuestionAttempted({
@@ -652,6 +671,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
           // Update session statistics (with backend-driven points)
           updateSessionSummary(payload.isCorrect, earnedAmount, earnedPts);
+
+          // Track question answered for ad frequency capping
+          recordAdQuestionAnswered();
 
           // Show animated result overlay
           setOverlayIsCorrect(payload.isCorrect);
@@ -784,6 +806,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     handleTransitionToNext,
     showToast,
     user,
+    recordAdQuestionAnswered,
   ]);
 
   // ── Redemption handler ──
@@ -806,6 +829,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         const response = await rewardsApi.redeem(amount, provider, phoneNumber, type);
         if (response.data?.success) {
           completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+          // Re-sync wallet from server after successful payout (Robinhood pattern)
+          refetchProfile();
           return {
             success: true,
             message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
@@ -821,7 +846,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         return { success: false, message: errorMsg };
       }
     },
-    [initiateRedemption, completeRedemption]
+    [initiateRedemption, completeRedemption, refetchProfile]
   );
 
   // ── Stable modal callbacks ──
@@ -1010,7 +1035,17 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
       {/* ── Session Progress Bar ── */}
       {sessionProgress.total > 1 && (
-        <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+        <View
+          style={[styles.progressBar, { backgroundColor: colors.border }]}
+          accessible
+          accessibilityRole="progressbar"
+          accessibilityLabel={`Question ${sessionProgress.current} of ${sessionProgress.total}`}
+          accessibilityValue={{
+            min: 0,
+            max: sessionProgress.total,
+            now: sessionProgress.current,
+          }}
+        >
           <View
             style={[
               styles.progressBarFill,
@@ -1106,7 +1141,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
             </View>
           </LinearGradient>
 
-          {/* No Spots Left Banner (full but not attempted) */}
+          {/* No Spots Left Banner (full but not attempted) — always has forward guidance */}
           {isClosed && !hasAlreadyAttempted && spotsLeft <= 0 && !result && (
             <Animated.View
               entering={FadeIn.duration(300)}
@@ -1129,6 +1164,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
                 </Text>
                 <Text style={[styles.attemptedBannerText, { color: colors.textMuted }]}>
                   All {question.maxWinners} winner spots have been filled.
+                  {unansweredQuestions.length > 0
+                    ? " Try the next question instead!"
+                    : " Check back soon for new questions."}
                 </Text>
               </View>
             </Animated.View>
@@ -1330,6 +1368,14 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
             )}
           </View>
 
+          {/* Post-Answer Ad Slot — shown after submission, frequency-capped */}
+          {shouldShowPostAnswerAd && (
+            <PostQuestionAdSlot
+              ad={postAnswerAd}
+              onImpression={trackPostAnswerImpression}
+            />
+          )}
+
           {/* Winners Card */}
           {Boolean(question.winners && question.winners.length) && (
             <View
@@ -1452,6 +1498,14 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         averageTime={averageTimeSeconds}
         lastRedemption={lastRedemption}
         onQuickRedeem={handleQuickRedeem}
+        adSlot={
+          shouldShowSessionAd ? (
+            <SessionSummaryAd
+              ad={sessionSummaryAd}
+              onImpression={trackSessionImpression}
+            />
+          ) : undefined
+        }
       />
 
       {/* Redemption Modal */}

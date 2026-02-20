@@ -880,25 +880,41 @@ export default function VideosScreen(): React.ReactElement {
     try {
       // Use OG-enabled URL so social platforms render rich link previews
       const shareUrl = generateVideoShareUrl(video.id);
+      const title = (video.title || 'Check out this video').slice(0, 200);
       const result = await Share.share({
-        message: `${video.title || 'Check out this video'}\n${shareUrl}`,
-        title: video.title || 'Shared Video',
+        message: `${title}\n${shareUrl}`,
+        title: title,
       });
 
       if (result.action === Share.sharedAction) {
         let platform: 'copy' | 'twitter' | 'facebook' | 'whatsapp' | 'instagram' | 'telegram' | 'email' | 'sms' | 'other' = 'other';
         const activityType = result.activityType?.toLowerCase() || '';
 
-        if (activityType.includes('copy')) platform = 'copy';
-        else if (activityType.includes('twitter')) platform = 'twitter';
-        else if (activityType.includes('facebook')) platform = 'facebook';
-        else if (activityType.includes('whatsapp')) platform = 'whatsapp';
+        if (activityType.includes('copy') || activityType.includes('clipboard')) platform = 'copy';
+        else if (activityType.includes('twitter') || activityType.includes('com.twitter')) platform = 'twitter';
+        else if (activityType.includes('facebook') || activityType.includes('com.facebook')) platform = 'facebook';
+        else if (activityType.includes('whatsapp') || activityType.includes('com.whatsapp')) platform = 'whatsapp';
+        else if (activityType.includes('instagram') || activityType.includes('com.instagram')) platform = 'instagram';
+        else if (activityType.includes('telegram') || activityType.includes('org.telegram')) platform = 'telegram';
+        else if (activityType.includes('mail') || activityType.includes('email')) platform = 'email';
+        else if (activityType.includes('message') || activityType.includes('sms') || activityType.includes('com.apple.MobileSMS')) platform = 'sms';
 
-        shareVideoMutate({ videoId: video.id, platform });
+        shareVideoMutate(
+          { videoId: video.id, platform },
+          {
+            onError: () => {
+              // Fire-and-forget analytics — don't disrupt UX for tracking failures
+              console.warn('Share analytics failed for video:', video.id);
+            },
+          },
+        );
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
-    } catch (error) {
-      console.error('Share error:', error);
+    } catch (error: any) {
+      // Share.share throws if user dismisses on some platforms — not a real error
+      if (error?.message !== 'User did not share') {
+        console.error('Share error:', error);
+      }
     }
   }, [shareVideoMutate]);
 

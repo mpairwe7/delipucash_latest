@@ -17,6 +17,24 @@ const APP_NAME = 'DelipuCash';
 const APP_SCHEME = process.env.MOBILE_APP_SCHEME || 'delipucash';
 const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@delipucash.com';
 
+// --------------------------------------------------------------------------
+// Deep Link Env Validation — warn loudly if placeholder values are in use
+// --------------------------------------------------------------------------
+const APPLE_TEAM_ID = process.env.APPLE_TEAM_ID;
+const ANDROID_SHA256_FINGERPRINT = process.env.ANDROID_SHA256_FINGERPRINT;
+
+if (!APPLE_TEAM_ID || APPLE_TEAM_ID === 'YOUR_APPLE_TEAM_ID') {
+  const msg = '[DeepLink] WARNING: APPLE_TEAM_ID is not set or is a placeholder. iOS Universal Links will NOT work in production.';
+  if (process.env.NODE_ENV === 'production') console.error(msg);
+  else console.warn(msg);
+}
+
+if (!ANDROID_SHA256_FINGERPRINT || ANDROID_SHA256_FINGERPRINT.startsWith('00:00:')) {
+  const msg = '[DeepLink] WARNING: ANDROID_SHA256_FINGERPRINT is not set or is a placeholder. Android App Links will NOT work in production.';
+  if (process.env.NODE_ENV === 'production') console.error(msg);
+  else console.warn(msg);
+}
+
 /**
  * GET /reset-password?token=...&email=...
  *
@@ -57,7 +75,7 @@ export const resetPasswordRedirect = (req, res) => {
  *     You can find it at: https://developer.apple.com/account → Membership → Team ID
  */
 export const appleAppSiteAssociation = (req, res) => {
-  const teamId = process.env.APPLE_TEAM_ID || 'YOUR_APPLE_TEAM_ID';
+  const teamId = APPLE_TEAM_ID || 'YOUR_APPLE_TEAM_ID';
   const bundleId = 'com.arolainc.DelipuCash';
 
   res.setHeader('Content-Type', 'application/json');
@@ -85,9 +103,7 @@ export const appleAppSiteAssociation = (req, res) => {
  */
 export const androidAssetLinks = (req, res) => {
   const packageName = 'com.arolainc.DelipuCash';
-  // TODO: Replace with your real SHA-256 fingerprint from EAS credentials
-  const sha256Fingerprint =
-    process.env.ANDROID_SHA256_FINGERPRINT ||
+  const sha256Fingerprint = ANDROID_SHA256_FINGERPRINT ||
     '00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00';
 
   res.setHeader('Content-Type', 'application/json');

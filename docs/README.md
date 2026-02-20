@@ -105,3 +105,4 @@ delipucash_latest/
 - **Instant Reward Enhancements** — Wallet balance syncs from server `user.points` (prevents client drift); submit debounce guard prevents double-tap submissions; optimistic answer locking; Duolingo-style session progress bar; payment retry with exponential backoff (3 attempts); admin upload form fixed to MTN/Airtel only
 - **Auth Fetch Safety** — `authFetch` in `authHooks.ts` now checks `Content-Type` before JSON parsing, preventing crashes when Vercel returns HTML error pages
 - **Theme Fix** — `TYPOGRAPHY.sizes` → `TYPOGRAPHY.fontSize` in survey components (UndoRedoToolbar, ConditionalLogicEditor)
+Set env vars in production: APPLE_TEAM_ID, ANDROID_SHA256_FINGERPRINT, GOOGLE_PLAY_URL, APP_STORE_URL

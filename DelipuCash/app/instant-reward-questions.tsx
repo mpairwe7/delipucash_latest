@@ -286,7 +286,7 @@ const UnansweredQuestionItem = memo(function UnansweredQuestionItem({
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data: user } = useUser();
+  const { data: user, refetch: refetchProfile } = useUser();
   const { isReady: authReady, isAuthenticated, auth } = useAuth();
   const { showToast } = useToast();
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -685,6 +685,8 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
       if (response.data?.success) {
         completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+        // Re-sync wallet from server after successful payout (Robinhood pattern)
+        refetchProfile();
         return {
           success: true,
           message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
@@ -699,7 +701,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       completeRedemption('', false, errorMsg);
       return { success: false, message: errorMsg };
     }
-  }, [initiateRedemption, completeRedemption]);
+  }, [initiateRedemption, completeRedemption, refetchProfile]);
 
   // SessionClosedModal handlers — refetch and navigate to first open question
   const handleSessionClosedContinue = useCallback(async () => {
@@ -860,6 +862,15 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         <Circle size={ICON_SIZE['2xl']} color={colors.textMuted} strokeWidth={1.5} />
         <Text style={[styles.emptyTitle, { color: colors.text }]}>No completed questions</Text>
         <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>Answer some questions to see them here!</Text>
+        <PrimaryButton
+          title="Start Answering"
+          onPress={() => {
+            triggerHaptic('selection');
+            setActiveTab('unanswered');
+          }}
+          variant="secondary"
+          style={{ marginTop: SPACING.sm }}
+        />
       </View>
     );
   }, [isLoading, rewardError, activeTab, colors, handleRefresh, isFetching]);

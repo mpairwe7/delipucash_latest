@@ -20,7 +20,7 @@
       "bundleIdentifier": "com.arolainc.DelipuCash",
       "buildNumber": "1",
       "associatedDomains": [
-        "applinks:delipucashserver.vercel.app"
+        "applinks:delipucash-latest.vercel.app"
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "DelipuCash needs camera access to record videos and take photos for surveys and content creation.",
@@ -61,12 +61,12 @@
           "data": [
             {
               "scheme": "https",
-              "host": "delipucashserver.vercel.app",
+              "host": "delipucash-latest.vercel.app",
               "pathPrefix": "/reset-password"
             },
             {
               "scheme": "https",
-              "host": "https://delipucash-latest.vercel.app",
+              "host": "delipucash-latest.vercel.app",
               "pathPrefix": "/video"
             }
           ],
