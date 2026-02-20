@@ -36,6 +36,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as VideoThumbnails from 'expo-video-thumbnails';
 import { router, Href } from 'expo-router';
 import {
   useTheme,
@@ -179,13 +180,53 @@ function UploadModalComponent({
   const [description, setDescription] = useState('');
   const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<SelectedThumbnail | null>(null);
+  const [autoThumbnail, setAutoThumbnail] = useState<SelectedThumbnail | null>(null);
+  const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
+
+  // Auto-generate thumbnail when video is selected (if user hasn't picked one manually)
+  useEffect(() => {
+    if (!selectedFile) {
+      setAutoThumbnail(null);
+      return;
+    }
+    let cancelled = false;
+    setIsGeneratingThumbnail(true);
+
+    (async () => {
+      try {
+        const { uri } = await VideoThumbnails.getThumbnailAsync(selectedFile.uri, {
+          time: 1000,
+          quality: 0.8,
+        });
+        if (!cancelled) {
+          setAutoThumbnail({
+            uri,
+            name: `thumb_${selectedFile.name.replace(/\.\w+$/, '.jpg')}`,
+            type: 'image/jpeg',
+          });
+        }
+      } catch {
+        // Thumbnail generation failed — user can still upload without it
+        if (!cancelled) setAutoThumbnail(null);
+      } finally {
+        if (!cancelled) setIsGeneratingThumbnail(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [selectedFile]);
+
+  // Effective thumbnail: manual pick takes priority over auto-generated
+  const effectiveThumbnail = selectedThumbnail || autoThumbnail;
 
   const resetForm = useCallback(() => {
     setTitle('');
     setDescription('');
     setSelectedFile(null);
     setSelectedThumbnail(null);
+    setAutoThumbnail(null);
+    setIsGeneratingThumbnail(false);
     setFileSizeError(null);
     if (storeCurrentUpload) {
       cancelUpload(storeCurrentUpload.fileId);
@@ -369,8 +410,8 @@ function UploadModalComponent({
           error: undefined,
         });
 
-        // Hooks now throw on service-level failure (success: false)
-        const result = selectedThumbnail
+        // Use combined upload when thumbnail is available (auto-generated or manual)
+        const result = effectiveThumbnail
           ? await uploadMedia({
               videoUri: selectedFile.uri,
               userId,
@@ -378,9 +419,9 @@ function UploadModalComponent({
               description: description.trim(),
               fileName: selectedFile.name,
               mimeType: selectedFile.type,
-              thumbnailUri: selectedThumbnail.uri,
-              thumbnailFileName: selectedThumbnail.name,
-              thumbnailMimeType: selectedThumbnail.type,
+              thumbnailUri: effectiveThumbnail.uri,
+              thumbnailFileName: effectiveThumbnail.name,
+              thumbnailMimeType: effectiveThumbnail.type,
             })
           : await uploadVideoOnly({
               videoUri: selectedFile.uri,
@@ -455,7 +496,7 @@ function UploadModalComponent({
 
     Alert.alert('Upload Failed', userMessage, actions);
   }, [
-    title, description, selectedFile, selectedThumbnail, userId,
+    title, description, selectedFile, effectiveThumbnail, userId,
     uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,
     onUploadComplete, onClose,
   ]);
@@ -517,6 +558,8 @@ function UploadModalComponent({
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
       testID={testID}
+      statusBarTranslucent
+      navigationBarTranslucent
     >
       <KeyboardAvoidingView
         style={[styles.container, { backgroundColor: colors.background }]}
@@ -668,8 +711,8 @@ function UploadModalComponent({
               style={[
                 styles.thumbnailSelector,
                 {
-                  borderColor: selectedThumbnail ? colors.success : colors.border,
-                  backgroundColor: selectedThumbnail
+                  borderColor: effectiveThumbnail ? colors.success : colors.border,
+                  backgroundColor: effectiveThumbnail
                     ? withAlpha(colors.success, 0.05)
                     : withAlpha(colors.card, 0.5),
                 },
@@ -679,22 +722,35 @@ function UploadModalComponent({
               accessibilityLabel="Select cover image"
               accessibilityRole="button"
             >
-              {selectedThumbnail ? (
+              {effectiveThumbnail ? (
                 <View style={styles.thumbnailPreviewRow}>
                   <Image
-                    source={{ uri: selectedThumbnail.uri }}
+                    source={{ uri: effectiveThumbnail.uri }}
                     style={styles.thumbnailPreview}
                   />
                   <View style={styles.thumbnailInfo}>
                     <Text style={[styles.thumbnailName, { color: colors.text }]} numberOfLines={1}>
-                      {selectedThumbnail.name}
+                      {selectedThumbnail ? selectedThumbnail.name : 'Auto-generated'}
                     </Text>
-                    <TouchableOpacity onPress={handleRemoveThumbnail} disabled={isUploading}>
-                      <Text style={[styles.thumbnailRemove, { color: colors.error }]}>
-                        Remove
-                      </Text>
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', gap: SPACING.sm }}>
+                      {!selectedThumbnail && (
+                        <Text style={[styles.thumbnailAutoLabel, { color: colors.success }]}>
+                          From video
+                        </Text>
+                      )}
+                      <TouchableOpacity onPress={selectedThumbnail ? handleRemoveThumbnail : handleSelectThumbnail} disabled={isUploading}>
+                        <Text style={[styles.thumbnailRemove, { color: selectedThumbnail ? colors.error : colors.primary }]}>
+                          {selectedThumbnail ? 'Remove' : 'Change'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
+                </View>
+              ) : isGeneratingThumbnail ? (
+                <View style={styles.thumbnailPlaceholder}>
+                  <Text style={[styles.thumbnailPlaceholderText, { color: colors.textMuted }]}>
+                    Generating cover from video...
+                  </Text>
                 </View>
               ) : (
                 <View style={styles.thumbnailPlaceholder}>
@@ -937,6 +993,10 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   thumbnailRemove: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  thumbnailAutoLabel: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },

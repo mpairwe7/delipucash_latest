@@ -16,7 +16,7 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import { Upload, Trash2 } from 'lucide-react-native';
+import { Upload, Trash2, Film } from 'lucide-react-native';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, withAlpha } from '@/utils/theme';
 import { formatDuration } from '@/utils/video-utils';
 import * as VideoThumbnails from 'expo-video-thumbnails';
@@ -24,7 +24,7 @@ import * as VideoThumbnails from 'expo-video-thumbnails';
 export interface PostCaptureDraftProps {
   videoUri: string;
   duration: number;
-  onPublish: (metadata: { title: string; description: string }) => void;
+  onPublish: (metadata: { title: string; description: string; thumbnailUri?: string }) => void;
   onDiscard: () => void;
   isUploading?: boolean;
   uploadProgress?: number;
@@ -42,16 +42,18 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [thumbnailUri, setThumbnailUri] = useState<string | null>(null);
+  const [thumbnailFailed, setThumbnailFailed] = useState(false);
 
   // Generate thumbnail from first frame
   useEffect(() => {
     let cancelled = false;
+    setThumbnailFailed(false);
     (async () => {
       try {
         const { uri } = await VideoThumbnails.getThumbnailAsync(videoUri, { time: 500 });
         if (!cancelled) setThumbnailUri(uri);
       } catch {
-        // Thumbnail generation failed — show placeholder
+        if (!cancelled) setThumbnailFailed(true);
       }
     })();
     return () => { cancelled = true; };
@@ -63,8 +65,9 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
     onPublish({
       title: title.trim() || defaultTitle,
       description: description.trim(),
+      thumbnailUri: thumbnailUri ?? undefined,
     });
-  }, [title, description, onPublish]);
+  }, [title, description, thumbnailUri, onPublish]);
 
   return (
     <KeyboardAvoidingView
@@ -83,6 +86,8 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
           <View style={[styles.thumbnailContainer, { backgroundColor: colors.surfaceVariant }]}>
             {thumbnailUri ? (
               <Image source={{ uri: thumbnailUri }} style={styles.thumbnail} />
+            ) : thumbnailFailed ? (
+              <Film size={24} color={colors.textSecondary} />
             ) : (
               <ActivityIndicator size="small" color={colors.primary} />
             )}

@@ -1236,14 +1236,18 @@ const styles = StyleSheet.create({
 
   // Between CTA Ad (between AnswerEarn and InstantReward)
   betweenCtaAd: {
-    marginTop: SPACING.sm,
-    marginBottom: SPACING.sm,
+    marginVertical: 0,
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.md,
+    paddingHorizontal: 0,
   },
 
   // Between content Ad
   betweenContentAd: {
+    marginVertical: 0,
     marginTop: SPACING.md,
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.md,
+    paddingHorizontal: 0,
   },
 
   // Banner Ad Placement

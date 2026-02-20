@@ -132,6 +132,10 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
   number: 'Number',
 };
 
+// Stable references for FlatList items (avoid re-renders)
+const HIT_SLOP_8 = { top: 8, bottom: 8, left: 8, right: 8 };
+const ROTATE_180 = { transform: [{ rotate: '180deg' }] } as const;
+
 // ============================================================================
 // TEMPLATE CONTENT
 // ============================================================================
@@ -263,7 +267,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
   const parseJSONContent = useCallback((content: string): ParsedImport => {
     const cleanContent = stripBOM(content);
-    const parsed = JSON.parse(cleanContent);
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(cleanContent);
+    } catch (e) {
+      const msg = e instanceof SyntaxError ? e.message : 'Invalid JSON';
+      return { questions: [], errors: [`JSON parse error: ${msg}`], warnings: [] };
+    }
     const errors: string[] = [];
     const warnings: string[] = [];
 
@@ -538,11 +548,14 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const newQuestions = parsedData.questions.filter((_, i) => i !== index);
     setParsedData({ ...parsedData, questions: newQuestions });
+    // Adjust editing index after removal
+    if (editingQuestionIndex === null) return;
     if (editingQuestionIndex === index) {
       setEditingQuestionIndex(null);
-    } else if (editingQuestionIndex !== null && editingQuestionIndex > index) {
+    } else if (editingQuestionIndex > index) {
       setEditingQuestionIndex(editingQuestionIndex - 1);
     }
+    // editingQuestionIndex < index — no adjustment needed (index unchanged)
   }, [parsedData, editingQuestionIndex]);
 
   const updateQuestion = useCallback((index: number, updates: Partial<QuestionData>) => {
@@ -850,7 +863,11 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
         {/* Warnings */}
         {parsedData.warnings.length > 0 && (
-          <View style={[styles.warningsBox, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
+          <View
+            style={[styles.warningsBox, { backgroundColor: withAlpha(colors.warning, 0.1) }]}
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+          >
             <View style={styles.warningsHeader}>
               <AlertCircle size={16} color={colors.warning} />
               <Text style={[styles.warningsTitle, { color: colors.warning }]}>
@@ -961,13 +978,13 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
                       style={styles.removeQuestionBtn}
                       accessibilityRole="button"
                       accessibilityLabel={`Remove question ${index + 1}`}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      hitSlop={HIT_SLOP_8}
                     >
                       <Trash2 size={16} color={colors.error} />
                     </TouchableOpacity>
                     <View style={[styles.expandIcon, { backgroundColor: withAlpha(colors.text, 0.06) }]}>
                       {isEditing ? (
-                        <ChevronDown size={14} color={colors.textMuted} style={{ transform: [{ rotate: '180deg' }] }} />
+                        <ChevronDown size={14} color={colors.textMuted} style={ROTATE_180} />
                       ) : (
                         <ChevronDown size={14} color={colors.textMuted} />
                       )}
@@ -998,6 +1015,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
   const renderValidation = () => {
     if (!parsedData) return null;
+    const validCount = parsedData.questions.length;
 
     return (
       <View style={styles.validationContainer}>
@@ -1008,10 +1026,16 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
           Import Errors Found
         </Text>
         <Text style={[styles.stepDescription, { color: colors.textMuted, textAlign: 'center' }]}>
-          Please fix the following issues and try again
+          {validCount > 0
+            ? `${validCount} valid question${validCount !== 1 ? 's' : ''} found. Fix errors or continue with valid questions.`
+            : 'Please fix the issues below or download a template to see the expected format.'}
         </Text>
 
-        <View style={[styles.errorsBox, { backgroundColor: withAlpha(colors.error, 0.05) }]}>
+        <View
+          style={[styles.errorsBox, { backgroundColor: withAlpha(colors.error, 0.05) }]}
+          accessibilityLiveRegion="assertive"
+          accessibilityRole="alert"
+        >
           {parsedData.errors.map((error, index) => (
             <View key={index} style={styles.errorRow}>
               <X size={14} color={colors.error} />
@@ -1124,21 +1148,34 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
               <Text style={styles.importBtnText}>
                 Import {parsedData.questions.length} Question{parsedData.questions.length !== 1 ? 's' : ''}
               </Text>
-              <ChevronRight size={20} color="#FFF" />
+              <ChevronRight size={20} color={colors.primaryText} />
             </TouchableOpacity>
           </View>
         )}
 
-        {step === 'validate' && (
+        {step === 'validate' && parsedData && (
           <View style={[styles.footer, { borderTopColor: colors.border }]}>
             <TouchableOpacity
-              style={[styles.retryBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+              style={[styles.retryBtn, { backgroundColor: colors.card, borderColor: colors.border, flex: parsedData.questions.length > 0 ? 1 : undefined }]}
               onPress={() => setStep('select')}
               accessibilityRole="button"
               accessibilityLabel="Try again with a different file"
             >
               <Text style={[styles.retryBtnText, { color: colors.text }]}>Try Again</Text>
             </TouchableOpacity>
+            {parsedData.questions.length > 0 && (
+              <TouchableOpacity
+                style={[styles.importBtn, { backgroundColor: colors.primary, flex: 2 }]}
+                onPress={() => setStep('preview')}
+                accessibilityRole="button"
+                accessibilityLabel={`Continue with ${parsedData.questions.length} valid questions`}
+              >
+                <Text style={styles.importBtnText}>
+                  Continue ({parsedData.questions.length} valid)
+                </Text>
+                <ChevronRight size={20} color={colors.primaryText} />
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>

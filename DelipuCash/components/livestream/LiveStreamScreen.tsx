@@ -39,7 +39,7 @@ import { useVideoPremiumAccess } from '@/services/purchasesHooks';
 import { useVideoStore, useVideoRecordingProgress, useVideoLivestreamStatus } from '@/store/VideoStore';
 import { useStartLivestream, useEndLivestream } from '@/services/hooks';
 import { useAuthStore } from '@/utils/auth/store';
-import { uploadVideoToR2 } from '@/services/r2UploadService';
+import { uploadVideoToR2, uploadMediaToR2, type UploadOptions } from '@/services/r2UploadService';
 
 // Components
 import { CameraControls } from './CameraControls';
@@ -529,18 +529,29 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   }, [startRecording]);
 
   // Post-capture draft handlers
-  const handlePublish = useCallback(async (metadata: { title: string; description: string }) => {
+  const handlePublish = useCallback(async (metadata: { title: string; description: string; thumbnailUri?: string }) => {
     if (!draftState) return;
     setDraftState(null);
     setIsUploading(true);
 
+    const progressHandler: UploadOptions = { onProgress: (event) => setUploadProgress(event.progress) };
+
     try {
-      const result = await uploadVideoToR2(
-        draftState.videoUri,
-        userId!,
-        { title: metadata.title, description: metadata.description, duration: draftState.duration },
-        { onProgress: (event) => setUploadProgress(event.progress) }
-      );
+      // Use combined video+thumbnail upload when thumbnail is available
+      const result = metadata.thumbnailUri
+        ? await uploadMediaToR2(
+            draftState.videoUri,
+            metadata.thumbnailUri,
+            userId!,
+            { title: metadata.title, description: metadata.description, duration: draftState.duration },
+            progressHandler
+          )
+        : await uploadVideoToR2(
+            draftState.videoUri,
+            userId!,
+            { title: metadata.title, description: metadata.description, duration: draftState.duration },
+            progressHandler
+          );
 
       setIsUploading(false);
       setUploadProgress(0);
@@ -549,6 +560,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         // Queue for retry via upload queue processor
         useVideoStore.getState().enqueuePendingUpload({
           videoUri: draftState.videoUri,
+          thumbnailUri: metadata.thumbnailUri,
           title: metadata.title,
           description: metadata.description,
           duration: draftState.duration,
@@ -571,6 +583,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       setUploadProgress(0);
       useVideoStore.getState().enqueuePendingUpload({
         videoUri: draftState.videoUri,
+        thumbnailUri: metadata.thumbnailUri,
         title: metadata.title,
         description: metadata.description,
         duration: draftState.duration,
@@ -579,7 +592,6 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       Alert.alert('Upload Queued', 'Upload will retry automatically.');
       onClose?.();
     }
-  // TODO: Add persistent upload progress notification visible outside this screen
   }, [draftState, userId, onVideoUploaded, onClose]);
 
   const handleDiscard = useCallback(() => {
@@ -799,6 +811,8 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         animationType="slide"
         presentationStyle="fullScreen"
         onRequestClose={handleClose}
+        statusBarTranslucent
+        navigationBarTranslucent
       >
         {content}
       </Modal>

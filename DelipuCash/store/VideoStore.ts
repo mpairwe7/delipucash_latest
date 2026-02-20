@@ -119,6 +119,7 @@ export interface VideoPlayerState {
 export interface PendingUpload {
   id: string;
   videoUri: string;
+  thumbnailUri?: string;
   title: string;
   description: string;
   duration: number;

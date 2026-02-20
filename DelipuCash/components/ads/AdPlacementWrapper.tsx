@@ -1008,10 +1008,11 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // Between Content
+  // Between Content — spacing controlled via parent `style` prop override.
+  // Defaults are conservative; screens pass their own margins.
   betweenContentContainer: {
-    marginVertical: 24,
-    paddingHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 0,
   },
   betweenContentDivider: {
     flexDirection: 'row',

@@ -20,6 +20,8 @@ const VALID_QUESTION_TYPES = [
 ];
 
 const MAX_QUESTIONS_PER_FILE = 200;
+const MAX_QUESTION_TEXT_LENGTH = 2000;
+const MAX_OPTIONS_PER_QUESTION = 100;
 
 // ============================================================================
 // COLUMN AUTO-MAPPING (ported from utils/columnAutoMapper.ts)
@@ -197,6 +199,12 @@ function parseDelimitedLine(line, delimiter = ',') {
       current += char;
     }
   }
+
+  // If still in quotes at end of line, close gracefully
+  if (inQuotes) {
+    values._unclosedQuote = true;
+  }
+
   values.push(current.trim());
   return values;
 }
@@ -268,13 +276,26 @@ function parseJSONFile(content) {
       return;
     }
 
+    const questionText = String(q.text).trim();
+
+    // Validate text length
+    if (questionText.length > MAX_QUESTION_TEXT_LENGTH) {
+      warnings.push(`Question ${index + 1}: Text truncated from ${questionText.length} to ${MAX_QUESTION_TEXT_LENGTH} characters`);
+    }
+
     const rawType = String(q.type || 'text').toLowerCase();
     if (!isValidQuestionType(rawType)) {
       warnings.push(`Question ${index + 1}: Invalid type "${q.type}", defaulting to "text"`);
     }
     const type = isValidQuestionType(rawType) ? rawType : 'text';
 
-    const options = Array.isArray(q.options) ? q.options.map(String) : [];
+    let options = Array.isArray(q.options) ? q.options.map(String) : [];
+
+    // Validate options count
+    if (options.length > MAX_OPTIONS_PER_QUESTION) {
+      warnings.push(`Question ${index + 1}: Options truncated from ${options.length} to ${MAX_OPTIONS_PER_QUESTION}`);
+      options = options.slice(0, MAX_OPTIONS_PER_QUESTION);
+    }
 
     // Validate options for choice types
     if (['radio', 'checkbox', 'dropdown'].includes(type) && options.length < 2) {
@@ -290,9 +311,17 @@ function parseJSONFile(content) {
       }
     }
 
+    // Validate integer values for minValue/maxValue
+    if (q.minValue !== undefined && typeof q.minValue === 'number' && !Number.isFinite(q.minValue)) {
+      warnings.push(`Question ${index + 1}: Invalid minValue, ignoring`);
+    }
+    if (q.maxValue !== undefined && typeof q.maxValue === 'number' && !Number.isFinite(q.maxValue)) {
+      warnings.push(`Question ${index + 1}: Invalid maxValue, ignoring`);
+    }
+
     questions.push({
       id: `imported_${index + 1}`,
-      text: String(q.text).trim(),
+      text: questionText.slice(0, MAX_QUESTION_TEXT_LENGTH),
       type,
       options,
       required: Boolean(q.required),
@@ -371,11 +400,23 @@ function parseSpreadsheetFile(content) {
   const questions = [];
   for (let i = 1; i < lines.length; i++) {
     const values = parseDelimitedLine(lines[i], delimiter);
-    const text = values[textIndex]?.replace(/^["']|["']$/g, '').trim();
+
+    // Warn about unclosed quotes in this row
+    if (values._unclosedQuote) {
+      warnings.push(`Row ${i + 1}: Unclosed quote detected — values may be misaligned`);
+    }
+
+    let text = values[textIndex]?.replace(/^["']|["']$/g, '').trim();
 
     if (!text) {
       invalidRows.push({ rowIndex: i + 1, reason: 'Empty question text', rawValues: values });
       continue;
+    }
+
+    // Validate text length
+    if (text.length > MAX_QUESTION_TEXT_LENGTH) {
+      warnings.push(`Row ${i + 1}: Question text truncated from ${text.length} to ${MAX_QUESTION_TEXT_LENGTH} characters`);
+      text = text.slice(0, MAX_QUESTION_TEXT_LENGTH);
     }
 
     const rawType = typeIndex !== -1 ? values[typeIndex]?.toLowerCase().trim() : 'text';
@@ -392,6 +433,12 @@ function parseSpreadsheetFile(content) {
       } else {
         options = optVal.split('|').map((o) => o.trim()).filter(Boolean);
       }
+    }
+
+    // Validate options count
+    if (options.length > MAX_OPTIONS_PER_QUESTION) {
+      warnings.push(`Row ${i + 1}: Options truncated from ${options.length} to ${MAX_OPTIONS_PER_QUESTION}`);
+      options = options.slice(0, MAX_OPTIONS_PER_QUESTION);
     }
 
     // Per-row validation
@@ -432,7 +479,9 @@ const SAMPLE_JSON = JSON.stringify({
   title: "Customer Feedback Survey",
   description: "Help us improve our services by sharing your experience",
   questions: [
+    { text: "What is your name?", type: "text", required: true, placeholder: "Enter your full name" },
     { text: "How would you rate our service?", type: "rating", required: true, minValue: 1, maxValue: 5, points: 10 },
+    { text: "What is your preferred contact method?", type: "radio", options: ["Email", "Phone", "SMS", "WhatsApp"], required: true, points: 5 },
     { text: "Which features do you use most?", type: "checkbox", options: ["Speed", "Design", "Support", "Price"], required: true, points: 5 },
     { text: "How did you hear about us?", type: "dropdown", options: ["Social Media", "Friend", "Advertisement", "Search Engine"], required: false, points: 5 },
     { text: "Would you recommend us to a friend?", type: "boolean", required: true, points: 5 },
@@ -448,7 +497,9 @@ const SAMPLE_JSON = JSON.stringify({
 }, null, 2);
 
 const SAMPLE_CSV = `text,type,options,required,minValue,maxValue,placeholder,points
+"What is your name?",text,,true,,,"Enter your full name",
 "How would you rate our service?",rating,,true,1,5,,10
+"What is your preferred contact method?",radio,"Email|Phone|SMS|WhatsApp",true,,,,5
 "Which features do you use most?",checkbox,"Speed|Design|Support|Price",true,,,,5
 "How did you hear about us?",dropdown,"Social Media|Friend|Advertisement|Search Engine",false,,,,5
 "Would you recommend us to a friend?",boolean,,true,,,,5
@@ -458,7 +509,9 @@ const SAMPLE_CSV = `text,type,options,required,minValue,maxValue,placeholder,poi
 "Any additional feedback?",paragraph,,false,,,"Share your detailed thoughts...",0`;
 
 const SAMPLE_TSV = `text\ttype\toptions\trequired\tminValue\tmaxValue\tplaceholder\tpoints
+"What is your name?"\ttext\t\ttrue\t\t\tEnter your full name\t
 "How would you rate our service?"\trating\t\ttrue\t1\t5\t\t10
+"What is your preferred contact method?"\tradio\tEmail|Phone|SMS|WhatsApp\ttrue\t\t\t\t5
 "Which features do you use most?"\tcheckbox\tSpeed|Design|Support|Price\ttrue\t\t\t\t5
 "How did you hear about us?"\tdropdown\tSocial Media|Friend|Advertisement|Search Engine\tfalse\t\t\t\t5
 "Would you recommend us to a friend?"\tboolean\t\ttrue\t\t\t\t5
@@ -486,6 +539,15 @@ export const previewImport = asyncHandler(async (req, res) => {
 
   const { originalname, buffer, mimetype } = req.file;
   const content = buffer.toString('utf-8');
+
+  // Detect binary / non-text content (null bytes indicate wrong encoding or binary file)
+  if (content.includes('\0')) {
+    return res.status(400).json({
+      success: false,
+      error: 'BINARY_FILE',
+      message: 'File appears to be binary or uses an unsupported encoding. Please upload a UTF-8 encoded text file.',
+    });
+  }
 
   // Detect format from filename extension (more reliable than MIME)
   const format = detectFormatFromFilename(originalname);

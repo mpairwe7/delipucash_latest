@@ -13,11 +13,12 @@
  */
 
 import { useEffect, useRef } from 'react';
+import * as FileSystem from 'expo-file-system';
 import { useVideoStore } from '@/store/VideoStore';
 import { useAuthStore } from '@/utils/auth/store';
 import { useToast } from '@/components/ui/Toast';
 import { onlineManager } from '@tanstack/react-query';
-import { uploadVideoToR2 } from '@/services/r2UploadService';
+import { uploadVideoToR2, uploadMediaToR2 } from '@/services/r2UploadService';
 
 const MAX_RETRIES = 3;
 
@@ -68,15 +69,26 @@ export function useUploadQueueProcessor() {
             // Increment retry count before attempting
             useVideoStore.getState().incrementUploadRetry(upload.id);
 
-            const result = await uploadVideoToR2(
-              upload.videoUri,
-              upload.userId,
-              {
-                title: upload.title,
-                description: upload.description,
-                duration: upload.duration,
-              },
-            );
+            // Validate thumbnail file still exists (may be cleaned up after app restart)
+            let thumbnailUri = upload.thumbnailUri;
+            if (thumbnailUri) {
+              try {
+                const info = await FileSystem.getInfoAsync(thumbnailUri);
+                if (!info.exists) thumbnailUri = undefined;
+              } catch {
+                thumbnailUri = undefined;
+              }
+            }
+
+            // Use combined upload when thumbnail is available, fallback to video-only
+            const uploadMeta = {
+              title: upload.title,
+              description: upload.description,
+              duration: upload.duration,
+            };
+            const result = thumbnailUri
+              ? await uploadMediaToR2(upload.videoUri, thumbnailUri, upload.userId, uploadMeta)
+              : await uploadVideoToR2(upload.videoUri, upload.userId, uploadMeta);
 
             if (!result.success) {
               throw new Error(result.error || 'Upload failed');
