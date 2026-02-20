@@ -76,6 +76,8 @@ export interface EarningsOverviewProps {
   totalEarnings: number;
   /** Total rewards earned */
   totalRewards?: number;
+  /** User's points balance (for points-based display) */
+  pointsBalance?: number;
   /** User's first name for personalization */
   userName?: string;
   /** Whether account is verified */
@@ -112,6 +114,7 @@ export function EarningsOverview({
   walletBalance,
   totalEarnings,
   totalRewards = 0,
+  pointsBalance,
   userName,
   isVerified = false,
   onWithdraw,
@@ -218,15 +221,36 @@ export function EarningsOverview({
             >
               Available Balance
             </AccessibleText>
-            <AccessibleText
-              variant="h1"
-              customColor="#FFFFFF"
-              style={styles.balanceValue}
-              accessibilityLiveRegion="polite"
-              accessibilityLabel={`Balance: ${formatCurrency(walletBalance)}`}
-            >
-              {formatCurrency(walletBalance)}
-            </AccessibleText>
+            {pointsBalance != null ? (
+              <>
+                <AccessibleText
+                  variant="h1"
+                  customColor="#FFFFFF"
+                  style={styles.balanceValue}
+                  accessibilityLiveRegion="polite"
+                  accessibilityLabel={`Balance: ${pointsBalance} points`}
+                >
+                  {pointsBalance.toLocaleString()} pts
+                </AccessibleText>
+                <AccessibleText
+                  variant="caption"
+                  customColor="rgba(255,255,255,0.6)"
+                  accessibilityLabel={`Equivalent to ${formatCurrency(walletBalance)}`}
+                >
+                  {'\u2248'} {formatCurrency(walletBalance)}
+                </AccessibleText>
+              </>
+            ) : (
+              <AccessibleText
+                variant="h1"
+                customColor="#FFFFFF"
+                style={styles.balanceValue}
+                accessibilityLiveRegion="polite"
+                accessibilityLabel={`Balance: ${formatCurrency(walletBalance)}`}
+              >
+                {formatCurrency(walletBalance)}
+              </AccessibleText>
+            )}
           </Animated.View>
         </View>
 

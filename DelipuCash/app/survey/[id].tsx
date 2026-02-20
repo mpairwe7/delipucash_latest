@@ -239,7 +239,6 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Local UI state
   const [showReview, setShowReview] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [payoutInitiated, setPayoutInitiated] = useState(false);
   const [showDropdownModal, setShowDropdownModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -475,8 +474,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       {
         onSuccess: (data) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-          storeSetSubmitted(data.reward || 0);
-          setPayoutInitiated(!!data.payoutInitiated);
+          storeSetSubmitted(data.pointsAwarded || data.reward || 0);
           closeReviewModal();
           setShowSuccess(true);
         },
@@ -563,8 +561,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     return (
       <SurveyCompletionOverlay
         visible={showSuccess}
-        earnedAmount={submittedReward ?? 0}
-        payoutInitiated={payoutInitiated}
+        pointsEarned={submittedReward ?? 0}
         completedSurveyId={id || ''}
         onBackToSurveys={() => {
           storeReset();

@@ -2,6 +2,7 @@ import type { AppUser } from "@/types";
 import * as SecureStore from "expo-secure-store";
 import { create } from "zustand";
 import { devtools } from 'zustand/middleware';
+import { silentRefresh } from '@/services/tokenRefresh';
 
 /**
  * Authentication key for secure storage
@@ -247,36 +248,17 @@ export function initializeAuth(): void {
  * refresh token exists.  The UI is already rendering with stale user data;
  * this just swaps in a fresh access token so the first API call succeeds
  * without the extra 401 → refresh → retry round-trip.
+ *
+ * 2026 fix: delegates to the shared silentRefresh() so that the cold-start
+ * refresh and the 401 interceptor share the same coalescing promise. This
+ * eliminates the race condition where both paths fire simultaneously, causing
+ * double token rotation and family revocation on the server.
  */
-function proactiveRefresh(refreshToken: string): void {
-  const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
-  const apiBase = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
-
-  fetch(`${apiBase}/api/auth/refresh-token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        // Refresh rejected — clear auth, user must re-login
-        useAuthStore.getState().setAuth(null);
-        return;
-      }
-      const data = await res.json();
-      const currentAuth = useAuthStore.getState().auth;
-      if (currentAuth) {
-        useAuthStore.getState().setAuth({
-          token: data.token,
-          refreshToken: data.refreshToken,
-          user: data.user ?? currentAuth.user,
-        });
-      }
-    })
-    .catch(() => {
-      // Network failure on startup — keep stale auth, the 401 interceptor
-      // will retry later when connectivity returns.
-    });
+function proactiveRefresh(_refreshToken: string): void {
+  silentRefresh().catch(() => {
+    // Network failure on startup — keep stale auth, the 401 interceptor
+    // will retry later when connectivity returns.
+  });
 }
 
 // ============================================================================

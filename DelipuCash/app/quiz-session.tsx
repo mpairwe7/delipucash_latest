@@ -76,6 +76,7 @@ import {
   canRedeem,
   getRedemptionOptions,
 } from '@/services/quizApi';
+import { useRewardConfig } from '@/services/configHooks';
 import useUser from '@/utils/useUser';
 import { lockPortrait } from '@/hooks/useScreenOrientation';
 import { formatCurrency } from '@/services';
@@ -307,7 +308,8 @@ export default function QuizSessionScreen({
 
   const { data: userData } = useUser();
   const userId = userData?.id || '';
-  
+  const { data: rewardConfig } = useRewardConfig();
+
   // Queries
   const { data: questions, isLoading, error, refetch } = useQuizQuestions(questionsLimit, category);
   const { data: userPoints } = useUserPoints(userId);
@@ -786,7 +788,7 @@ export default function QuizSessionScreen({
 
   if (sessionState === 'SESSION_SUMMARY' || sessionState === 'REWARDS_SELECTION') {
     const availablePoints = (userPoints?.availablePoints || 0) + sessionSummary.totalEarned;
-    const redemptionOptions = getRedemptionOptions(availablePoints);
+    const redemptionOptions = getRedemptionOptions(availablePoints, rewardConfig);
 
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -883,13 +885,13 @@ export default function QuizSessionScreen({
                 Available Balance
               </Text>
               <Text style={[styles.pointsValue, { color: colors.text }]}>
-                {availablePoints} pts ≈ {formatCurrency(pointsToCash(availablePoints))}
+                {availablePoints} pts ≈ {formatCurrency(pointsToCash(availablePoints, rewardConfig))}
               </Text>
             </View>
           </View>
 
           {/* Redemption Section */}
-          {canRedeem(availablePoints) && (
+          {canRedeem(availablePoints, rewardConfig) && (
             <View style={[styles.redemptionCard, { backgroundColor: colors.card }]}>
               <View style={styles.redemptionHeader}>
                 <Gift size={24} color={colors.primary} strokeWidth={1.5} />

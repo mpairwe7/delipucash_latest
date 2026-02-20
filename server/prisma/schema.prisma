@@ -702,6 +702,16 @@ model LoginSession {
   @@index([tokenFamily])
 }
 
+model AppConfig {
+  id                     String   @id @default("singleton")
+  surveyCompletionPoints Int      @default(10)
+  pointsToCashNumerator  Int      @default(2500)
+  pointsToCashDenominator Int     @default(20)
+  minWithdrawalPoints    Int      @default(50)
+  updatedAt              DateTime @updatedAt
+  updatedBy              String?  @db.Uuid
+}
+
 enum PaymentStatus {
   PENDING
   SUCCESSFUL

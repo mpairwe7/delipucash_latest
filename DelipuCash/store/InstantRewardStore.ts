@@ -24,25 +24,29 @@ import { getStreakBonus } from '@/utils/quiz-utils';
 // ===========================================
 
 /**
- * Reward constants for instant reward questions
- * Each correct answer earns 500 UGX (equivalent to 5 points)
+ * RewardConfig type — mirrors the AppConfig from the backend.
+ * Imported by components via configHooks.ts; re-exported here for convenience.
+ */
+export interface RewardConfig {
+  surveyCompletionPoints: number;
+  pointsToCashNumerator: number;
+  pointsToCashDenominator: number;
+  minWithdrawalPoints: number;
+}
+
+/**
+ * Reward constants for instant reward questions.
+ * INSTANT_REWARD_AMOUNT and INSTANT_REWARD_POINTS remain fixed
+ * (quiz rewards are not admin-configurable — only survey rewards are).
+ * MIN_REDEMPTION_POINTS is a UI fallback; actual enforcement uses config.
  */
 export const REWARD_CONSTANTS = {
   /** Amount in UGX for each correct answer */
   INSTANT_REWARD_AMOUNT: 500,
-  /** Points equivalent (1 point = 100 UGX) */
+  /** Points equivalent (for instant quiz rewards) */
   INSTANT_REWARD_POINTS: 5,
-  /** Conversion rate: points to UGX */
-  POINTS_TO_UGX_RATE: 100,
-  /** Minimum points required for redemption */
+  /** UI fallback for minimum redemption — overridden by config.minWithdrawalPoints */
   MIN_REDEMPTION_POINTS: 50,
-  /** Redemption options (points to UGX) */
-  REDEMPTION_OPTIONS: [
-    { points: 50, cashValue: 5000 },
-    { points: 100, cashValue: 10000 },
-    { points: 250, cashValue: 25000 },
-    { points: 500, cashValue: 50000 },
-  ] as const,
 } as const;
 
 /** Redemption type for rewards */
@@ -206,7 +210,8 @@ export interface InstantRewardUIActions {
   completeRedemption: (transactionRef: string, success: boolean, errorMessage?: string) => void;
   cancelRedemption: () => void;
   canRedeem: () => boolean;
-  getRedemptionOptions: () => typeof REWARD_CONSTANTS.REDEMPTION_OPTIONS[number][];
+  /** @deprecated Use getRedemptionOptions(config) from configHooks instead */
+  getRedemptionOptions: () => { points: number; cashValue: number }[];
 
   // Current Question State
   setCurrentQuestion: (questionId: string | null) => void;
@@ -630,14 +635,12 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
 
       canRedeem: () => {
         const { walletBalance } = get();
-        const totalPoints = Math.floor(walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
-        return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+        return walletBalance >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
       },
 
+      /** @deprecated Use getAvailableRedemptionOptions(userPoints, config) from module exports instead */
       getRedemptionOptions: () => {
-        const { walletBalance } = get();
-        const totalPoints = Math.floor(walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
-        return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= totalPoints);
+        return [];
       },
 
       // ========================================
@@ -818,10 +821,14 @@ export const selectAttemptedCount = (state: InstantRewardUIState) =>
 export const selectTotalRewardsEarned = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalRewardsEarned ?? 0;
 
-/** Reactive selector for canRedeem — uses server-synced walletBalance as single source of truth */
+/**
+ * Reactive selector for canRedeem.
+ * Uses walletBalance (which is now the raw points count from the server).
+ * minWithdrawalPoints defaults to REWARD_CONSTANTS.MIN_REDEMPTION_POINTS (50)
+ * until the config is loaded and passed at the component level.
+ */
 export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
-  const totalPoints = Math.floor(state.walletBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
-  return totalPoints >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+  return state.walletBalance >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
 };
 
 export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>
@@ -896,24 +903,49 @@ export const useOfflineQueueState = () => useInstantRewardStore(useShallow(selec
 // Helper Functions
 // ===========================================
 
-/** Convert points to cash value in UGX */
-export const pointsToCash = (points: number): number =>
-  points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
-
-/** Convert cash value to points */
-export const cashToPoints = (cash: number): number =>
-  Math.floor(cash / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
-
-/** Check if user can redeem rewards */
-export const canRedeemRewards = (totalRewardsEarned: number): boolean => {
-  const points = totalRewardsEarned / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
-  return points >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+/**
+ * Convert points to UGX using config-driven rate.
+ * Falls back to 100 UGX/point if no config provided (backward compat).
+ */
+export const pointsToCash = (points: number, config?: RewardConfig): number => {
+  if (config) {
+    return Math.floor((points * config.pointsToCashNumerator) / config.pointsToCashDenominator);
+  }
+  // Legacy fallback (instant quiz rewards: 1 point = 100 UGX)
+  return points * 100;
 };
 
-/** Get available redemption options based on points */
-export const getAvailableRedemptionOptions = (totalRewardsEarned: number) => {
-  const points = totalRewardsEarned / REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
-  return REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(opt => opt.points <= points);
+/**
+ * Convert UGX to points using config-driven rate.
+ * Falls back to 100 UGX/point if no config provided.
+ */
+export const cashToPoints = (cash: number, config?: RewardConfig): number => {
+  if (config) {
+    return Math.ceil((cash * config.pointsToCashDenominator) / config.pointsToCashNumerator);
+  }
+  return Math.floor(cash / 100);
+};
+
+/** Check if user can redeem rewards using config-driven minimum */
+export const canRedeemRewards = (userPoints: number, config?: RewardConfig): boolean => {
+  const minPoints = config?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+  return userPoints >= minPoints;
+};
+
+/** Generate dynamic redemption options from config */
+export const getRedemptionOptions = (config: RewardConfig) => {
+  const min = config.minWithdrawalPoints;
+  return [
+    { points: min, cashValue: pointsToCash(min, config) },
+    { points: min * 2, cashValue: pointsToCash(min * 2, config) },
+    { points: min * 5, cashValue: pointsToCash(min * 5, config) },
+    { points: min * 10, cashValue: pointsToCash(min * 10, config) },
+  ];
+};
+
+/** Get available redemption options filtered by user's balance */
+export const getAvailableRedemptionOptions = (userPoints: number, config: RewardConfig) => {
+  return getRedemptionOptions(config).filter(opt => opt.points <= userPoints);
 };
 
 // ===========================================

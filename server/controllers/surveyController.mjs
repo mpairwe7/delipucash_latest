@@ -3,6 +3,7 @@ import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { dispatchWebhooks } from '../lib/webhookDispatcher.mjs';
 import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
+import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -567,84 +568,21 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       },
     });
 
-    // Calculate reward (from survey's rewardAmount field)
-    const reward = survey.rewardAmount || 0;
+    // Award fixed points from global config (replaces per-survey rewardAmount)
+    const rewardConfig = await getRewardConfig();
+    const pointsAwarded = rewardConfig.surveyCompletionPoints;
+    const cashEquivalent = pointsToUgx(pointsAwarded, rewardConfig);
 
-    // Award reward points to user if applicable
-    if (reward > 0) {
+    if (pointsAwarded > 0) {
       try {
         await prisma.appUser.update({
           where: { id: userId },
-          data: {
-            points: { increment: reward },
-          },
+          data: { points: { increment: pointsAwarded } },
         });
-        console.log(`Awarded ${reward} points to user ${userId}`);
+        console.log(`Awarded ${pointsAwarded} points to user ${userId}`);
       } catch (rewardError) {
         console.error('Error awarding reward points:', rewardError);
         // Don't fail the submission if reward fails
-      }
-    }
-
-    // Auto-payout: disburse mobile money if survey has a budget
-    // Uses interactive $transaction with re-read to prevent race conditions
-    let payoutInitiated = false;
-    if (reward > 0 && survey.totalBudget) {
-      try {
-        // Fetch respondent's phone info
-        const respondent = await prisma.appUser.findUnique({
-          where: { id: userId },
-          select: { phone: true },
-        });
-
-        // Determine provider from phone prefix (Uganda: 077/078=MTN, 075/070=AIRTEL)
-        const phone = respondent?.phone?.replace(/\s+/g, '');
-        const provider = phone ? detectMoMoProvider(phone) : null;
-
-        if (phone && provider) {
-          // Atomic budget check + reserve: re-read survey inside transaction to prevent
-          // concurrent submissions from exceeding totalBudget
-          const reserved = await prisma.$transaction(async (tx) => {
-            const freshSurvey = await tx.survey.findUnique({
-              where: { id: surveyId },
-              select: { totalBudget: true, amountDisbursed: true },
-            });
-            if (!freshSurvey || !freshSurvey.totalBudget) return false;
-            if (freshSurvey.amountDisbursed + reward > freshSurvey.totalBudget) return false;
-
-            await tx.survey.update({
-              where: { id: surveyId },
-              data: { amountDisbursed: { increment: reward } },
-            });
-            await tx.surveyResponse.update({
-              where: { id: surveyResponse.id },
-              data: {
-                amountAwarded: reward,
-                paymentStatus: 'PENDING',
-                paymentProvider: provider,
-                phoneNumber: phone,
-              },
-            });
-            return true;
-          });
-
-          if (reserved) {
-            payoutInitiated = true;
-
-            // Fire-and-forget: process actual disbursement (non-blocking)
-            processSurveyPayout({
-              responseId: surveyResponse.id,
-              phone,
-              provider,
-              amount: reward,
-              userId,
-              surveyId,
-            }).catch((err) => console.error('Survey payout error (fire-and-forget):', err));
-          }
-        }
-      } catch (payoutError) {
-        console.error('Error initiating survey auto-payout:', payoutError);
-        // Don't fail the submission — points were already awarded
       }
     }
 
@@ -660,11 +598,11 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     }
 
     // SSE: Notify submitter of completion + reward
-    if (reward > 0) {
+    if (pointsAwarded > 0) {
       publishEvent(userId, 'survey.completed', {
         surveyId,
-        reward,
-        payoutInitiated,
+        pointsAwarded,
+        cashEquivalent,
       }).catch(() => {});
     }
 
@@ -679,11 +617,9 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     res.status(201).json({
       success: true,
       submitted: true,
-      message: payoutInitiated
-        ? 'Survey response submitted! Your mobile money payment is being processed.'
-        : 'Survey response submitted successfully!',
-      reward,
-      payoutInitiated,
+      message: 'Survey response submitted successfully!',
+      pointsAwarded,
+      cashEquivalent,
       responseId: surveyResponse.id,
       submittedAt: surveyResponse.createdAt,
     });

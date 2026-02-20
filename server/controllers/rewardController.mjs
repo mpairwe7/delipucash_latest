@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+import { getRewardConfig as fetchRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 
 // Add Reward Points
 export const addReward = asyncHandler(async (req, res) => {
@@ -237,7 +238,7 @@ export const claimDailyReward = asyncHandler(async (req, res) => {
 // Redeem Rewards — convert points to cash/airtime via mobile money
 export const redeemRewards = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { cashValue, provider, phoneNumber, type, idempotencyKey } = req.body;
+  const { pointsToRedeem, cashValue: legacyCashValue, provider, phoneNumber, type, idempotencyKey } = req.body;
 
   // Idempotency: if a key is provided, check for existing PENDING/SUCCESSFUL redemption
   if (idempotencyKey) {
@@ -262,9 +263,12 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     }
   }
 
-  // Validate inputs
-  if (!cashValue || !provider || !phoneNumber || !type) {
-    return res.status(400).json({ success: false, error: 'Missing required fields: cashValue, provider, phoneNumber, type.' });
+  // Validate inputs — accept pointsToRedeem (new) or cashValue (legacy fallback)
+  if (!pointsToRedeem && !legacyCashValue) {
+    return res.status(400).json({ success: false, error: 'Missing required field: pointsToRedeem.' });
+  }
+  if (!provider || !phoneNumber || !type) {
+    return res.status(400).json({ success: false, error: 'Missing required fields: provider, phoneNumber, type.' });
   }
   if (!['MTN', 'AIRTEL'].includes(provider)) {
     return res.status(400).json({ success: false, error: 'Invalid provider. Must be MTN or AIRTEL.' });
@@ -272,8 +276,26 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   if (!['CASH', 'AIRTIME'].includes(type)) {
     return res.status(400).json({ success: false, error: 'Invalid type. Must be CASH or AIRTIME.' });
   }
-  if (cashValue <= 0) {
-    return res.status(400).json({ success: false, error: 'cashValue must be positive.' });
+
+  // Load dynamic config
+  const rewardConfig = await fetchRewardConfig();
+
+  // Determine points and cash from config-driven rate
+  const pointsRequired = pointsToRedeem
+    ? Math.floor(Number(pointsToRedeem))
+    : Math.ceil((Number(legacyCashValue) * rewardConfig.pointsToCashDenominator) / rewardConfig.pointsToCashNumerator);
+  const cashValue = pointsToUgx(pointsRequired, rewardConfig);
+
+  if (pointsRequired <= 0 || cashValue <= 0) {
+    return res.status(400).json({ success: false, error: 'Redemption amount must be positive.' });
+  }
+
+  // Minimum withdrawal check
+  if (pointsRequired < rewardConfig.minWithdrawalPoints) {
+    return res.status(400).json({
+      success: false,
+      error: `Minimum ${rewardConfig.minWithdrawalPoints} points required for withdrawal.`,
+    });
   }
 
   // Validate phone number format (Uganda: 9-13 digits, starts with valid prefix)
@@ -292,9 +314,6 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       return res.status(400).json({ success: false, error: 'Phone number prefix does not match a supported provider.' });
     }
   }
-
-  const POINTS_TO_UGX = 100;
-  const pointsRequired = Math.ceil(cashValue / POINTS_TO_UGX);
 
   // Phase 1: Validate balance, deduct points, create PENDING record (transactional)
   let redemption;

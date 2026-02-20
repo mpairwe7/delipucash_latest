@@ -5,6 +5,7 @@ import { formatCurrency, rewardsApi } from "@/services/api";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useInstantRewardQuestions } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
+import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult } from "@/types";
 import {
@@ -402,12 +403,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Sync Zustand wallet with server-side points to prevent drift ──
   // (Duolingo/Cash App pattern: source of truth is always the server)
+  const { data: rewardConfig } = useRewardConfig();
   useEffect(() => {
-    if (user?.points != null) {
-      const serverBalanceUGX = user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+    if (user?.points != null && rewardConfig) {
+      const serverBalanceUGX = pointsToUgx(user.points, rewardConfig);
       updateWalletBalance(serverBalanceUGX);
     }
-  }, [user?.points, updateWalletBalance]);
+  }, [user?.points, rewardConfig, updateWalletBalance]);
 
   // ── Soft auth check — user navigated from an auth-guarded screen,
   //    so only show a toast if auth expires mid-session (no hard redirect) ──

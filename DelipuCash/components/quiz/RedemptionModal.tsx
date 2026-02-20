@@ -75,7 +75,10 @@ import {
   RewardRedemptionType,
   PaymentProvider,
   pointsToCash,
+  getRedemptionOptions,
+  type RewardConfig,
 } from '@/store/InstantRewardStore';
+import { useRewardConfig } from '@/services/configHooks';
 import { triggerHaptic } from '@/utils/quiz-utils';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -365,10 +368,11 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     }
   }, [visible, initialType, initialProvider, initialPhone, userPhone]);
 
-  const availablePoints = Math.floor(availableAmount / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
-  const redemptionOptions = REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(
-    (opt) => opt.points <= availablePoints,
-  );
+  const { data: rewardConfig } = useRewardConfig();
+  const availablePoints = availableAmount; // availableAmount is now the raw points count
+  const redemptionOptions = rewardConfig
+    ? getRedemptionOptions(rewardConfig).filter((opt) => opt.points <= availablePoints)
+    : [];
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -405,7 +409,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     setError(null);
 
     try {
-      const cashValue = pointsToCash(selectedAmount);
+      const cashValue = pointsToCash(selectedAmount, rewardConfig ?? undefined);
       const result = await onRedeem(cashValue, selectedType, selectedProvider, cleanPhone);
       if (result.success) {
         triggerHaptic('success');
@@ -595,7 +599,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     <Animated.View entering={FadeInDown.duration(300)} style={styles.stepContent}>
       <Text style={[styles.stepTitle, { color: colors.text }]}>Payment Details</Text>
       <Text style={[styles.stepSubtitle, { color: colors.textMuted }]}>
-        {selectedType === 'CASH' ? 'Mobile Money' : 'Airtime'} — {formatCurrency(pointsToCash(selectedAmount))}
+        {selectedType === 'CASH' ? 'Mobile Money' : 'Airtime'} — {formatCurrency(pointsToCash(selectedAmount, rewardConfig ?? undefined))}
       </Text>
 
       {/* Provider pills */}
@@ -742,7 +746,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         style={[styles.receiptCard, { backgroundColor: colors.card, borderColor: colors.border }]}
         accessible
         accessibilityRole="summary"
-        accessibilityLabel={`Redeeming ${formatCurrency(pointsToCash(selectedAmount))} via ${selectedType === 'CASH' ? 'mobile money' : 'airtime'} to ${selectedProvider} ${phoneNumber}`}
+        accessibilityLabel={`Redeeming ${formatCurrency(pointsToCash(selectedAmount, rewardConfig ?? undefined))} via ${selectedType === 'CASH' ? 'mobile money' : 'airtime'} to ${selectedProvider} ${phoneNumber}`}
       >
         <View style={styles.receiptRow}>
           <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Payout Type</Text>
@@ -754,7 +758,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         <View style={styles.receiptRow}>
           <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Amount</Text>
           <Text style={[styles.receiptValue, { color: colors.success }]}>
-            {formatCurrency(pointsToCash(selectedAmount))}
+            {formatCurrency(pointsToCash(selectedAmount, rewardConfig ?? undefined))}
           </Text>
         </View>
         <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />

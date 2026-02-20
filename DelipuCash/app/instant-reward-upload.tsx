@@ -46,6 +46,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { pointsToCash, cashToPoints, REWARD_CONSTANTS } from "@/store/InstantRewardStore";
+import { useRewardConfig } from "@/services/configHooks";
 
 export default function InstantRewardUploadScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -53,6 +54,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const { data: user, loading: userLoading } = useUser();
   const createQuestion = useCreateRewardQuestion();
   const { showToast } = useToast();
+  const { data: rewardConfig } = useRewardConfig();
   const submitDebounceRef = useRef(false);
 
   const [questionText, setQuestionText] = useState("");
@@ -351,7 +353,9 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
             </View>
           </View>
           <Text style={[styles.conversionHint, { color: colors.textMuted }]}>
-            1 point = {REWARD_CONSTANTS.POINTS_TO_UGX_RATE} UGX
+            {rewardConfig
+              ? `${rewardConfig.pointsToCashDenominator} points = ${rewardConfig.pointsToCashNumerator} UGX`
+              : '1 point = 100 UGX'}
           </Text>
 
           <View style={styles.formRow}>

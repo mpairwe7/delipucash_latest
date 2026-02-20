@@ -32,6 +32,7 @@ import surveyWebhookRoutes from './routes/surveyWebhookRoutes.mjs';
 import surveyTemplateRoutes from './routes/surveyTemplateRoutes.mjs';
 import surveyCollabRoutes from './routes/surveyCollabRoutes.mjs';
 import surveyImportRoutes from './routes/surveyImportRoutes.mjs';
+import configRoutes from './routes/configRoutes.mjs';
 import { resetPasswordRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
 import { videoOgRedirect } from './controllers/ogController.mjs';
 
@@ -130,6 +131,7 @@ app.use('/api/surveys', surveyTemplateRoutes); // Survey template routes
 app.use('/api/surveys', surveyCollabRoutes); // Survey collaboration routes
 app.use('/api/surveys', surveyImportRoutes); // Survey import preview & samples
 app.use('/api/sse', sseRoutes); // Server-Sent Events stream
+app.use('/api/config', configRoutes); // App configuration (reward rates, etc.)
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {

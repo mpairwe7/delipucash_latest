@@ -36,6 +36,7 @@ import {
   formatCurrency,
 } from "@/services/api";
 import { useWithdraw, useUnreadCount } from "@/services/hooks";
+import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import useUser from "@/utils/useUser";
 import { useFormValidation, validators } from "@/utils/validation";
 import { NotificationBell } from "@/components";
@@ -110,7 +111,10 @@ export default function WithdrawScreen(): React.ReactElement {
   const { data: unreadCount } = useUnreadCount();
   const withdrawMutation = useWithdraw();
   
+  const { data: rewardConfig } = useRewardConfig();
   const walletBalance = user?.walletBalance || 0;
+  const userPoints = user?.points ?? 0;
+  const pointsCashValue = rewardConfig ? pointsToUgx(userPoints, rewardConfig) : 0;
   const phoneNumber = user?.phone || user?.telephone || "";
 
   const validationSchema = {
@@ -484,6 +488,11 @@ export default function WithdrawScreen(): React.ReactElement {
           <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
             Available balance: {formatCurrency(walletBalance)}
           </Text>
+          {userPoints > 0 && (
+            <Text style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}>
+              Points: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
+            </Text>
+          )}
         </View>
 
         {/* Step Indicator */}

@@ -31,6 +31,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
 
 import { useAuthStore, initializeAuth } from '@/utils/auth/store';
+import { silentRefresh } from '@/services/tokenRefresh';
 import { useThemeStore } from '@/utils/theme';
 import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
@@ -277,6 +278,39 @@ export default function RootLayout() {
   // Uses standalone initializeAuth() — no QueryClient needed
   useEffect(() => {
     initializeAuth();
+  }, []);
+
+  // 2026 best-practice: Proactively refresh token when app resumes from background.
+  // Access tokens are 15min — if the user backgrounds the app and returns after
+  // >15min, the token is expired. Without this, the first API call would fail with
+  // 401 → silentRefresh → retry, causing a visible delay. This pre-emptively
+  // refreshes so API calls succeed immediately on resume.
+  // (Instagram, TikTok, Threads all use this pattern.)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        const currentAuth = useAuthStore.getState().auth;
+        if (!currentAuth?.token) return;
+
+        // Decode JWT and check if access token is expired or about to expire (< 2min buffer)
+        try {
+          const payload = JSON.parse(atob(currentAuth.token.split('.')[1]));
+          const expiresAt = (payload.exp || 0) * 1000;
+          const bufferMs = 2 * 60 * 1000; // 2 minutes before expiry
+          if (expiresAt - Date.now() < bufferMs) {
+            silentRefresh().catch(() => {
+              // Refresh failed — 401 interceptor will handle it on next API call
+            });
+          }
+        } catch {
+          // Token decode failed — let 401 interceptor handle it
+        }
+      }
+    });
+
+    return () => subscription.remove();
   }, []);
 
   // Read auth state for RevenueCat user sync

@@ -18,6 +18,7 @@ import { formatCurrency } from "@/services";
 import { useRegularRewardQuestions, useRegularRewardQuestionAttempts } from "@/services/hooks";
 import type { UserAttemptRecord } from "@/services/hooks";
 import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
+import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useAuth } from "@/utils/auth/useAuth";
 import { triggerHaptic } from "@/utils/quiz-utils";
 import { InstantRewardListSkeleton } from "@/components/question/QuestionSkeletons";
@@ -389,11 +390,12 @@ export default function RewardQuestionsScreen(): React.ReactElement {
   }, [userEmail, initializeAttemptHistory]);
 
   // Sync Zustand wallet balance from server-side user points (prevents drift after app restart)
+  const { data: rewardConfig } = useRewardConfig();
   useEffect(() => {
-    if (user?.points != null) {
-      syncWalletFromServer(user.points * REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+    if (user?.points != null && rewardConfig) {
+      syncWalletFromServer(pointsToUgx(user.points, rewardConfig));
     }
-  }, [user?.points, syncWalletFromServer]);
+  }, [user?.points, rewardConfig, syncWalletFromServer]);
 
   // Hydrate local store from server-provided attempts so the UI stays in sync
   // even after app restarts or store clears.

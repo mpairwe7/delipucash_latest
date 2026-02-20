@@ -1,21 +1,18 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
+import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 
 /**
  * Quiz Session Controller
  * Handles quiz questions, points management, and reward redemption
- * 
+ *
  * Industry Standards:
  * - RESTful API design
  * - Proper error handling with meaningful messages
  * - Pagination support
  * - Mock data fallback for development
  */
-
-// Points to UGX conversion rate
-const POINTS_TO_UGX_RATE = 100; // 1 point = 100 UGX
-const MIN_REDEMPTION_POINTS = 50;
 
 // Mock questions for fallback when database is empty or unavailable
 const MOCK_QUIZ_QUESTIONS = [
@@ -417,9 +414,11 @@ export const redeemReward = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Missing required fields: points, phoneNumber, provider' });
   }
 
-  if (points < MIN_REDEMPTION_POINTS) {
+  const rewardConfig = await getRewardConfig();
+
+  if (points < rewardConfig.minWithdrawalPoints) {
     return res.status(400).json({
-      message: `Minimum ${MIN_REDEMPTION_POINTS} points required for redemption`
+      message: `Minimum ${rewardConfig.minWithdrawalPoints} points required for redemption`
     });
   }
 
@@ -433,7 +432,7 @@ export const redeemReward = asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Invalid phone number format.' });
   }
 
-  const cashValue = points * POINTS_TO_UGX_RATE;
+  const cashValue = pointsToUgx(points, rewardConfig);
 
   // Phase 1: Atomically validate balance + deduct points + create PENDING record
   let redemptionRecord;

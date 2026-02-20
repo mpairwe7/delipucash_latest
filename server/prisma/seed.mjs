@@ -76,13 +76,38 @@ async function createDefaultAdmin() {
   }
 }
 
+async function seedAppConfig() {
+  console.log('Checking for AppConfig singleton...');
+
+  const config = await prisma.appConfig.upsert({
+    where: { id: 'singleton' },
+    update: {},
+    create: {
+      id: 'singleton',
+      surveyCompletionPoints: 10,
+      pointsToCashNumerator: 2500,
+      pointsToCashDenominator: 20,
+      minWithdrawalPoints: 50,
+    },
+  });
+
+  console.log('AppConfig ready:', {
+    surveyCompletionPoints: config.surveyCompletionPoints,
+    rate: `${config.pointsToCashNumerator} UGX per ${config.pointsToCashDenominator} points`,
+    minWithdrawalPoints: config.minWithdrawalPoints,
+  });
+}
+
 async function main() {
-  console.log('🌱 Starting database seeding...\n');
-  
+  console.log('Starting database seeding...\n');
+
   // Create default admin
   await createDefaultAdmin();
-  
-  console.log('\n✨ Database seeding completed successfully!');
+
+  // Seed AppConfig singleton
+  await seedAppConfig();
+
+  console.log('\nDatabase seeding completed successfully!');
 }
 
 main()

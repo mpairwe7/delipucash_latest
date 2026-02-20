@@ -73,6 +73,7 @@ import {
 import { formatCurrency } from '@/services';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { REWARD_CONSTANTS, type PaymentProvider } from '@/store/InstantRewardStore';
+import { useRewardConfig, pointsToUgx, ugxToPoints, getRedemptionOptions as getConfigRedemptionOptions, type RewardConfig } from '@/services/configHooks';
 import { triggerHaptic } from '@/utils/quiz-utils';
 
 // ─── Reanimated SVG wrapper ──────────────────────────────────────────────────
@@ -556,13 +557,15 @@ const streakStyles = StyleSheet.create({
 interface RedemptionProgressBarProps {
   currentBalance: number;
   delay: number;
+  rewardConfig?: RewardConfig | null;
 }
 
-const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBalance, delay }) => {
+const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBalance, delay, rewardConfig }) => {
   const { colors } = useTheme();
-  const minCash = REWARD_CONSTANTS.MIN_REDEMPTION_POINTS * REWARD_CONSTANTS.POINTS_TO_UGX_RATE;
+  const minPoints = rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+  const minCash = rewardConfig ? pointsToUgx(minPoints, rewardConfig) : minPoints * 100;
   const progress = Math.min(currentBalance / minCash, 1);
-  const currentPts = Math.floor(currentBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+  const currentPts = rewardConfig ? ugxToPoints(currentBalance, rewardConfig) : Math.floor(currentBalance / 100);
 
   const barWidth = useSharedValue(0);
   useEffect(() => {
@@ -588,8 +591,8 @@ const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBa
       ]}
       accessible
       accessibilityRole="progressbar"
-      accessibilityLabel={`${currentPts} of ${REWARD_CONSTANTS.MIN_REDEMPTION_POINTS} points toward redemption`}
-      accessibilityValue={{ min: 0, max: REWARD_CONSTANTS.MIN_REDEMPTION_POINTS, now: currentPts }}
+      accessibilityLabel={`${currentPts} of ${minPoints} points toward redemption`}
+      accessibilityValue={{ min: 0, max: minPoints, now: currentPts }}
     >
       <View style={progressStyles.header}>
         <TrendingUp size={ICON_SIZE.base} color={colors.warning} strokeWidth={1.8} />
@@ -612,8 +615,10 @@ const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBa
           ]}
         />
         {/* Milestone markers */}
-        {REWARD_CONSTANTS.REDEMPTION_OPTIONS.map((opt) => {
-          const pos = (opt.points / REWARD_CONSTANTS.REDEMPTION_OPTIONS[REWARD_CONSTANTS.REDEMPTION_OPTIONS.length - 1].points) * 100;
+        {rewardConfig && getConfigRedemptionOptions(rewardConfig).map((opt) => {
+          const options = getConfigRedemptionOptions(rewardConfig);
+          const maxPts = options[options.length - 1].points;
+          const pos = (opt.points / maxPts) * 100;
           return (
             <View
               key={opt.points}
@@ -634,7 +639,7 @@ const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBa
           {currentPts} pts
         </Text>
         <Text style={[progressStyles.progressTarget, { color: colors.textMuted }]}>
-          {REWARD_CONSTANTS.MIN_REDEMPTION_POINTS} pts
+          {minPoints} pts
         </Text>
       </View>
     </Animated.View>
@@ -695,14 +700,16 @@ const progressStyles = StyleSheet.create({
 
 interface NextMilestoneProps {
   currentBalance: number;
+  rewardConfig?: RewardConfig | null;
 }
 
-const NextMilestone: React.FC<NextMilestoneProps> = ({ currentBalance }) => {
+const NextMilestone: React.FC<NextMilestoneProps> = ({ currentBalance, rewardConfig }) => {
   const { colors } = useTheme();
-  const currentPts = Math.floor(currentBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
+  const currentPts = rewardConfig ? ugxToPoints(currentBalance, rewardConfig) : Math.floor(currentBalance / 100);
 
-  const nextTier = REWARD_CONSTANTS.REDEMPTION_OPTIONS.find((opt) => opt.points > currentPts);
-  if (!nextTier) return null; // Already at max tier
+  const options = rewardConfig ? getConfigRedemptionOptions(rewardConfig) : [];
+  const nextTier = options.find((opt) => opt.points > currentPts);
+  if (!nextTier) return null; // Already at max tier or no config
 
   const remaining = nextTier.points - currentPts;
 
@@ -833,6 +840,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
 }) => {
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
+  const { data: rewardConfig } = useRewardConfig();
 
   const accuracy =
     totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
@@ -1075,7 +1083,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                       {formatCurrency(totalBalance)}
                     </Text>
                     <Text style={[styles.pointsEquiv, { color: colors.textMuted }]}>
-                      ≈ {Math.floor(totalBalance / REWARD_CONSTANTS.POINTS_TO_UGX_RATE)} pts
+                      ≈ {rewardConfig ? ugxToPoints(totalBalance, rewardConfig) : Math.floor(totalBalance / 100)} pts
                     </Text>
                   </View>
                 </View>
@@ -1188,10 +1196,10 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                 </View>
 
                 {/* Next milestone motivator */}
-                <NextMilestone currentBalance={totalBalance} />
+                <NextMilestone currentBalance={totalBalance} rewardConfig={rewardConfig} />
               </Animated.View>
             ) : (
-              <RedemptionProgressBar currentBalance={totalBalance} delay={1100} />
+              <RedemptionProgressBar currentBalance={totalBalance} delay={1100} rewardConfig={rewardConfig} />
             )}
 
             {/* ── Actions ─────────────────────────────────────── */}

@@ -301,49 +301,54 @@ export function useInitiateDisbursement(): UseMutationResult<
 
 // ===========================================
 // Points Conversion Utilities
+// Delegates to config-driven helpers; accepts optional RewardConfig
 // ===========================================
 
-/**
- * Minimum points required for redemption
- */
+import {
+  pointsToUgx as configPointsToUgx,
+  ugxToPoints as configUgxToPoints,
+  getRedemptionOptions as configGetRedemptionOptions,
+  type RewardConfig,
+} from './configHooks';
+
+/** UI fallback — overridden by config.minWithdrawalPoints at runtime */
 export const MIN_REDEMPTION_POINTS = 50;
 
 /**
- * Points to UGX conversion rate
+ * Convert points to cash value (UGX).
+ * Pass `config` for config-driven rate; falls back to legacy 100 UGX/pt.
  */
-export const POINTS_TO_UGX_RATE = 100; // 1 point = 100 UGX
-
-/**
- * Convert points to cash value (UGX)
- */
-export function pointsToCash(points: number): number {
-  return points * POINTS_TO_UGX_RATE;
-}
-
-/**
- * Convert cash (UGX) to points
- */
-export function cashToPoints(ugx: number): number {
-  return Math.floor(ugx / POINTS_TO_UGX_RATE);
+export function pointsToCash(points: number, config?: RewardConfig | null): number {
+  if (config) return configPointsToUgx(points, config);
+  return points * 100; // legacy fallback
 }
 
 /**
  * Check if user can redeem
  */
-export function canRedeem(availablePoints: number): boolean {
-  return availablePoints >= MIN_REDEMPTION_POINTS;
+export function canRedeem(availablePoints: number, config?: RewardConfig | null): boolean {
+  const min = config?.minWithdrawalPoints ?? MIN_REDEMPTION_POINTS;
+  return availablePoints >= min;
 }
 
 /**
  * Get redemption options based on available points
  */
-export function getRedemptionOptions(availablePoints: number): {
+export function getRedemptionOptions(availablePoints: number, config?: RewardConfig | null): {
   points: number;
   cashValue: number;
   label: string;
 }[] {
+  if (config) {
+    return configGetRedemptionOptions(config)
+      .filter(opt => opt.points <= availablePoints)
+      .map(opt => ({
+        ...opt,
+        label: `${opt.points} points = UGX ${opt.cashValue.toLocaleString()}`,
+      }));
+  }
+  // Legacy fallback
   const options = [50, 100, 200, 500, 1000];
-  
   return options
     .filter(pts => pts <= availablePoints)
     .map(pts => ({

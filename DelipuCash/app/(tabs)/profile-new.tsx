@@ -63,6 +63,7 @@ import {
   Globe,
   LogOut,
   ChevronRight,
+  Settings2,
 } from 'lucide-react-native';
 
 // Components
@@ -101,6 +102,7 @@ import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
+import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
 
 // Theme
 import {
@@ -362,6 +364,7 @@ export default function ProfileScreen(): React.ReactElement {
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showRewardSettings, setShowRewardSettings] = useState(false);
 
   // Subscription status (via RevenueCat entitlements)
   const hasSurveySubscription = canCreateSurvey;
@@ -468,6 +471,16 @@ export default function ProfileScreen(): React.ReactElement {
       route: '/instant-reward-upload',
       adminOnly: true,
       accessibilityHint: 'Create a new instant reward question',
+    },
+    {
+      id: 'reward-settings',
+      title: 'Reward Settings',
+      icon: Settings2,
+      iconColor: '#FF9800',
+      iconBgColor: 'rgba(255, 152, 0, 0.1)',
+      onPress: () => setShowRewardSettings(true),
+      adminOnly: true,
+      accessibilityHint: 'Configure survey reward rates and withdrawal limits',
     },
     {
       id: 'upload-questions-file',
@@ -1198,6 +1211,11 @@ export default function ProfileScreen(): React.ReactElement {
         onSave={handleSaveProfile}
         onClose={() => setShowEditProfileModal(false)}
         isSaving={updateProfileMutation.isPending}
+      />
+
+      <RewardSettingsSheet
+        visible={showRewardSettings}
+        onClose={() => setShowRewardSettings(false)}
       />
     </View>
   );

@@ -60,12 +60,12 @@ import {
   withAlpha,
 } from '@/utils/theme';
 import { useSurveyAttemptStore } from '@/store/SurveyAttemptStore';
+import { useRewardConfig, pointsToUgx } from '@/services/configHooks';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
 
-const MIN_WITHDRAWAL_UGX = 1000;
 const CONFETTI_COUNT = 24;
 const CONFETTI_COLORS = [
   '#10B981', // success green
@@ -82,8 +82,12 @@ const CONFETTI_COLORS = [
 
 export interface SurveyCompletionOverlayProps {
   visible: boolean;
-  earnedAmount: number;
-  payoutInitiated: boolean;
+  /** Points earned from completing the survey */
+  pointsEarned: number;
+  /** Cash equivalent in UGX (from backend) */
+  cashEquivalent?: number;
+  /** @deprecated Use pointsEarned instead */
+  earnedAmount?: number;
   completedSurveyId: string;
   onBackToSurveys: () => void;
 }
@@ -229,12 +233,20 @@ const AnimatedCountUp: React.FC<{
 
 export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = ({
   visible,
+  pointsEarned = 0,
+  cashEquivalent = 0,
   earnedAmount,
-  payoutInitiated,
   completedSurveyId,
   onBackToSurveys,
 }) => {
+  // Backward compat: use earnedAmount as points if pointsEarned not provided
+  const displayPoints = pointsEarned || earnedAmount || 0;
   const { colors, statusBarStyle } = useTheme();
+  const { data: rewardConfig } = useRewardConfig();
+  // Compute cash equivalent from config if not passed explicitly
+  const displayCash = cashEquivalent > 0
+    ? cashEquivalent
+    : rewardConfig ? pointsToUgx(displayPoints, rewardConfig) : 0;
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const queryClient = useQueryClient();
@@ -255,11 +267,12 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
     }
   }, [visible, queryClient]);
 
-  // Computed values
-  const walletBalance = userData?.walletBalance ?? 0;
-  const canWithdraw = walletBalance >= MIN_WITHDRAWAL_UGX && !payoutInitiated;
-  const withdrawalProgress = Math.min(walletBalance / MIN_WITHDRAWAL_UGX, 1);
-  const amountToGo = Math.max(MIN_WITHDRAWAL_UGX - walletBalance, 0);
+  // Computed values — points-based (uses config for min withdrawal)
+  const userPoints = userData?.points ?? 0;
+  const minWithdrawalPoints = rewardConfig?.minWithdrawalPoints ?? 50;
+  const canWithdraw = userPoints >= minWithdrawalPoints;
+  const withdrawalProgress = Math.min(userPoints / minWithdrawalPoints, 1);
+  const pointsToGo = Math.max(minWithdrawalPoints - userPoints, 0);
 
   const nextSurvey = useMemo(() => {
     if (!runningSurveys) return null;
@@ -302,11 +315,11 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
     if (!visible) return;
     const balanceMsg = canWithdraw
       ? 'You can now withdraw your earnings.'
-      : `Earn ${formatCurrency(amountToGo)} more to cash out.`;
-    const payoutMsg = payoutInitiated ? ' Mobile money payment is being sent to your phone.' : '';
-    const msg = `Survey completed! You earned ${formatMoneyForAccessibility(earnedAmount)}. Your balance is ${formatMoneyForAccessibility(walletBalance)}. ${balanceMsg}${payoutMsg}`;
+      : `Earn ${pointsToGo} more points to cash out.`;
+    const cashMsg = displayCash > 0 ? `, approximately ${formatMoneyForAccessibility(displayCash)}` : '';
+    const msg = `Survey completed! You earned ${displayPoints} points${cashMsg}. Your balance is ${userPoints} points. ${balanceMsg}`;
     setTimeout(() => announce(msg), 400);
-  }, [visible, earnedAmount, walletBalance, canWithdraw, amountToGo, payoutInitiated]);
+  }, [visible, displayPoints, displayCash, userPoints, canWithdraw, pointsToGo]);
 
   // Navigation handlers (guarded against double-tap)
   const handleWithdraw = useCallback(() => {
@@ -445,7 +458,7 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
         </Animated.View>
 
         {/* ── Earnings Card ── */}
-        {earnedAmount > 0 && (
+        {displayPoints > 0 && (
           <View
             style={[
               styles.earningsCard,
@@ -464,12 +477,17 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
                 <Text style={[styles.earningsLabel, { color: colors.textMuted }]}>
                   You earned
                 </Text>
-                <AnimatedCountUp
-                  amount={earnedAmount}
-                  color={colors.success}
-                  delay={400}
-                  reducedMotion={reducedMotion}
-                />
+                <Text
+                  style={[styles.countUpText, { color: colors.success }]}
+                  accessibilityLabel={`${displayPoints} points earned`}
+                >
+                  +{displayPoints} points
+                </Text>
+                {displayCash > 0 && (
+                  <Text style={[styles.earningsLabel, { color: colors.textMuted, marginTop: 2 }]}>
+                    {'\u2248'} {formatCurrency(displayCash)}
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -479,10 +497,10 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
               <View style={styles.balanceRow}>
                 <Wallet size={16} color={colors.textMuted} strokeWidth={1.5} />
                 <Text style={[styles.balanceLabel, { color: colors.textMuted }]}>
-                  Wallet Balance
+                  Points Balance
                 </Text>
                 <Text style={[styles.balanceAmount, { color: colors.text }]}>
-                  {formatCurrency(walletBalance)}
+                  {userPoints} pts
                 </Text>
               </View>
 
@@ -510,30 +528,14 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
                 <Text style={[styles.progressText, { color: canWithdraw ? colors.success : colors.textMuted }]}>
                   {canWithdraw
                     ? 'Ready to withdraw!'
-                    : `Earn ${formatCurrency(amountToGo)} more to cash out`}
+                    : `Earn ${pointsToGo} more points to cash out`}
                 </Text>
               </View>
             </Animated.View>
           </View>
         )}
 
-        {/* ── MoMo Status Banner ── */}
-        {payoutInitiated && (
-          <Animated.View
-            style={[
-              styles.momoBanner,
-              { backgroundColor: withAlpha(colors.success, 0.1), borderColor: withAlpha(colors.success, 0.2) },
-              bannerAnimStyle,
-            ]}
-            accessibilityRole="alert"
-            accessibilityLiveRegion="polite"
-          >
-            <CheckCircle2 size={18} color={colors.success} strokeWidth={1.5} />
-            <Text style={[styles.momoText, { color: colors.success }]}>
-              Mobile money payment is being sent to your phone.
-            </Text>
-          </Animated.View>
-        )}
+        {/* Points accumulate — user withdraws manually from profile */}
 
         {/* ── Primary CTA ── */}
         <Animated.View style={[styles.ctaContainer, ctaAnimStyle]}>

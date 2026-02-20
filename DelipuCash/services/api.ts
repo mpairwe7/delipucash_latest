@@ -111,6 +111,15 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiRespon
       }
     }
 
+    // 403 Forbidden = tampered / permanently invalid token (not just expired).
+    // The server distinguishes 401 (expired, refreshable) from 403 (invalid, not
+    // refreshable). Clear auth state so the user is redirected to login instead
+    // of seeing cryptic "Request failed" errors on every screen.
+    if (response.status === 403) {
+      const { useAuthStore } = await import('@/utils/auth/store');
+      useAuthStore.getState().setAuth(null);
+    }
+
     const json = await response.json();
     if (!response.ok) {
       return { success: false, data: json as T, error: json?.message || "Request failed" };
