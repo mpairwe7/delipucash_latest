@@ -237,7 +237,30 @@ export const claimDailyReward = asyncHandler(async (req, res) => {
 // Redeem Rewards — convert points to cash/airtime via mobile money
 export const redeemRewards = asyncHandler(async (req, res) => {
   const userId = req.user.id;
-  const { cashValue, provider, phoneNumber, type } = req.body;
+  const { cashValue, provider, phoneNumber, type, idempotencyKey } = req.body;
+
+  // Idempotency: if a key is provided, check for existing PENDING/SUCCESSFUL redemption
+  if (idempotencyKey) {
+    const existing = await prisma.rewardRedemption.findFirst({
+      where: { userId, transactionRef: idempotencyKey },
+    });
+    if (existing) {
+      if (existing.status === 'SUCCESSFUL') {
+        return res.json({
+          success: true,
+          transactionRef: existing.transactionRef,
+          message: 'Redemption already processed successfully.',
+        });
+      }
+      if (existing.status === 'PENDING') {
+        return res.status(409).json({
+          success: false,
+          error: 'A redemption with this key is already being processed.',
+        });
+      }
+      // FAILED — allow retry with same key
+    }
+  }
 
   // Validate inputs
   if (!cashValue || !provider || !phoneNumber || !type) {
@@ -251,6 +274,23 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   }
   if (cashValue <= 0) {
     return res.status(400).json({ success: false, error: 'cashValue must be positive.' });
+  }
+
+  // Validate phone number format (Uganda: 9-13 digits, starts with valid prefix)
+  const cleanedPhone = phoneNumber.replace(/[^0-9]/g, '');
+  if (cleanedPhone.length < 9 || cleanedPhone.length > 13) {
+    return res.status(400).json({ success: false, error: 'Invalid phone number. Must be 9-13 digits.' });
+  }
+  // Normalize to local format for prefix check
+  let localPhone = cleanedPhone;
+  if (localPhone.startsWith('256') && localPhone.length >= 12) {
+    localPhone = '0' + localPhone.slice(3);
+  }
+  if (localPhone.startsWith('0')) {
+    const validPrefixes = /^07[05678]/; // MTN: 076/077/078, Airtel: 070/075
+    if (!validPrefixes.test(localPhone)) {
+      return res.status(400).json({ success: false, error: 'Phone number prefix does not match a supported provider.' });
+    }
   }
 
   const POINTS_TO_UGX = 100;
@@ -292,6 +332,7 @@ export const redeemRewards = asyncHandler(async (req, res) => {
           phoneNumber,
           type,
           status: 'PENDING',
+          transactionRef: idempotencyKey || null,
         },
       });
     }, { timeout: 10000 });
@@ -325,25 +366,58 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   }
 
   // Phase 3: Update record + refund on failure (transactional)
-  await prisma.$transaction(async (tx) => {
-    await tx.rewardRedemption.update({
-      where: { id: redemption.id },
-      data: {
-        status: paymentResult.success ? 'SUCCESSFUL' : 'FAILED',
-        transactionRef: paymentResult.reference ?? null,
-        errorMessage: paymentResult.success ? null : 'Payment provider returned failure.',
-        completedAt: new Date(),
-      },
-    });
+  // Wrapped in try-catch to prevent "lost transaction" — if Phase 2 succeeds
+  // but Phase 3 DB write fails, we still return success to the user.
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.rewardRedemption.update({
+        where: { id: redemption.id },
+        data: {
+          status: paymentResult.success ? 'SUCCESSFUL' : 'FAILED',
+          transactionRef: paymentResult.reference ?? null,
+          errorMessage: paymentResult.success ? null : 'Payment provider returned failure.',
+          completedAt: new Date(),
+        },
+      });
 
-    // Refund points if payment failed
-    if (!paymentResult.success) {
-      await tx.appUser.update({
+      // Refund points if payment failed
+      if (!paymentResult.success) {
+        await tx.appUser.update({
+          where: { id: userId },
+          data: { points: { increment: pointsRequired } },
+        });
+      }
+    });
+  } catch (phase3Error) {
+    console.error('[RedeemRewards] CRITICAL: Phase 3 DB update failed:', phase3Error);
+    console.error('[RedeemRewards] Payment result was:', paymentResult);
+
+    // If payment succeeded but DB update failed, still tell user it worked
+    // The record stays PENDING — admin reconciliation needed
+    if (paymentResult.success) {
+      return res.json({
+        success: true,
+        transactionRef: paymentResult.reference,
+        message: `${cashValue.toLocaleString()} UGX has been sent to your ${provider} number!`,
+      });
+    }
+
+    // If payment failed AND DB update failed, user's points are already deducted
+    // Attempt standalone refund
+    try {
+      await prisma.appUser.update({
         where: { id: userId },
         data: { points: { increment: pointsRequired } },
       });
+    } catch (refundError) {
+      console.error('[RedeemRewards] CRITICAL: Standalone refund also failed:', refundError);
     }
-  });
+
+    return res.status(502).json({
+      success: false,
+      error: 'Payment processing failed. Your points have been refunded.',
+    });
+  }
 
   if (paymentResult.success) {
     return res.json({

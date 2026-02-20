@@ -995,7 +995,10 @@ export const getPaymentHistory = async (req, res) => {
     const { userId } = req.params;
     console.log('Received Payment History Request:', req.params);
 
-    const payments = await prisma.payment.find({ userId }).sort({ createdAt: -1 });
+    const payments = await prisma.payment.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+    });
 
     return res.json({ payments });
   } catch (error) {
@@ -1015,15 +1018,15 @@ export const updatePaymentStatus = async (req, res) => {
       return res.status(400).json({ message: "Invalid payment status." });
     }
 
-    const updatedPayment = await prisma.payment.findByIdAndUpdate(
-      paymentId,
-      { status },
-      { new: true }
-    );
-
-    if (!updatedPayment) {
+    const existing = await prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!existing) {
       return res.status(404).json({ message: "Payment not found." });
     }
+
+    const updatedPayment = await prisma.payment.update({
+      where: { id: paymentId },
+      data: { status },
+    });
 
     return res.json({
       message: `Payment status updated to ${status}!`,

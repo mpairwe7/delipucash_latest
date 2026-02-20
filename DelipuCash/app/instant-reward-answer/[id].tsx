@@ -900,11 +900,12 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       phoneNumber,
     });
 
+    const idempotencyKey = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
     try {
-      const response = await rewardsApi.redeem(amount, provider, phoneNumber, type);
+      const response = await rewardsApi.redeem(amount, provider, phoneNumber, type, idempotencyKey);
 
       if (response.data?.success) {
-        completeRedemption(response.data.transactionRef ?? `TXN-${Date.now()}`, true);
+        completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
         // Re-sync wallet from server after successful payout (Robinhood pattern)
         refetchProfile();
         return {
@@ -1476,6 +1477,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         initialType={quickRedeemType}
         initialProvider={quickRedeemProvider}
         initialPhone={quickRedeemPhone}
+        userPhone={userPhone || undefined}
       />
     </View>
   );

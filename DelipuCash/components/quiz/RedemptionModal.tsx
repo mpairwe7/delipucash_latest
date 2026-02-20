@@ -97,6 +97,8 @@ export interface RedemptionModalProps {
   initialProvider?: PaymentProvider;
   /** Pre-fill phone for quick-redeem */
   initialPhone?: string;
+  /** User's profile phone number — pre-filled into phone input, editable */
+  userPhone?: string;
 }
 
 type RedemptionStep =
@@ -195,6 +197,12 @@ const stepStyles = StyleSheet.create({
 
 // ─── Confetti (reused lightweight pattern) ───────────────────────────────────
 
+// Deterministic seeded random — stable across re-renders (replaces Math.random())
+const seededRandom = (seed: number): number => {
+  const val = Math.sin(seed) * 10000;
+  return val - Math.floor(val);
+};
+
 const ConfettiParticle: React.FC<{
   color: string;
   index: number;
@@ -206,18 +214,33 @@ const ConfettiParticle: React.FC<{
   const rotate = useSharedValue(0);
   const scale = useSharedValue(0);
 
-  const angle = (index / total) * 2 * Math.PI;
-  const speed = 250 + Math.random() * 200;
-  const dx = Math.cos(angle) * (30 + Math.random() * 60);
+  // Pre-compute deterministic values from index — stable across re-renders
+  const seed = React.useMemo(() => {
+    const r1 = seededRandom(index * 9301 + 49297);
+    const r2 = seededRandom(index * 7919 + 31337);
+    const r3 = seededRandom(index * 6571 + 17389);
+    const r4 = seededRandom(index * 4231 + 21013);
+    const ang = (index / total) * 2 * Math.PI;
+    const spd = 250 + r1 * 200;
+    const dxVal = Math.cos(ang) * (30 + r2 * 60);
+    const sz = 5 + r3 * 5;
+    return {
+      speed: spd,
+      dx: dxVal,
+      sz,
+      borderRadius: r4 > 0.5 ? sz / 2 : 1,
+      rotDir: r1 > 0.5 ? 1 : -1,
+    };
+  }, [index, total]);
 
   useEffect(() => {
     const d = index * 25;
     scale.value = withDelay(d, withSpring(1, { damping: 4, stiffness: 200 }));
-    y.value = withDelay(d, withTiming(-speed, { duration: 1200, easing: Easing.out(Easing.quad) }));
-    x.value = withDelay(d, withTiming(dx, { duration: 1200, easing: Easing.out(Easing.quad) }));
+    y.value = withDelay(d, withTiming(-seed.speed, { duration: 1200, easing: Easing.out(Easing.quad) }));
+    x.value = withDelay(d, withTiming(seed.dx, { duration: 1200, easing: Easing.out(Easing.quad) }));
     rotate.value = withDelay(
       d,
-      withTiming(360 * (Math.random() > 0.5 ? 1 : -1), { duration: 1200 }),
+      withTiming(360 * seed.rotDir, { duration: 1200 }),
     );
     opacity.value = withDelay(d + 700, withTiming(0, { duration: 500 }));
   }, []);
@@ -232,15 +255,14 @@ const ConfettiParticle: React.FC<{
     opacity: opacity.value,
   }));
 
-  const sz = 5 + Math.random() * 5;
   return (
     <Animated.View
       style={[
         {
           position: 'absolute',
-          width: sz,
-          height: sz,
-          borderRadius: Math.random() > 0.5 ? sz / 2 : 1,
+          width: seed.sz,
+          height: seed.sz,
+          borderRadius: seed.borderRadius,
           backgroundColor: color,
         },
         style,
@@ -267,6 +289,21 @@ const MiniConfetti: React.FC<{ particleColors: string[] }> = ({ particleColors }
   </View>
 );
 
+// ─── Provider Detection ─────────────────────────────────────────────────────
+
+/** Detect MTN or Airtel from Ugandan phone prefix (07x, 256xx, +256xx) */
+function detectProviderFromPhone(phone: string): PaymentProvider | null {
+  const cleaned = phone.replace(/[^0-9]/g, '');
+  let local = cleaned;
+  if (local.startsWith('256') && local.length >= 12) {
+    local = '0' + local.slice(3);
+  }
+  if (local.length < 3 || !local.startsWith('0')) return null;
+  if (/^07[678]/.test(local)) return 'MTN';
+  if (/^07[05]/.test(local)) return 'AIRTEL';
+  return null;
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export const RedemptionModal: React.FC<RedemptionModalProps> = ({
@@ -278,6 +315,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   initialType,
   initialProvider,
   initialPhone,
+  userPhone,
 }) => {
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
@@ -291,6 +329,9 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Track whether the phone was pre-filled from profile (for UI hint)
+  const [isPhonePrefilled, setIsPhonePrefilled] = useState(false);
+
   // Reset on open — if quick-redeem props provided, skip to SELECT_AMOUNT with pre-fills
   useEffect(() => {
     if (visible) {
@@ -302,16 +343,27 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         setSelectedType(initialType);
         setSelectedProvider(initialProvider);
         setPhoneNumber(initialPhone);
+        setIsPhonePrefilled(false);
         setSelectedAmount(0);
         setStep('SELECT_AMOUNT');
       } else {
         setStep('SELECT_TYPE');
         setSelectedType(null);
         setSelectedAmount(0);
-        setPhoneNumber('');
+
+        // Pre-fill phone from user profile if available
+        const prefillPhone = userPhone || '';
+        setPhoneNumber(prefillPhone);
+        setIsPhonePrefilled(!!prefillPhone);
+
+        // Auto-detect provider from pre-filled phone
+        if (prefillPhone) {
+          const detected = detectProviderFromPhone(prefillPhone);
+          if (detected) setSelectedProvider(detected);
+        }
       }
     }
-  }, [visible, initialType, initialProvider, initialPhone]);
+  }, [visible, initialType, initialProvider, initialPhone, userPhone]);
 
   const availablePoints = Math.floor(availableAmount / REWARD_CONSTANTS.POINTS_TO_UGX_RATE);
   const redemptionOptions = REWARD_CONSTANTS.REDEMPTION_OPTIONS.filter(
@@ -587,24 +639,72 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
 
       {/* Phone input */}
       <Text style={[styles.fieldLabel, { color: colors.textMuted }]}>Phone Number</Text>
+
+      {/* Pre-fill indicator */}
+      {isPhonePrefilled && phoneNumber === userPhone && (
+        <View
+          style={[styles.prefillHint, { backgroundColor: withAlpha(colors.success, 0.08) }]}
+          accessibilityRole="text"
+          accessibilityLabel="Phone number pre-filled from your profile"
+        >
+          <Check size={14} color={colors.success} strokeWidth={2} />
+          <Text style={[styles.prefillHintText, { color: colors.success }]}>
+            From your profile
+          </Text>
+        </View>
+      )}
+
       <View
         style={[
           styles.phoneContainer,
-          { borderColor: colors.border, backgroundColor: colors.card },
+          {
+            borderColor: phoneNumber.length >= 9
+              ? withAlpha(colors.success, 0.5)
+              : colors.border,
+            backgroundColor: colors.card,
+          },
         ]}
       >
-        <Phone size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
+        <View style={[styles.phonePrefix, { borderRightColor: colors.border }]}>
+          <Text style={[styles.phonePrefixText, { color: colors.textMuted }]}>+256</Text>
+        </View>
         <TextInput
           style={[styles.phoneInput, { color: colors.text }]}
-          placeholder="07XX XXX XXX"
+          placeholder="7XX XXX XXX"
           placeholderTextColor={colors.textMuted}
           value={phoneNumber}
-          onChangeText={setPhoneNumber}
+          onChangeText={(text) => {
+            setPhoneNumber(text);
+            setIsPhonePrefilled(false);
+            // Auto-detect provider as user types
+            const detected = detectProviderFromPhone(text);
+            if (detected) setSelectedProvider(detected);
+          }}
           keyboardType="phone-pad"
           maxLength={12}
+          autoComplete="tel"
+          textContentType="telephoneNumber"
           accessibilityLabel="Phone number"
-          accessibilityHint="Enter your mobile money or airtime phone number"
+          accessibilityHint={
+            isPhonePrefilled
+              ? 'Pre-filled from your profile. Tap to edit.'
+              : 'Enter your mobile money or airtime phone number'
+          }
         />
+        {phoneNumber.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setPhoneNumber('');
+              setIsPhonePrefilled(false);
+              triggerHaptic('light');
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Clear phone number"
+          >
+            <CircleX size={ICON_SIZE.md} color={colors.textMuted} strokeWidth={1.5} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {error && (
@@ -785,7 +885,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         style={styles.overlay}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="padding"
           style={styles.keyboardView}
         >
           <Animated.View
@@ -886,10 +986,9 @@ const styles = StyleSheet.create({
   },
   headerBtnPlaceholder: { width: COMPONENT_SIZE.touchTarget },
 
-  // Content
-  content: { flex: 1 },
+  // Content — no flex:1 on ScrollView; sheet is content-sized (maxHeight constrains)
+  content: {},
   contentContainer: {
-    flexGrow: 1,
     padding: SPACING.lg,
     paddingBottom: SPACING['3xl'],
   },
@@ -900,6 +999,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: SPACING['2xl'],
+    minHeight: 320,
   },
   stepTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -1018,20 +1118,44 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
   },
+  prefillHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xxs,
+    borderRadius: RADIUS.full,
+    alignSelf: 'flex-start',
+    marginBottom: SPACING.xs,
+    marginTop: -SPACING.sm,
+  },
+  prefillHintText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
   phoneContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.sm,
-    padding: SPACING.md,
     borderRadius: RADIUS.base,
     borderWidth: BORDER_WIDTH.thin,
     marginBottom: SPACING.sm,
+    paddingRight: SPACING.sm,
+  },
+  phonePrefix: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.md,
+    borderRightWidth: BORDER_WIDTH.thin,
+  },
+  phonePrefixText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
   phoneInput: {
     flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.lg,
-    padding: 0,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.md,
   },
   inlineError: {
     flexDirection: 'row',

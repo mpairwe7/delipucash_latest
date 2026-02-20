@@ -303,10 +303,12 @@ export const getUserPoints = asyncHandler(async (req, res) => {
  * PUT /api/user/points
  */
 export const updateUserPoints = asyncHandler(async (req, res) => {
-  const { userId, points, sessionId, source = 'quiz_session' } = req.body;
+  // Use authenticated user ID from JWT — never trust client-supplied userId
+  const userId = req.user.id;
+  const { points, sessionId, source = 'quiz_session' } = req.body;
 
-  if (!userId || points === undefined) {
-    return res.status(400).json({ message: 'userId and points are required' });
+  if (points === undefined) {
+    return res.status(400).json({ message: 'points is required' });
   }
 
   try {
@@ -352,8 +354,9 @@ export const updateUserPoints = asyncHandler(async (req, res) => {
  * POST /api/quiz-sessions
  */
 export const saveQuizSession = asyncHandler(async (req, res) => {
+  // Use authenticated user ID from JWT — never trust client-supplied userId
+  const userId = req.user.id;
   const {
-    userId,
     questions,
     answers,
     totalPoints,
@@ -406,112 +409,140 @@ export const saveQuizSession = asyncHandler(async (req, res) => {
  * POST /api/rewards/redeem
  */
 export const redeemReward = asyncHandler(async (req, res) => {
-  const { userId, points, redemptionType, phoneNumber, provider } = req.body;
+  // Use authenticated user ID from JWT — never trust client-supplied userId
+  const userId = req.user.id;
+  const { points, redemptionType, phoneNumber, provider } = req.body;
 
-  if (!userId || !points || !phoneNumber || !provider) {
-    return res.status(400).json({ message: 'Missing required fields' });
+  if (!points || !phoneNumber || !provider) {
+    return res.status(400).json({ message: 'Missing required fields: points, phoneNumber, provider' });
   }
 
   if (points < MIN_REDEMPTION_POINTS) {
-    return res.status(400).json({ 
-      message: `Minimum ${MIN_REDEMPTION_POINTS} points required for redemption` 
+    return res.status(400).json({
+      message: `Minimum ${MIN_REDEMPTION_POINTS} points required for redemption`
     });
   }
 
+  if (!['MTN', 'AIRTEL'].includes(provider)) {
+    return res.status(400).json({ message: 'Invalid provider. Use MTN or AIRTEL.' });
+  }
+
+  // Validate Uganda phone number format
+  const cleaned = phoneNumber.replace(/[^0-9]/g, '');
+  if (cleaned.length < 9 || cleaned.length > 13) {
+    return res.status(400).json({ message: 'Invalid phone number format.' });
+  }
+
+  const cashValue = points * POINTS_TO_UGX_RATE;
+
+  // Phase 1: Atomically validate balance + deduct points + create PENDING record
+  let redemptionRecord;
   try {
-    // Check user has enough points
-    const user = await prisma.appUser.findUnique({
-      where: { id: userId },
-      select: { id: true, points: true, email: true },
-    });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    if (user.points < points) {
-      return res.status(400).json({ 
-        message: 'Insufficient points',
-        available: user.points,
-        requested: points,
-      });
-    }
-
-    // Calculate cash value
-    const cashValue = points * POINTS_TO_UGX_RATE;
-
-    // Process disbursement based on provider
-    let paymentResult;
-    try {
-      if (provider === 'MTN') {
-        paymentResult = await processMtnPayment({
-          amount: cashValue,
-          phoneNumber,
-          userId,
-          reason: `Points redemption: ${points} points for ${redemptionType}`,
-        });
-      } else if (provider === 'AIRTEL') {
-        paymentResult = await processAirtelPayment({
-          amount: cashValue,
-          phoneNumber,
-          userId,
-          reason: `Points redemption: ${points} points for ${redemptionType}`,
-        });
-      } else {
-        return res.status(400).json({ message: 'Invalid provider. Use MTN or AIRTEL.' });
-      }
-    } catch (paymentError) {
-      console.error('Payment processing error:', paymentError);
-      return res.status(500).json({ 
-        success: false,
-        message: 'Payment processing failed. Please try again.',
-        paymentStatus: 'FAILED',
-      });
-    }
-
-    if (paymentResult && paymentResult.success) {
-      // Deduct points from user
-      const updatedUser = await prisma.appUser.update({
+    redemptionRecord = await prisma.$transaction(async (tx) => {
+      const user = await tx.appUser.findUnique({
         where: { id: userId },
-        data: {
-          points: { decrement: points },
-        },
-        select: { points: true },
+        select: { id: true, points: true, email: true },
       });
 
-      // Create negative reward record for audit
-      await prisma.reward.create({
+      if (!user) {
+        const err = new Error('User not found.');
+        err.statusCode = 404;
+        throw err;
+      }
+
+      if (user.points < points) {
+        const err = new Error(`Insufficient points. You have ${user.points}, need ${points}.`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      // Deduct points atomically (prevents race condition)
+      await tx.appUser.update({
+        where: { id: userId },
+        data: { points: { decrement: points } },
+      });
+
+      // Create audit trail
+      await tx.reward.create({
         data: {
           userEmail: user.email,
           points: -points,
-          description: `Redeemed ${points} points for ${redemptionType}: ${cashValue} UGX via ${provider}`,
+          description: `Redeemed ${points} points for ${redemptionType || 'CASH'}: ${cashValue} UGX via ${provider}`,
         },
       });
 
-      res.json({
-        success: true,
-        transactionId: paymentResult.reference,
-        amountRedeemed: cashValue,
-        pointsDeducted: points,
-        remainingPoints: updatedUser.points,
-        message: `Successfully redeemed ${points} points for UGX ${cashValue.toLocaleString()}`,
-        paymentStatus: 'SUCCESSFUL',
+      return { userId: user.id, email: user.email };
+    }, { timeout: 10000 });
+  } catch (err) {
+    const statusCode = err.statusCode || 500;
+    return res.status(statusCode).json({ success: false, message: err.message, paymentStatus: 'FAILED' });
+  }
+
+  // Phase 2: Call payment provider (outside transaction — no long-held locks)
+  let paymentResult;
+  try {
+    if (provider === 'MTN') {
+      paymentResult = await processMtnPayment({
+        amount: cashValue,
+        phoneNumber,
+        userId,
+        reason: `Points redemption: ${points} points for ${redemptionType || 'CASH'}`,
       });
     } else {
-      res.status(500).json({
-        success: false,
-        message: 'Payment failed. Please try again.',
-        paymentStatus: 'FAILED',
+      paymentResult = await processAirtelPayment({
+        amount: cashValue,
+        phoneNumber,
+        userId,
+        reason: `Points redemption: ${points} points for ${redemptionType || 'CASH'}`,
       });
     }
-  } catch (error) {
-    console.error('Error redeeming reward:', error);
-    res.status(500).json({ 
+  } catch (paymentError) {
+    console.error('[QuizRedeem] Payment provider error:', paymentError);
+    paymentResult = { success: false, reference: null };
+  }
+
+  // Phase 3: On failure, refund points
+  if (!paymentResult || !paymentResult.success) {
+    try {
+      await prisma.$transaction(async (tx) => {
+        await tx.appUser.update({
+          where: { id: userId },
+          data: { points: { increment: points } },
+        });
+        await tx.reward.create({
+          data: {
+            userEmail: redemptionRecord.email,
+            points: points,
+            description: `Refund: payment failed for ${points} points via ${provider}`,
+          },
+        });
+      });
+    } catch (refundError) {
+      console.error('[QuizRedeem] CRITICAL: Refund failed after payment failure:', refundError);
+    }
+
+    return res.status(502).json({
       success: false,
-      message: 'Failed to process redemption',
+      message: 'Payment failed. Your points have been refunded.',
       paymentStatus: 'FAILED',
     });
   }
+
+  // Fetch updated balance
+  const updatedUser = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { points: true },
+  });
+
+  res.json({
+    success: true,
+    transactionId: paymentResult.reference,
+    amountRedeemed: cashValue,
+    pointsDeducted: points,
+    remainingPoints: updatedUser?.points ?? 0,
+    message: `Successfully redeemed ${points} points for UGX ${cashValue.toLocaleString()}`,
+    paymentStatus: 'SUCCESSFUL',
+  });
 });
 
 /**
@@ -519,10 +550,12 @@ export const redeemReward = asyncHandler(async (req, res) => {
  * POST /api/payments/disburse
  */
 export const initiateDisbursement = asyncHandler(async (req, res) => {
-  const { userId, amount, phoneNumber, provider, reason } = req.body;
+  // Use authenticated user ID from JWT — never trust client-supplied userId
+  const userId = req.user.id;
+  const { amount, phoneNumber, provider, reason } = req.body;
 
-  if (!userId || !amount || !phoneNumber || !provider) {
-    return res.status(400).json({ message: 'Missing required fields' });
+  if (!amount || !phoneNumber || !provider) {
+    return res.status(400).json({ message: 'Missing required fields: amount, phoneNumber, provider' });
   }
 
   try {

@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Image,
   KeyboardAvoidingView,
+  ScrollView,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -75,100 +76,107 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior="padding"
     >
       <View style={[styles.content, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <Text style={[styles.heading, { color: colors.text }]}>New Post</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Add details before publishing
-        </Text>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.scrollContent}
+        >
+          {/* Header */}
+          <Text style={[styles.heading, { color: colors.text }]}>New Post</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            Add details before publishing
+          </Text>
 
-        {/* Thumbnail + Duration */}
-        <View style={styles.previewRow}>
-          <View style={[styles.thumbnailContainer, { backgroundColor: colors.surfaceVariant }]}>
-            {thumbnailUri ? (
-              <Image source={{ uri: thumbnailUri }} style={styles.thumbnail} />
-            ) : thumbnailFailed ? (
-              <Film size={24} color={colors.textSecondary} />
-            ) : (
-              <ActivityIndicator size="small" color={colors.primary} />
-            )}
-            <View style={styles.durationBadge}>
-              <Text style={styles.durationText}>{formatDuration(duration)}</Text>
+          {/* Thumbnail + Duration */}
+          <View style={styles.previewRow}>
+            <View style={[styles.thumbnailContainer, { backgroundColor: colors.surfaceVariant }]}>
+              {thumbnailUri ? (
+                <Image source={{ uri: thumbnailUri }} style={styles.thumbnail} />
+              ) : thumbnailFailed ? (
+                <Film size={24} color={colors.textSecondary} />
+              ) : (
+                <ActivityIndicator size="small" color={colors.primary} />
+              )}
+              <View style={styles.durationBadge}>
+                <Text style={styles.durationText}>{formatDuration(duration)}</Text>
+              </View>
+            </View>
+
+            {/* Title input beside thumbnail */}
+            <View style={styles.titleInputContainer}>
+              <TextInput
+                style={[styles.titleInput, { color: colors.text, borderColor: withAlpha(colors.border, 0.3) }]}
+                placeholder="Add a title..."
+                placeholderTextColor={colors.textSecondary}
+                value={title}
+                onChangeText={setTitle}
+                maxLength={100}
+                autoFocus
+              />
             </View>
           </View>
 
-          {/* Title input beside thumbnail */}
-          <View style={styles.titleInputContainer}>
-            <TextInput
-              style={[styles.titleInput, { color: colors.text, borderColor: withAlpha(colors.border, 0.3) }]}
-              placeholder="Add a title..."
-              placeholderTextColor={colors.textSecondary}
-              value={title}
-              onChangeText={setTitle}
-              maxLength={100}
-              autoFocus
-            />
-          </View>
-        </View>
+          {/* Description */}
+          <TextInput
+            style={[styles.descriptionInput, { color: colors.text, borderColor: withAlpha(colors.border, 0.3) }]}
+            placeholder="Add a description..."
+            placeholderTextColor={colors.textSecondary}
+            value={description}
+            onChangeText={setDescription}
+            maxLength={500}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
 
-        {/* Description */}
-        <TextInput
-          style={[styles.descriptionInput, { color: colors.text, borderColor: withAlpha(colors.border, 0.3) }]}
-          placeholder="Add a description..."
-          placeholderTextColor={colors.textSecondary}
-          value={description}
-          onChangeText={setDescription}
-          maxLength={500}
-          multiline
-          numberOfLines={3}
-          textAlignVertical="top"
-        />
-
-        {/* Upload progress */}
-        {(isUploading || isProcessing) && (
-          <View style={styles.progressContainer}>
-            <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
-              <View style={[styles.progressBar, {
-                width: isProcessing ? '100%' : `${uploadProgress}%`,
-                backgroundColor: isProcessing ? colors.warning : colors.primary,
-              }]} />
+          {/* Upload progress */}
+          {(isUploading || isProcessing) && (
+            <View style={styles.progressContainer}>
+              <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
+                <View style={[styles.progressBar, {
+                  width: isProcessing ? '100%' : `${uploadProgress}%`,
+                  backgroundColor: isProcessing ? colors.warning : colors.primary,
+                }]} />
+              </View>
+              <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+                {isProcessing
+                  ? 'Finalizing on server...'
+                  : `Uploading... ${Math.round(uploadProgress)}%`}
+              </Text>
             </View>
-            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              {isProcessing
-                ? 'Finalizing on server...'
-                : `Uploading... ${Math.round(uploadProgress)}%`}
-            </Text>
+          )}
+
+          {/* Actions */}
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.discardButton, { borderColor: withAlpha(colors.border, 0.3) }]}
+              onPress={onDiscard}
+              disabled={isUploading || isProcessing}
+            >
+              <Trash2 size={18} color={colors.error} />
+              <Text style={[styles.discardText, { color: colors.error }]}>Discard</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.publishButton, { backgroundColor: colors.primary, opacity: (isUploading || isProcessing) ? 0.7 : 1 }]}
+              onPress={handlePublish}
+              disabled={isUploading || isProcessing}
+            >
+              {isUploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Upload size={18} color="#fff" />
+                  <Text style={styles.publishText}>Post</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-        )}
-
-        {/* Actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity
-            style={[styles.discardButton, { borderColor: withAlpha(colors.border, 0.3) }]}
-            onPress={onDiscard}
-            disabled={isUploading || isProcessing}
-          >
-            <Trash2 size={18} color={colors.error} />
-            <Text style={[styles.discardText, { color: colors.error }]}>Discard</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.publishButton, { backgroundColor: colors.primary, opacity: (isUploading || isProcessing) ? 0.7 : 1 }]}
-            onPress={handlePublish}
-            disabled={isUploading || isProcessing}
-          >
-            {isUploading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Upload size={18} color="#fff" />
-                <Text style={styles.publishText}>Post</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+        </ScrollView>
       </View>
     </KeyboardAvoidingView>
   );
@@ -186,6 +194,9 @@ const styles = StyleSheet.create({
   content: {
     borderTopLeftRadius: RADIUS.xl,
     borderTopRightRadius: RADIUS.xl,
+    maxHeight: '80%',
+  },
+  scrollContent: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,
     paddingBottom: SPACING['2xl'],

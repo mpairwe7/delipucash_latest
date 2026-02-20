@@ -1065,16 +1065,18 @@ export const rewardsApi = {
 
   /**
    * Redeem rewards — convert points to cash/airtime via mobile money
+   * @param idempotencyKey Unique key to prevent duplicate redemptions on retry
    */
   async redeem(
     cashValue: number,
     provider: string,
     phoneNumber: string,
     type: string,
+    idempotencyKey?: string,
   ): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string }>> {
     return fetchJson(API_ROUTES.rewards.redeem, {
       method: 'POST',
-      body: JSON.stringify({ cashValue, provider, phoneNumber, type }),
+      body: JSON.stringify({ cashValue, provider, phoneNumber, type, idempotencyKey }),
     });
   },
 
