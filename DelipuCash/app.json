@@ -8,6 +8,12 @@
     "scheme": "delipucash",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "androidStatusBar": {
+      "barStyle": "dark-content"
+    },
+    "androidNavigationBar": {
+      "barStyle": "dark-content"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.arolainc.DelipuCash",
@@ -59,7 +65,7 @@
             },
             {
               "scheme": "https",
-              "host": "delipucashserver.vercel.app",
+              "host": "https://delipucash-latest.vercel.app",
               "pathPrefix": "/video"
             }
           ],

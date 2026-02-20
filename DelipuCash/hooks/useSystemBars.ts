@@ -25,7 +25,7 @@
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { Platform, StatusBar as RNStatusBar, StyleSheet, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { setStatusBarStyle, setStatusBarHidden, setStatusBarTranslucent } from 'expo-status-bar';
+import { setStatusBarStyle, setStatusBarHidden } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import type { StatusBarStyle } from 'expo-status-bar';
 import { SYSTEM_BARS, type SystemBarsMode, useThemeStore } from '@/utils/theme';
@@ -274,17 +274,11 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
       };
     }
 
-    // Configure status bar
+    // Configure status bar style + Android nav bar button style.
+    // SDK 54 edge-to-edge: translucency and background color are system-managed.
     setStatusBarStyle(currentStyle, animated);
 
-    // Configure translucent mode (Android) + transparent navigation bar
     if (Platform.OS === 'android') {
-      setStatusBarTranslucent(translucent);
-      RNStatusBar.setBackgroundColor('transparent');
-
-      // Ensure navigation bar is truly transparent — edgeToEdgeEnabled
-      // alone is insufficient on many OEM skins / older Android versions.
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
       NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
     }
 
@@ -308,13 +302,12 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
         setStatusBarStyle(previousStateRef.current.style, false);
         setStatusBarHidden(previousStateRef.current.hidden, 'none');
       }
-      // Restore Android navigation bar on unmount
+      // Restore Android navigation bar visibility on unmount
       if (restoreOnUnmount && Platform.OS === 'android') {
         NavigationBar.setVisibilityAsync('visible').catch(() => {});
-        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
       }
     };
-  }, [mode, currentStyle, translucent, animated, restoreOnUnmount, hideSystemBars, showSystemBars, isDark]);
+  }, [mode, currentStyle, animated, restoreOnUnmount, hideSystemBars, showSystemBars, isDark]);
 
   // ============================================================================
   // RETURN VALUE

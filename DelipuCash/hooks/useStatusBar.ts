@@ -14,8 +14,8 @@
  */
 
 import { useCallback, useEffect } from 'react';
-import { Platform, StatusBar as RNStatusBar, AccessibilityInfo } from 'react-native';
-import { setStatusBarStyle, setStatusBarTranslucent, setStatusBarHidden } from 'expo-status-bar';
+import { Platform } from 'react-native';
+import { setStatusBarStyle, setStatusBarHidden } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '@/utils/theme';
@@ -35,8 +35,9 @@ export interface StatusBarOptions {
   style?: 'light' | 'dark' | 'auto' | 'inverted';
   
   /**
-   * Whether the status bar should be translucent (Android only)
-   * Enables edge-to-edge design — true by default (2026 standard)
+   * Whether the status bar should be translucent (Android only).
+   * @deprecated SDK 54 edge-to-edge enforces translucent; this option is a no-op.
+   * Kept for API compatibility only.
    * @default true
    */
   translucent?: boolean;
@@ -55,8 +56,9 @@ export interface StatusBarOptions {
   animated?: boolean;
   
   /**
-   * Background color for Android status bar
-   * Only works when translucent is false
+   * Background color for Android status bar.
+   * @deprecated SDK 54 edge-to-edge enforces transparent; this option is a no-op.
+   * Kept for API compatibility only.
    * @default 'transparent'
    */
   backgroundColor?: string;
@@ -146,37 +148,17 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
   const shouldAnimate = mergedOptions.animated ?? true;
 
   // --------------------------------------------------------------------------
-  // Android edge-to-edge: translucent status bar + transparent navigation bar
+  // Android edge-to-edge: navigation bar button style.
+  // SDK 54 enforces edge-to-edge — status bar translucency and background
+  // color are handled by the system. Only button style still needs JS control.
   // --------------------------------------------------------------------------
   useEffect(() => {
     if (Platform.OS === 'android') {
-      // Translucent status bar (edge-to-edge top)
-      setStatusBarTranslucent(mergedOptions.translucent ?? true);
-
-      // Status bar background
-      if (!mergedOptions.translucent && mergedOptions.backgroundColor) {
-        RNStatusBar.setBackgroundColor(mergedOptions.backgroundColor, shouldAnimate);
-      } else {
-        // Transparent for edge-to-edge (Instagram/TikTok/YouTube standard)
-        RNStatusBar.setBackgroundColor('transparent', false);
-      }
-
-      // Ensure Android navigation bar is truly transparent — edgeToEdgeEnabled
-      // alone is insufficient on many OEM skins / older Android versions.
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
-
-      // Navigation bar button style: ensure icons are visible against content
       const navBarButtonStyle = mergedOptions.navigationBarStyle
         ?? (isDark ? 'light' : 'dark');
       NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
     }
-  }, [
-    mergedOptions.translucent,
-    mergedOptions.backgroundColor,
-    mergedOptions.navigationBarStyle,
-    shouldAnimate,
-    isDark,
-  ]);
+  }, [mergedOptions.navigationBarStyle, isDark]);
 
   // Update status bar style when theme changes
   useEffect(() => {
@@ -195,23 +177,20 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
   // --------------------------------------------------------------------------
   useFocusEffect(
     useCallback(() => {
+      // Re-apply status bar style when screen regains focus (tab switch).
+      // SDK 54 edge-to-edge: only style + hidden + nav button style need JS.
       setStatusBarStyle(resolvedStyle, true);
-      
-      if (Platform.OS === 'android') {
-        setStatusBarTranslucent(mergedOptions.translucent ?? true);
-        RNStatusBar.setBackgroundColor('transparent', false);
 
-        // Ensure navigation bar stays transparent on focus restore
-        NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      if (Platform.OS === 'android') {
         const navBarButtonStyle = mergedOptions.navigationBarStyle
           ?? (isDark ? 'light' : 'dark');
         NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
       }
-      
+
       if (mergedOptions.hidden !== undefined) {
         setStatusBarHidden(mergedOptions.hidden, 'fade');
       }
-    }, [resolvedStyle, mergedOptions.translucent, mergedOptions.hidden, mergedOptions.navigationBarStyle, isDark])
+    }, [resolvedStyle, mergedOptions.hidden, mergedOptions.navigationBarStyle, isDark])
   );
 
   // Utility functions
@@ -281,7 +260,6 @@ export function useImmersiveStatusBar() {
     resetStyle();
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('visible').catch(() => {});
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
     }
   }, [setHidden, resetStyle]);
 

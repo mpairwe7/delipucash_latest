@@ -18,7 +18,12 @@
 import { ApiResponse } from "@/types";
 import { useAuthStore } from "@/utils/auth/store";
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "";
+// Normalise the base URL the same way api.ts does:
+// 1. Default to the deployed Vercel API if env var is unset
+// 2. Strip trailing slashes and a trailing /api segment so that request
+//    paths like /api/r2/upload/avatar aren't doubled to /api/api/...
+const _rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
+const API_BASE_URL = _rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 /** Get current auth token for authenticated upload requests */
 function getAuthToken(): string | null {

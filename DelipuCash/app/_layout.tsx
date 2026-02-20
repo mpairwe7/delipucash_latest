@@ -1,6 +1,6 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { SplashScreen, Stack, usePathname } from 'expo-router';
-import { StatusBar, setStatusBarHidden, setStatusBarStyle, setStatusBarTranslucent } from 'expo-status-bar';
+import { StatusBar, setStatusBarHidden, setStatusBarStyle } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
 import { useEffect, useMemo } from 'react';
 import { AppState, LogBox, Platform, ErrorUtils } from 'react-native';
@@ -55,7 +55,8 @@ if (Platform.OS !== 'web') {
     // Filter out LayoutAnimation warnings in New Architecture
     const warningMessage = args.join(' ');
     if (warningMessage.includes('setLayoutAnimationEnabledExperimental') ||
-        warningMessage.includes('New Architecture')) {
+        warningMessage.includes('New Architecture') ||
+        warningMessage.includes('setBackgroundColorAsync is not supported')) {
       return; // Suppress these warnings
     }
     originalConsoleWarn.apply(console, args);
@@ -216,10 +217,8 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
     setStatusBarHidden(isImmersiveRoute, 'fade');
 
     if (Platform.OS === 'android') {
-      setStatusBarTranslucent(true);
-      // Explicitly set navigation bar background transparent — edgeToEdgeEnabled
-      // alone is not enough on many OEM skins / older Android versions.
-      NavigationBar.setBackgroundColorAsync('transparent').catch(() => {});
+      // SDK 54 edge-to-edge: translucency + background are system-managed.
+      // Only button style and visibility need JS control.
       NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
 
       if (isImmersiveRoute) {
@@ -233,9 +232,10 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
   return (
     <>
       {/* Declarative StatusBar component — authoritative baseline */}
+      {/* SDK 54 edge-to-edge: translucent + transparent are system defaults.
+          Only style (icon color) and hidden need declarative control. */}
       <StatusBar
         style={isDark ? 'light' : 'dark'}
-        translucent
         hidden={isImmersiveRoute}
         animated
       />
