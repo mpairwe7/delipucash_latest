@@ -542,7 +542,7 @@ export default function ProfileScreen(): React.ReactElement {
         { text: 'Maybe Later', style: 'cancel' },
         {
           text: 'Subscribe',
-          onPress: () => router.push('/subscription' as Href),
+          onPress: () => router.push('/(tabs)/surveys-new' as Href),
           style: 'default',
         },
       ]

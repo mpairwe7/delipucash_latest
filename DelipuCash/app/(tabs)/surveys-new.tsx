@@ -33,6 +33,7 @@ import {
 } from "@/components/survey";
 import { useRunningSurveys, useUnreadCount, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
 import { useSurveyCreatorAccess } from "@/services/purchasesHooks";
+import { InlinePremiumSection, type InlinePremiumSectionRef } from "@/components/payment";
 import {
   useAdsForPlacement,
   useBannerAds,
@@ -63,6 +64,7 @@ import { Href, router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useStatusBar } from "@/hooks/useStatusBar";
 import {
+  BarChart3,
   CheckCircle,
   Clock,
   CreditCard,
@@ -249,6 +251,7 @@ export default function SurveysScreen(): React.ReactElement {
   // Tab indicator animation
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
+  const premiumSectionRef = useRef<InlinePremiumSectionRef>(null);
 
   // Subscription status (via RevenueCat / Google Play Billing)
   const {
@@ -632,14 +635,7 @@ export default function SurveysScreen(): React.ReactElement {
     }
 
     if (!isAdmin && !hasActiveSubscription) {
-      Alert.alert(
-        "Subscription Required",
-        "You need an active subscription to create surveys.",
-        [
-          { text: "Maybe Later", style: "cancel" },
-          { text: "Subscribe", onPress: () => router.push("/subscription" as Href) },
-        ]
-      );
+      premiumSectionRef.current?.expand();
       return;
     }
 
@@ -681,15 +677,6 @@ export default function SurveysScreen(): React.ReactElement {
       params: { importedQuestions: JSON.stringify(data.questions) },
     } as Href);
   }, []);
-
-  // Subscribe handler
-  const handleSubscribe = useCallback(() => {
-    if (!isAuthenticated) {
-      openAuth({ mode: "signin" });
-      return;
-    }
-    router.push("/subscription" as Href);
-  }, [isAuthenticated, openAuth]);
 
   // Render list item — enhanced with WCAG 2.2 AA accessibility
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
@@ -971,72 +958,22 @@ export default function SurveysScreen(): React.ReactElement {
         </View>
       )}
 
-      {/* Subscription Banner — hidden from admins who bypass subscription */}
+      {/* Survey Premium Section — hidden from admins who bypass subscription */}
       {authReady && isAuthenticated && !isAdmin && (
-        <TouchableOpacity
-          style={[
-            styles.subscriptionBanner,
-            {
-              backgroundColor: hasActiveSubscription
-                ? withAlpha(colors.success, 0.1)
-                : withAlpha(colors.warning, 0.1),
-              borderColor: hasActiveSubscription
-                ? withAlpha(colors.success, 0.25)
-                : withAlpha(colors.warning, 0.25),
-            },
+        <InlinePremiumSection
+          ref={premiumSectionRef}
+          featureType="SURVEY"
+          title="Survey Premium"
+          accentColor={colors.primary}
+          features={[
+            { icon: FileText, text: 'Create unlimited surveys' },
+            { icon: BarChart3, text: 'Advanced analytics & data export' },
+            { icon: CreditCard, text: 'Mobile money payouts to respondents' },
           ]}
-          onPress={!hasActiveSubscription ? handleSubscribe : undefined}
-          activeOpacity={hasActiveSubscription ? 1 : 0.8}
-          accessibilityRole="button"
-          accessibilityLabel={
-            hasActiveSubscription
-              ? `Active subscription with ${remainingDays} days remaining`
-              : "No active subscription. Tap to subscribe"
-          }
-        >
-          <View style={[
-            styles.subscriptionIconBg,
-            {
-              backgroundColor: hasActiveSubscription
-                ? withAlpha(colors.success, 0.15)
-                : withAlpha(colors.warning, 0.15),
-            }
-          ]}>
-            {hasActiveSubscription ? (
-              <ShieldCheck size={20} color={colors.success} strokeWidth={2} />
-            ) : (
-              <CreditCard size={20} color={colors.warning} strokeWidth={2} />
-            )}
-          </View>
-          <View style={styles.subscriptionContent}>
-            <Text
-              style={[
-                styles.subscriptionTitle,
-                { color: hasActiveSubscription ? colors.success : colors.warning }
-              ]}
-              maxFontSizeMultiplier={FONT_SCALE.body}
-            >
-              {hasActiveSubscription ? "Active Subscription" : "No Active Subscription"}
-            </Text>
-            <Text
-              style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}
-              maxFontSizeMultiplier={FONT_SCALE.body}
-            >
-              {hasActiveSubscription
-                ? `${remainingDays} days remaining${subscriptionStatus?.willRenew ? ' • Auto-renewing' : ''}`
-                : "Subscribe to create unlimited surveys"
-              }
-            </Text>
-          </View>
-          {!hasActiveSubscription && (
-            <View style={[styles.subscribeBtn, { backgroundColor: colors.warning }]}>
-              <Text style={[styles.subscribeBtnText, { color: colors.card }]}>Subscribe</Text>
-            </View>
-          )}
-          {hasActiveSubscription && (
-            <CheckCircle size={20} color={colors.success} strokeWidth={2} />
-          )}
-        </TouchableOpacity>
+          onPurchaseComplete={() => {
+            refetchSubscription();
+          }}
+        />
       )}
 
       {/* Tabs */}
@@ -1156,7 +1093,7 @@ export default function SurveysScreen(): React.ReactElement {
       </View>
     </View>
   ), [
-    authReady, colors, currentSurveys.length, activeTab, handleSubscribe, handleTabChange,
+    authReady, colors, currentSurveys.length, activeTab, handleTabChange,
     hasActiveSubscription, isAdmin, isAuthenticated, isSearching, isTablet, remainingDays, search,
     searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, unreadCount, cardViewStyle
   ]);

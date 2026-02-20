@@ -19,6 +19,8 @@ import { purchasesQueryKeys } from './purchasesQueryKeys';
 // TYPES
 // ============================================================================
 
+export type FeatureType = 'SURVEY' | 'VIDEO';
+
 export interface MoMoPaymentInitiation {
   payment: {
     id: string;
@@ -54,7 +56,21 @@ export interface MoMoPaymentStatus {
   } | null;
 }
 
+/** Per-feature subscription status from the backend */
+export interface FeatureSubscriptionStatus {
+  isActive: boolean;
+  source: 'GOOGLE_PLAY' | 'MOBILE_MONEY' | 'NONE';
+  expirationDate: string | null;
+  remainingDays: number;
+  planType: string | null;
+}
+
+/** Unified status with per-feature breakdown + legacy flat fields */
 export interface UnifiedSubscriptionStatus {
+  // Per-feature (new)
+  survey?: FeatureSubscriptionStatus;
+  video?: FeatureSubscriptionStatus;
+  // Legacy flat fields (backward compat)
   isActive: boolean;
   source: 'GOOGLE_PLAY' | 'MOBILE_MONEY' | 'NONE';
   expirationDate: string | null;
@@ -84,29 +100,13 @@ export const subscriptionPaymentKeys = {
   all: ['subscription-payment'] as const,
   status: (id: string) => [...subscriptionPaymentKeys.all, 'status', id] as const,
   unified: () => [...subscriptionPaymentKeys.all, 'unified'] as const,
-  plans: () => [...subscriptionPaymentKeys.all, 'plans'] as const,
+  plans: (featureType?: FeatureType) => [...subscriptionPaymentKeys.all, 'plans', featureType ?? 'SURVEY'] as const,
 };
 
 // ============================================================================
 // HOOKS
 // ============================================================================
 
-/**
- * Hook to initiate a MoMo payment for subscription
- *
- * @example
- * ```tsx
- * const { mutate: initiate, isPending } = useMoMoPaymentInitiate();
- *
- * initiate({
- *   phoneNumber: '+256700123456',
- *   provider: 'MTN',
- *   planType: 'MONTHLY',
- * }, {
- *   onSuccess: (data) => setPaymentId(data.payment.id),
- * });
- * ```
- */
 /**
  * Generate a client-side idempotency key.
  * Uses timestamp + random suffix — unique per payment attempt.
@@ -117,6 +117,10 @@ function generateIdempotencyKey(): string {
   return `idk_${ts}_${rand}`;
 }
 
+/**
+ * Hook to initiate a MoMo payment for subscription
+ * Now accepts `featureType` to differentiate survey vs video payments.
+ */
 export function useMoMoPaymentInitiate() {
   const idempotencyKeyRef = useRef<string>(generateIdempotencyKey());
 
@@ -125,6 +129,7 @@ export function useMoMoPaymentInitiate() {
       phoneNumber: string;
       provider: 'MTN' | 'AIRTEL';
       planType: string;
+      featureType?: FeatureType;
     }) => {
       const response = await api.post<MoMoPaymentInitiation>(
         '/api/survey-payments/initiate',
@@ -166,6 +171,7 @@ export function useMoMoPaymentStatus(paymentId: string | null) {
 
 /**
  * Hook to get unified subscription status (MoMo + Google Play)
+ * Returns per-feature status (survey, video) alongside legacy flat fields.
  */
 export function useUnifiedSubscription() {
   return useQuery({
@@ -182,12 +188,16 @@ export function useUnifiedSubscription() {
 
 /**
  * Hook to fetch available MoMo subscription plans with pricing
+ *
+ * @param featureType - 'SURVEY' or 'VIDEO' (defaults to 'SURVEY')
  */
-export function useMoMoPlans() {
+export function useMoMoPlans(featureType: FeatureType = 'SURVEY') {
   return useQuery({
-    queryKey: subscriptionPaymentKeys.plans(),
+    queryKey: subscriptionPaymentKeys.plans(featureType),
     queryFn: async () => {
-      const response = await api.get<MoMoPlan[]>('/api/survey-subscriptions/plans');
+      const response = await api.get<MoMoPlan[]>(
+        `/api/survey-subscriptions/plans?featureType=${featureType}`,
+      );
       return response.data;
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -202,9 +212,11 @@ export function useMoMoPlans() {
  * - Auto-stops on SUCCESSFUL, FAILED, or 5-min timeout
  * - Invalidates subscription queries on success
  *
+ * @param featureType - 'SURVEY' or 'VIDEO' — threaded through to initiation
+ *
  * @example
  * ```tsx
- * const { initiate, status, isPolling, reset } = useMoMoPaymentFlow();
+ * const { initiate, status, isPolling, reset } = useMoMoPaymentFlow('SURVEY');
  *
  * // Start payment
  * initiate({ phoneNumber, provider, planType });
@@ -212,7 +224,7 @@ export function useMoMoPlans() {
  * // status will be: null | 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'TIMEOUT'
  * ```
  */
-export function useMoMoPaymentFlow() {
+export function useMoMoPaymentFlow(featureType: FeatureType = 'SURVEY') {
   const queryClient = useQueryClient();
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
@@ -242,13 +254,13 @@ export function useMoMoPaymentFlow() {
 
   const initiate = useCallback(
     (data: { phoneNumber: string; provider: 'MTN' | 'AIRTEL'; planType: string }) => {
-      initiateMutation.mutate(data, {
+      initiateMutation.mutate({ ...data, featureType }, {
         onSuccess: (result) => {
           setPaymentId(result.payment.id);
         },
       });
     },
-    [initiateMutation],
+    [initiateMutation, featureType],
   );
 
   const reset = useCallback(() => {

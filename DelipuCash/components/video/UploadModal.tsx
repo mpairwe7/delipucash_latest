@@ -348,7 +348,7 @@ function UploadModalComponent({
   const handleUpgrade = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onUpgradeRequired?.();
-    router.push('/subscription' as Href);
+    router.push('/(tabs)/videos-new' as Href);
   }, [onUpgradeRequired]);
 
   const handleClose = useCallback(() => {

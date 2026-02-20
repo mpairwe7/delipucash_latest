@@ -201,7 +201,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Navigate to subscription screen for upgrade
   const handleUpgrade = useCallback(() => {
     onUpgradeRequired?.();
-    router.push('/subscription' as Href);
+    router.push('/(tabs)/videos-new' as Href);
   }, [onUpgradeRequired]);
 
   // Cleanup on unmount - stop recording if in progress

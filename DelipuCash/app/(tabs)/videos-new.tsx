@@ -137,6 +137,8 @@ import {
 import { useAdFrequency } from '@/services/adFrequencyManager';
 import { useShouldShowAds } from '@/services/useShouldShowAds';
 import { useAuth } from '@/utils/auth/useAuth';
+import { useVideoPremium } from '@/services/purchasesHooks';
+import { InlinePremiumSection, type InlinePremiumSectionRef } from '@/components/payment';
 import { generateVideoShareUrl } from '@/utils/share';
 import { blendFeed } from '@/utils/feedBlender';
 import { insertAdsIntoFeed, DEFAULT_AD_CONFIG, type FeedItem } from '@/utils/feedAdEngine';
@@ -350,6 +352,8 @@ const MiniPlayerWrapper = React.memo(function MiniPlayerWrapper({
 export default function VideosScreen(): React.ReactElement {
   const { colors, isDark } = useTheme();
   const { isReady: authReady, isAuthenticated } = useAuth();
+  const { isPremium: hasVideoPremium, isLoading: videoPremiumLoading } = useVideoPremium();
+  const videoPremiumRef = useRef<InlinePremiumSectionRef>(null);
 
   // ============================================================================
   // SYSTEM BARS - Industry-standard immersive video experience
@@ -1314,6 +1318,24 @@ export default function VideosScreen(): React.ReactElement {
               <LiveViewerCount count={liveViewerCount} />
             </View>
           </View>
+
+          {/* Video Premium Section — shown for non-premium authenticated users */}
+          {authReady && isAuthenticated && !hasVideoPremium && !videoPremiumLoading && (
+            <InlinePremiumSection
+              ref={videoPremiumRef}
+              featureType="VIDEO"
+              title="Video Premium"
+              accentColor={colors.warning}
+              features={[
+                { icon: Upload, text: 'Upload videos up to 500 MB' },
+                { icon: Wifi, text: 'Livestream up to 2 hours' },
+                { icon: Camera, text: 'Record videos up to 30 minutes' },
+              ]}
+              onPurchaseComplete={() => {
+                // Premium status will auto-refresh via cache invalidation
+              }}
+            />
+          )}
         </View>
 
         {/* Search Overlay */}

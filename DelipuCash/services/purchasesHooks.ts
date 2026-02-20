@@ -15,7 +15,7 @@ import { useEffect, useCallback, useMemo } from 'react';
 import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { purchasesService, ENTITLEMENTS } from './purchasesService';
 import { purchasesQueryKeys } from './purchasesQueryKeys';
-import { useUnifiedSubscription } from './subscriptionPaymentHooks';
+import { useUnifiedSubscription, type FeatureSubscriptionStatus } from './subscriptionPaymentHooks';
 import {
   MAX_UPLOAD_SIZE_FREE,
   MAX_UPLOAD_SIZE_PREMIUM,
@@ -104,7 +104,7 @@ export function useCustomerInfo() {
  * ```
  */
 export function useSurveyCreatorAccess() {
-  const premium = usePremiumStatus();
+  const premium = useSurveyPremium();
   const { data: rcSub, refetch } = useSubscriptionStatus();
 
   // Google Play subs have willRenew from RevenueCat; MoMo subs don't auto-renew
@@ -184,27 +184,121 @@ export function useUnifiedSubscriptionStatus() {
 }
 
 /**
- * Unified premium status — single source of truth for all premium gating.
+ * Survey premium status — checks SURVEY_CREATOR entitlement (RC) + MoMo survey payments.
+ * Also checks legacy PREMIUM entitlement for backward compat with pre-split subscribers.
+ */
+export function useSurveyPremium() {
+  const { data: customerInfo, isLoading: rcLoading } = useCustomerInfo();
+  const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+
+  return useMemo(() => {
+    const surveyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.SURVEY_CREATOR];
+    const legacyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.PREMIUM];
+    const activeEntitlement = surveyEntitlement ?? legacyEntitlement;
+    const rcActive = Boolean(activeEntitlement?.isActive);
+
+    // Use per-feature status if available, fall back to legacy flat
+    const momoFeature: FeatureSubscriptionStatus | undefined = momoSub?.survey;
+    const momoActive = momoFeature?.isActive ?? false;
+
+    let source: 'GOOGLE_PLAY' | 'MOBILE_MONEY' | 'NONE' = 'NONE';
+    if (rcActive) source = 'GOOGLE_PLAY';
+    else if (momoActive) source = 'MOBILE_MONEY';
+
+    // Pull expiration from the active source
+    let expirationDate: string | null = null;
+    let remainingDays = 0;
+    let planType: string | null = null;
+
+    if (rcActive && activeEntitlement?.expirationDate) {
+      expirationDate = activeEntitlement.expirationDate;
+      remainingDays = Math.max(0, Math.ceil(
+        (new Date(expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      ));
+    } else if (momoActive && momoFeature) {
+      expirationDate = momoFeature.expirationDate;
+      remainingDays = momoFeature.remainingDays;
+      planType = momoFeature.planType;
+    }
+
+    return {
+      isPremium: rcActive || momoActive,
+      isLoading: rcLoading || momoLoading,
+      source,
+      expirationDate,
+      remainingDays,
+      planType,
+    };
+  }, [customerInfo, momoSub, rcLoading, momoLoading]);
+}
+
+/**
+ * Video premium status — checks VIDEO_PREMIUM entitlement (RC) + MoMo video payments.
+ * Also checks legacy PREMIUM entitlement for backward compat with pre-split subscribers.
+ */
+export function useVideoPremium() {
+  const { data: customerInfo, isLoading: rcLoading } = useCustomerInfo();
+  const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+
+  return useMemo(() => {
+    const videoEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.VIDEO_PREMIUM];
+    const legacyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.PREMIUM];
+    const activeEntitlement = videoEntitlement ?? legacyEntitlement;
+    const rcActive = Boolean(activeEntitlement?.isActive);
+
+    // Use per-feature status if available, fall back to legacy flat
+    const momoFeature: FeatureSubscriptionStatus | undefined = momoSub?.video;
+    const momoActive = momoFeature?.isActive ?? false;
+
+    let source: 'GOOGLE_PLAY' | 'MOBILE_MONEY' | 'NONE' = 'NONE';
+    if (rcActive) source = 'GOOGLE_PLAY';
+    else if (momoActive) source = 'MOBILE_MONEY';
+
+    // Pull expiration from the active source
+    let expirationDate: string | null = null;
+    let remainingDays = 0;
+    let planType: string | null = null;
+
+    if (rcActive && activeEntitlement?.expirationDate) {
+      expirationDate = activeEntitlement.expirationDate;
+      remainingDays = Math.max(0, Math.ceil(
+        (new Date(expirationDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+      ));
+    } else if (momoActive && momoFeature) {
+      expirationDate = momoFeature.expirationDate;
+      remainingDays = momoFeature.remainingDays;
+      planType = momoFeature.planType;
+    }
+
+    return {
+      isPremium: rcActive || momoActive,
+      isLoading: rcLoading || momoLoading,
+      source,
+      expirationDate,
+      remainingDays,
+      planType,
+    };
+  }, [customerInfo, momoSub, rcLoading, momoLoading]);
+}
+
+/**
+ * Unified premium status — union of survey + video premium.
  *
- * Returns true if the user has ANY active subscription (RevenueCat OR MoMo).
- * Use this for survey creation access, video premium, and ad-free gating.
- *
- * @example
- * ```tsx
- * const { isPremium, source, remainingDays } = usePremiumStatus();
- * ```
+ * Returns true if the user has ANY active subscription (survey OR video).
+ * Used for ad suppression via `useShouldShowAds`.
  */
 export function usePremiumStatus() {
-  const unified = useUnifiedSubscriptionStatus();
+  const survey = useSurveyPremium();
+  const video = useVideoPremium();
 
   return useMemo(() => ({
-    isPremium: unified.isActive,
-    isLoading: unified.isLoading,
-    source: unified.source,
-    expirationDate: unified.expirationDate,
-    remainingDays: unified.remainingDays,
-    planType: unified.planType,
-  }), [unified.isActive, unified.isLoading, unified.source, unified.expirationDate, unified.remainingDays, unified.planType]);
+    isPremium: survey.isPremium || video.isPremium,
+    isLoading: survey.isLoading || video.isLoading,
+    source: survey.source !== 'NONE' ? survey.source : video.source,
+    expirationDate: survey.expirationDate || video.expirationDate,
+    remainingDays: Math.max(survey.remainingDays, video.remainingDays),
+    planType: survey.planType || video.planType,
+  }), [survey, video]);
 }
 
 /**
@@ -222,41 +316,64 @@ export function useBillingIssueDetection() {
 
   const billingIssue = (() => {
     // ── RevenueCat (Google Play) billing issues ──
+    // Check both survey and video entitlements for billing issues
     if (customerInfo && subscription) {
-      const surveyEntitlement = customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR];
-      if (surveyEntitlement) {
-        // Grace period: subscription is active but billing retry is in progress
-        if (surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
-          return {
-            type: 'grace_period' as const,
-            source: 'GOOGLE_PLAY' as const,
-            detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
-            message: 'Your payment method needs updating. You still have access while we retry.',
-          };
-        }
-
-        // Expired with billing issue — account hold (no access)
-        if (!surveyEntitlement.isActive && surveyEntitlement.billingIssueDetectedAt) {
-          return {
-            type: 'account_hold' as const,
-            source: 'GOOGLE_PLAY' as const,
-            detectedAt: new Date(surveyEntitlement.billingIssueDetectedAt),
-            message: 'Your subscription is on hold due to a payment issue. Update your payment method to restore access.',
-          };
+      const entitlementIds = [ENTITLEMENTS.SURVEY_CREATOR, ENTITLEMENTS.VIDEO_PREMIUM, ENTITLEMENTS.PREMIUM];
+      for (const entitlementId of entitlementIds) {
+        const entitlement = customerInfo.entitlements.active[entitlementId];
+        if (entitlement) {
+          if (entitlement.isActive && entitlement.billingIssueDetectedAt) {
+            return {
+              type: 'grace_period' as const,
+              source: 'GOOGLE_PLAY' as const,
+              detectedAt: new Date(entitlement.billingIssueDetectedAt),
+              message: 'Your payment method needs updating. You still have access while we retry.',
+            };
+          }
+          if (!entitlement.isActive && entitlement.billingIssueDetectedAt) {
+            return {
+              type: 'account_hold' as const,
+              source: 'GOOGLE_PLAY' as const,
+              detectedAt: new Date(entitlement.billingIssueDetectedAt),
+              message: 'Your subscription is on hold due to a payment issue. Update your payment method to restore access.',
+            };
+          }
         }
       }
     }
 
     // ── MoMo billing issues ──
-    // If MoMo subscription data exists (user had a plan) but is no longer active,
-    // it means their MoMo subscription expired and needs renewal.
-    if (momoSub && momoSub.planType && !momoSub.isActive) {
-      return {
-        type: 'expired' as const,
-        source: 'MOBILE_MONEY' as const,
-        detectedAt: momoSub.expirationDate ? new Date(momoSub.expirationDate) : null,
-        message: 'Your mobile money subscription has expired. Renew to restore access to all premium features.',
-      };
+    // Check per-feature MoMo status for expired subscriptions
+    if (momoSub) {
+      const surveyFeature = momoSub.survey;
+      const videoFeature = momoSub.video;
+
+      if (surveyFeature && surveyFeature.planType && !surveyFeature.isActive) {
+        return {
+          type: 'expired' as const,
+          source: 'MOBILE_MONEY' as const,
+          detectedAt: surveyFeature.expirationDate ? new Date(surveyFeature.expirationDate) : null,
+          message: 'Your survey subscription has expired. Renew to continue creating surveys.',
+        };
+      }
+      if (videoFeature && videoFeature.planType && !videoFeature.isActive) {
+        return {
+          type: 'expired' as const,
+          source: 'MOBILE_MONEY' as const,
+          detectedAt: videoFeature.expirationDate ? new Date(videoFeature.expirationDate) : null,
+          message: 'Your video premium subscription has expired. Renew to restore extended upload and livestream limits.',
+        };
+      }
+
+      // Legacy flat field fallback
+      if (momoSub.planType && !momoSub.isActive) {
+        return {
+          type: 'expired' as const,
+          source: 'MOBILE_MONEY' as const,
+          detectedAt: momoSub.expirationDate ? new Date(momoSub.expirationDate) : null,
+          message: 'Your mobile money subscription has expired. Renew to restore access to premium features.',
+        };
+      }
     }
 
     return null;
@@ -289,7 +406,7 @@ export function useBillingIssueDetection() {
  * ```
  */
 export function useVideoPremiumAccess() {
-  const { isPremium, isLoading } = usePremiumStatus();
+  const { isPremium, isLoading } = useVideoPremium();
   const { refetch } = useSubscriptionStatus();
 
   return {
@@ -430,7 +547,9 @@ export function useSubscriptionListener(
     const removeListener = purchasesService.addCustomerInfoListener(
       (customerInfo: CustomerInfo) => {
         const isActive = Boolean(
-          customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR]?.isActive
+          customerInfo.entitlements.active[ENTITLEMENTS.SURVEY_CREATOR]?.isActive ||
+          customerInfo.entitlements.active[ENTITLEMENTS.VIDEO_PREMIUM]?.isActive ||
+          customerInfo.entitlements.active[ENTITLEMENTS.PREMIUM]?.isActive
         );
 
         // Update cache with new customer info

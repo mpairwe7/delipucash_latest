@@ -27,6 +27,7 @@ model AppUser {
   passwordResetExpiry      DateTime?             // Password reset token expiration
   subscriptionStatus       SubscriptionStatus    @default(INACTIVE)
   surveysubscriptionStatus SubscriptionStatus    @default(INACTIVE)
+  videoSubscriptionStatus  SubscriptionStatus    @default(INACTIVE)
   currentSubscriptionId    String?               @db.Uuid
   privacySettings          Json?
   createdAt                DateTime              @default(now())
@@ -633,6 +634,7 @@ model Payment {
   idempotencyKey   String?          @unique
   status           PaymentStatus    @default(PENDING)
   subscriptionType SubscriptionType
+  featureType      FeatureType      @default(SURVEY)
   startDate        DateTime
   endDate          DateTime
   createdAt        DateTime         @default(now())
@@ -641,6 +643,7 @@ model Payment {
   user             AppUser          @relation(fields: [userId], references: [id])
 
   @@index([userId, status])
+  @@index([userId, featureType, status])
 }
 
 model Notification {
@@ -715,6 +718,11 @@ enum surveysubscriptionStatus {
   ACTIVE
   INACTIVE
   PENDING
+}
+
+enum FeatureType {
+  SURVEY
+  VIDEO
 }
 
 enum SubscriptionType {

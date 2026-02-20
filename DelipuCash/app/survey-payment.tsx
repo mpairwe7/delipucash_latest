@@ -14,6 +14,6 @@ import React from 'react';
 import { Redirect } from 'expo-router';
 
 export default function SurveyPaymentRedirect() {
-  return <Redirect href="/subscription" />;
+  return <Redirect href="/(tabs)/surveys-new" />;
 }
 

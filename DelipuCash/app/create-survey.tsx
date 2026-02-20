@@ -359,7 +359,7 @@ const CreateSurveyScreen: React.FC = () => {
               if (needsAuth) {
                 openAuth({ mode: "signin" });
               } else {
-                router.replace("/subscription" as Href);
+                router.replace("/(tabs)/surveys-new" as Href);
               }
             }}
             variant="primary"

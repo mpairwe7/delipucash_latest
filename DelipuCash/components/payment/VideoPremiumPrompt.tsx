@@ -29,11 +29,14 @@ interface VideoPremiumPromptProps {
   action?: string;
   /** Called when the user dismisses the prompt */
   onDismiss?: () => void;
+  /** Called when the user taps upgrade; if omitted, navigates to /(tabs)/videos-new */
+  onUpgrade?: () => void;
 }
 
 export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
   action,
   onDismiss,
+  onUpgrade,
 }) => {
   const { colors } = useTheme();
   const router = useRouter();
@@ -85,7 +88,13 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
       </View>
 
       <Pressable
-        onPress={() => router.push('/subscription')}
+        onPress={() => {
+          if (onUpgrade) {
+            onUpgrade();
+          } else {
+            router.push('/(tabs)/videos-new');
+          }
+        }}
         style={({ pressed }) => [
           styles.cta,
           { backgroundColor: colors.warning, opacity: pressed ? 0.85 : 1 },

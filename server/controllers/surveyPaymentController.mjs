@@ -124,6 +124,96 @@ const SURVEY_SUBSCRIPTION_PLANS = [
 ];
 
 /**
+ * Video subscription plans configuration
+ * Separate pricing and features from survey plans
+ */
+const VIDEO_SUBSCRIPTION_PLANS = [
+  {
+    id: "vplan_daily",
+    type: "DAILY",
+    name: "Daily",
+    description: "24 hours of video premium access",
+    price: 200,
+    currency: "UGX",
+    durationDays: 1,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes"],
+    isActive: true,
+  },
+  {
+    id: "vplan_weekly",
+    type: "WEEKLY",
+    name: "Weekly",
+    description: "7 days of video premium access",
+    price: 1000,
+    currency: "UGX",
+    durationDays: 7,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes", "Livestream up to 2 hours"],
+    isActive: true,
+  },
+  {
+    id: "vplan_monthly",
+    type: "MONTHLY",
+    name: "Monthly",
+    description: "30 days of video premium access",
+    price: 3500,
+    currency: "UGX",
+    durationDays: 30,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes", "Livestream up to 2 hours", "Ad-free video experience"],
+    isPopular: true,
+    isActive: true,
+  },
+  {
+    id: "vplan_quarterly",
+    type: "QUARTERLY",
+    name: "Quarterly",
+    description: "90 days of video premium access",
+    price: 9000,
+    currency: "UGX",
+    durationDays: 90,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes", "Livestream up to 2 hours", "Ad-free video experience"],
+    savings: "Save 14%",
+    isActive: true,
+  },
+  {
+    id: "vplan_half_yearly",
+    type: "HALF_YEARLY",
+    name: "Half Yearly",
+    description: "180 days of video premium access",
+    price: 16000,
+    currency: "UGX",
+    durationDays: 180,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes", "Livestream up to 2 hours", "Ad-free video experience", "Priority video processing"],
+    savings: "Save 24%",
+    isActive: true,
+  },
+  {
+    id: "vplan_yearly",
+    type: "YEARLY",
+    name: "Yearly",
+    description: "365 days of video premium access",
+    price: 28000,
+    currency: "UGX",
+    durationDays: 365,
+    features: ["Upload up to 500 MB", "Record up to 30 minutes", "Livestream up to 2 hours", "Ad-free video experience", "Priority video processing"],
+    savings: "Save 33%",
+    isBestValue: true,
+    isActive: true,
+  },
+  {
+    id: "vplan_lifetime",
+    type: "LIFETIME",
+    name: "Lifetime",
+    description: "Unlimited lifetime video premium access",
+    price: 70000,
+    currency: "UGX",
+    durationDays: 36500,
+    features: ["Lifetime video premium", "All video features", "Priority processing", "Early access to new features"],
+    isBestValue: true,
+    isActive: true,
+  },
+];
+
+/**
  * Generate unique transaction ID
  */
 const generateTransactionId = () => {
@@ -142,10 +232,13 @@ const calculateEndDate = (startDate, durationDays) => {
 };
 
 /**
- * Get plan by type
+ * Get plan by type and feature
+ * @param {string} type - Plan type (e.g., 'MONTHLY')
+ * @param {string} featureType - 'SURVEY' or 'VIDEO' (default: 'SURVEY')
  */
-const getPlanByType = (type) => {
-  return SURVEY_SUBSCRIPTION_PLANS.find(p => p.type === type);
+const getPlanByType = (type, featureType = 'SURVEY') => {
+  const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+  return plans.find(p => p.type === type);
 };
 
 // ============================================================================
@@ -158,9 +251,11 @@ const getPlanByType = (type) => {
  * @route GET /api/survey-subscriptions/plans
  */
 export const getPlans = asyncHandler(async (req, res) => {
-  console.log('[SurveyPayment] Fetching subscription plans');
+  const featureType = req.query.featureType || 'SURVEY';
+  console.log(`[SurveyPayment] Fetching ${featureType} subscription plans`);
 
-  const activePlans = SURVEY_SUBSCRIPTION_PLANS.filter(p => p.isActive);
+  const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+  const activePlans = plans.filter(p => p.isActive);
 
   res.json(activePlans);
 });
@@ -245,7 +340,8 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
  * @route POST /api/survey-payments/initiate
  */
 export const initiatePayment = asyncHandler(async (req, res) => {
-  const { phoneNumber, provider, planType } = req.body;
+  const { phoneNumber, provider, planType, featureType: rawFeatureType } = req.body;
+  const featureType = rawFeatureType === 'VIDEO' ? 'VIDEO' : 'SURVEY';
   const idempotencyKey = req.headers['x-idempotency-key'] || req.body.idempotencyKey;
   const actualUserId = req.user?.id;
 
@@ -260,12 +356,12 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const plan = getPlanByType(planType);
+  const plan = getPlanByType(planType, featureType);
   if (!plan) {
     return res.status(400).json({ error: 'Invalid subscription plan type' });
   }
 
-  console.log(`[SurveyPayment] Initiating payment for user: ${actualUserId}, plan: ${planType}, provider: ${provider}`);
+  console.log(`[SurveyPayment] Initiating ${featureType} payment for user: ${actualUserId}, plan: ${planType}, provider: ${provider}`);
 
   // Clean phone number
   let cleanPhone = phoneNumber.replace(/\s/g, '');
@@ -293,7 +389,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
 
       if (existingByKey) {
         console.log(`[SurveyPayment] Idempotency hit for key: ${idempotencyKey}, returning existing payment: ${existingByKey.id}`);
-        const existingPlan = getPlanByType(existingByKey.subscriptionType);
+        const existingPlan = getPlanByType(existingByKey.subscriptionType, existingByKey.featureType);
         return res.status(200).json({
           payment: {
             id: existingByKey.id,
@@ -322,11 +418,13 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       }
     }
 
-    // Prevent concurrent payments — reject if a recent PENDING payment exists
+    // Prevent concurrent payments — reject if a recent PENDING payment for same feature exists
+    // Users can have 1 PENDING survey + 1 PENDING video payment simultaneously
     const existingPending = await prisma.payment.findFirst({
       where: {
         userId: actualUserId,
         status: 'PENDING',
+        featureType,
         createdAt: { gt: new Date(Date.now() - 15 * 60 * 1000) },
       },
     });
@@ -352,6 +450,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
         idempotencyKey: idempotencyKey || null,
         status: 'PENDING',
         subscriptionType: planType,
+        featureType,
         startDate: now,
         endDate: endDate,
         userId: actualUserId,
@@ -390,7 +489,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
 
     // Trigger actual mobile money request asynchronously
     // This would integrate with MTN/Airtel APIs
-    triggerMobileMoneyRequest(payment.id, provider, plan.price, cleanPhone, transactionId)
+    triggerMobileMoneyRequest(payment.id, provider, plan.price, cleanPhone, transactionId, featureType)
       .catch(err => console.error('[SurveyPayment] Mobile money request failed:', err));
 
   } catch (error) {
@@ -403,9 +502,14 @@ export const initiatePayment = asyncHandler(async (req, res) => {
  * Trigger mobile money collection request
  * Called asynchronously after creating payment record
  * Uses COLLECTION APIs (request-to-pay), NOT disbursement
+ *
+ * @param {string} featureType - 'SURVEY' or 'VIDEO' — determines which user status field to update
  */
-const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumber, transactionId) => {
-  console.log(`[SurveyPayment] Triggering ${provider} collection request...`);
+const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumber, transactionId, featureType = 'SURVEY') => {
+  console.log(`[SurveyPayment] Triggering ${provider} collection request for ${featureType}...`);
+
+  // Determine which user subscription status field to update
+  const statusField = featureType === 'VIDEO' ? 'videoSubscriptionStatus' : 'surveysubscriptionStatus';
 
   try {
     let result;
@@ -437,11 +541,11 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
 
         await tx.appUser.update({
           where: { id: payment.userId },
-          data: { surveysubscriptionStatus: 'ACTIVE' },
+          data: { [statusField]: 'ACTIVE' },
         });
       });
 
-      console.log(`[SurveyPayment] Payment ${paymentId} completed successfully`);
+      console.log(`[SurveyPayment] ${featureType} payment ${paymentId} completed successfully`);
     } else {
       await prisma.payment.update({
         where: { id: paymentId },
@@ -480,6 +584,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
             firstName: true,
             lastName: true,
             surveysubscriptionStatus: true,
+            videoSubscriptionStatus: true,
           },
         },
       },
@@ -517,6 +622,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
 
           if (liveStatus !== 'PENDING') {
             // Update DB to match provider reality
+            const statusField = payment.featureType === 'VIDEO' ? 'videoSubscriptionStatus' : 'surveysubscriptionStatus';
             if (liveStatus === 'SUCCESSFUL') {
               await prisma.$transaction(async (tx) => {
                 await tx.payment.update({
@@ -525,7 +631,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
                 });
                 await tx.appUser.update({
                   where: { id: payment.userId },
-                  data: { surveysubscriptionStatus: 'ACTIVE' },
+                  data: { [statusField]: 'ACTIVE' },
                 });
               });
               payment.status = 'SUCCESSFUL';
@@ -545,7 +651,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
       }
     }
 
-    const plan = getPlanByType(payment.subscriptionType);
+    const plan = getPlanByType(payment.subscriptionType, payment.featureType);
 
     let subscription = null;
     if (payment.status === 'SUCCESSFUL') {
@@ -591,6 +697,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
         firstName: payment.user.firstName,
         lastName: payment.user.lastName,
         surveysubscriptionStatus: payment.user.surveysubscriptionStatus,
+        videoSubscriptionStatus: payment.user.videoSubscriptionStatus,
       },
     });
   } catch (error) {
@@ -621,7 +728,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
     });
 
     const formattedPayments = payments.map(payment => {
-      const plan = getPlanByType(payment.subscriptionType);
+      const plan = getPlanByType(payment.subscriptionType, payment.featureType);
       
       return {
         id: payment.id,
@@ -704,51 +811,74 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
   try {
     const user = await prisma.appUser.findUnique({
       where: { id: userId },
-      select: { surveysubscriptionStatus: true },
+      select: {
+        surveysubscriptionStatus: true,
+        videoSubscriptionStatus: true,
+        subscriptionStatus: true, // Legacy unified Google Play status
+      },
     });
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Check latest successful MoMo payment with valid end date
-    const latestPayment = await prisma.payment.findFirst({
-      where: {
-        userId,
-        status: 'SUCCESSFUL',
-        endDate: { gt: new Date() },
-      },
-      orderBy: { endDate: 'desc' },
-    });
-
-    const momoActive = Boolean(latestPayment);
     const now = new Date();
-    let remainingDays = 0;
-    let expirationDate = null;
-    let planType = null;
 
-    if (latestPayment) {
-      expirationDate = latestPayment.endDate.toISOString();
-      remainingDays = Math.ceil(
-        (latestPayment.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      );
-      planType = latestPayment.subscriptionType;
-    }
+    // Helper to build per-feature status from MoMo payments + user status field
+    const buildFeatureStatus = (latestPayment, userStatusField) => {
+      const momoActive = Boolean(latestPayment);
+      let remainingDays = 0;
+      let expirationDate = null;
+      let planType = null;
 
-    // Determine source — MoMo if we found an active payment,
-    // GOOGLE_PLAY if user status is ACTIVE but no MoMo payment (set by RevenueCat webhook or manual),
-    // NONE otherwise
-    const isActive = momoActive || user.surveysubscriptionStatus === 'ACTIVE';
-    let source = 'NONE';
-    if (momoActive) source = 'MOBILE_MONEY';
-    else if (user.surveysubscriptionStatus === 'ACTIVE') source = 'GOOGLE_PLAY';
+      if (latestPayment) {
+        expirationDate = latestPayment.endDate.toISOString();
+        remainingDays = Math.ceil(
+          (latestPayment.endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        planType = latestPayment.subscriptionType;
+      }
+
+      const isActive = momoActive || userStatusField === 'ACTIVE';
+      let source = 'NONE';
+      if (momoActive) source = 'MOBILE_MONEY';
+      else if (userStatusField === 'ACTIVE') source = 'GOOGLE_PLAY';
+
+      return { isActive, source, expirationDate, remainingDays, planType };
+    };
+
+    // Fetch latest active MoMo payments per feature type
+    const [surveyPayment, videoPayment] = await Promise.all([
+      prisma.payment.findFirst({
+        where: { userId, status: 'SUCCESSFUL', featureType: 'SURVEY', endDate: { gt: now } },
+        orderBy: { endDate: 'desc' },
+      }),
+      prisma.payment.findFirst({
+        where: { userId, status: 'SUCCESSFUL', featureType: 'VIDEO', endDate: { gt: now } },
+        orderBy: { endDate: 'desc' },
+      }),
+    ]);
+
+    const survey = buildFeatureStatus(surveyPayment, user.surveysubscriptionStatus);
+    const video = buildFeatureStatus(videoPayment, user.videoSubscriptionStatus);
+
+    // Legacy unified status — active if ANY feature is active or legacy subscriptionStatus is ACTIVE
+    const legacyActive = survey.isActive || video.isActive || user.subscriptionStatus === 'ACTIVE';
+    let legacySource = 'NONE';
+    if (survey.source !== 'NONE') legacySource = survey.source;
+    else if (video.source !== 'NONE') legacySource = video.source;
+    else if (user.subscriptionStatus === 'ACTIVE') legacySource = 'GOOGLE_PLAY';
 
     res.json({
-      isActive,
-      source,
-      expirationDate,
-      remainingDays,
-      planType,
+      // Per-feature status (new)
+      survey,
+      video,
+      // Legacy flat fields (backward compat)
+      isActive: legacyActive,
+      source: legacySource,
+      expirationDate: survey.expirationDate || video.expirationDate,
+      remainingDays: Math.max(survey.remainingDays, video.remainingDays),
+      planType: survey.planType || video.planType,
     });
   } catch (error) {
     console.error('[SurveyPayment] Error checking unified subscription status:', error);
