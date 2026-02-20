@@ -9,10 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "androidStatusBar": {
-      "barStyle": "dark-content"
+      "barStyle": "light-content"
     },
     "androidNavigationBar": {
-      "barStyle": "dark-content",
+      "barStyle": "light-content",
       "enforceContrast": false
     },
     "ios": {

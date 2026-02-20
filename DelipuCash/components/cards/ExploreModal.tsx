@@ -48,10 +48,9 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { triggerHaptic } from '@/utils/quiz-utils';
+import { getResponsiveSize, getResponsivePadding, isTablet } from '@/utils/responsive';
 
-const { width, height } = Dimensions.get("window");
-const isTablet = width >= 768;
-const isSmallScreen = width < 375;
+const { height } = Dimensions.get("window");
 
 export interface ExploreFeature {
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
@@ -81,21 +80,6 @@ export interface ExploreModalProps {
   /** Test ID for testing */
   testID?: string;
 }
-
-/**
- * Get responsive size based on screen dimensions
- */
-const getResponsiveSize = (small: number, medium: number, large: number): number => {
-  if (isTablet) return large;
-  if (isSmallScreen) return small;
-  return medium;
-};
-
-const getResponsivePadding = (): number => {
-  if (isTablet) return 32;
-  if (isSmallScreen) return 16;
-  return 20;
-};
 
 export function ExploreModal({
   visible,

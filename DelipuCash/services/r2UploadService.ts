@@ -290,23 +290,40 @@ export async function uploadVideoToR2(
   try {
     const fileName = metadata.fileName || videoUri.split('/').pop() || 'video.mp4';
     const mimeType = metadata.mimeType || 'video/mp4';
-    
-    // Create FormData
-    const formData = new FormData();
-    formData.append('video', assetToFormData(videoUri, fileName, mimeType) as unknown as Blob);
-    formData.append('userId', userId);
-    
-    if (metadata.title) formData.append('title', metadata.title);
-    if (metadata.description) formData.append('description', metadata.description);
-    if (metadata.duration) formData.append('duration', String(metadata.duration));
-    
+
+    // Factory: rebuild FormData for each attempt (required after token refresh)
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('video', assetToFormData(videoUri, fileName, mimeType) as unknown as Blob);
+      fd.append('userId', userId);
+      if (metadata.title) fd.append('title', metadata.title);
+      if (metadata.description) fd.append('description', metadata.description);
+      if (metadata.duration) fd.append('duration', String(metadata.duration));
+      return fd;
+    };
+
+    options.onStart?.();
+
     // Upload with progress tracking
-    const response = await createProgressRequest(
+    let response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/video`,
       'POST',
-      formData,
+      buildFormData(),
       options
     );
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/upload/video`,
+          'POST',
+          buildFormData(),
+          options
+        );
+      }
+    }
 
     // 2026: Safe JSON parsing with content-type validation
     const data = await safeParseJSON(response);
@@ -364,21 +381,39 @@ export async function uploadMediaToR2(
     const thumbnailFileName = metadata.thumbnailFileName || thumbnailUri.split('/').pop() || 'thumbnail.jpg';
     const thumbnailMimeType = metadata.thumbnailMimeType || 'image/jpeg';
 
-    const formData = new FormData();
-    formData.append('video', assetToFormData(videoUri, videoFileName, videoMimeType) as unknown as Blob);
-    formData.append('thumbnail', assetToFormData(thumbnailUri, thumbnailFileName, thumbnailMimeType) as unknown as Blob);
-    formData.append('userId', userId);
+    // Factory: rebuild FormData for each attempt (required after token refresh)
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('video', assetToFormData(videoUri, videoFileName, videoMimeType) as unknown as Blob);
+      fd.append('thumbnail', assetToFormData(thumbnailUri, thumbnailFileName, thumbnailMimeType) as unknown as Blob);
+      fd.append('userId', userId);
+      if (metadata.title) fd.append('title', metadata.title);
+      if (metadata.description) fd.append('description', metadata.description);
+      if (metadata.duration) fd.append('duration', String(metadata.duration));
+      return fd;
+    };
 
-    if (metadata.title) formData.append('title', metadata.title);
-    if (metadata.description) formData.append('description', metadata.description);
-    if (metadata.duration) formData.append('duration', String(metadata.duration));
+    options.onStart?.();
 
-    const response = await createProgressRequest(
+    let response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/media`,
       'POST',
-      formData,
+      buildFormData(),
       options
     );
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/upload/media`,
+          'POST',
+          buildFormData(),
+          options
+        );
+      }
+    }
 
     // 2026: Safe JSON parsing with content-type validation
     const data = await safeParseJSON(response);
@@ -428,38 +463,61 @@ export async function uploadThumbnailToR2(
   try {
     const fileName = thumbnailUri.split('/').pop() || 'thumbnail.jpg';
     const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
-    
-    const formData = new FormData();
-    formData.append('thumbnail', assetToFormData(thumbnailUri, fileName, mimeType) as unknown as Blob);
-    formData.append('userId', userId);
-    if (videoId) formData.append('videoId', videoId);
-    
-    const response = await createProgressRequest(
+
+    // Factory: rebuild FormData for each attempt (required after token refresh)
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('thumbnail', assetToFormData(thumbnailUri, fileName, mimeType) as unknown as Blob);
+      fd.append('userId', userId);
+      if (videoId) fd.append('videoId', videoId);
+      return fd;
+    };
+
+    options.onStart?.();
+
+    let response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/thumbnail`,
       'POST',
-      formData,
+      buildFormData(),
       options
     );
-    
-    const data = await response.json();
-    options.onComplete?.();
-    
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/upload/thumbnail`,
+          'POST',
+          buildFormData(),
+          options
+        );
+      }
+    }
+
+    // 2026: Safe JSON parsing with content-type validation
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
-      const error = new Error(data.message || 'Upload failed');
+      const errorMessage = data.message || data.error || 'Thumbnail upload failed';
+      const error = new Error(errorMessage);
       options.onError?.(error);
       return {
         success: false,
         data: data as ThumbnailUploadResult,
-        error: data.message,
+        error: errorMessage,
       };
     }
-    
+
+    // Only signal completion on actual success
+    options.onComplete?.();
+
     return {
       success: true,
       data: data.thumbnail as ThumbnailUploadResult,
     };
   } catch (error) {
-    const err = error instanceof Error ? error : new Error('Upload failed');
+    const err = error instanceof Error ? error : new Error('Thumbnail upload failed');
     options.onError?.(err);
     return {
       success: false,
@@ -565,27 +623,46 @@ export async function uploadLivestreamChunk(
   userId: string
 ): Promise<ApiResponse<{ key: string; size: number; chunkIndex: number }>> {
   try {
-    const formData = new FormData();
-    formData.append('chunk', assetToFormData(chunkUri, `chunk_${chunkIndex}.mp4`, 'video/mp4') as unknown as Blob);
-    formData.append('sessionId', sessionId);
-    formData.append('chunkIndex', String(chunkIndex));
-    formData.append('userId', userId);
-    
-    const response = await fetch(`${API_BASE_URL}/api/r2/livestream/chunk`, {
-      method: 'POST',
-      body: formData,
-    });
-    
-    const data = await response.json();
-    
+    // Factory: rebuild FormData for each attempt (required after token refresh)
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('chunk', assetToFormData(chunkUri, `chunk_${chunkIndex}.mp4`, 'video/mp4') as unknown as Blob);
+      fd.append('sessionId', sessionId);
+      fd.append('chunkIndex', String(chunkIndex));
+      fd.append('userId', userId);
+      return fd;
+    };
+
+    let response = await createProgressRequest(
+      `${API_BASE_URL}/api/r2/livestream/chunk`,
+      'POST',
+      buildFormData(),
+      {}
+    );
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/livestream/chunk`,
+          'POST',
+          buildFormData(),
+          {}
+        );
+      }
+    }
+
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
       return {
         success: false,
         data: data,
-        error: data.message,
+        error: data.message || data.error || 'Chunk upload failed',
       };
     }
-    
+
     return {
       success: true,
       data: data.chunk,
@@ -609,27 +686,34 @@ export async function finalizeLivestreamRecording(
   description?: string
 ): Promise<ApiResponse<{ url: string; totalSize: number; videoId: string }>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/r2/livestream/finalize`, {
+    let response = await fetch(`${API_BASE_URL}/api/r2/livestream/finalize`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({
-        sessionId,
-        userId,
-        title,
-        description,
-      }),
+      body: JSON.stringify({ sessionId, userId, title, description }),
     });
-    
-    const data = await response.json();
-    
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await fetch(`${API_BASE_URL}/api/r2/livestream/finalize`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ sessionId, userId, title, description }),
+        });
+      }
+    }
+
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
       return {
         success: false,
         data: data,
-        error: data.message,
+        error: data.message || data.error || 'Finalization failed',
       };
     }
-    
+
     return {
       success: true,
       data: {
@@ -659,22 +743,34 @@ export async function getSignedPlaybackUrl(
   expiresIn: number = 3600
 ): Promise<ApiResponse<{ url: string; expiresIn: number }>> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/r2/presign/download`, {
+    let response = await fetch(`${API_BASE_URL}/api/r2/presign/download`, {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify({ key, expiresIn }),
     });
-    
-    const data = await response.json();
-    
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await fetch(`${API_BASE_URL}/api/r2/presign/download`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ key, expiresIn }),
+        });
+      }
+    }
+
+    const data = await safeParseJSON(response);
+
     if (!response.ok) {
       return {
         success: false,
         data: data,
-        error: data.message,
+        error: data.message || data.error || 'Failed to get playback URL',
       };
     }
-    
+
     return {
       success: true,
       data: {
@@ -726,35 +822,53 @@ export async function uploadAdMediaToR2(
     const fileName = metadata.fileName || mediaUri.split('/').pop() || 'media';
     const mimeType = metadata.mimeType || (mediaUri.toLowerCase().includes('.mp4') ? 'video/mp4' : 'image/jpeg');
 
-    // Create FormData
-    const formData = new FormData();
-    formData.append('media', assetToFormData(mediaUri, fileName, mimeType) as unknown as Blob);
-    formData.append('userId', userId);
-
-    if (metadata.adId) formData.append('adId', metadata.adId);
+    // Factory: rebuild FormData for each attempt (required after token refresh)
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('media', assetToFormData(mediaUri, fileName, mimeType) as unknown as Blob);
+      fd.append('userId', userId);
+      if (metadata.adId) fd.append('adId', metadata.adId);
+      return fd;
+    };
 
     options.onStart?.();
 
     // Upload with progress tracking
-    const response = await createProgressRequest(
+    let response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/ad-media`,
       'POST',
-      formData,
+      buildFormData(),
       options
     );
 
-    const data = await response.json();
-    options.onComplete?.();
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/upload/ad-media`,
+          'POST',
+          buildFormData(),
+          options
+        );
+      }
+    }
+
+    const data = await safeParseJSON(response);
 
     if (!response.ok) {
-      const error = new Error(data.message || 'Upload failed');
+      const errorMessage = data.message || data.error || 'Ad media upload failed';
+      const error = new Error(errorMessage);
       options.onError?.(error);
       return {
         success: false,
         data: data as AdMediaUploadResult,
-        error: data.message,
+        error: errorMessage,
       };
     }
+
+    // Only signal completion on actual success
+    options.onComplete?.();
 
     return {
       success: true,

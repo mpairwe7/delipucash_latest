@@ -36,7 +36,6 @@ import {
   RefreshControl,
   StyleSheet,
   Platform,
-  Dimensions,
   ListRenderItem,
   AccessibilityInfo,
 } from "react-native";
@@ -125,12 +124,8 @@ import {
   BetweenContentAd,
   AdPlacementWrapper,
 } from "@/components/ads";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
-// Responsive breakpoints
-const isTablet = SCREEN_WIDTH >= 768;
-const isSmallScreen = SCREEN_WIDTH < 375;
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { isSmallScreen } from '@/utils/responsive';
 
 // Section identifiers for FlatList
 type SectionType =
@@ -259,6 +254,7 @@ const HorizontalSeparator = memo(function HorizontalSeparator() {
 
 export default function HomePage(): React.ReactElement {
   const insets = useSafeAreaInsets();
+  const layout = useResponsiveLayout();
   const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
   const { data: user, loading: userLoading, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -335,10 +331,11 @@ export default function HomePage(): React.ReactElement {
 
   // Responsive padding
   const horizontalPadding = useMemo(() => {
-    if (isTablet) return SPACING["2xl"];
-    if (isSmallScreen) return SPACING.base;
-    return SPACING.lg;
-  }, []);
+    return layout.select({
+      phone: layout.isSmallPhone ? SPACING.base : SPACING.lg,
+      tablet: SPACING["2xl"],
+    });
+  }, [layout]);
 
   // Progressive loading: only block the entire screen when we have absolutely
   // nothing to show (no cached user, no persisted query cache).
@@ -1102,7 +1099,7 @@ export default function HomePage(): React.ReactElement {
                       key={item.id}
                       style={[
                         styles.exploreItemWrapper,
-                        { width: isTablet ? "31%" : "48%" },
+                        { width: layout.isTablet ? "31%" : "48%" },
                       ]}
                     >
                       <ExploreCard
@@ -1112,7 +1109,7 @@ export default function HomePage(): React.ReactElement {
                         colors={item.colors}
                         onPress={() => handleExplorePress(item.id)}
                         index={idx}
-                        variant={isSmallScreen ? "compact" : "default"}
+                        variant={layout.isSmallPhone ? "compact" : "default"}
                       />
                     </View>
                   ))}
@@ -1195,7 +1192,13 @@ export default function HomePage(): React.ReactElement {
         scrollEventThrottle={200}
         contentContainerStyle={[
           styles.flatListContent,
-          { paddingTop: insets.top + SPACING.sm, paddingHorizontal: horizontalPadding },
+          {
+            paddingTop: insets.top + SPACING.sm,
+            paddingHorizontal: horizontalPadding,
+            maxWidth: layout.contentMaxWidth,
+            alignSelf: 'center' as const,
+            width: '100%',
+          },
         ]}
         refreshControl={
           <RefreshControl

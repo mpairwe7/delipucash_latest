@@ -140,6 +140,9 @@ import { triggerHaptic } from "@/utils/quiz-utils";
 // Error Boundary
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
+// Responsive layout
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+
 // ============================================================================
 // PERFORMANCE: Memoized wrapper to avoid inline closure in renderItem
 // ============================================================================
@@ -452,6 +455,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
 export default function QuestionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar();
+  const layout = useResponsiveLayout();
   const { data: user } = useUser();
   const { isReady: authReady, isAuthenticated } = useAuth();
 
@@ -1022,7 +1026,12 @@ export default function QuestionsScreen(): React.ReactElement {
           ListFooterComponent={renderFooter}
           contentContainerStyle={[
             styles.listContent,
-            { paddingBottom: insets.bottom + 80 },
+            {
+              paddingBottom: insets.bottom + 80,
+              maxWidth: layout.contentMaxWidth,
+              alignSelf: 'center' as const,
+              width: '100%',
+            },
           ]}
           showsVerticalScrollIndicator={false}
           refreshControl={

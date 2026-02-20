@@ -1952,7 +1952,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
                     <Upload size={18} color={colors.primaryText} />
                 )}
                 <Text style={[styles.modalUploadText, { color: colors.primaryText }]}>
-                  {isUploading ? 'Importing...' : `Choose ${selectedImportType.toUpperCase()} File`}
+                  {isUploading ? 'Importing...' : 'Choose File'}
                 </Text>
               </TouchableOpacity>
             </View>

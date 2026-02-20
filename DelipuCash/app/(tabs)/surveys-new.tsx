@@ -85,7 +85,6 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
   AccessibilityInfo,
   Pressable,
@@ -93,6 +92,7 @@ import {
 import { X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
 
 // ============================================================================
 // MEMOIZED COMPONENTS
@@ -218,8 +218,9 @@ interface ListItem {
 export default function SurveysScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar(); // Focus-aware status bar management
-  const { width } = useWindowDimensions();
-  const isTablet = width >= 768;
+  const layout = useResponsiveLayout();
+  const { isTablet } = layout;
+  const width = layout.width;
 
   // Store state (individual selectors — avoid full-store subscriptions)
   const activeTab = useSurveyUIStore(s => s.activeTab);
@@ -1173,6 +1174,9 @@ export default function SurveysScreen(): React.ReactElement {
           {
             paddingTop: insets.top,
             paddingBottom: insets.bottom + SPACING['3xl'] + 100, // Space for FAB
+            maxWidth: layout.contentMaxWidth,
+            alignSelf: 'center' as const,
+            width: '100%',
           },
         ]}
         showsVerticalScrollIndicator={false}
@@ -1189,9 +1193,9 @@ export default function SurveysScreen(): React.ReactElement {
         updateCellsBatchingPeriod={50}
         windowSize={5}
         initialNumToRender={8}
-        // Grid layout for tablet
-        numColumns={isTablet && cardViewStyle === 'grid' ? 2 : 1}
-        key={isTablet && cardViewStyle === 'grid' ? 'grid' : 'list'} // Force re-render on layout change
+        // Grid layout for tablet — uses reactive gridColumns from useResponsiveLayout
+        numColumns={isTablet && cardViewStyle === 'grid' ? layout.gridColumns : 1}
+        key={isTablet && cardViewStyle === 'grid' ? `grid-${layout.gridColumns}` : 'list'} // Force re-render on layout/rotation change
         columnWrapperStyle={isTablet && cardViewStyle === 'grid' ? styles.gridRow : undefined}
       />
 

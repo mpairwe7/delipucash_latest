@@ -31,7 +31,6 @@ import {
   StyleSheet,
   Alert,
   Platform,
-  Dimensions,
   FlatList,
   ListRenderItemInfo,
   Modal,
@@ -111,19 +110,7 @@ import {
   useThemeStore,
   withAlpha,
 } from '@/utils/theme';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-// const SCREEN_HEIGHT = Dimensions.get('window').height; // unused for now
-
-// Responsive helpers
-const isTablet = SCREEN_WIDTH >= 768;
-const isSmallScreen = SCREEN_WIDTH < 375;
-
-const getResponsivePadding = () => {
-  if (isTablet) return 32;
-  if (isSmallScreen) return 16;
-  return 20;
-};
+import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
 
 // Section types for FlatList
 type SectionType =
@@ -343,6 +330,7 @@ const SignOutSection = memo(function SignOutSection({ onSignOut, colors }: SignO
 export default function ProfileScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle, isDark } = useStatusBar(); // Focus-aware status bar management
+  const layout = useResponsiveLayout();
   const toggleTheme = useThemeStore(s => s.toggleTheme);
   const { signOut } = useAuth();
   
@@ -390,7 +378,10 @@ export default function ProfileScreen(): React.ReactElement {
     }
   }, [user]);
 
-  const responsivePadding = getResponsivePadding();
+  const responsivePadding = layout.select({
+    phone: layout.isSmallPhone ? 16 : 20,
+    tablet: 32,
+  });
 
   // Profile data — defensive: treat null / undefined / whitespace-only as absent
   const profile = useMemo(() => {
@@ -1010,6 +1001,9 @@ export default function ProfileScreen(): React.ReactElement {
             paddingTop: SPACING.sm,
             paddingBottom: insets.bottom + SPACING['2xl'],
             paddingHorizontal: responsivePadding,
+            maxWidth: layout.contentMaxWidth,
+            alignSelf: 'center' as const,
+            width: '100%',
           },
         ]}
         showsVerticalScrollIndicator={false}

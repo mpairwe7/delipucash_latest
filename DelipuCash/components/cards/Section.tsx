@@ -24,7 +24,6 @@ import {
   StyleProp,
   ViewStyle,
   Platform,
-  Dimensions,
 } from "react-native";
 import { MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -36,10 +35,7 @@ import {
   SHADOWS,
 } from "@/utils/theme";
 import { triggerHaptic } from '@/utils/quiz-utils';
-
-const { width } = Dimensions.get("window");
-const isTablet = width >= 768;
-const isSmallScreen = width < 375;
+import { getResponsiveSize, isTablet } from '@/utils/responsive';
 
 export interface SectionProps {
   /** Section title */
@@ -61,15 +57,6 @@ export interface SectionProps {
   /** Test ID for testing */
   testID?: string;
 }
-
-/**
- * Get responsive size based on screen dimensions
- */
-const getResponsiveSize = (small: number, medium: number, large: number): number => {
-  if (isTablet) return large;
-  if (isSmallScreen) return small;
-  return medium;
-};
 
 export function Section({
   title,

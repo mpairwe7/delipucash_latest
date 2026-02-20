@@ -21,7 +21,6 @@ import {
   ViewStyle,
   Pressable,
   Platform,
-  Dimensions,
 } from "react-native";
 import Animated, {
   useSharedValue,
@@ -44,9 +43,7 @@ import { Question } from "@/types";
 // Create AnimatedPressable
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-const { width } = Dimensions.get("window");
-const isTablet = width >= 768;
-const isSmallScreen = width < 375;
+import { getResponsiveSize } from '@/utils/responsive';
 
 export interface RecentQuestionCardProps {
   /** Question data object */
@@ -68,15 +65,6 @@ const SPRING_CONFIG = {
   damping: 15,
   stiffness: 150,
   mass: 0.5,
-};
-
-/**
- * Get responsive size based on screen dimensions
- */
-const getResponsiveSize = (small: number, medium: number, large: number): number => {
-  if (isTablet) return large;
-  if (isSmallScreen) return small;
-  return medium;
 };
 
 /**
