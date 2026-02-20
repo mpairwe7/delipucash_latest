@@ -707,7 +707,12 @@ export async function uploadVideoViaPresignedUrl(
   const { uploadUrl, key: r2VideoKey, publicUrl: videoPublicUrl } = presignResult.data;
 
   // Step 2: Upload directly to R2 (bypasses Vercel entirely)
-  const uploadSuccess = await uploadToPresignedUrl(uploadUrl, videoUri, mimeType, options);
+  // Only forward onProgress/onStart — onComplete is deferred until after finalize (Step 3)
+  const uploadSuccess = await uploadToPresignedUrl(uploadUrl, videoUri, mimeType, {
+    onProgress: options.onProgress,
+    onStart: options.onStart,
+    onError: options.onError,
+  });
   if (!uploadSuccess) {
     throw new Error('Direct upload to storage failed');
   }

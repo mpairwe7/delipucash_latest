@@ -167,6 +167,10 @@ export function useUploadVideoToR2(): UseMutationResult<
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
+              // XHR bytes fully sent — now waiting for finalize API call
+              if (event.progress >= 100) {
+                setIsProcessing(true);
+              }
             },
             onComplete: () => {
               setProgress(100);
@@ -250,6 +254,10 @@ export function useUploadMediaToR2(): UseMutationResult<
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
+              // XHR bytes fully sent — now waiting for finalize API call
+              if (event.progress >= 100) {
+                setIsProcessing(true);
+              }
             },
             onComplete: () => {
               setProgress(100);

@@ -103,6 +103,8 @@ const NON_RETRYABLE_UPLOAD_ERROR_PATTERNS = [
   'forbidden',
   'token expired',
   'not signed in',
+  'failed to get upload url',
+  'file not found in storage',
 ];
 
 function isNonRetryableUploadError(message: string): boolean {
@@ -177,23 +179,19 @@ function UploadModalComponent({
   const isProcessing = isProcessingVideo || isProcessingMedia;
   const uploadProgress = isUploadingMedia ? mediaProgress : videoProgress;
 
-  // Retry tracking for user feedback
-  const [retryAttempt, setRetryAttempt] = useState(0);
-  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing' | 'retrying'>('idle');
+  // Upload phase for UI feedback
+  const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'processing'>('idle');
 
   // Derive upload phase from hook states
   useEffect(() => {
     if (isProcessing) {
       setUploadPhase('processing');
-    } else if (isUploading && retryAttempt > 0) {
-      setUploadPhase('retrying');
     } else if (isUploading) {
       setUploadPhase('uploading');
     } else {
-      // Reset to idle only when not uploading/processing
       setUploadPhase(prev => (prev === 'idle' ? prev : 'idle'));
     }
-  }, [isUploading, isProcessing, retryAttempt]);
+  }, [isUploading, isProcessing]);
 
   // Sync premium status with store
   useEffect(() => {
@@ -354,11 +352,9 @@ function UploadModalComponent({
   }, [onUpgradeRequired]);
 
   const handleClose = useCallback(() => {
-    if (isUploading || isProcessing || uploadPhase === 'retrying') {
+    if (isUploading || isProcessing) {
       Alert.alert(
-        uploadPhase === 'processing' ? 'Processing Video' :
-        uploadPhase === 'retrying' ? 'Retrying Upload' :
-        'Upload in Progress',
+        uploadPhase === 'processing' ? 'Processing Video' : 'Upload in Progress',
         uploadPhase === 'processing'
           ? 'Your video is being processed on the server. Closing now may result in a lost upload.'
           : 'An upload is currently in progress. Are you sure you want to cancel?',
@@ -368,7 +364,6 @@ function UploadModalComponent({
             text: 'Cancel Upload',
             style: 'destructive',
             onPress: () => {
-              setRetryAttempt(0);
               setUploadPhase('idle');
               resetForm();
               onClose();
@@ -413,7 +408,6 @@ function UploadModalComponent({
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setRetryAttempt(0);
     setUploadPhase('uploading');
 
     // Track in VideoStore
@@ -462,7 +456,6 @@ function UploadModalComponent({
       if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const videoId = result.data?.id || '';
-      setRetryAttempt(0);
       setUploadPhase('idle');
       setTitle('');
       setDescription('');
@@ -474,7 +467,6 @@ function UploadModalComponent({
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Upload failed');
 
-      setRetryAttempt(0);
       setUploadPhase('idle');
       if (fileId) failUpload(fileId, error.message);
 
@@ -483,13 +475,20 @@ function UploadModalComponent({
         { text: 'OK', style: 'cancel' }
       ];
 
-      if (error.message.includes('Network') || error.message.toLowerCase().includes('timeout') || error.message.toLowerCase().includes('timed out')) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('network') || msg.includes('timeout') || msg.includes('timed out')) {
         userMessage = 'Upload failed due to network issues. Please check your connection and try again.';
         actions = [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Retry', onPress: handleUpload },
         ];
-      } else if (error.message.includes('Server error') || error.message.includes('finalize')) {
+      } else if (msg.includes('direct upload') || msg.includes('storage failed')) {
+        userMessage = 'Upload to cloud storage failed. Please check your connection and try again.';
+        actions = [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: handleUpload },
+        ];
+      } else if (msg.includes('server error') || msg.includes('finalize')) {
         userMessage = 'Server is temporarily unavailable. Please try again in a moment.';
         actions = [
           { text: 'Cancel', style: 'cancel' },
@@ -587,13 +586,12 @@ function UploadModalComponent({
 
           <TouchableOpacity
             onPress={handleUpload}
-            disabled={!isValid || isUploading || isProcessing || uploadPhase === 'retrying'}
+            disabled={!isValid || isUploading || isProcessing}
             style={[
               styles.uploadButton,
               {
                 backgroundColor:
                   uploadPhase === 'processing' ? colors.warning :
-                  uploadPhase === 'retrying' ? colors.warning :
                   isValid && !isUploading ? colors.primary : colors.border,
                 opacity: isUploading || isProcessing ? 0.7 : 1,
               },
@@ -613,7 +611,6 @@ function UploadModalComponent({
               ]}
             >
               {uploadPhase === 'processing' ? 'Processing...' :
-               uploadPhase === 'retrying' ? `Retry ${retryAttempt}/2` :
                isUploading ? `${uploadProgress}%` :
                'Upload'}
             </Text>
@@ -621,19 +618,15 @@ function UploadModalComponent({
         </View>
 
         {/* Upload progress bar — stays visible during processing & retry */}
-        {(isUploading || isProcessing || uploadPhase === 'retrying') && (
+        {(isUploading || isProcessing) && (
           <View style={styles.progressBarContainer}>
             <View
               style={[
                 styles.progressBar,
                 {
                   backgroundColor:
-                    uploadPhase === 'processing' ? colors.warning :
-                    uploadPhase === 'retrying' ? colors.warning :
-                    colors.primary,
-                  width: uploadPhase === 'processing' ? '100%' :
-                         uploadPhase === 'retrying' ? '100%' :
-                         `${uploadProgress}%`,
+                    uploadPhase === 'processing' ? colors.warning : colors.primary,
+                  width: uploadPhase === 'processing' ? '100%' : `${uploadProgress}%`,
                 },
               ]}
             />
@@ -641,12 +634,10 @@ function UploadModalComponent({
         )}
 
         {/* Upload phase status text */}
-        {uploadPhase !== 'idle' && uploadPhase !== 'uploading' && (
+        {uploadPhase === 'processing' && (
           <View style={[styles.phaseStatusContainer, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
             <Text style={[styles.phaseStatusText, { color: colors.warning }]}>
-              {uploadPhase === 'processing'
-                ? 'Video uploaded. Processing on server...'
-                : `Connection issue. Retrying (${retryAttempt}/2)...`}
+              Video uploaded. Finalizing on server...
             </Text>
           </View>
         )}
