@@ -205,17 +205,8 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   }), []);
 
   // ── Animations ──
-  const expandAnim = useSharedValue(0);
-  useEffect(() => {
-    expandAnim.value = reduceMotion
-      ? (isExpanded ? 1 : 0)
-      : withSpring(isExpanded ? 1 : 0, SPRING_CONFIG);
-  }, [isExpanded, reduceMotion]);
-
-  const expandStyle = useAnimatedStyle(() => ({
-    opacity: expandAnim.value,
-    maxHeight: expandAnim.value * 2000,
-  }));
+  // FadeIn/FadeOut on the Animated.View handles opacity.
+  // No manual opacity spring needed — avoids Reanimated layout animation conflict.
 
   // ── Derived state ──
   const featureOffering = useMemo(() => {
@@ -390,10 +381,9 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
       {isExpanded && (
         <Animated.View
           ref={expandedRef}
-          style={[styles.expandedContainer, expandStyle]}
+          style={styles.expandedContainer}
           entering={reduceMotion ? undefined : FadeIn.duration(250)}
           exiting={reduceMotion ? undefined : FadeOut.duration(150)}
-          accessibilityRole="tabpanel"
           accessibilityLabel={`${title} purchase options`}
         >
           {/* Feature list */}
