@@ -1167,8 +1167,8 @@ export default function HomePage(): React.ReactElement {
   if (isInitialLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Status bar with translucent for edge-to-edge design */}
-        <StatusBar style={statusBarStyle} translucent animated />
+        {/* Status bar — SDK 54 edge-to-edge handles translucency automatically */}
+        <StatusBar style={statusBarStyle} animated />
         <View
           style={[
             styles.skeletonContainer,
@@ -1183,8 +1183,8 @@ export default function HomePage(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Status bar with translucent for edge-to-edge design */}
-      <StatusBar style={statusBarStyle} translucent animated />
+      {/* Status bar — SDK 54 edge-to-edge handles translucency automatically */}
+      <StatusBar style={statusBarStyle} animated />
       
       <AnimatedFlatList
         ref={flatListRef}

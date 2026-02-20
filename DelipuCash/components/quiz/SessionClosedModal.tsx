@@ -142,7 +142,7 @@ export const SessionClosedModal: React.FC<SessionClosedModalProps> = ({
   }, [onRedeem]);
 
   return (
-    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent>
       <BlurView intensity={70} style={StyleSheet.absoluteFill}>
         <View
           style={[

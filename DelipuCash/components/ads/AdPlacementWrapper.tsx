@@ -304,6 +304,7 @@ const InterstitialAdComponent: React.FC<InterstitialAdProps> = memo(({
       animationType="fade"
       transparent
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={handleClose}
     >
       <View style={styles.interstitialOverlay}>

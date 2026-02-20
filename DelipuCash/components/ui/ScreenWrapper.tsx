@@ -72,7 +72,9 @@ export interface ScreenWrapperProps {
   /** Override status bar style */
   statusBarStyle?: StatusBarStyle;
   
-  /** Make status bar translucent (Android) */
+  /**
+   * @deprecated SDK 54 edge-to-edge enforces translucent; this prop is a no-op.
+   */
   statusBarTranslucent?: boolean;
   
   /** Container style override */
@@ -238,10 +240,9 @@ function ScreenWrapperComponent({
       edges={safeAreaEdges}
       testID={testID}
     >
-      {/* Status bar with animated transitions for theme changes */}
-      <StatusBar 
-        style={resolvedStatusBarStyle} 
-        translucent={statusBarTranslucent}
+      {/* Status bar — SDK 54 edge-to-edge handles translucency automatically */}
+      <StatusBar
+        style={resolvedStatusBarStyle}
         animated
       />
 

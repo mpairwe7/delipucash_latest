@@ -156,7 +156,7 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
     if (Platform.OS === 'android') {
       const navBarButtonStyle = mergedOptions.navigationBarStyle
         ?? (isDark ? 'light' : 'dark');
-      NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
+      NavigationBar.setStyle(navBarButtonStyle);
     }
   }, [mergedOptions.navigationBarStyle, isDark]);
 
@@ -184,7 +184,7 @@ export function useStatusBar(options: StatusBarOptions = {}): StatusBarConfig {
       if (Platform.OS === 'android') {
         const navBarButtonStyle = mergedOptions.navigationBarStyle
           ?? (isDark ? 'light' : 'dark');
-        NavigationBar.setButtonStyleAsync(navBarButtonStyle).catch(() => {});
+        NavigationBar.setStyle(navBarButtonStyle);
       }
 
       if (mergedOptions.hidden !== undefined) {

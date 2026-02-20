@@ -1154,7 +1154,7 @@ export default function VideosScreen(): React.ReactElement {
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar style={statusBarStyle} translucent animated />
+        <StatusBar style={statusBarStyle} animated />
 
         {/* Main Video Feed — rendered FIRST so the header naturally paints on top.
             The feed uses flex: 1 and is offset by headerHeight via contentContainerStyle. */}

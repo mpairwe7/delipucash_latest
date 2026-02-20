@@ -766,6 +766,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
       transparent
       animationType="none"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={handleClose}
       accessibilityViewIsModal
     >

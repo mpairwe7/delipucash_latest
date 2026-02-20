@@ -279,7 +279,7 @@ export function useSystemBars(options: UseSystemBarsOptions = {}): UseSystemBars
     setStatusBarStyle(currentStyle, animated);
 
     if (Platform.OS === 'android') {
-      NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
+      NavigationBar.setStyle(isDark ? 'light' : 'dark');
     }
 
     // Apply mode-specific settings

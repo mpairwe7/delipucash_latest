@@ -969,7 +969,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} translucent animated />
+      <StatusBar style={statusBarStyle} animated />
 
       {/* Header */}
       <Animated.View

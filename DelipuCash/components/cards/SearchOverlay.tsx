@@ -237,6 +237,7 @@ function SearchOverlayComponent({
       transparent
       onRequestClose={handleClose}
       statusBarTranslucent
+      navigationBarTranslucent
     >
       <KeyboardAvoidingView
         style={styles.modalContainer}

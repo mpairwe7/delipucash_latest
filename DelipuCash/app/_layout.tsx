@@ -218,8 +218,8 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
 
     if (Platform.OS === 'android') {
       // SDK 54 edge-to-edge: translucency + background are system-managed.
-      // Only button style and visibility need JS control.
-      NavigationBar.setButtonStyleAsync(isDark ? 'light' : 'dark').catch(() => {});
+      // Only style and visibility need JS control.
+      NavigationBar.setStyle(isDark ? 'light' : 'dark');
 
       if (isImmersiveRoute) {
         NavigationBar.setVisibilityAsync('hidden').catch(() => {});

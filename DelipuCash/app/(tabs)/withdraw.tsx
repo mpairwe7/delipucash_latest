@@ -457,7 +457,7 @@ export default function WithdrawScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} translucent animated />
+      <StatusBar style={statusBarStyle} animated />
 
       <ScrollView
         style={styles.scrollView}

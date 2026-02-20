@@ -803,7 +803,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               <ChevronDown size={20} color={colors.textMuted} />
             </TouchableOpacity>
 
-            <Modal visible={showDropdownModal} transparent animationType="fade">
+            <Modal visible={showDropdownModal} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent>
               <TouchableOpacity
                 style={styles.dropdownOverlay}
                 activeOpacity={1}
@@ -1374,7 +1374,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         />
       </View>
 
-      <Modal transparent visible={showReview} animationType="none" onRequestClose={closeReviewModal}>
+      <Modal transparent visible={showReview} animationType="none" onRequestClose={closeReviewModal} statusBarTranslucent navigationBarTranslucent>
         <Animated.View
           style={[
             styles.modalOverlay,

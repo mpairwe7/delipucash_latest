@@ -1013,6 +1013,7 @@ function VideoPlayerComponent({
       presentationStyle="fullScreen"
       onRequestClose={handleClose}
       statusBarTranslucent
+      navigationBarTranslucent
       testID={testID}
     >
       <StatusBar hidden />

@@ -1158,7 +1158,7 @@ export default function SurveysScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} translucent animated />
+      <StatusBar style={statusBarStyle} animated />
 
       <FlatList
         ref={flatListRef}

@@ -168,8 +168,15 @@ const handleMulterError = (err, req, res, next) => {
       message: err.message,
     });
   }
-  
+
+  // Propagate non-multer errors (e.g. auth errors from verifyToken)
+  // to the app-level error handler instead of masking them as INVALID_FILE.
   if (err) {
+    // If the error has a statusCode (e.g. from errorHandler()), preserve it
+    if (err.statusCode) {
+      return next(err);
+    }
+    // Otherwise it's likely a file-filter rejection from multer's fileFilter callback
     return res.status(400).json({
       success: false,
       error: 'INVALID_FILE',

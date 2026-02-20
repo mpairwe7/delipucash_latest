@@ -947,7 +947,7 @@ export default function ProfileScreen(): React.ReactElement {
   if (isLoading && !user) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <StatusBar style={statusBarStyle} translucent animated />
+        <StatusBar style={statusBarStyle} animated />
         <View
           style={[
             styles.content,
@@ -978,7 +978,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <StatusBar style={statusBarStyle} translucent animated />
+      <StatusBar style={statusBarStyle} animated />
 
       {/* Notification Bell Header */}
       <Animated.View

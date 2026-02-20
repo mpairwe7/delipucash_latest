@@ -12,7 +12,8 @@
       "barStyle": "dark-content"
     },
     "androidNavigationBar": {
-      "barStyle": "dark-content"
+      "barStyle": "dark-content",
+      "enforceContrast": false
     },
     "ios": {
       "supportsTablet": true,

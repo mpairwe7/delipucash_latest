@@ -17,6 +17,7 @@
 
 import { ApiResponse } from "@/types";
 import { useAuthStore } from "@/utils/auth/store";
+import { silentRefresh, isTokenExpiredResponse } from './tokenRefresh';
 
 // Normalise the base URL the same way api.ts does:
 // 1. Default to the deployed Vercel API if env var is unset
@@ -795,17 +796,33 @@ export async function uploadAvatarToR2(
     const fileName = avatarUri.split('/').pop() || 'avatar.jpg';
     const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg';
 
-    const formData = new FormData();
-    formData.append('avatar', assetToFormData(avatarUri, fileName, mimeType) as unknown as Blob);
+    const buildFormData = () => {
+      const fd = new FormData();
+      fd.append('avatar', assetToFormData(avatarUri, fileName, mimeType) as unknown as Blob);
+      return fd;
+    };
 
     options.onStart?.();
 
-    const response = await createProgressRequest(
+    let response = await createProgressRequest(
       `${API_BASE_URL}/api/r2/upload/avatar`,
       'POST',
-      formData,
+      buildFormData(),
       options
     );
+
+    // If access token expired → silent refresh → retry once
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed) {
+        response = await createProgressRequest(
+          `${API_BASE_URL}/api/r2/upload/avatar`,
+          'POST',
+          buildFormData(),
+          options
+        );
+      }
+    }
 
     const data = await safeParseJSON(response);
 

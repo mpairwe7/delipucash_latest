@@ -665,7 +665,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     // Camera view — the main recording/live screen
     content = (
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar style="light" translucent animated />
+        <StatusBar style="light" animated />
 
         <TouchableOpacity
           activeOpacity={1}

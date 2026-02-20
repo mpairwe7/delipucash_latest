@@ -879,6 +879,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
       transparent
       animationType="none"
       statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
       accessibilityViewIsModal
     >
