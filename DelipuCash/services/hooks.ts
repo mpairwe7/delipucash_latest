@@ -811,6 +811,8 @@ export function useSubmitSurvey(): UseMutationResult<
       // Invalidate surveys list to update response counts
       queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+      // Refresh user profile so walletBalance reflects the new reward
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
 
       // Invalidate attempt check cache for this survey
       queryClient.invalidateQueries({

@@ -358,6 +358,29 @@ export const videoApi = {
   },
 
   /**
+   * Refresh a single video's signed URLs by fetching from GET /api/videos/:id
+   * Used when playback fails due to expired signed URLs (ExoPlayer source error).
+   * Returns only the fresh videoUrl (and thumbnail), or null on failure.
+   */
+  async refreshVideoUrl(videoId: string): Promise<{ videoUrl: string; thumbnail: string } | null> {
+    try {
+      const token = getAuthToken();
+      const response = await fetchJson<{ data: Video }>(VIDEO_ROUTES.get(videoId), undefined, token);
+      if (response.success && response.data) {
+        const raw = (response.data as any).data || response.data;
+        const videoUrl = toAbsoluteUrl(raw.videoUrl);
+        const thumbnail = toAbsoluteUrl(raw.thumbnail);
+        if (videoUrl && videoUrl.length > 0) {
+          return { videoUrl, thumbnail };
+        }
+      }
+    } catch (err) {
+      if (__DEV__) console.warn('[videoApi] refreshVideoUrl failed:', err);
+    }
+    return null;
+  },
+
+  /**
    * Get trending videos — dedicated /trending endpoint with time-decay scoring
    * Now supports pagination + localization
    */

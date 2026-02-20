@@ -93,6 +93,7 @@ import { Video } from '@/types';
 import { useVideoFeedStore } from '@/store/VideoFeedStore';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 import { telemetry } from '@/services/telemetryApi';
+import { videoApi } from '@/services/videoApi';
 
 // ============================================================================
 // CONSTANTS
@@ -362,6 +363,9 @@ function VideoFeedItemComponent({
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accumulatedSeekRef = useRef(0);
   const isMountedRef = useRef(true);
+  // Playback error → URL refresh retry (max 1 auto-retry per mount)
+  const urlRetryCountRef = useRef(0);
+  const MAX_URL_RETRIES = 1;
 
   // Telemetry refs — all tracking state in refs to avoid re-renders at 250ms
   const telemetryRef = useRef({
@@ -551,9 +555,32 @@ function VideoFeedItemComponent({
           isPlayerReadyRef.current = false;
         } else if (event.status === 'error') {
           isPlayerReadyRef.current = false;
-          setHasError(true);
           setIsBuffering(false);
           if (__DEV__) console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, (event as any).error || 'Unknown error');
+
+          // Auto-retry once with a fresh signed URL (expired R2 URLs return XML → extractor error)
+          if (urlRetryCountRef.current < MAX_URL_RETRIES) {
+            urlRetryCountRef.current += 1;
+            (async () => {
+              try {
+                const fresh = await videoApi.refreshVideoUrl(video.id);
+                if (fresh && fresh.videoUrl && isMountedRef.current && player) {
+                  if (__DEV__) console.log(`[VideoFeedItem] Retrying video ${video.id} with fresh URL`);
+                  setIsBuffering(true);
+                  await player.replaceAsync(fresh.videoUrl);
+                  // statusChange → readyToPlay will auto-play
+                  return;
+                }
+              } catch {
+                // URL refresh failed — fall through to error state
+              }
+              if (isMountedRef.current) {
+                setHasError(true);
+              }
+            })();
+          } else {
+            setHasError(true);
+          }
         }
       });
 
@@ -897,12 +924,21 @@ function VideoFeedItemComponent({
                   setHasError(false);
                   setIsBuffering(true);
                   isPlayerReadyRef.current = false;
-                  // 2026: Reload the source with replaceAsync — simply calling
-                  // play() after an error doesn't reload the failed source.
-                  if (player && videoSource) {
+                  // Reset retry counter so the auto-retry can fire again after manual retry
+                  urlRetryCountRef.current = 0;
+
+                  if (player) {
                     try {
-                      await player.replaceAsync(videoSource);
-                      // statusChange → readyToPlay will trigger auto-play
+                      // Fetch a fresh signed URL before retrying
+                      const fresh = await videoApi.refreshVideoUrl(video.id);
+                      const freshUrl = fresh?.videoUrl || videoSource;
+                      if (freshUrl) {
+                        await player.replaceAsync(freshUrl);
+                        // statusChange → readyToPlay will trigger auto-play
+                      } else {
+                        setHasError(true);
+                        setIsBuffering(false);
+                      }
                     } catch {
                       setHasError(true);
                       setIsBuffering(false);

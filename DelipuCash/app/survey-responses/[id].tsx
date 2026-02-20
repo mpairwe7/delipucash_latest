@@ -445,7 +445,6 @@ const SurveyResponsesScreen = (): React.ReactElement => {
           styles.tabBar,
           deviceType !== 'phone' && { justifyContent: 'center', gap: SPACING.xl },
         ]}
-        role="tablist"
       >
         {(['summary', 'questions', 'individual'] as ViewMode[]).map((mode) => (
           <TouchableOpacity

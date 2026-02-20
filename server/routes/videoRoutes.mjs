@@ -3,6 +3,7 @@ import {
   createVideo,
   getVideosByUser,
   getAllVideos,
+  getVideoById,
   getTrendingVideos,
   getFollowingVideos,
   updateVideo,
@@ -68,6 +69,7 @@ router.get('/live', getLiveStreams);
 router.get('/user/:userId', getVideosByUser);
 router.get('/:id/comments', getVideoComments);
 router.get('/limits/:userId', getVideoLimits);
+router.get('/:id', optionalAuth, getVideoById);               // single video with fresh signed URLs (MUST be after all named routes)
 
 // ============================================================================
 // PROTECTED / PUBLIC MUTATION ROUTES

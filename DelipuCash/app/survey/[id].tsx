@@ -21,7 +21,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router, useLocalSearchParams } from "expo-router";
 import {
-  Award,
   Calendar,
   CheckCircle2,
   ChevronDown,
@@ -60,6 +59,7 @@ import {
 import { evaluateConditions } from "@/utils/conditionalLogic";
 import type { ConditionalLogicConfig } from "@/types";
 import { FileUploadQuestion } from "@/components/survey/FileUploadQuestion";
+import { SurveyCompletionOverlay } from "@/components/survey/SurveyCompletionOverlay";
 
 // Unique ID for InputAccessoryView (iOS keyboard toolbar)
 const INPUT_ACCESSORY_VIEW_ID = "survey-input-accessory";
@@ -253,7 +253,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const slideAnim = useRef(new Animated.Value(0)).current;
   const modalOpacity = useRef(new Animated.Value(0)).current;
   const modalScale = useRef(new Animated.Value(0.95)).current;
-  const successScale = useRef(new Animated.Value(0)).current;
+
 
   // Initialize attempt store when survey loads
   useEffect(() => {
@@ -479,13 +479,6 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           setPayoutInitiated(!!data.payoutInitiated);
           closeReviewModal();
           setShowSuccess(true);
-          // Animate success
-          Animated.spring(successScale, {
-            toValue: 1,
-            useNativeDriver: true,
-            damping: 12,
-            stiffness: 120,
-          }).start();
         },
         onError: (err) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
@@ -564,62 +557,20 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   }, []);
 
   // ============================================================================
-  // SUCCESS STATE
+  // SUCCESS STATE — Enhanced completion overlay with celebration + smart CTAs
   // ============================================================================
   if (showSuccess) {
     return (
-      <View style={[styles.stateContainer, { backgroundColor: colors.background }]}>
-        <StatusBar style={statusBarStyle} />
-        <Animated.View
-          style={[
-            styles.successIcon,
-            {
-              backgroundColor: withAlpha(colors.primary, 0.12),
-              transform: [{ scale: successScale }],
-            },
-          ]}
-        >
-          <Award size={56} color={colors.primary} strokeWidth={1.5} />
-        </Animated.View>
-        <Text style={[styles.stateTitle, { color: colors.text }]}>Survey Completed!</Text>
-        <Text style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300 }]}>
-          Thank you for your responses. Your feedback is valuable.
-        </Text>
-        {(submittedReward ?? 0) > 0 && (
-          <View style={[styles.rewardBadge, { backgroundColor: withAlpha(colors.primary, 0.14) }]}>
-            <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
-            <Text style={[styles.rewardBadgeText, { color: colors.primary }]}>
-              You earned {formatCurrency(submittedReward || 0)}!
-            </Text>
-          </View>
-        )}
-        {payoutInitiated && (
-          <Text
-            accessibilityLiveRegion="polite"
-            accessibilityRole="alert"
-            style={[styles.stateText, { color: colors.success, textAlign: 'center', maxWidth: 300, marginTop: SPACING.sm }]}
-          >
-            Mobile money payment is being sent to your phone.
-          </Text>
-        )}
-        {!payoutInitiated && (submittedReward ?? 0) > 0 && (
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[styles.stateText, { color: colors.textMuted, textAlign: 'center', maxWidth: 300, marginTop: SPACING.xs, fontSize: TYPOGRAPHY.fontSize.xs }]}
-          >
-            Points added to your account.
-          </Text>
-        )}
-        <PrimaryButton
-          title="Back to Surveys"
-          onPress={() => {
-            storeReset();
-            router.back();
-          }}
-          style={{ marginTop: SPACING.xl, minWidth: 200 }}
-          accessibilityLabel="Go back to browse surveys"
-        />
-      </View>
+      <SurveyCompletionOverlay
+        visible={showSuccess}
+        earnedAmount={submittedReward ?? 0}
+        payoutInitiated={payoutInitiated}
+        completedSurveyId={id || ''}
+        onBackToSurveys={() => {
+          storeReset();
+          router.back();
+        }}
+      />
     );
   }
 
@@ -1803,28 +1754,6 @@ const styles = StyleSheet.create({
   attemptedDateText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  // Success state styles
-  successIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: RADIUS["2xl"],
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: SPACING.lg,
-  },
-  rewardBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.md,
-    borderRadius: RADIUS.full,
-    marginTop: SPACING.md,
-  },
-  rewardBadgeText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.lg,
   },
   // Optional badge
   optionalBadge: {

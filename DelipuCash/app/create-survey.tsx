@@ -387,7 +387,6 @@ const CreateSurveyScreen: React.FC = () => {
           marginBottom: SPACING.md,
         },
       ]}
-      role="tablist"
       accessibilityLabel="Survey creation methods"
     >
       <View

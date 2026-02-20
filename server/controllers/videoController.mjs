@@ -352,6 +352,86 @@ export const getAllVideos = asyncHandler(async (req, res) => {
 });
 
 // ============================================================================
+// GET SINGLE VIDEO BY ID — returns fresh signed URLs for playback
+// Used by the client to refresh expired signed URLs on playback error
+// ============================================================================
+
+export const getVideoById = asyncHandler(async (req, res) => {
+  try {
+    const { id } = req.params;
+    const authUserId = req.user?.id;
+
+    const video = await prisma.video.findUnique({
+      where: { id },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    if (!video) {
+      return res.status(404).json({ success: false, message: 'Video not found' });
+    }
+
+    // Per-user like/bookmark status (only if authenticated)
+    const [userLike, userBookmark] = await Promise.all([
+      authUserId
+        ? prisma.videoLike.findFirst({ where: { userId: authUserId, videoId: id } })
+        : Promise.resolve(null),
+      authUserId
+        ? prisma.videoBookmark.findFirst({ where: { userId: authUserId, videoId: id } })
+        : Promise.resolve(null),
+    ]);
+
+    // Check if creator has an active livestream
+    const activeLivestream = await prisma.livestream.findFirst({
+      where: { userId: video.userId, status: 'live' },
+      select: { sessionId: true },
+    });
+
+    const signed = await signVideoUrls(video);
+
+    res.json({
+      success: true,
+      data: {
+        id: video.id,
+        title: video.title || 'Untitled Video',
+        description: video.description || '',
+        videoUrl: signed.videoUrl,
+        thumbnail: signed.thumbnail,
+        userId: video.userId,
+        likes: video.likes || 0,
+        views: video.views || 0,
+        isLiked: !!userLike,
+        isBookmarked: !!userBookmark,
+        commentsCount: video.commentsCount || 0,
+        createdAt: video.createdAt.toISOString(),
+        updatedAt: video.updatedAt.toISOString(),
+        duration: video.duration || 0,
+        comments: [],
+        isLive: !!activeLivestream,
+        livestreamSessionId: activeLivestream?.sessionId || null,
+        user: video.user ? {
+          id: video.user.id,
+          firstName: video.user.firstName || 'Anonymous',
+          lastName: video.user.lastName || '',
+          avatar: video.user.avatar,
+        } : null,
+      },
+    });
+  } catch (error) {
+    console.error('VideoController: getVideoById - Error occurred:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch video' });
+  }
+});
+
+// ============================================================================
 // TRENDING — Enhanced engagement-velocity scoring with time-decay
 // Score includes share rate and completion rate for 2026 quality signals
 // Supports pagination and locale filtering (country/language)

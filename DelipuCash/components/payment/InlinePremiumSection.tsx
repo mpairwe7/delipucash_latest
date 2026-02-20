@@ -34,14 +34,9 @@ import {
   ScrollView,
 } from 'react-native';
 import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withTiming,
   useReducedMotion,
   FadeIn,
   FadeOut,
-  Layout,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { PurchasesPackage, PURCHASES_ERROR_CODE } from 'react-native-purchases';
@@ -120,8 +115,6 @@ type MoMoStep = 'select_plan' | 'enter_phone' | 'confirm' | 'processing';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
-const SPRING_CONFIG = { damping: 20, stiffness: 200 };
 
 const PACKAGE_TO_PLAN: Record<string, string> = {
   DAILY: 'DAILY',
