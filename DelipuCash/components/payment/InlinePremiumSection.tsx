@@ -490,19 +490,31 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                           method="MTN_MOMO"
                           name="MTN Mobile Money"
                           description="Pay with your MTN MoMo wallet"
-                          icon={<Smartphone size={22} color="#FFCC00" />}
+                          icon={
+                            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                              <Smartphone size={16} color="#FFCC00" />
+                              <Text style={{ fontWeight: '800', fontSize: 10, color: '#FFCC00', marginTop: 1, letterSpacing: 0.5 }}>MTN</Text>
+                            </View>
+                          }
                           isSelected={selectedProvider === 'MTN'}
                           onSelect={() => setSelectedProvider('MTN')}
                           brandColor="#FFCC00"
+                          style={{ flex: 1 }}
                         />
                         <PaymentMethodCard
                           method="AIRTEL_MONEY"
                           name="Airtel Money"
                           description="Pay with your Airtel Money wallet"
-                          icon={<Smartphone size={22} color="#FF0000" />}
+                          icon={
+                            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                              <Smartphone size={16} color="#FF0000" />
+                              <Text style={{ fontWeight: '800', fontSize: 9, color: '#FF0000', marginTop: 1, letterSpacing: 0.5 }}>AIRTEL</Text>
+                            </View>
+                          }
                           isSelected={selectedProvider === 'AIRTEL'}
                           onSelect={() => setSelectedProvider('AIRTEL')}
                           brandColor="#FF0000"
+                          style={{ flex: 1 }}
                         />
                       </View>
                     </Animated.View>

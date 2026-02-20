@@ -1,20 +1,23 @@
 /**
  * OTPVerificationModal Component
  * Reusable OTP/2FA verification modal with countdown timer
- * 
+ *
  * Design: Modern fintech verification flow (2025-2026 style)
+ * Inspired by Google, WhatsApp, Revolut — individual digit boxes
  * Features:
+ * - Individual digit boxes with auto-advance + auto-submit
  * - Animated countdown timer with visual feedback
- * - Auto-focus on OTP input
- * - Resend code functionality
+ * - Hidden TextInput pattern for clipboard paste support
+ * - Inline error display with shake animation
  * - Loading states for verification
  * - Expiration handling
- * 
+ *
  * Accessibility: WCAG 2.2 AA compliant
  * - Modal focus management
- * - Screen reader announcements for timer
- * - Clear error states
- * 
+ * - Screen reader announcements for timer & errors
+ * - Clear switch state announcements
+ * - 48dp touch targets
+ *
  * @example
  * ```tsx
  * <OTPVerificationModal
@@ -43,9 +46,11 @@ import {
   KeyboardAvoidingView,
   ActivityIndicator,
   AccessibilityInfo,
+  Pressable,
 } from 'react-native';
-import { Shield, KeyRound, X, RefreshCw } from 'lucide-react-native';
+import { Shield, KeyRound, X, RefreshCw, AlertCircle } from 'lucide-react-native';
 import Animated, {
+  FadeIn,
   FadeInUp,
   ReduceMotion,
   useSharedValue,
@@ -95,6 +100,8 @@ export interface OTPVerificationModalProps {
   isVerifying?: boolean;
   /** Whether resend is in progress */
   isResending?: boolean;
+  /** Inline error message to display */
+  error?: string | null;
   /** Custom icon */
   icon?: React.ReactNode;
   /** Test ID */
@@ -123,30 +130,44 @@ export function OTPVerificationModal({
   onClose,
   isVerifying = false,
   isResending = false,
+  error,
   icon,
   testID,
 }: OTPVerificationModalProps): React.ReactElement {
   const { colors } = useTheme();
   const [code, setCode] = useState('');
   const [countdown, setCountdown] = useState(0);
-  const inputRef = useRef<TextInput>(null);
+  const hiddenInputRef = useRef<TextInput>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoSubmittedRef = useRef(false);
 
   // Animation values
   const shakeX = useSharedValue(0);
   const iconPulse = useSharedValue(1);
+  const cursorOpacity = useSharedValue(1);
 
   // Clear code on close
   useEffect(() => {
     if (!visible) {
       setCode('');
       setCountdown(0);
+      autoSubmittedRef.current = false;
       if (countdownRef.current) {
         clearInterval(countdownRef.current);
         countdownRef.current = null;
       }
     }
   }, [visible]);
+
+  // Clear code and reset auto-submit when error changes (new error = allow retry)
+  useEffect(() => {
+    if (error) {
+      setCode('');
+      autoSubmittedRef.current = false;
+      triggerShake();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [error]);
 
   // Countdown timer
   useEffect(() => {
@@ -174,11 +195,11 @@ export function OTPVerificationModal({
     }
   }, [visible, expiresAt]);
 
-  // Auto-focus input when modal opens
+  // Auto-focus hidden input when modal opens
   useEffect(() => {
     if (visible) {
       setTimeout(() => {
-        inputRef.current?.focus();
+        hiddenInputRef.current?.focus();
       }, 300);
 
       // Icon pulse animation
@@ -188,6 +209,16 @@ export function OTPVerificationModal({
           withTiming(1, { duration: 1000 })
         ),
         3,
+        true
+      );
+
+      // Cursor blink
+      cursorOpacity.value = withRepeat(
+        withSequence(
+          withTiming(0, { duration: 500 }),
+          withTiming(1, { duration: 500 })
+        ),
+        -1,
         true
       );
     }
@@ -202,6 +233,10 @@ export function OTPVerificationModal({
     transform: [{ scale: iconPulse.value }],
   }));
 
+  const cursorAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: cursorOpacity.value,
+  }));
+
   const triggerShake = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     shakeX.value = withSequence(
@@ -213,6 +248,27 @@ export function OTPVerificationModal({
     );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Handle code input change — auto-submit when full
+  const handleCodeChange = useCallback((text: string) => {
+    // Only allow digits
+    const digits = text.replace(/[^0-9]/g, '').slice(0, codeLength);
+    setCode(digits);
+
+    // Auto-submit when all digits entered
+    if (digits.length === codeLength && !autoSubmittedRef.current && !isVerifying) {
+      autoSubmittedRef.current = true;
+      const isExpired = expiresAt ? Date.now() > expiresAt : false;
+      if (isExpired) {
+        triggerShake();
+        AccessibilityInfo.announceForAccessibility('Code expired. Please request a new one.');
+        return;
+      }
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      // Small delay so user sees the last digit appear
+      setTimeout(() => onVerify(digits), 150);
+    }
+  }, [codeLength, expiresAt, isVerifying, onVerify, triggerShake]);
 
   const handleVerify = useCallback(() => {
     if (code.length !== codeLength) {
@@ -227,12 +283,14 @@ export function OTPVerificationModal({
     }
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    autoSubmittedRef.current = true;
     onVerify(code);
   }, [code, codeLength, expiresAt, onVerify, triggerShake]);
 
   const handleResend = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCode('');
+    autoSubmittedRef.current = false;
     onResend?.();
   }, [onResend]);
 
@@ -240,6 +298,10 @@ export function OTPVerificationModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
+
+  const focusInput = useCallback(() => {
+    hiddenInputRef.current?.focus();
+  }, []);
 
   // Derive modal content based on variant
   const getVariantConfig = () => {
@@ -256,7 +318,7 @@ export function OTPVerificationModal({
           icon: <KeyRound size={32} color={colors.warning} />,
           iconBg: withAlpha(colors.warning, 0.1),
           defaultTitle: 'Disable Two-Factor Authentication',
-          defaultSubtitle: 'Enter your password to confirm disabling 2FA. This will make your account less secure.',
+          defaultSubtitle: `Enter the verification code sent to ${maskedEmail || 'your email'} to confirm disabling 2FA.`,
         };
       case 'passwordReset':
         return {
@@ -279,12 +341,20 @@ export function OTPVerificationModal({
   const isExpired = expiresAt ? Date.now() > expiresAt : false;
   const canVerify = code.length === codeLength && !isExpired && !isVerifying;
 
+  // Digit box dimensions
+  const boxGap = SPACING.sm;
+  const maxBoxWidth = 48;
+  const availableWidth = Math.min(SCREEN_WIDTH - SPACING.xl * 2, 400) - SPACING.xl * 2;
+  const boxWidth = Math.min(maxBoxWidth, (availableWidth - boxGap * (codeLength - 1)) / codeLength);
+
   return (
     <Modal
       visible={visible}
       transparent
       animationType="fade"
       onRequestClose={handleClose}
+      statusBarTranslucent
+      navigationBarTranslucent
       accessibilityViewIsModal
       testID={testID}
     >
@@ -378,30 +448,94 @@ export function OTPVerificationModal({
             </View>
           )}
 
-          {/* OTP Input */}
-          <Animated.View style={[styles.inputContainer, shakeAnimatedStyle]}>
-            <TextInput
-              ref={inputRef}
-              style={[
-                styles.otpInput,
-                {
-                  color: colors.text,
-                  backgroundColor: colors.background,
-                  borderColor: isExpired ? colors.error : colors.border,
-                },
-              ]}
-              value={code}
-              onChangeText={setCode}
-              placeholder={`Enter ${codeLength}-digit code`}
-              placeholderTextColor={colors.textMuted}
-              keyboardType="number-pad"
-              maxLength={codeLength}
-              autoFocus
-              editable={!isExpired}
-              accessibilityLabel={`${codeLength}-digit verification code`}
-              accessibilityHint="Enter the code sent to your email"
-            />
+          {/* Hidden TextInput (captures keyboard + paste) */}
+          <TextInput
+            ref={hiddenInputRef}
+            style={styles.hiddenInput}
+            value={code}
+            onChangeText={handleCodeChange}
+            keyboardType="number-pad"
+            maxLength={codeLength}
+            autoFocus
+            editable={!isExpired && !isVerifying}
+            textContentType="oneTimeCode"
+            autoComplete="one-time-code"
+            accessibilityLabel={`${codeLength}-digit verification code`}
+            accessibilityHint="Enter the code sent to your email"
+            accessibilityValue={{ text: code.length > 0 ? `${code.length} of ${codeLength} digits entered` : 'No digits entered' }}
+            caretHidden
+          />
+
+          {/* OTP Digit Boxes */}
+          <Animated.View style={[styles.digitBoxContainer, shakeAnimatedStyle]}>
+            <Pressable
+              style={[styles.digitBoxRow, { gap: boxGap }]}
+              onPress={focusInput}
+              accessibilityLabel={`Verification code input, ${code.length} of ${codeLength} digits entered`}
+              accessibilityRole="none"
+            >
+              {Array.from({ length: codeLength }).map((_, index) => {
+                const digit = code[index];
+                const isFocused = index === code.length && !isExpired && !isVerifying;
+                const isFilled = digit !== undefined;
+                const hasError = !!error;
+
+                return (
+                  <Animated.View
+                    key={index}
+                    entering={FadeIn.delay(index * 30).duration(200).reduceMotion(ReduceMotion.System)}
+                    style={[
+                      styles.digitBox,
+                      {
+                        width: boxWidth,
+                        height: boxWidth * 1.2,
+                        borderColor: hasError
+                          ? colors.error
+                          : isFocused
+                            ? colors.primary
+                            : isFilled
+                              ? withAlpha(colors.primary, 0.5)
+                              : colors.border,
+                        borderWidth: isFocused || hasError ? 2 : 1.5,
+                        backgroundColor: isFilled
+                          ? withAlpha(colors.primary, 0.05)
+                          : colors.background,
+                      },
+                    ]}
+                  >
+                    {isFilled ? (
+                      <AccessibleText
+                        variant="h2"
+                        customColor={hasError ? colors.error : colors.text}
+                        style={styles.digitText}
+                      >
+                        {digit}
+                      </AccessibleText>
+                    ) : isFocused ? (
+                      <Animated.View
+                        style={[styles.cursor, { backgroundColor: colors.primary }, cursorAnimatedStyle]}
+                      />
+                    ) : null}
+                  </Animated.View>
+                );
+              })}
+            </Pressable>
           </Animated.View>
+
+          {/* Inline Error Message */}
+          {error && (
+            <Animated.View
+              entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}
+              style={styles.errorContainer}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
+              <AlertCircle size={14} color={colors.error} />
+              <AccessibleText variant="bodySmall" customColor={colors.error} style={styles.errorText}>
+                {error}
+              </AccessibleText>
+            </Animated.View>
+          )}
 
           {/* Action Buttons */}
           <View style={styles.actions}>
@@ -515,20 +649,44 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.xl,
     marginBottom: SPACING.md,
   },
-  inputContainer: {
-    width: '100%',
-    marginBottom: SPACING.lg,
+  hiddenInput: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
-  otpInput: {
+  digitBoxContainer: {
     width: '100%',
-    height: 56,
-    borderWidth: 1.5,
-    borderRadius: RADIUS.xl,
-    paddingHorizontal: SPACING.md,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xl,
+    marginBottom: SPACING.md,
+  },
+  digitBoxRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  digitBox: {
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  digitText: {
     textAlign: 'center',
-    letterSpacing: 8,
+  },
+  cursor: {
+    width: 2,
+    height: 24,
+    borderRadius: 1,
+    opacity: 0.6,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+  },
+  errorText: {
+    flex: 1,
   },
   actions: {
     flexDirection: 'row',

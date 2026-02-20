@@ -24,6 +24,7 @@ import {
 } from '@tanstack/react-query';
 import { Video, Comment } from '@/types';
 import { videoApi, VideoWithDetails, VideoAnalytics, VideoStats, LivestreamListItem } from './videoApi';
+import { useAuthStore } from '@/utils/auth/store';
 
 // ============================================================================
 // QUERY KEYS
@@ -476,40 +477,56 @@ export function useAddVideoComment(): UseMutationResult<
     mutationKey: ['videos', 'addComment'],
     mutationFn: async ({ videoId, text }) => {
       const response = await videoApi.addComment(videoId, text);
-      if (!response.success) throw new Error(response.error);
+      if (!response.success) throw new Error(response.error || 'Failed to post comment');
       return response.data;
     },
-    // Optimistic update
+    // Optimistic update — use fuzzy key matching (getQueriesData/setQueriesData)
+    // because useVideoCommentsQuery appends { page, limit } to the base key
     onMutate: async ({ videoId, text, mediaUrls }) => {
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.comments(videoId) });
+      const baseKey = videoQueryKeys.comments(videoId);
+      await queryClient.cancelQueries({ queryKey: baseKey });
 
-      const previousData = queryClient.getQueryData<CommentsData>(
-        videoQueryKeys.comments(videoId)
-      );
+      // Snapshot ALL matching comment queries (fuzzy match)
+      const previousQueries = queryClient.getQueriesData<CommentsData>({ queryKey: baseKey });
 
-      // Create optimistic comment
+      // Build optimistic comment with real user data
+      const authState = useAuthStore.getState().auth;
       const optimisticComment: Comment = {
         id: `temp_${Date.now()}`,
         text,
         mediaUrls: mediaUrls || [],
-        userId: 'current_user',
+        userId: authState?.user?.id || 'current_user',
         videoId,
         createdAt: new Date().toISOString(),
+        user: authState?.user ? {
+          id: authState.user.id,
+          firstName: authState.user.firstName,
+          lastName: authState.user.lastName,
+          email: authState.user.email,
+          avatar: authState.user.avatar,
+        } as any : undefined,
       };
 
-      queryClient.setQueryData<CommentsData>(
-        videoQueryKeys.comments(videoId),
-        (old) => ({
-          comments: [optimisticComment, ...(old?.comments || [])],
-          pagination: old?.pagination || { page: 1, limit: 20, total: 1, totalPages: 1 },
-        })
+      // Update ALL matching comment queries (fuzzy match)
+      queryClient.setQueriesData<CommentsData>(
+        { queryKey: baseKey },
+        (old) => old ? {
+          comments: [optimisticComment, ...(old.comments || [])],
+          pagination: {
+            ...old.pagination,
+            total: (old.pagination?.total || 0) + 1,
+          },
+        } : undefined,
       );
 
-      return { previousData };
+      return { previousQueries };
     },
     onError: (_, { videoId }, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(videoQueryKeys.comments(videoId), context.previousData);
+      // Rollback ALL matching comment queries
+      if (context?.previousQueries) {
+        for (const [key, data] of context.previousQueries) {
+          if (data) queryClient.setQueryData(key, data);
+        }
       }
     },
     onSettled: (_, __, { videoId }) => {
@@ -543,25 +560,32 @@ export function useDeleteVideoComment(): UseMutationResult<
       return response.data;
     },
     onMutate: async ({ videoId, commentId }) => {
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.comments(videoId) });
+      const baseKey = videoQueryKeys.comments(videoId);
+      await queryClient.cancelQueries({ queryKey: baseKey });
 
-      const previousData = queryClient.getQueryData<CommentsData>(
-        videoQueryKeys.comments(videoId)
+      // Snapshot ALL matching comment queries (fuzzy match)
+      const previousQueries = queryClient.getQueriesData<CommentsData>({ queryKey: baseKey });
+
+      // Optimistically remove comment from ALL matching queries
+      queryClient.setQueriesData<CommentsData>(
+        { queryKey: baseKey },
+        (old) => old ? {
+          comments: old.comments.filter((c) => c.id !== commentId),
+          pagination: {
+            ...old.pagination,
+            total: Math.max(0, (old.pagination?.total || 0) - 1),
+          },
+        } : undefined,
       );
 
-      queryClient.setQueryData<CommentsData>(
-        videoQueryKeys.comments(videoId),
-        (old) => ({
-          comments: old?.comments.filter((c) => c.id !== commentId) || [],
-          pagination: old?.pagination || { page: 1, limit: 20, total: 0, totalPages: 1 },
-        })
-      );
-
-      return { previousData };
+      return { previousQueries };
     },
     onError: (_, { videoId }, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(videoQueryKeys.comments(videoId), context.previousData);
+      // Rollback ALL matching comment queries
+      if (context?.previousQueries) {
+        for (const [key, data] of context.previousQueries) {
+          if (data) queryClient.setQueryData(key, data);
+        }
       }
     },
     onSettled: (_, __, { videoId }) => {

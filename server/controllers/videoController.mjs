@@ -491,11 +491,13 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
     const blockedSet = new Set(blockedUsers.map(b => b.blockedId));
     const hiddenVideoIds = new Set(userFeedback.filter(f => f.action === 'not_interested').map(f => f.videoId));
-    const hiddenCreatorVideoIds = new Set();
-    const hiddenCreatorIdsFromFeedback = new Set();
-    for (const fb of userFeedback) {
-      if (fb.action === 'hide_creator') hiddenCreatorIdsFromFeedback.add(fb.videoId);
-    }
+
+    // Resolve hide_creator feedback: map video IDs → creator IDs via the fetched videos
+    const hideCreatorVideoIds = userFeedback.filter(f => f.action === 'hide_creator').map(f => f.videoId);
+    const videoToCreatorMap = new Map(videos.map(v => [v.id, v.userId]));
+    const hiddenCreatorIds = new Set(
+      hideCreatorVideoIds.map(vid => videoToCreatorMap.get(vid)).filter(Boolean),
+    );
 
     const now = Date.now();
 
@@ -504,8 +506,10 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
       .filter(video => {
         // Safety: exclude blocked creators
         if (blockedSet.has(video.userId)) return false;
-        // Safety: exclude hidden videos
+        // Safety: exclude hidden videos (not_interested)
         if (hiddenVideoIds.has(video.id)) return false;
+        // Safety: exclude creators the user chose to hide
+        if (hiddenCreatorIds.has(video.userId)) return false;
         return true;
       })
       .map(async (video) => {
@@ -1821,7 +1825,7 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
       // 30% explore + 70% personalized
       const exploreCount = Math.floor(limit * 0.3);
       const exploreVideos = scored.filter(s => !interactedCreators.has(s.video.userId));
-      const topVideos = scored.filter(s => interactedCreators.has(s.video.userId) || engagementScore > 0);
+      const topVideos = scored.filter(s => interactedCreators.has(s.video.userId) || s.score > 0);
       finalVideos = [
         ...topVideos.slice(0, limit - exploreCount),
         ...exploreVideos.slice(0, exploreCount).map(s => ({ ...s, recommendationReason: 'new_creator_spotlight' })),

@@ -618,16 +618,17 @@ export const videoApi = {
   async getComments(videoId: string, page: number = 1, limit: number = 20): Promise<PaginatedResponse<Comment>> {
     const response = await fetchJson<{
       comments?: Comment[];
-      data?: { comments?: Comment[] };
+      data?: { comments?: Comment[]; pagination?: { page: number; limit: number; total: number; totalPages: number } };
     }>(`${VIDEO_ROUTES.comments(videoId)}?page=${page}&limit=${limit}`);
 
     const payload = response.data as any;
     const comments = payload?.data?.comments ?? payload?.comments ?? [];
+    const serverPagination = payload?.data?.pagination;
 
     return {
       success: response.success,
       data: comments,
-      pagination: { page, limit, total: 0, totalPages: 0 },
+      pagination: serverPagination || { page, limit, total: comments.length, totalPages: 1 },
       error: response.error,
     };
   },

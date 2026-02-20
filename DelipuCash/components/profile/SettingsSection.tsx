@@ -37,6 +37,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  ActivityIndicator,
 } from 'react-native';
 import { ChevronRight, ChevronDown, ChevronUp } from 'lucide-react-native';
 import Animated, {
@@ -89,6 +90,8 @@ export interface SettingItem {
   customContent?: React.ReactNode;
   /** Whether item is disabled */
   disabled?: boolean;
+  /** Whether item is loading (shows spinner for toggle) */
+  loading?: boolean;
   /** Destructive styling (red text) */
   destructive?: boolean;
   /** Badge text (e.g., "Premium") */
@@ -249,17 +252,21 @@ function SettingItemRow({
         )}
 
         {item.type === 'toggle' && (
-          <Switch
-            value={item.value}
-            onValueChange={handleToggle}
-            disabled={item.disabled}
-            thumbColor={item.value ? colors.primary : colors.border}
-            trackColor={{
-              false: colors.border,
-              true: withAlpha(colors.primary, 0.4),
-            }}
-            accessibilityLabel={`${item.label} toggle`}
-          />
+          item.loading ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Switch
+              value={item.value}
+              onValueChange={handleToggle}
+              disabled={item.disabled}
+              thumbColor={item.value ? colors.primary : colors.border}
+              trackColor={{
+                false: colors.border,
+                true: withAlpha(colors.primary, 0.4),
+              }}
+              accessibilityLabel={`${item.label} toggle`}
+            />
+          )
         )}
 
         {item.type === 'navigation' && (

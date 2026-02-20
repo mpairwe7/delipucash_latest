@@ -35,7 +35,6 @@ import {
   Dimensions,
   AppState,
   AppStateStatus,
-  AccessibilityInfo,
   Platform,
   Linking,
   Alert,
@@ -418,7 +417,6 @@ export default function VideosScreen(): React.ReactElement {
 
   // 2026 Standards: New state
   const [isDataSaverMode, setIsDataSaverMode] = useState(false);
-  const [reducedMotionEnabled, setReducedMotionEnabled] = useState(false);
   // Viewer count from store (updated via SSE in Phase 5)
   const liveViewerCount = useVideoStore(
     (state) => state.currentLivestream?.viewerCount ?? 0
@@ -454,23 +452,7 @@ export default function VideosScreen(): React.ReactElement {
     scrollProgress.value = progress;
   }, [scrollProgress]);
 
-  // ============================================================================
-  // 2026 ACCESSIBILITY - Reduced Motion Detection (WCAG 2.2 AAA)
-  // ============================================================================
-
-  useEffect(() => {
-    const checkReducedMotion = async () => {
-      const enabled = await AccessibilityInfo.isReduceMotionEnabled();
-      setReducedMotionEnabled(enabled);
-    };
-    checkReducedMotion();
-
-    const subscription = AccessibilityInfo.addEventListener(
-      'reduceMotionChanged',
-      setReducedMotionEnabled
-    );
-    return () => subscription.remove();
-  }, []);
+  // Reduced motion is handled per-component via useReducedMotion() hook
 
   // ============================================================================
   // DATA HOOKS - Using infinite query for proper pagination/infinite scroll
@@ -527,7 +509,12 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: bookmarkVideoMutate } = useBookmarkVideo();
   const { mutate: shareVideoMutate } = useShareVideo();
   const { mutateAsync: addComment } = useAddVideoComment();
-  const { data: commentsData, refetch: refetchComments } = useVideoCommentsQuery(ui.commentsVideoId || '');
+  const {
+    data: commentsData,
+    isLoading: commentsLoading,
+    refetch: refetchComments,
+    isRefetching: commentsRefetching,
+  } = useVideoCommentsQuery(ui.commentsVideoId || '');
 
   // Ad data - gated by premium status (premium users see no ads)
   const { shouldShowAds } = useShouldShowAds();
@@ -630,14 +617,6 @@ export default function VideosScreen(): React.ReactElement {
       .filter((video) => hasPlayableVideoUrl(video.videoUrl));
   }, [trendingData?.pages]);
 
-  // Server-side search results: flatten infinite pages
-  const searchResultVideos = useMemo(() => {
-    if (!searchData?.pages) return [];
-    return searchData.pages
-      .flatMap((page) => page.videos)
-      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
-  }, [searchData?.pages]);
-
   // Tab-aware derived state — avoids if/else chains in handlers
   const isLoading = activeTab === 'for-you' ? isForYouLoading
     : activeTab === 'following' ? isFollowingLoading
@@ -674,6 +653,14 @@ export default function VideosScreen(): React.ReactElement {
     hasNextPage: hasNextSearch,
     isFetchingNextPage: isFetchingNextSearch,
   } = useVideoSearchInfinite(searchQuery, 15);
+
+  // Server-side search results: flatten infinite pages
+  const searchResultVideos = useMemo(() => {
+    if (!searchData?.pages) return [];
+    return searchData.pages
+      .flatMap((page) => page.videos)
+      .filter((video) => hasPlayableVideoUrl(video.videoUrl));
+  }, [searchData?.pages]);
 
   // Generate search suggestions from local data (instant) while server search is loading
   const searchSuggestions = useMemo(() => {
@@ -1409,24 +1396,21 @@ export default function VideosScreen(): React.ReactElement {
         visible={ui.showComments}
         videoId={ui.commentsVideoId || ''}
         comments={commentsData?.comments || []}
+        totalCount={commentsData?.pagination?.total}
+        isLoading={commentsLoading && ui.showComments}
         onClose={closeComments}
         onAddComment={async (text: string) => {
           if (!authReady) return;
           if (!isAuthenticated) {
             router.push('/(auth)/login' as Href);
-            throw new Error('Please log in to comment.');
+            return;
           }
           if (ui.commentsVideoId) {
-            try {
-              await addComment({ videoId: ui.commentsVideoId, text });
-              await refetchComments();
-            } catch (error) {
-              const message = error instanceof Error ? error.message : 'Failed to post comment';
-              Alert.alert('Comment failed', message);
-              throw error;
-            }
+            await addComment({ videoId: ui.commentsVideoId, text });
           }
         }}
+        onRefresh={() => refetchComments()}
+        isRefreshing={commentsRefetching}
         testID="comments-sheet"
       />
 

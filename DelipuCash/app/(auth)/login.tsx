@@ -74,6 +74,7 @@ export default function LoginScreen(): React.ReactElement {
   const [loginEmail, setLoginEmail] = useState("");
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
+  const [login2FAError, setLogin2FAError] = useState<string | null>(null);
 
   const send2FAMutation = useSend2FACodeMutation();
   const verify2FAMutation = useVerify2FALoginMutation();
@@ -190,6 +191,7 @@ export default function LoginScreen(): React.ReactElement {
 
   /** Verify the 2FA code entered in the OTP modal */
   const handle2FAVerify = useCallback(async (code: string) => {
+    setLogin2FAError(null);
     // Pre-read onboarding flag before auth state change
     const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
     isNavigatingRef.current = true;
@@ -199,6 +201,7 @@ export default function LoginScreen(): React.ReactElement {
       {
         onSuccess: () => {
           setShow2FAModal(false);
+          setLogin2FAError(null);
           queryClient.invalidateQueries();
           requestAnimationFrame(() => {
             if (!hasOnboarded) {
@@ -211,7 +214,7 @@ export default function LoginScreen(): React.ReactElement {
         },
         onError: (err) => {
           isNavigatingRef.current = false;
-          setGeneralError(err.message || 'Invalid verification code.');
+          setLogin2FAError(err.message || 'Invalid verification code.');
         },
       }
     );
@@ -219,6 +222,7 @@ export default function LoginScreen(): React.ReactElement {
 
   /** Resend 2FA code */
   const handle2FAResend = useCallback(() => {
+    setLogin2FAError(null);
     send2FAMutation.mutate(
       { email: loginEmail },
       {
@@ -377,17 +381,19 @@ export default function LoginScreen(): React.ReactElement {
         visible={show2FAModal}
         variant="verification"
         title="Two-Factor Authentication"
-        subtitle="Enter the 6-digit code sent to your email"
+        subtitle={`Enter the 6-digit code sent to ${maskedEmail || 'your email'}`}
         maskedEmail={maskedEmail}
         expiresAt={otpExpiresAt}
         onVerify={handle2FAVerify}
         onResend={handle2FAResend}
         onClose={() => {
           setShow2FAModal(false);
+          setLogin2FAError(null);
           isNavigatingRef.current = false;
         }}
         isVerifying={verify2FAMutation.isPending}
         isResending={send2FAMutation.isPending}
+        error={login2FAError}
       />
     </View>
   );

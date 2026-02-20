@@ -144,6 +144,7 @@ export interface Comment {
   user?: AppUser;
   video?: Video;
   createdAt: string;
+  likes?: number;
 }
 
 export interface Survey {

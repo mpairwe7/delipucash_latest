@@ -89,7 +89,7 @@ function WhyRecommendedBadgeComponent({
         { backgroundColor: withAlpha(colors.background, 0.7) },
       ]}
       accessibilityRole="text"
-      accessibilityLabel={`Recommended because: ${mapping.label}`}
+      accessibilityLabel={`Recommended because: ${label}`}
       testID={testID}
     >
       <Icon
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   label: {
-    fontFamily: TYPOGRAPHY.fonts.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs, // 10px
     letterSpacing: TYPOGRAPHY.letterSpacing.wide,
   },

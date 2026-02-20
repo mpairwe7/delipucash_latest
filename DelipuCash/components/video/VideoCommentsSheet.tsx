@@ -5,23 +5,16 @@
  * 2026 Standards Applied:
  * 1. Pinned Comments — Creator-pinned comment with visual distinction
  * 2. Creator Hearts — Special heart icon for creator-liked comments
- * 3. Reaction Emoji Row — Quick emoji reactions (beyond like/reply)
- * 4. Contextual Haptics — Action-specific feedback (Soft/Medium/Rigid/Success)
- * 5. WCAG 2.2 AAA — 44px touch targets, live regions, semantic roles
- * 6. Enhanced Gesture Dismiss — Velocity-aware sheet dismissal
- * 7. Smart Keyboard Avoidance — Platform-aware input handling
- * 8. Threaded Replies Preview — Visual thread indicator
- * 9. Comment Timestamp — Relative time with full date tooltip
- * 10. Engagement Counts — Formatted counts with animation
+ * 3. Contextual Haptics — Action-specific feedback (Soft/Medium/Rigid/Success)
+ * 4. WCAG 2.2 AAA — 48px touch targets, live regions, semantic roles, accessibilityViewIsModal
+ * 5. Enhanced Gesture Dismiss — Velocity-aware sheet dismissal
+ * 6. Smart Keyboard Avoidance — Platform-aware input handling
+ * 7. Comment Timestamp — Relative time display
+ * 8. Engagement Counts — Formatted counts with animation
+ * 9. No double-state — single source of truth via props + React Query
+ * 10. Character counter — visible progress toward limit
  *
- * @example
- * ```tsx
- * <VideoCommentsSheet
- *   visible={showComments}
- *   videoId={video.id}
- *   onClose={() => setShowComments(false)}
- * />
- * ```
+ * @module components/video/VideoCommentsSheet
  */
 
 import React, { memo, useCallback, useEffect, useMemo, useState, useRef } from 'react';
@@ -34,9 +27,11 @@ import {
   FlatList,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
+  useWindowDimensions,
   ActivityIndicator,
   Image,
+  Alert,
+  RefreshControl,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -75,9 +70,9 @@ import { Comment } from '@/types';
 // CONSTANTS
 // ============================================================================
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.75;
 const DRAG_THRESHOLD = 100;
+const AVATAR_SIZE = 36;
+const MAX_COMMENT_LENGTH = 500;
 
 // ============================================================================
 // TYPES
@@ -88,8 +83,12 @@ export interface VideoCommentsSheetProps {
   visible: boolean;
   /** Video ID to load comments for */
   videoId: string;
-  /** Comments data (if pre-loaded) */
+  /** Comments data from React Query (single source of truth) */
   comments?: Comment[];
+  /** Total comment count from server pagination */
+  totalCount?: number;
+  /** Whether comments are loading */
+  isLoading?: boolean;
   /** Close handler */
   onClose: () => void;
   /** Add comment handler */
@@ -98,13 +97,18 @@ export interface VideoCommentsSheetProps {
   onLikeComment?: (commentId: string) => void;
   /** Reply to comment handler */
   onReplyComment?: (commentId: string, text: string) => Promise<void>;
+  /** Load more comments (pagination) */
+  onLoadMore?: () => void;
+  /** Whether more comments are available */
+  hasMore?: boolean;
+  /** Whether more comments are loading */
+  isLoadingMore?: boolean;
+  /** Refresh handler */
+  onRefresh?: () => void;
+  /** Whether refreshing */
+  isRefreshing?: boolean;
   /** Test ID */
   testID?: string;
-}
-
-// Extended Comment type with likes support
-interface CommentWithLikes extends Comment {
-  likes?: number;
 }
 
 // ============================================================================
@@ -126,7 +130,7 @@ const formatTimeAgo = (dateString: string): string => {
   return date.toLocaleDateString();
 };
 
-const getCommentAuthorName = (comment: CommentWithLikes): string => {
+const getCommentAuthorName = (comment: Comment): string => {
   const first = comment.user?.firstName?.trim() || '';
   const last = comment.user?.lastName?.trim() || '';
   const fullName = `${first} ${last}`.trim();
@@ -136,19 +140,19 @@ const getCommentAuthorName = (comment: CommentWithLikes): string => {
   return 'User';
 };
 
-const getCommentAuthorInitial = (comment: CommentWithLikes): string => {
+const getCommentAuthorInitial = (comment: Comment): string => {
   const name = getCommentAuthorName(comment);
   return name.charAt(0).toUpperCase() || 'U';
 };
 
 // ============================================================================
-// COMMENT ITEM
+// COMMENT ITEM — stable callbacks via ID-based pattern
 // ============================================================================
 
 interface CommentItemProps {
-  comment: CommentWithLikes;
-  onLike: () => void;
-  onReply: () => void;
+  comment: Comment;
+  onLike: (commentId: string) => void;
+  onReply: (commentId: string) => void;
   isLiked: boolean;
 }
 
@@ -161,21 +165,26 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
     likeScale.value = withSpring(1.3, { damping: 6, stiffness: 400 }, () => {
       likeScale.value = withSpring(1);
     });
-    onLike();
-  }, [onLike, likeScale]);
+    onLike(comment.id);
+  }, [onLike, comment.id, likeScale]);
+
+  const handleReply = useCallback(() => {
+    onReply(comment.id);
+  }, [onReply, comment.id]);
 
   const likeStyle = useAnimatedStyle(() => ({
     transform: [{ scale: likeScale.value }],
   }));
 
   return (
-    <View style={styles.commentItem}>
+    <View style={styles.commentItem} accessibilityRole="text">
       <View style={[styles.avatar, { backgroundColor: colors.border }]}>
         {comment.user?.avatar ? (
           <Image
             source={{ uri: comment.user.avatar }}
             style={styles.avatarImage}
             resizeMode="cover"
+            accessibilityLabel={`${getCommentAuthorName(comment)}'s avatar`}
           />
         ) : (
           <Text style={[styles.avatarText, { color: colors.text }]}>
@@ -190,7 +199,6 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
             <Text style={[styles.commentAuthor, { color: colors.text }]}>
               {getCommentAuthorName(comment)}
             </Text>
-            {/* 2026: Verified creator badge */}
             {comment.userId === 'creator' && (
               <BadgeCheck size={14} color={colors.primary} strokeWidth={2.5} />
             )}
@@ -200,7 +208,10 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
           </Text>
         </View>
 
-        <Text style={[styles.commentText, { color: colors.text }]}>
+        <Text
+          style={[styles.commentText, { color: colors.text }]}
+          accessibilityRole="text"
+        >
           {comment.text}
         </Text>
 
@@ -209,7 +220,7 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
             onPress={handleLike}
             style={styles.commentAction}
             accessibilityRole="button"
-            accessibilityLabel={`${isLiked ? 'Unlike' : 'Like'} comment. ${comment.likes} likes`}
+            accessibilityLabel={`${isLiked ? 'Unlike' : 'Like'} comment. ${comment.likes || 0} likes`}
             accessibilityState={{ selected: isLiked }}
           >
             <Animated.View style={likeStyle}>
@@ -225,7 +236,7 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
           </Pressable>
 
           <Pressable
-            onPress={onReply}
+            onPress={handleReply}
             style={styles.commentAction}
             accessibilityRole="button"
             accessibilityLabel="Reply to comment"
@@ -244,6 +255,26 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
 CommentItem.displayName = 'CommentItem';
 
 // ============================================================================
+// LOADING SKELETON
+// ============================================================================
+
+const CommentSkeleton = memo(() => {
+  const { colors } = useTheme();
+  return (
+    <View style={styles.commentItem} accessibilityLabel="Loading comment">
+      <View style={[styles.avatar, { backgroundColor: withAlpha(colors.border, 0.5) }]} />
+      <View style={styles.commentContent}>
+        <View style={[styles.skeletonLine, styles.skeletonShort, { backgroundColor: withAlpha(colors.border, 0.5) }]} />
+        <View style={[styles.skeletonLine, styles.skeletonLong, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+        <View style={[styles.skeletonLine, styles.skeletonMedium, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+      </View>
+    </View>
+  );
+});
+
+CommentSkeleton.displayName = 'CommentSkeleton';
+
+// ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
@@ -251,26 +282,55 @@ function VideoCommentsSheetComponent({
   visible,
   videoId,
   comments: propComments,
+  totalCount,
+  isLoading,
   onClose,
   onAddComment,
   onLikeComment,
   onReplyComment,
+  onLoadMore,
+  hasMore,
+  isLoadingMore,
+  onRefresh,
+  isRefreshing,
   testID,
 }: VideoCommentsSheetProps): React.ReactElement | null {
   const { colors } = useTheme();
+  const { height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const inputRef = useRef<TextInput>(null);
+  const listRef = useRef<FlatList>(null);
+
+  const SHEET_MAX_HEIGHT = screenHeight * 0.75;
 
   // Animation values
   const translateY = useSharedValue(SHEET_MAX_HEIGHT);
   const backdropOpacity = useSharedValue(0);
 
-  // Local state
-  const [comments, setComments] = useState<CommentWithLikes[]>(propComments || []);
+  // Normalize comments from props (single source of truth — no local state duplication)
+  const comments = useMemo(
+    () => (propComments || []).map((comment) => ({
+      ...comment,
+      likes: comment.likes || 0,
+    })),
+    [propComments],
+  );
+
+  // Display count: prefer server total, fallback to loaded count
+  const displayCount = totalCount ?? comments.length;
+
+  // Local UI state only (not duplicated data)
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+
+  // Resolve reply author name for display
+  const replyAuthorName = useMemo(() => {
+    if (!replyingTo) return null;
+    const replyComment = comments.find((c) => c.id === replyingTo);
+    return replyComment ? getCommentAuthorName(replyComment) : null;
+  }, [replyingTo, comments]);
 
   // ============================================================================
   // EFFECTS
@@ -285,16 +345,7 @@ function VideoCommentsSheetComponent({
       translateY.value = withTiming(SHEET_MAX_HEIGHT, { duration: 200 });
       backdropOpacity.value = withTiming(0, { duration: 200 });
     }
-  }, [visible, translateY, backdropOpacity]);
-
-  // Keep local list in sync with latest comments from parent/query
-  useEffect(() => {
-    const normalized = (propComments || []).map((comment) => ({
-      ...comment,
-      likes: comment.likes || 0,
-    }));
-    setComments(normalized);
-  }, [propComments, videoId, visible]);
+  }, [visible, translateY, backdropOpacity, SHEET_MAX_HEIGHT]);
 
   // ============================================================================
   // HANDLERS
@@ -304,7 +355,7 @@ function VideoCommentsSheetComponent({
     translateY.value = withTiming(SHEET_MAX_HEIGHT, { duration: 200 });
     backdropOpacity.value = withTiming(0, { duration: 200 });
     setTimeout(onClose, 200);
-  }, [translateY, backdropOpacity, onClose]);
+  }, [translateY, backdropOpacity, onClose, SHEET_MAX_HEIGHT]);
 
   const handleSubmitComment = useCallback(async () => {
     if (!newComment.trim() || isSubmitting) return;
@@ -315,28 +366,20 @@ function VideoCommentsSheetComponent({
     try {
       if (onAddComment) {
         await onAddComment(newComment.trim());
-      } else {
-        // Mock: Add comment locally
-        const mockComment: CommentWithLikes = {
-          id: Date.now().toString(),
-          text: newComment.trim(),
-          userId: 'currentUser',
-          videoId: videoId,
-          mediaUrls: [],
-          createdAt: new Date().toISOString(),
-          likes: 0,
-        };
-        setComments((prev) => [mockComment, ...prev]);
       }
       setNewComment('');
       setReplyingTo(null);
+      // Scroll to top to see optimistic comment
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
     } catch (error) {
-      if (__DEV__) console.error('Failed to add comment:', error);
+      const message = error instanceof Error ? error.message : 'Something went wrong';
+      Alert.alert('Comment failed', message);
     } finally {
       setIsSubmitting(false);
     }
-  }, [newComment, isSubmitting, onAddComment, videoId]);
+  }, [newComment, isSubmitting, onAddComment]);
 
+  // Stable ID-based callbacks — avoids inline closures in renderComment
   const handleLikeComment = useCallback((commentId: string) => {
     setLikedComments((prev) => {
       const newSet = new Set(prev);
@@ -355,31 +398,69 @@ function VideoCommentsSheetComponent({
     inputRef.current?.focus();
   }, []);
 
+  const handleEmptyPress = useCallback(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleEndReached = useCallback(() => {
+    if (hasMore && !isLoadingMore) {
+      onLoadMore?.();
+    }
+  }, [hasMore, isLoadingMore, onLoadMore]);
+
   // Stable FlatList callbacks
-  const commentKeyExtractor = useCallback((item: CommentWithLikes) => item.id, []);
+  const commentKeyExtractor = useCallback((item: Comment) => item.id, []);
 
   const renderComment = useCallback(
-    ({ item }: { item: CommentWithLikes }) => (
+    ({ item }: { item: Comment }) => (
       <CommentItem
         comment={item}
-        onLike={() => handleLikeComment(item.id)}
-        onReply={() => handleReply(item.id)}
+        onLike={handleLikeComment}
+        onReply={handleReply}
         isLiked={likedComments.has(item.id)}
       />
     ),
     [handleLikeComment, handleReply, likedComments],
   );
 
+  // Loading skeleton list
+  const loadingComponent = useMemo(
+    () => (
+      <View>
+        <CommentSkeleton />
+        <CommentSkeleton />
+        <CommentSkeleton />
+        <CommentSkeleton />
+      </View>
+    ),
+    [],
+  );
+
   const commentsEmptyComponent = useMemo(
     () => (
-      <View style={styles.emptyContainer}>
+      <Pressable
+        onPress={handleEmptyPress}
+        style={styles.emptyContainer}
+        accessibilityRole="button"
+        accessibilityLabel="No comments yet. Tap to add the first comment."
+      >
         <MessageCircle size={48} color={colors.textMuted} />
         <Text style={[styles.emptyText, { color: colors.textMuted }]}>
           No comments yet. Be the first!
         </Text>
-      </View>
+      </Pressable>
     ),
-    [colors.textMuted],
+    [colors.textMuted, handleEmptyPress],
+  );
+
+  const listFooterComponent = useMemo(
+    () =>
+      isLoadingMore ? (
+        <View style={styles.loadingMore}>
+          <ActivityIndicator size="small" color={colors.textMuted} />
+        </View>
+      ) : null,
+    [isLoadingMore, colors.textMuted],
   );
 
   // ============================================================================
@@ -424,12 +505,19 @@ function VideoCommentsSheetComponent({
 
   if (!visible) return null;
 
+  const charCount = newComment.length;
+  const charWarning = charCount > MAX_COMMENT_LENGTH * 0.9;
+
   return (
-    <View style={styles.overlay} testID={testID}>
+    <View
+      style={styles.overlay}
+      testID={testID}
+      accessibilityViewIsModal={true}
+    >
       {/* Backdrop */}
       <Pressable style={StyleSheet.absoluteFill} onPress={handleClose}>
         <Animated.View
-          style={[styles.backdrop, backdropStyle]}
+          style={[styles.backdrop, { backgroundColor: withAlpha(colors.background, 0.6) }, backdropStyle]}
         />
       </Pressable>
 
@@ -443,6 +531,7 @@ function VideoCommentsSheetComponent({
               backgroundColor: colors.card,
               maxHeight: SHEET_MAX_HEIGHT,
               paddingBottom: insets.bottom,
+              borderColor: withAlpha(colors.border, 0.15),
             },
           ]}
         >
@@ -453,8 +542,12 @@ function VideoCommentsSheetComponent({
 
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              {comments.length} Comments
+            <Text
+              style={[styles.headerTitle, { color: colors.text }]}
+              accessibilityRole="header"
+              accessibilityLiveRegion="polite"
+            >
+              {displayCount} {displayCount === 1 ? 'Comment' : 'Comments'}
             </Text>
             <Pressable
               onPress={handleClose}
@@ -467,19 +560,37 @@ function VideoCommentsSheetComponent({
           </View>
 
           {/* Comments List */}
-          <FlatList
-            data={comments}
-            keyExtractor={commentKeyExtractor}
-            renderItem={renderComment}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={commentsEmptyComponent}
-            // Performance optimizations
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            windowSize={7}
-            initialNumToRender={8}
-          />
+          {isLoading ? (
+            loadingComponent
+          ) : (
+            <FlatList
+              ref={listRef}
+              data={comments}
+              keyExtractor={commentKeyExtractor}
+              renderItem={renderComment}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+              ListEmptyComponent={commentsEmptyComponent}
+              ListFooterComponent={listFooterComponent}
+              onEndReached={handleEndReached}
+              onEndReachedThreshold={0.3}
+              refreshControl={
+                onRefresh ? (
+                  <RefreshControl
+                    refreshing={isRefreshing ?? false}
+                    onRefresh={onRefresh}
+                    tintColor={colors.textMuted}
+                    colors={[colors.primary]}
+                  />
+                ) : undefined
+              }
+              // Performance optimizations
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={10}
+              windowSize={7}
+              initialNumToRender={8}
+            />
+          )}
 
           {/* Input */}
           <KeyboardAvoidingView
@@ -490,32 +601,51 @@ function VideoCommentsSheetComponent({
               {replyingTo && (
                 <View style={styles.replyingContainer}>
                   <Text style={[styles.replyingText, { color: colors.textMuted }]}>
-                    Replying to comment
+                    Replying to {replyAuthorName || 'comment'}
                   </Text>
-                  <Pressable onPress={() => setReplyingTo(null)}>
+                  <Pressable
+                    onPress={() => setReplyingTo(null)}
+                    style={styles.replyDismiss}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel reply"
+                    hitSlop={8}
+                  >
                     <X size={14} color={colors.textMuted} />
                   </Pressable>
                 </View>
               )}
               <View style={styles.inputRow}>
-                <TextInput
-                  ref={inputRef}
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colors.background,
-                      color: colors.text,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  placeholder="Add a comment..."
-                  placeholderTextColor={colors.textMuted}
-                  value={newComment}
-                  onChangeText={setNewComment}
-                  multiline
-                  maxLength={500}
-                  accessibilityLabel="Comment input"
-                />
+                <View style={styles.inputWrapper}>
+                  <TextInput
+                    ref={inputRef}
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: colors.background,
+                        color: colors.text,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                    placeholder="Add a comment..."
+                    placeholderTextColor={colors.textMuted}
+                    value={newComment}
+                    onChangeText={setNewComment}
+                    multiline
+                    maxLength={MAX_COMMENT_LENGTH}
+                    accessibilityLabel="Comment input"
+                    accessibilityHint={`${MAX_COMMENT_LENGTH - charCount} characters remaining`}
+                  />
+                  {charCount > 0 && (
+                    <Text
+                      style={[
+                        styles.charCounter,
+                        { color: charWarning ? colors.error : colors.textMuted },
+                      ]}
+                    >
+                      {charCount}/{MAX_COMMENT_LENGTH}
+                    </Text>
+                  )}
+                </View>
                 <Pressable
                   onPress={handleSubmitComment}
                   disabled={!newComment.trim() || isSubmitting}
@@ -556,7 +686,6 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: withAlpha('#000000', 0.6),
   },
   sheet: {
     borderTopLeftRadius: RADIUS['2xl'],
@@ -564,7 +693,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...SHADOWS.lg,
     borderWidth: 1,
-    borderColor: withAlpha('#FFFFFF', 0.06),
     borderBottomWidth: 0,
   },
   handleContainer: {
@@ -604,9 +732,9 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.lg,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: SPACING.sm,
@@ -618,7 +746,7 @@ const styles = StyleSheet.create({
   avatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 18,
+    borderRadius: AVATAR_SIZE / 2,
   },
   commentContent: {
     flex: 1,
@@ -628,12 +756,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: SPACING.xs,
-    marginBottom: 2,
+    marginBottom: SPACING.xxs,
   },
   commentAuthorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: SPACING.xxs,
   },
   commentAuthor: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -678,6 +806,10 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     textAlign: 'center',
   },
+  loadingMore: {
+    paddingVertical: SPACING.md,
+    alignItems: 'center',
+  },
   inputContainer: {
     borderTopWidth: 1,
     paddingHorizontal: SPACING.md,
@@ -693,13 +825,21 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
+  replyDismiss: {
+    minWidth: COMPONENT_SIZE.touchTarget,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: SPACING.sm,
   },
-  input: {
+  inputWrapper: {
     flex: 1,
+  },
+  input: {
     borderWidth: 1,
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.md,
@@ -708,12 +848,34 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.base,
     maxHeight: 100,
   },
+  charCounter: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'right',
+    paddingTop: SPACING.xxs,
+    paddingRight: SPACING.xs,
+  },
   sendButton: {
     width: COMPONENT_SIZE.touchTarget,
     height: COMPONENT_SIZE.touchTarget,
     borderRadius: COMPONENT_SIZE.touchTarget / 2,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Skeleton loading styles
+  skeletonLine: {
+    height: 12,
+    borderRadius: RADIUS.sm,
+    marginBottom: SPACING.xs,
+  },
+  skeletonShort: {
+    width: '40%',
+  },
+  skeletonMedium: {
+    width: '70%',
+  },
+  skeletonLong: {
+    width: '90%',
   },
 });
 

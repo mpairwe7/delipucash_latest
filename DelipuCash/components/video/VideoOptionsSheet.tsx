@@ -136,7 +136,7 @@ function VideoOptionsSheetComponent({
   ];
 
   return (
-    <View style={[StyleSheet.absoluteFill, styles.overlay]} pointerEvents={visible ? 'auto' : 'none'}>
+    <View style={[StyleSheet.absoluteFill, styles.overlay]} pointerEvents={visible ? 'auto' : 'none'} accessibilityViewIsModal={visible}>
       {/* Backdrop */}
       <Pressable style={StyleSheet.absoluteFill} onPress={handleClose}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: '#000000' }, backdropStyle]} />

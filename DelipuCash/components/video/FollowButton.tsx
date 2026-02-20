@@ -44,8 +44,8 @@ export interface FollowButtonProps {
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const SIZE_CONFIG = {
-  sm: { height: 28, paddingH: SPACING.sm, iconSize: 14, fontSize: TYPOGRAPHY.fontSize.sm },
-  md: { height: 36, paddingH: SPACING.base, iconSize: 16, fontSize: TYPOGRAPHY.fontSize.base },
+  sm: { height: 32, paddingH: SPACING.sm, iconSize: 14, fontSize: TYPOGRAPHY.fontSize.sm },
+  md: { height: 40, paddingH: SPACING.base, iconSize: 16, fontSize: TYPOGRAPHY.fontSize.base },
 } as const;
 
 // ============================================================================
@@ -144,6 +144,7 @@ function FollowButtonComponent({
           opacity: isLoading ? 0.6 : 1,
         },
       ]}
+      hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={
         isFollowing
@@ -184,7 +185,7 @@ const styles = StyleSheet.create({
     minWidth: 48,
   },
   label: {
-    fontFamily: TYPOGRAPHY.fonts.medium,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     letterSpacing: TYPOGRAPHY.letterSpacing.normal,
   },
 });

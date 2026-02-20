@@ -365,6 +365,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRewardSettings, setShowRewardSettings] = useState(false);
+  const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
+  const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
 
   // Subscription status (via RevenueCat entitlements)
   const hasSurveySubscription = canCreateSurvey;
@@ -678,6 +680,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   /** Step 2: Verify OTP code to complete disabling 2FA */
   const handleVerifyDisable2FA = useCallback((code: string) => {
+    setDisable2FAError(null);
     updateTwoFactorMutation.mutate(
       { enabled: false, password: disable2FAPassword, code },
       {
@@ -685,10 +688,11 @@ export default function ProfileScreen(): React.ReactElement {
           setTwoFactorEnabled(false);
           setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
+          setDisable2FAError(null);
           Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
         },
-        onError: (error) => {
-          Alert.alert('Verification Failed', error.message || 'Invalid verification code.');
+        onError: (err) => {
+          setDisable2FAError(err.message || 'Invalid verification code.');
         },
       }
     );
@@ -696,6 +700,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   /** Resend disable-2FA OTP code */
   const handleResendDisable2FA = useCallback(() => {
+    setDisable2FAError(null);
     updateTwoFactorMutation.mutate(
       { enabled: false, password: disable2FAPassword },
       {
@@ -704,36 +709,38 @@ export default function ProfileScreen(): React.ReactElement {
             setDisable2FAOtpExpiresAt(Date.now() + (data.expiresIn || 180) * 1000);
           }
         },
-        onError: (error) => {
-          Alert.alert('Error', error.message || 'Failed to resend verification code.');
+        onError: (err) => {
+          setDisable2FAError(err.message || 'Failed to resend verification code.');
         },
       }
     );
   }, [disable2FAPassword, updateTwoFactorMutation]);
 
   const handleVerify2FA = useCallback((code: string) => {
+    setEnable2FAError(null);
     verify2FAMutation.mutate(code, {
       onSuccess: () => {
         setTwoFactorEnabled(true);
         setShow2FAModal(false);
+        setEnable2FAError(null);
         Alert.alert('2FA Enabled', 'Two-factor authentication is now active.');
       },
-      onError: (error) => {
-        Alert.alert('Verification Failed', error.message || 'Invalid verification code.');
+      onError: (err) => {
+        setEnable2FAError(err.message || 'Invalid verification code.');
       },
     });
   }, [verify2FAMutation]);
 
   const handleResend2FA = useCallback(() => {
+    setEnable2FAError(null);
     resend2FAMutation.mutate(undefined, {
       onSuccess: (data) => {
         setMaskedEmail(data.email || '');
         const expiresIn = data.expiresIn || 180;
         setOtpExpiresAt(Date.now() + expiresIn * 1000);
-        Alert.alert('Code Resent', `A new verification code has been sent to ${data.email}`);
       },
-      onError: (error) => {
-        Alert.alert('Error', error.message || 'Failed to resend verification code.');
+      onError: (err) => {
+        setEnable2FAError(err.message || 'Failed to resend verification code.');
       },
     });
   }, [resend2FAMutation]);
@@ -825,10 +832,15 @@ export default function ProfileScreen(): React.ReactElement {
       type: 'toggle',
       id: '2fa',
       label: 'Two-Factor Authentication',
-      subtitle: 'OTP required at sign-in',
+      subtitle: twoFactorEnabled ? 'Enabled — OTP required at sign-in' : 'Disabled — enable for extra security',
       icon: <Shield size={ICON_SIZE.base} color={colors.primary} />,
       value: twoFactorEnabled,
       onChange: handleToggle2FA,
+      disabled: updateTwoFactorMutation.isPending,
+      loading: updateTwoFactorMutation.isPending,
+      accessibilityHint: twoFactorEnabled
+        ? 'Double tap to disable two-factor authentication'
+        : 'Double tap to enable two-factor authentication via email code',
     },
     {
       type: 'navigation',
@@ -846,7 +858,7 @@ export default function ProfileScreen(): React.ReactElement {
       icon: <Smartphone size={ICON_SIZE.base} color={colors.warning} />,
       onPress: handleManageSessions,
     },
-  ], [twoFactorEnabled, handleToggle2FA, handleChangePassword, handleManageSessions, colors, profile.activeSessions]);
+  ], [twoFactorEnabled, handleToggle2FA, handleChangePassword, handleManageSessions, colors, profile.activeSessions, updateTwoFactorMutation.isPending]);
 
   const appearanceSettings: SettingItem[] = useMemo(() => [
     {
@@ -1044,9 +1056,13 @@ export default function ProfileScreen(): React.ReactElement {
         expiresAt={otpExpiresAt}
         onVerify={handleVerify2FA}
         onResend={handleResend2FA}
-        onClose={() => setShow2FAModal(false)}
+        onClose={() => {
+          setShow2FAModal(false);
+          setEnable2FAError(null);
+        }}
         isVerifying={verify2FAMutation.isPending}
         isResending={resend2FAMutation.isPending}
+        error={enable2FAError}
       />
 
       {/* 2FA Disable Password Modal */}
@@ -1054,7 +1070,12 @@ export default function ProfileScreen(): React.ReactElement {
         visible={showDisable2FAPrompt}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowDisable2FAPrompt(false)}
+        onRequestClose={() => {
+          setShowDisable2FAPrompt(false);
+          setDisable2FAPassword('');
+        }}
+        statusBarTranslucent
+        navigationBarTranslucent
         accessibilityViewIsModal
       >
         <View style={styles.modalOverlay}>
@@ -1072,6 +1093,8 @@ export default function ProfileScreen(): React.ReactElement {
               placeholderTextColor={colors.textMuted}
               secureTextEntry
               autoFocus
+              returnKeyType="done"
+              onSubmitEditing={handleConfirmDisable2FA}
               style={[
                 styles.passwordInput,
                 {
@@ -1080,7 +1103,8 @@ export default function ProfileScreen(): React.ReactElement {
                   backgroundColor: colors.background,
                 },
               ]}
-              accessibilityLabel="Password input"
+              accessibilityLabel="Password to disable two-factor authentication"
+              accessibilityHint="Enter your account password to proceed"
             />
             <View style={styles.modalButtons}>
               <AnimatedCard
@@ -1120,9 +1144,11 @@ export default function ProfileScreen(): React.ReactElement {
         onClose={() => {
           setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
+          setDisable2FAError(null);
         }}
         isVerifying={updateTwoFactorMutation.isPending}
         isResending={updateTwoFactorMutation.isPending}
+        error={disable2FAError}
       />
 
       {/* Change Password Modal (Android) */}
@@ -1131,6 +1157,8 @@ export default function ProfileScreen(): React.ReactElement {
         transparent
         animationType="fade"
         onRequestClose={() => setShowChangePasswordModal(false)}
+        statusBarTranslucent
+        navigationBarTranslucent
         accessibilityViewIsModal
       >
         <View style={styles.modalOverlay}>
