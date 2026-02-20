@@ -164,7 +164,6 @@ export const uploadVideoToR2 = asyncHandler(async (req, res) => {
           duration: duration ? parseInt(duration, 10) : null,
           likes: 0,
           views: 0,
-          isBookmarked: false,
           commentsCount: 0,
           // R2 metadata
           r2VideoKey: videoResult.key,

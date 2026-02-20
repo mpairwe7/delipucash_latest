@@ -54,7 +54,6 @@ export const createVideo = asyncHandler(async (req, res) => {
         duration: duration ? Math.round(duration) : null, // Duration in seconds
         likes: 0,
         views: 0,
-        isBookmarked: false,
         commentsCount: 0,
         createdAt: timestamp ? new Date(timestamp) : new Date(),
         updatedAt: new Date(),
