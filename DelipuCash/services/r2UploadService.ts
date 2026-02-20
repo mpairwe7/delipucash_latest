@@ -131,11 +131,11 @@ async function safeParseJSON(response: Response): Promise<any> {
     return { message: text };
   }
 
-  // Try to parse JSON
+  // Read body as text first (can only be consumed once), then parse as JSON
+  const text = await response.text();
   try {
-    return await response.json();
+    return JSON.parse(text);
   } catch (parseError) {
-    const text = await response.text();
     throw new Error(`Failed to parse server response. Got: ${text.substring(0, 100)}`);
   }
 }
@@ -579,7 +579,8 @@ export async function getPresignedUploadUrl(
 }
 
 /**
- * Upload directly to R2 using a presigned URL
+ * Upload directly to R2 using a presigned URL.
+ * Uses XHR for progress tracking (fetch does not support upload progress).
  */
 export async function uploadToPresignedUrl(
   presignedUrl: string,
@@ -587,26 +588,185 @@ export async function uploadToPresignedUrl(
   mimeType: string,
   options: UploadOptions = {}
 ): Promise<boolean> {
-  try {
-    // For React Native, we need to use fetch with blob
-    const response = await fetch(fileUri);
-    const blob = await response.blob();
-    
-    const uploadResponse = await fetch(presignedUrl, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': mimeType,
-      },
-      body: blob,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && options.onProgress) {
+        const rawProgress = (event.loaded / event.total) * 100;
+        options.onProgress({
+          loaded: event.loaded,
+          total: event.total,
+          progress: Math.min(Math.max(Math.round(rawProgress), 0), 100),
+        });
+      }
     });
-    
-    options.onComplete?.();
-    return uploadResponse.ok;
-  } catch (error) {
-    const err = error instanceof Error ? error : new Error('Direct upload failed');
-    options.onError?.(err);
-    return false;
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        options.onComplete?.();
+        resolve(true);
+      } else {
+        const err = new Error(`Direct upload failed with status ${xhr.status}`);
+        options.onError?.(err);
+        resolve(false);
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      const err = new Error('Network error during direct upload. Please check your connection.');
+      options.onError?.(err);
+      reject(err);
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Direct upload was cancelled'));
+    });
+
+    xhr.addEventListener('timeout', () => {
+      const err = new Error('Direct upload timed out. Please try again.');
+      options.onError?.(err);
+      reject(err);
+    });
+
+    xhr.open('PUT', presignedUrl);
+    xhr.timeout = 10 * 60 * 1000; // 10 minutes for large videos
+    xhr.setRequestHeader('Content-Type', mimeType);
+
+    options.onStart?.();
+
+    // React Native: send file URI directly as a blob-like object
+    xhr.send({ uri: fileUri, type: mimeType, name: 'upload' } as any);
+  });
+}
+
+// ============================================================================
+// PRESIGNED VIDEO UPLOAD ORCHESTRATOR
+// ============================================================================
+
+/**
+ * Upload a thumbnail via presigned URL.
+ * Returns the R2 key and public URL for use in the finalize call.
+ */
+export async function uploadThumbnailViaPresignedUrl(
+  thumbnailUri: string,
+  userId: string,
+  fileName: string,
+  mimeType: string
+): Promise<{ key: string; publicUrl: string; mimeType: string }> {
+  const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, 'thumbnail');
+  if (!presignResult.success) {
+    throw new Error(presignResult.error || 'Failed to get thumbnail upload URL');
   }
+
+  const success = await uploadToPresignedUrl(
+    presignResult.data.uploadUrl,
+    thumbnailUri,
+    mimeType
+  );
+  if (!success) {
+    throw new Error('Thumbnail upload failed');
+  }
+
+  return {
+    key: presignResult.data.key,
+    publicUrl: presignResult.data.publicUrl,
+    mimeType,
+  };
+}
+
+/**
+ * Upload a video via presigned URL (bypasses Vercel body size limit).
+ *
+ * Flow:
+ * 1. Get presigned URL from server (small JSON request)
+ * 2. Upload video directly to R2 via XHR (progress tracked)
+ * 3. Finalize — tell server to create Video DB record (small JSON request)
+ */
+export async function uploadVideoViaPresignedUrl(
+  videoUri: string,
+  userId: string,
+  metadata: {
+    title?: string;
+    description?: string;
+    duration?: number;
+    fileName?: string;
+    mimeType?: string;
+  } = {},
+  options: UploadOptions = {},
+  thumbnailData?: { key: string; publicUrl: string; mimeType: string }
+): Promise<ApiResponse<VideoUploadResult>> {
+  const fileName = metadata.fileName || videoUri.split('/').pop() || 'video.mp4';
+  const mimeType = metadata.mimeType || 'video/mp4';
+
+  // Step 1: Get presigned URL (small JSON — fits within Vercel limit)
+  const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, 'video');
+  if (!presignResult.success) {
+    throw new Error(presignResult.error || 'Failed to get upload URL');
+  }
+  const { uploadUrl, key: r2VideoKey, publicUrl: videoPublicUrl } = presignResult.data;
+
+  // Step 2: Upload directly to R2 (bypasses Vercel entirely)
+  const uploadSuccess = await uploadToPresignedUrl(uploadUrl, videoUri, mimeType, options);
+  if (!uploadSuccess) {
+    throw new Error('Direct upload to storage failed');
+  }
+
+  // Step 3: Finalize — create DB record via server (small JSON request)
+  let finalizeResponse: Response;
+  try {
+    finalizeResponse = await fetch(`${API_BASE_URL}/api/r2/upload/finalize-video`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({
+        r2VideoKey,
+        videoUrl: videoPublicUrl,
+        videoMimeType: mimeType,
+        r2ThumbnailKey: thumbnailData?.key || null,
+        thumbnailUrl: thumbnailData?.publicUrl || '',
+        thumbnailMimeType: thumbnailData?.mimeType || null,
+        title: metadata.title,
+        description: metadata.description,
+        duration: metadata.duration,
+      }),
+    });
+  } catch (networkErr) {
+    throw new Error('Network error while finalizing upload. The video was uploaded but the record was not created.');
+  }
+
+  // If token expired on finalize, refresh and retry (finalize is cheap)
+  if (isTokenExpiredResponse(finalizeResponse.status)) {
+    const refreshed = await silentRefresh();
+    if (refreshed) {
+      finalizeResponse = await fetch(`${API_BASE_URL}/api/r2/upload/finalize-video`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          r2VideoKey,
+          videoUrl: videoPublicUrl,
+          videoMimeType: mimeType,
+          r2ThumbnailKey: thumbnailData?.key || null,
+          thumbnailUrl: thumbnailData?.publicUrl || '',
+          thumbnailMimeType: thumbnailData?.mimeType || null,
+          title: metadata.title,
+          description: metadata.description,
+          duration: metadata.duration,
+        }),
+      });
+    }
+  }
+
+  const data = await safeParseJSON(finalizeResponse);
+  if (!finalizeResponse.ok) {
+    throw new Error(data.message || 'Failed to finalize upload');
+  }
+
+  options.onComplete?.();
+
+  return {
+    success: true,
+    data: data.video || (data.data as VideoUploadResult),
+  };
 }
 
 // ============================================================================

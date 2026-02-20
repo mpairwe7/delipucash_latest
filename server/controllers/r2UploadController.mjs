@@ -32,6 +32,7 @@ import r2, {
   finalizeLivestreamSession,
   generateObjectKey,
   getPublicUrl,
+  getFileMetadata,
   validateFileType,
   validateFileSize,
   STORAGE_PATHS,
@@ -445,6 +446,153 @@ export const getPresignedDownloadUrl = asyncHandler(async (req, res) => {
       success: false,
       error: 'URL_GENERATION_FAILED',
       message: error.message || 'Failed to generate download URL',
+    });
+  }
+});
+
+// ============================================================================
+// FINALIZE PRESIGNED VIDEO UPLOAD
+// ============================================================================
+
+/**
+ * Finalize a video upload done via presigned URL.
+ * Verifies the file exists in R2, then creates the Video DB record.
+ */
+export const finalizePresignedVideoUpload = asyncHandler(async (req, res) => {
+  const {
+    r2VideoKey,
+    videoUrl,
+    videoMimeType,
+    r2ThumbnailKey,
+    thumbnailUrl,
+    thumbnailMimeType,
+    title,
+    description,
+    duration,
+  } = req.body;
+
+  const userId = req.user?.id ? String(req.user.id).trim() : '';
+
+  if (!userId) {
+    return res.status(401).json({
+      success: false,
+      error: 'AUTH_REQUIRED',
+      message: 'Authentication is required',
+    });
+  }
+
+  if (!r2VideoKey) {
+    return res.status(400).json({
+      success: false,
+      error: 'MISSING_PARAMS',
+      message: 'r2VideoKey is required',
+    });
+  }
+
+  // Verify user exists
+  const { exists } = await getUserPremiumStatus(userId);
+  if (!exists) {
+    return res.status(404).json({
+      success: false,
+      error: 'USER_NOT_FOUND',
+      message: 'User not found',
+    });
+  }
+
+  try {
+    // Verify the video file actually exists in R2
+    const videoMeta = await getFileMetadata(r2VideoKey);
+    if (!videoMeta) {
+      return res.status(404).json({
+        success: false,
+        error: 'FILE_NOT_FOUND',
+        message: 'Video file not found in storage. Upload may have failed.',
+      });
+    }
+
+    // Verify thumbnail if key provided
+    let thumbnailMeta = null;
+    if (r2ThumbnailKey) {
+      thumbnailMeta = await getFileMetadata(r2ThumbnailKey);
+      // Thumbnail missing is non-fatal — proceed without it
+      if (!thumbnailMeta) {
+        console.warn(`[R2Controller] Thumbnail key ${r2ThumbnailKey} not found in R2, proceeding without`);
+      }
+    }
+
+    // Create video record in database
+    const video = await prisma.$transaction(async (tx) => {
+      return tx.video.create({
+        data: {
+          title: title || 'Untitled Video',
+          description: description || '',
+          videoUrl: videoUrl || getPublicUrl(r2VideoKey),
+          thumbnail: (thumbnailMeta ? (thumbnailUrl || getPublicUrl(r2ThumbnailKey)) : ''),
+          userId,
+          duration: duration ? parseInt(duration, 10) : null,
+          likes: 0,
+          views: 0,
+          commentsCount: 0,
+          // R2 metadata
+          r2VideoKey,
+          r2ThumbnailKey: thumbnailMeta ? r2ThumbnailKey : null,
+          r2VideoEtag: videoMeta.etag,
+          r2ThumbnailEtag: thumbnailMeta?.etag || null,
+          videoMimeType: videoMimeType || videoMeta.mimeType,
+          thumbnailMimeType: thumbnailMeta ? (thumbnailMimeType || thumbnailMeta.mimeType) : null,
+          videoSizeBytes: BigInt(videoMeta.size),
+          thumbnailSizeBytes: thumbnailMeta?.size || null,
+          storageProvider: 'r2',
+          isProcessed: true,
+          processingStatus: 'completed',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              avatar: true,
+            },
+          },
+        },
+      });
+    });
+
+    // Return signed URLs for immediate playback
+    const [signedVideoUrl, signedThumbnailUrl] = await Promise.all([
+      getSignedDownloadUrl(r2VideoKey),
+      video.r2ThumbnailKey
+        ? getSignedDownloadUrl(video.r2ThumbnailKey)
+        : Promise.resolve(video.thumbnail),
+    ]);
+
+    console.log(`[R2Controller] Presigned video finalized: ${video.id}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Video created successfully',
+      video: {
+        id: video.id,
+        title: video.title,
+        description: video.description,
+        videoUrl: signedVideoUrl,
+        thumbnail: signedThumbnailUrl,
+        duration: video.duration,
+        r2VideoKey: video.r2VideoKey,
+        r2ThumbnailKey: video.r2ThumbnailKey,
+        videoSizeBytes: Number(video.videoSizeBytes),
+        createdAt: video.createdAt,
+        user: video.user,
+      },
+    });
+  } catch (error) {
+    console.error('[R2Controller] Finalize presigned video error:', error);
+
+    res.status(500).json({
+      success: false,
+      error: 'FINALIZE_FAILED',
+      message: error.message || 'Failed to finalize video upload',
     });
   }
 });

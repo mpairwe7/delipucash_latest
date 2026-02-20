@@ -975,9 +975,8 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   noOptions: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: SPACING.sm,
     padding: SPACING.lg,
     borderRadius: RADIUS.md,
   },

@@ -8,7 +8,7 @@
  * - Real upload progress via XHR (no fake intervals)
  * - Animated progress bar with percentage
  * - Premium tier file-size gating with upgrade prompt
- * - Uploads directly to Cloudflare R2 (server creates DB record atomically)
+ * - Uploads directly to Cloudflare R2 via presigned URL (bypasses Vercel body limit)
  */
 
 import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
@@ -397,7 +397,7 @@ function UploadModalComponent({
     }
   }, [title, description, selectedFile, isUploading, isProcessing, uploadPhase, resetForm, onClose]);
 
-  // ── Upload handler — sends actual file to R2 with retry logic ──────────────
+  // ── Upload handler — presigned URL flow (bypasses Vercel body limit) ────────
   const handleUpload = useCallback(async () => {
     if (!title.trim()) {
       Alert.alert('Validation Error', 'Please enter a title for your video');
@@ -429,100 +429,76 @@ function UploadModalComponent({
     }
     const fileId = upload.fileId;
 
-    const maxRetries = 2;
-    let attempt = 0;
-    let lastError: Error | null = null;
+    try {
+      useVideoStore.getState().updateUploadProgress(fileId, {
+        status: 'uploading',
+        error: undefined,
+      });
 
-    while (attempt <= maxRetries) {
-      try {
-        // Keep store status aligned with retry/upload phase
-        useVideoStore.getState().updateUploadProgress(fileId, {
-          status: 'uploading',
-          error: undefined,
-        });
+      // Single call — hook internally does: presign → R2 upload → finalize
+      // Thumbnail is included when available; hook uploads it via presigned URL first
+      const result = effectiveThumbnail
+        ? await uploadMedia({
+            videoUri: selectedFile.uri,
+            userId,
+            title: title.trim(),
+            description: description.trim(),
+            fileName: selectedFile.name,
+            mimeType: selectedFile.type,
+            thumbnailUri: effectiveThumbnail.uri,
+            thumbnailFileName: effectiveThumbnail.name,
+            thumbnailMimeType: effectiveThumbnail.type,
+          })
+        : await uploadVideoOnly({
+            videoUri: selectedFile.uri,
+            userId,
+            title: title.trim(),
+            description: description.trim(),
+            fileName: selectedFile.name,
+            mimeType: selectedFile.type,
+          });
 
-        // Use combined upload when thumbnail is available (auto-generated or manual)
-        const result = effectiveThumbnail
-          ? await uploadMedia({
-              videoUri: selectedFile.uri,
-              userId,
-              title: title.trim(),
-              description: description.trim(),
-              fileName: selectedFile.name,
-              mimeType: selectedFile.type,
-              thumbnailUri: effectiveThumbnail.uri,
-              thumbnailFileName: effectiveThumbnail.name,
-              thumbnailMimeType: effectiveThumbnail.type,
-            })
-          : await uploadVideoOnly({
-              videoUri: selectedFile.uri,
-              userId,
-              title: title.trim(),
-              description: description.trim(),
-              fileName: selectedFile.name,
-              mimeType: selectedFile.type,
-            });
+      // Success — sync store, reset form, notify parent
+      if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const videoId = result.data?.id || '';
+      setRetryAttempt(0);
+      setUploadPhase('idle');
+      setTitle('');
+      setDescription('');
+      setSelectedFile(null);
+      setSelectedThumbnail(null);
+      setFileSizeError(null);
+      onUploadComplete?.(videoId);
+      onClose();
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Upload failed');
 
-        // Success — sync store, reset form, notify parent
-        if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        const videoId = result.data?.id || '';
-        setRetryAttempt(0);
-        setUploadPhase('idle');
-        setTitle('');
-        setDescription('');
-        setSelectedFile(null);
-        setSelectedThumbnail(null);
-        setFileSizeError(null);
-        onUploadComplete?.(videoId);
-        onClose();
-        return;
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error('Upload failed');
-        attempt++;
+      setRetryAttempt(0);
+      setUploadPhase('idle');
+      if (fileId) failUpload(fileId, error.message);
 
-        // Non-retryable errors — break immediately
-        if (isNonRetryableUploadError(lastError.message)) {
-          break;
-        }
+      let userMessage = error.message;
+      let actions: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[] = [
+        { text: 'OK', style: 'cancel' }
+      ];
 
-        // Signal retry to UI before backoff delay
-        if (attempt <= maxRetries) {
-          setRetryAttempt(attempt);
-          setUploadPhase('retrying');
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
+      if (error.message.includes('Network') || error.message.toLowerCase().includes('timeout') || error.message.toLowerCase().includes('timed out')) {
+        userMessage = 'Upload failed due to network issues. Please check your connection and try again.';
+        actions = [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: handleUpload },
+        ];
+      } else if (error.message.includes('Server error') || error.message.includes('finalize')) {
+        userMessage = 'Server is temporarily unavailable. Please try again in a moment.';
+        actions = [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Retry', onPress: handleUpload },
+        ];
       }
+
+      Alert.alert('Upload Failed', userMessage, actions);
     }
-
-    // All retries exhausted
-    setRetryAttempt(0);
-    setUploadPhase('idle');
-    const message = lastError?.message || 'Upload failed after multiple attempts';
-    if (fileId) failUpload(fileId, message);
-
-    let userMessage = message;
-    let actions: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[] = [
-      { text: 'OK', style: 'cancel' }
-    ];
-
-    if (message.includes('Network') || message.toLowerCase().includes('timeout') || message.toLowerCase().includes('timed out')) {
-      userMessage = 'Upload failed due to network issues. Please check your connection and try again.';
-      actions = [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Retry', onPress: handleUpload },
-      ];
-    } else if (message.includes('Server error')) {
-      userMessage = 'Server is temporarily unavailable. Please try again in a moment.';
-      actions = [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Retry', onPress: handleUpload },
-      ];
-    }
-
-    Alert.alert('Upload Failed', userMessage, actions);
   }, [
     title, description, selectedFile, effectiveThumbnail, userId,
     uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,

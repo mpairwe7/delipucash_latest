@@ -31,6 +31,8 @@ import {
   uploadThumbnailToR2,
   getPresignedUploadUrl,
   uploadToPresignedUrl,
+  uploadVideoViaPresignedUrl,
+  uploadThumbnailViaPresignedUrl,
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
   getSignedPlaybackUrl,
@@ -152,7 +154,7 @@ export function useUploadVideoToR2(): UseMutationResult<
       setIsProcessing(false);
 
       try {
-        const result = await uploadVideoToR2(
+        const result = await uploadVideoViaPresignedUrl(
           params.videoUri,
           params.userId,
           {
@@ -165,10 +167,6 @@ export function useUploadVideoToR2(): UseMutationResult<
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
-              // XHR bytes fully sent — waiting for server response
-              if (event.progress >= 100) {
-                setIsProcessing(true);
-              }
             },
             onComplete: () => {
               setProgress(100);
@@ -181,11 +179,6 @@ export function useUploadVideoToR2(): UseMutationResult<
             },
           }
         );
-
-        // Throw on service-level failure so retry logic in UploadModal triggers
-        if (!result.success) {
-          throw new Error(result.error || 'Upload failed');
-        }
 
         return result;
       } catch (error) {
@@ -212,7 +205,8 @@ export function useUploadVideoToR2(): UseMutationResult<
 // ============================================================================
 
 /**
- * Hook to upload video and thumbnail together
+ * Hook to upload video and thumbnail together via presigned URLs.
+ * Thumbnail is uploaded first, then video with thumbnail metadata passed to finalize.
  */
 export function useUploadMediaToR2(): UseMutationResult<
   ApiResponse<VideoUploadResult>,
@@ -231,25 +225,31 @@ export function useUploadMediaToR2(): UseMutationResult<
       setIsProcessing(false);
 
       try {
-        const result = await uploadMediaToR2(
+        // Step 1: Upload thumbnail via presigned URL (small, fast)
+        let thumbnailData: { key: string; publicUrl: string; mimeType: string } | undefined;
+        if (params.thumbnailUri) {
+          thumbnailData = await uploadThumbnailViaPresignedUrl(
+            params.thumbnailUri,
+            params.userId,
+            params.thumbnailFileName || 'thumbnail.jpg',
+            params.thumbnailMimeType || 'image/jpeg'
+          );
+        }
+
+        // Step 2: Upload video via presigned URL (progress tracked)
+        const result = await uploadVideoViaPresignedUrl(
           params.videoUri,
-          params.thumbnailUri,
           params.userId,
           {
             title: params.title,
             description: params.description,
             duration: params.duration,
-            videoFileName: params.fileName,
-            videoMimeType: params.mimeType,
-            thumbnailFileName: params.thumbnailFileName,
-            thumbnailMimeType: params.thumbnailMimeType,
+            fileName: params.fileName,
+            mimeType: params.mimeType,
           },
           {
             onProgress: (event: UploadProgressEvent) => {
               setProgress(event.progress);
-              if (event.progress >= 100) {
-                setIsProcessing(true);
-              }
             },
             onComplete: () => {
               setProgress(100);
@@ -260,13 +260,9 @@ export function useUploadMediaToR2(): UseMutationResult<
               setIsProcessing(false);
               setIsUploading(false);
             },
-          }
+          },
+          thumbnailData
         );
-
-        // Throw on service-level failure so retry logic in UploadModal triggers
-        if (!result.success) {
-          throw new Error(result.error || 'Upload failed');
-        }
 
         return result;
       } catch (error) {

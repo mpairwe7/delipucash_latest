@@ -23,6 +23,7 @@ import {
   uploadAvatarToR2,
   getPresignedUploadUrl,
   getPresignedDownloadUrl,
+  finalizePresignedVideoUpload,
   deleteVideoFromR2,
   uploadLivestreamChunk,
   finalizeLivestreamRecording,
@@ -319,6 +320,24 @@ router.post('/presign/upload', getPresignedUploadUrl);
  * - expiresIn: Optional expiry in seconds (default: 1 hour)
  */
 router.post('/presign/download', getPresignedDownloadUrl);
+
+/**
+ * POST /api/r2/upload/finalize-video
+ * Finalize a video uploaded via presigned URL.
+ * Verifies the file exists in R2, then creates the Video DB record.
+ *
+ * Body (JSON):
+ * - r2VideoKey: R2 object key for the uploaded video (required)
+ * - videoUrl: Public URL of the video
+ * - videoMimeType: Video MIME type
+ * - r2ThumbnailKey: R2 key for thumbnail (optional)
+ * - thumbnailUrl: Public URL of thumbnail (optional)
+ * - thumbnailMimeType: Thumbnail MIME type (optional)
+ * - title: Video title
+ * - description: Video description
+ * - duration: Video duration in seconds
+ */
+router.post('/upload/finalize-video', verifyToken, finalizePresignedVideoUpload);
 
 // ============================================================================
 // LIVESTREAM ROUTES
