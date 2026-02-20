@@ -36,6 +36,7 @@ import {
   Platform,
   Dimensions,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -54,9 +55,7 @@ import {
   Heart,
   Send,
   MessageCircle,
-  Pin,
   BadgeCheck,
-  Smile,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
@@ -127,6 +126,21 @@ const formatTimeAgo = (dateString: string): string => {
   return date.toLocaleDateString();
 };
 
+const getCommentAuthorName = (comment: CommentWithLikes): string => {
+  const first = comment.user?.firstName?.trim() || '';
+  const last = comment.user?.lastName?.trim() || '';
+  const fullName = `${first} ${last}`.trim();
+
+  if (fullName) return fullName;
+  if (comment.userId === 'current_user' || comment.userId === 'currentUser') return 'You';
+  return 'User';
+};
+
+const getCommentAuthorInitial = (comment: CommentWithLikes): string => {
+  const name = getCommentAuthorName(comment);
+  return name.charAt(0).toUpperCase() || 'U';
+};
+
 // ============================================================================
 // COMMENT ITEM
 // ============================================================================
@@ -157,16 +171,24 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
   return (
     <View style={styles.commentItem}>
       <View style={[styles.avatar, { backgroundColor: colors.border }]}>
-        <Text style={[styles.avatarText, { color: colors.text }]}>
-          {(comment.userId || 'U').charAt(0).toUpperCase()}
-        </Text>
+        {comment.user?.avatar ? (
+          <Image
+            source={{ uri: comment.user.avatar }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={[styles.avatarText, { color: colors.text }]}>
+            {getCommentAuthorInitial(comment)}
+          </Text>
+        )}
       </View>
 
       <View style={styles.commentContent}>
         <View style={styles.commentHeader}>
           <View style={styles.commentAuthorRow}>
             <Text style={[styles.commentAuthor, { color: colors.text }]}>
-              @{comment.userId || 'user'}
+              {getCommentAuthorName(comment)}
             </Text>
             {/* 2026: Verified creator badge */}
             {comment.userId === 'creator' && (
@@ -592,6 +614,11 @@ const styles = StyleSheet.create({
   avatarText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
   },
   commentContent: {
     flex: 1,

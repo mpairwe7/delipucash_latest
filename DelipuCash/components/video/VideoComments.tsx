@@ -32,6 +32,7 @@ import {
   ActivityIndicator,
   Animated,
   Keyboard,
+  Image,
   type ViewStyle,
   type ListRenderItem,
 } from 'react-native';
@@ -123,6 +124,21 @@ const formatCount = (count: number): string => {
   return count.toString();
 };
 
+const getCommentAuthorName = (comment: Comment): string => {
+  const first = comment.user?.firstName?.trim() || '';
+  const last = comment.user?.lastName?.trim() || '';
+  const fullName = `${first} ${last}`.trim();
+
+  if (fullName) return fullName;
+  if (comment.userId === 'current_user' || comment.userId === 'currentUser') return 'You';
+  return 'User';
+};
+
+const getCommentAuthorInitial = (comment: Comment): string => {
+  const name = getCommentAuthorName(comment);
+  return name.charAt(0).toUpperCase() || 'U';
+};
+
 // ============================================================================
 // COMMENT ITEM COMPONENT
 // ============================================================================
@@ -182,9 +198,17 @@ const CommentItem = memo<CommentItemProps>(({
         style={[styles.avatar, { backgroundColor: withAlpha(colors.primary, 0.2) }]}
         accessibilityElementsHidden
       >
-        <Text style={[styles.avatarText, { color: colors.primary }]}>
-          {comment.userId?.charAt(0)?.toUpperCase() || 'U'}
-        </Text>
+        {comment.user?.avatar ? (
+          <Image
+            source={{ uri: comment.user.avatar }}
+            style={styles.avatarImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={[styles.avatarText, { color: colors.primary }]}>
+            {getCommentAuthorInitial(comment)}
+          </Text>
+        )}
       </View>
 
       {/* Content */}
@@ -192,7 +216,7 @@ const CommentItem = memo<CommentItemProps>(({
         {/* Header */}
         <View style={styles.commentHeader}>
           <Text style={[styles.commentAuthor, { color: colors.text }]}>
-            User {comment.userId?.slice(-3) || 'Unknown'}
+            {getCommentAuthorName(comment)}
           </Text>
           <Text style={[styles.commentTime, { color: colors.textSecondary }]}>
             {formatRelativeTime(comment.createdAt)}
@@ -397,7 +421,7 @@ export const VideoComments = memo<VideoCommentsProps>(({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     
     const text = replyingTo 
-      ? `@User${replyingTo.userId?.slice(-3)} ${commentText}`
+      ? `@${getCommentAuthorName(replyingTo)} ${commentText}`
       : commentText;
 
     try {
@@ -524,7 +548,7 @@ export const VideoComments = memo<VideoCommentsProps>(({
         {replyingTo && (
           <View style={[styles.replyIndicator, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
             <Text style={[styles.replyText, { color: colors.primary }]}>
-              Replying to @User{replyingTo.userId?.slice(-3)}
+              Replying to @{getCommentAuthorName(replyingTo)}
             </Text>
             <TouchableOpacity
               onPress={handleCancelReply}
@@ -664,6 +688,11 @@ const styles = StyleSheet.create({
   avatarText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.md,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
   },
   commentContent: {
     flex: 1,

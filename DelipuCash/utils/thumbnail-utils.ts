@@ -64,20 +64,29 @@ const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.wmv', '.flv', '.webm', '.mkv
 // ============================================================================
 
 /**
- * Generate a thumbnail URL from video URL using expo-video-thumbnails
- * Creates an actual thumbnail from the video when thumbnailUrl is not available
+ * Generate a thumbnail URL from video URL using expo-video-thumbnails.
+ * Only works with local file:// URIs — expo-video-thumbnails cannot
+ * generate thumbnails from remote HTTPS URLs. Remote URLs immediately
+ * return the placeholder to avoid slow failures and error spam.
  */
 export const generateThumbnailFromVideo = async (
   videoUrl: string,
   options?: ThumbnailOptions
 ): Promise<string> => {
+  // expo-video-thumbnails only supports local file:// URIs.
+  // Remote URLs (R2 signed URLs, HTTPS, etc.) will always fail with
+  // "Could not generate thumbnail", so skip directly to the placeholder.
+  if (!videoUrl || !videoUrl.startsWith('file://')) {
+    console.log('[Thumbnail] Skipping generation — not a local file URI:', videoUrl?.substring(0, 80));
+    return PLACEHOLDER_IMAGES.video;
+  }
+
   const {
     time = DEFAULT_THUMBNAIL_TIME,
     quality = DEFAULT_THUMBNAIL_QUALITY,
   } = options || {};
 
   try {
-    // Generate thumbnail from video URL using expo-video-thumbnails
     const { uri } = await VideoThumbnails.getThumbnailAsync(videoUrl, {
       time,
       quality,
@@ -86,16 +95,16 @@ export const generateThumbnailFromVideo = async (
     console.log('[Thumbnail] Successfully generated thumbnail:', uri);
     return uri;
   } catch (error) {
-    console.error('[Thumbnail] Error generating thumbnail from video:', error);
-    // Return a fallback placeholder if thumbnail generation fails
+    console.error('[Thumbnail] Error generating thumbnail from local video:', error);
     return PLACEHOLDER_IMAGES.video;
   }
 };
 
 /**
  * Get the best available thumbnail URL for media content
- * Priority: thumbnailUrl > imageUrl > generated from videoUrl (only if thumbnailUrl is empty) > fallback placeholder
- * Handles R2 Storage URLs and other video URLs without extensions
+ * Priority: thumbnailUrl > imageUrl > generated from local videoUrl > fallback placeholder
+ * Note: Thumbnail generation only works with local file:// URIs.
+ * Remote video URLs skip generation and return the placeholder directly.
  */
 export const getBestThumbnailUrl = async (
   media: AdWithMedia,
@@ -103,29 +112,30 @@ export const getBestThumbnailUrl = async (
 ): Promise<string | null> => {
   // First priority: use existing thumbnailUrl
   if (media.thumbnailUrl && media.thumbnailUrl.trim() !== '') {
-    console.log('[Thumbnail] Using existing thumbnailUrl:', media.thumbnailUrl);
     return media.thumbnailUrl;
   }
 
   // Second priority: use imageUrl as fallback
   if (media.imageUrl && media.imageUrl.trim() !== '') {
-    console.log('[Thumbnail] Using imageUrl as fallback:', media.imageUrl);
     return media.imageUrl;
   }
 
-  // Third priority: generate from videoUrl ONLY if thumbnailUrl is empty
-  if (generateFromVideo && media.videoUrl && media.videoUrl.trim() !== '' && (!media.thumbnailUrl || media.thumbnailUrl.trim() === '')) {
-    try {
-      console.log('[Thumbnail] Generating thumbnail from video URL (thumbnailUrl is empty):', media.videoUrl);
-      return await generateThumbnailFromVideo(media.videoUrl);
-    } catch (error) {
-      console.error('[Thumbnail] Failed to generate thumbnail from video URL:', media.videoUrl, error);
-      // Continue to next priority if thumbnail generation fails
+  // Third priority: generate from videoUrl ONLY for local file:// URIs
+  // Remote URLs always fail with expo-video-thumbnails, so skip straight
+  // to the placeholder to avoid error spam and wasted time.
+  if (generateFromVideo && media.videoUrl && media.videoUrl.trim() !== '') {
+    if (media.videoUrl.startsWith('file://')) {
+      try {
+        return await generateThumbnailFromVideo(media.videoUrl);
+      } catch (error) {
+        console.warn('[Thumbnail] Failed to generate thumbnail from local video:', error);
+      }
     }
+    // Remote video with no thumbnail — return the video placeholder
+    return PLACEHOLDER_IMAGES.video;
   }
 
   // Final fallback: return null
-  console.log('[Thumbnail] No suitable thumbnail source found');
   return null;
 };
 

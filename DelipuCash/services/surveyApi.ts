@@ -42,6 +42,8 @@ const SURVEY_ROUTES = {
   analytics: (id: string) => `/api/surveys/${id}/analytics`,
   delete: (id: string) => `/api/surveys/${id}`,
   update: (id: string) => `/api/surveys/${id}`,
+  importPreview: "/api/surveys/import/preview",
+  importSample: (format: string) => `/api/surveys/import/samples/${format}`,
 } as const;
 
 // Survey attempt status interface
@@ -149,6 +151,46 @@ export interface SurveyAnalytics {
     questionText: string;
     responseDistribution: { option: string; count: number; percentage: number }[];
   }[];
+}
+
+// ===========================================
+// Import Preview Types
+// ===========================================
+
+export interface ImportPreviewQuestion {
+  id: string;
+  text: string;
+  type: string;
+  options: string[];
+  required: boolean;
+  placeholder?: string;
+  minValue?: number;
+  maxValue?: number;
+  points?: number;
+}
+
+export interface ImportInvalidRow {
+  rowIndex: number;
+  reason: string;
+  rawValues: string[];
+}
+
+export interface ImportColumnMapping {
+  headerIndex: number;
+  headerText: string;
+  targetField: string | null;
+  confidence: number;
+}
+
+export interface ServerImportPreviewResponse {
+  success: boolean;
+  title?: string;
+  description?: string;
+  questions: ImportPreviewQuestion[];
+  warnings: string[];
+  errors: string[];
+  invalidRows: ImportInvalidRow[];
+  columnMappings: ImportColumnMapping[];
 }
 
 // ===========================================
@@ -313,6 +355,62 @@ export const surveyApi = {
    */
   async getStats(): Promise<ApiResponse<SurveyStats>> {
     return fetchJson<SurveyStats>("/api/surveys/stats");
+  },
+
+  /**
+   * Upload file for server-side import preview.
+   * Uses FormData (not JSON) since we're sending a file.
+   */
+  async importPreview(
+    fileUri: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<ApiResponse<ServerImportPreviewResponse>> {
+    const token = getAuthToken();
+    if (!token) {
+      return { success: false, data: {} as ServerImportPreviewResponse, error: 'Not authenticated' };
+    }
+
+    const formData = new FormData();
+    formData.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: mimeType,
+    } as unknown as Blob);
+
+    const url = `${API_BASE_URL}${SURVEY_ROUTES.importPreview}`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          // Do NOT set Content-Type for FormData — fetch sets it with boundary
+        },
+        body: formData,
+      });
+      const json = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          data: json as ServerImportPreviewResponse,
+          error: json?.message || json?.error || `Import failed with status ${response.status}`,
+        };
+      }
+      return { success: true, data: json as ServerImportPreviewResponse };
+    } catch (error) {
+      return {
+        success: false,
+        data: {} as ServerImportPreviewResponse,
+        error: error instanceof Error ? error.message : 'Network error',
+      };
+    }
+  },
+
+  /**
+   * Get the full URL for downloading a sample import template.
+   */
+  getImportSampleUrl(format: 'json' | 'csv' | 'tsv'): string {
+    return `${API_BASE_URL}${SURVEY_ROUTES.importSample(format)}`;
   },
 };
 
