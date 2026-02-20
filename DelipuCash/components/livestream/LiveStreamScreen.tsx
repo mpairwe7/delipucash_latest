@@ -39,7 +39,7 @@ import { useVideoPremiumAccess } from '@/services/purchasesHooks';
 import { useVideoStore, useVideoRecordingProgress, useVideoLivestreamStatus } from '@/store/VideoStore';
 import { useStartLivestream, useEndLivestream } from '@/services/hooks';
 import { useAuthStore } from '@/utils/auth/store';
-import { uploadVideoToR2, uploadMediaToR2, type UploadOptions } from '@/services/r2UploadService';
+import { useUploadVideoToR2, useUploadMediaToR2 } from '@/services/r2UploadHooks';
 
 // Components
 import { CameraControls } from './CameraControls';
@@ -120,6 +120,10 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   const startLivestreamMutation = useStartLivestream();
   const endLivestreamMutation = useEndLivestream();
 
+  // Presigned URL upload hooks (bypasses Vercel 4.5MB body limit)
+  const uploadVideoHook = useUploadVideoToR2();
+  const uploadMediaHook = useUploadMediaToR2();
+
   // Sync premium status with store
   useEffect(() => {
     useVideoStore.getState().setPremiumStatus({
@@ -142,11 +146,14 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
   
+  // Upload state — derived from presigned URL hooks (no manual setState)
+  const isUploading = uploadVideoHook.isUploading || uploadMediaHook.isUploading;
+  const isProcessing = uploadVideoHook.isProcessing || uploadMediaHook.isProcessing;
+  const uploadProgress = uploadMediaHook.isUploading ? uploadMediaHook.progress : uploadVideoHook.progress;
+
   // State
-  const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [showControls, setShowControls] = useState(true);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [showLimitWarning, setShowLimitWarning] = useState(false);
   const [showLobby, setShowLobby] = useState(mode === 'live');
   const [draftState, setDraftState] = useState<{ videoUri: string; duration: number } | null>(null);
@@ -528,71 +535,71 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     startRecording();
   }, [startRecording]);
 
-  // Post-capture draft handlers
+  // Post-capture draft handlers — presigned URL flow (bypasses Vercel body limit)
   const handlePublish = useCallback(async (metadata: { title: string; description: string; thumbnailUri?: string }) => {
-    if (!draftState) return;
-    setDraftState(null);
-    setIsUploading(true);
+    if (!draftState || !userId || isUploading || isProcessing) return;
 
-    const progressHandler: UploadOptions = { onProgress: (event) => setUploadProgress(event.progress) };
+    // Capture values before any state changes to avoid stale closures
+    const { videoUri, duration } = draftState;
 
     try {
       // Use combined video+thumbnail upload when thumbnail is available
       const result = metadata.thumbnailUri
-        ? await uploadMediaToR2(
-            draftState.videoUri,
-            metadata.thumbnailUri,
-            userId!,
-            { title: metadata.title, description: metadata.description, duration: draftState.duration },
-            progressHandler
-          )
-        : await uploadVideoToR2(
-            draftState.videoUri,
-            userId!,
-            { title: metadata.title, description: metadata.description, duration: draftState.duration },
-            progressHandler
-          );
+        ? await uploadMediaHook.mutateAsync({
+            videoUri,
+            userId,
+            title: metadata.title,
+            description: metadata.description,
+            duration,
+            thumbnailUri: metadata.thumbnailUri,
+          })
+        : await uploadVideoHook.mutateAsync({
+            videoUri,
+            userId,
+            title: metadata.title,
+            description: metadata.description,
+            duration,
+          });
 
-      setIsUploading(false);
-      setUploadProgress(0);
-
-      if (!result.success) {
-        // Queue for retry via upload queue processor
-        useVideoStore.getState().enqueuePendingUpload({
-          videoUri: draftState.videoUri,
-          thumbnailUri: metadata.thumbnailUri,
-          title: metadata.title,
-          description: metadata.description,
-          duration: draftState.duration,
-          userId: userId!,
-        });
-        Alert.alert('Upload Queued', 'Upload will retry when connection improves.');
-        onClose?.();
-        return;
-      }
-
+      // Success — dismiss draft, reset title ref, notify parent
+      recordingTitleRef.current = '';
+      setDraftState(null);
       onVideoUploaded?.({
         id: result.data?.id || `video_${Date.now()}`,
-        uri: draftState.videoUri,
-        duration: draftState.duration,
+        uri: videoUri,
+        duration,
         title: metadata.title,
       });
       Alert.alert('Video Published', 'Your video is live!', [{ text: 'OK', onPress: onClose }]);
-    } catch {
-      setIsUploading(false);
-      setUploadProgress(0);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error('Upload failed');
+      const msg = error.message.toLowerCase();
+
+      // Non-retryable errors — keep draft visible for user to fix or dismiss
+      const nonRetryable = [
+        'validation', 'authentication', 'auth_required', 'unauthorized', 'forbidden',
+        'token expired', 'not signed in', 'user_not_found', 'user not found',
+        'file too large', 'invalid file', 'failed to get upload url', 'file not found in storage',
+      ];
+      if (nonRetryable.some(p => msg.includes(p))) {
+        Alert.alert('Upload Failed', error.message);
+        return;
+      }
+
+      // Retryable errors (network, timeout, storage): queue for offline retry
+      setDraftState(null);
       useVideoStore.getState().enqueuePendingUpload({
-        videoUri: draftState.videoUri,
+        videoUri,
         thumbnailUri: metadata.thumbnailUri,
         title: metadata.title,
         description: metadata.description,
-        duration: draftState.duration,
-        userId: userId!,
+        duration,
+        userId,
       });
-      Alert.alert('Upload Queued', 'Upload will retry automatically.');
+      Alert.alert('Upload Queued', 'Upload will retry when connection improves.');
       onClose?.();
     }
-  }, [draftState, userId, onVideoUploaded, onClose]);
+  }, [draftState, userId, isUploading, isProcessing, uploadMediaHook, uploadVideoHook, onVideoUploaded, onClose]);
 
   const handleDiscard = useCallback(() => {
     setDraftState(null);
@@ -671,6 +678,7 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
         onDiscard={handleDiscard}
         isUploading={isUploading}
         uploadProgress={uploadProgress}
+        isProcessing={isProcessing}
       />
     );
   } else {

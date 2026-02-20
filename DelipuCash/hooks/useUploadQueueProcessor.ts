@@ -18,7 +18,7 @@ import { useVideoStore } from '@/store/VideoStore';
 import { useAuthStore } from '@/utils/auth/store';
 import { useToast } from '@/components/ui/Toast';
 import { onlineManager } from '@tanstack/react-query';
-import { uploadVideoToR2, uploadMediaToR2 } from '@/services/r2UploadService';
+import { uploadVideoViaPresignedUrl, uploadThumbnailViaPresignedUrl } from '@/services/r2UploadService';
 
 const MAX_RETRIES = 3;
 
@@ -80,18 +80,25 @@ export function useUploadQueueProcessor() {
               }
             }
 
-            // Use combined upload when thumbnail is available, fallback to video-only
-            const uploadMeta = {
-              title: upload.title,
-              description: upload.description,
-              duration: upload.duration,
-            };
-            const result = thumbnailUri
-              ? await uploadMediaToR2(upload.videoUri, thumbnailUri, upload.userId, uploadMeta)
-              : await uploadVideoToR2(upload.videoUri, upload.userId, uploadMeta);
+            // Upload thumbnail first if available, then video via presigned URL
+            let thumbnailData: { key: string; publicUrl: string; mimeType: string } | undefined;
+            if (thumbnailUri) {
+              const thumbFileName = thumbnailUri.split('/').pop() || 'thumbnail.jpg';
+              thumbnailData = await uploadThumbnailViaPresignedUrl(
+                thumbnailUri, upload.userId, thumbFileName, 'image/jpeg'
+              );
+            }
+
+            const result = await uploadVideoViaPresignedUrl(
+              upload.videoUri,
+              upload.userId,
+              { title: upload.title, description: upload.description, duration: upload.duration },
+              {}, // no progress tracking for background retry
+              thumbnailData
+            );
 
             if (!result.success) {
-              throw new Error(result.error || 'Upload failed');
+              throw new Error('Upload failed');
             }
 
             // Remove from queue on success

@@ -28,6 +28,8 @@ export interface PostCaptureDraftProps {
   onDiscard: () => void;
   isUploading?: boolean;
   uploadProgress?: number;
+  /** True after upload reaches 100% while waiting for server finalization */
+  isProcessing?: boolean;
 }
 
 export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
@@ -37,6 +39,7 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
   onDiscard,
   isUploading = false,
   uploadProgress = 0,
+  isProcessing = false,
 }) => {
   const { colors } = useTheme();
   const [title, setTitle] = useState('');
@@ -124,13 +127,18 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
         />
 
         {/* Upload progress */}
-        {isUploading && (
+        {(isUploading || isProcessing) && (
           <View style={styles.progressContainer}>
             <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
-              <View style={[styles.progressBar, { width: `${uploadProgress}%`, backgroundColor: colors.primary }]} />
+              <View style={[styles.progressBar, {
+                width: isProcessing ? '100%' : `${uploadProgress}%`,
+                backgroundColor: isProcessing ? colors.warning : colors.primary,
+              }]} />
             </View>
             <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              Uploading... {Math.round(uploadProgress)}%
+              {isProcessing
+                ? 'Finalizing on server...'
+                : `Uploading... ${Math.round(uploadProgress)}%`}
             </Text>
           </View>
         )}
@@ -140,16 +148,16 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
           <TouchableOpacity
             style={[styles.discardButton, { borderColor: withAlpha(colors.border, 0.3) }]}
             onPress={onDiscard}
-            disabled={isUploading}
+            disabled={isUploading || isProcessing}
           >
             <Trash2 size={18} color={colors.error} />
             <Text style={[styles.discardText, { color: colors.error }]}>Discard</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.publishButton, { backgroundColor: colors.primary, opacity: isUploading ? 0.6 : 1 }]}
+            style={[styles.publishButton, { backgroundColor: colors.primary, opacity: (isUploading || isProcessing) ? 0.7 : 1 }]}
             onPress={handlePublish}
-            disabled={isUploading}
+            disabled={isUploading || isProcessing}
           >
             {isUploading ? (
               <ActivityIndicator size="small" color="#fff" />

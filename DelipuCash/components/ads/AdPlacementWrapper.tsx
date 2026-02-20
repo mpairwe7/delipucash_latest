@@ -573,7 +573,7 @@ const BetweenContentAdComponent: React.FC<BetweenContentAdProps> = memo(({
   return (
     <AnimatedLib.View
       style={[styles.betweenContentContainer, style]}
-      entering={SlideInRight.duration(400)}
+      entering={FadeIn.duration(300)}
     >
       <View style={styles.betweenContentDivider}>
         <View style={styles.dividerLine} />
@@ -1013,6 +1013,7 @@ const styles = StyleSheet.create({
   betweenContentContainer: {
     marginVertical: 12,
     paddingHorizontal: 0,
+    overflow: 'hidden',
   },
   betweenContentDivider: {
     flexDirection: 'row',
@@ -1035,6 +1036,7 @@ const styles = StyleSheet.create({
   betweenContentAd: {
     borderRadius: 12,
     overflow: 'hidden',
+    marginVertical: 0,
   },
 
   // Carousel
