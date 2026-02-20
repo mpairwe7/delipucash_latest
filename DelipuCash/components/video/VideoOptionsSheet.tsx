@@ -33,6 +33,7 @@ import {
 import {
   EyeOff,
   UserX,
+  Shield,
   Flag,
   X,
 } from 'lucide-react-native';
@@ -49,7 +50,7 @@ import type { Video } from '@/types';
 // TYPES
 // ============================================================================
 
-export type VideoOptionsAction = 'not_interested' | 'hide_creator' | 'report';
+export type VideoOptionsAction = 'not_interested' | 'hide_creator' | 'block_creator' | 'report';
 
 export interface VideoOptionsSheetProps {
   visible: boolean;
@@ -64,7 +65,7 @@ export interface VideoOptionsSheetProps {
 // ============================================================================
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-const SHEET_HEIGHT = 280;
+const SHEET_HEIGHT = 340;
 
 // ============================================================================
 // COMPONENT
@@ -130,6 +131,7 @@ function VideoOptionsSheetComponent({
   const options: { action: VideoOptionsAction; icon: typeof EyeOff; label: string; color?: string }[] = [
     { action: 'not_interested', icon: EyeOff, label: 'Not Interested' },
     { action: 'hide_creator', icon: UserX, label: 'Hide content from this creator' },
+    { action: 'block_creator', icon: Shield, label: 'Block this creator', color: '#FF9500' },
     { action: 'report', icon: Flag, label: 'Report', color: '#FF3B30' },
   ];
 

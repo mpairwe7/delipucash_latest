@@ -302,6 +302,12 @@ const ringStyles = StyleSheet.create({
 
 // ─── Confetti Particles ──────────────────────────────────────────────────────
 
+// Deterministic seeded random — stable across re-renders (replaces Math.random())
+const seededRandom = (seed: number): number => {
+  const val = Math.sin(seed) * 10000;
+  return val - Math.floor(val);
+};
+
 const ConfettiParticle: React.FC<{
   color: string;
   index: number;
@@ -313,18 +319,33 @@ const ConfettiParticle: React.FC<{
   const rotate = useSharedValue(0);
   const scale = useSharedValue(0);
 
-  const angle = (index / total) * 2 * Math.PI;
-  const speed = 300 + Math.random() * 200;
-  const dx = Math.cos(angle) * (40 + Math.random() * 80);
+  // Pre-compute deterministic values from index — stable across re-renders
+  const seed = useMemo(() => {
+    const r1 = seededRandom(index * 9301 + 49297);
+    const r2 = seededRandom(index * 7919 + 31337);
+    const r3 = seededRandom(index * 6571 + 17389);
+    const r4 = seededRandom(index * 4231 + 21013);
+    const ang = (index / total) * 2 * Math.PI;
+    const spd = 300 + r1 * 200;
+    const dxVal = Math.cos(ang) * (40 + r2 * 80);
+    const sz = 6 + r3 * 6;
+    return {
+      speed: spd,
+      dx: dxVal,
+      sz,
+      borderRadius: r4 > 0.5 ? sz / 2 : 2,
+      rotDir: r1 > 0.5 ? 1 : -1,
+    };
+  }, [index, total]);
 
   useEffect(() => {
     const d = index * 30;
     scale.value = withDelay(d, withSpring(1, { damping: 4, stiffness: 200 }));
-    y.value = withDelay(d, withTiming(-speed, { duration: 1400, easing: Easing.out(Easing.quad) }));
-    x.value = withDelay(d, withTiming(dx, { duration: 1400, easing: Easing.out(Easing.quad) }));
+    y.value = withDelay(d, withTiming(-seed.speed, { duration: 1400, easing: Easing.out(Easing.quad) }));
+    x.value = withDelay(d, withTiming(seed.dx, { duration: 1400, easing: Easing.out(Easing.quad) }));
     rotate.value = withDelay(
       d,
-      withTiming(360 * (Math.random() > 0.5 ? 1 : -1), { duration: 1400 }),
+      withTiming(360 * seed.rotDir, { duration: 1400 }),
     );
     opacity.value = withDelay(d + 800, withTiming(0, { duration: 600 }));
   }, []);
@@ -339,15 +360,14 @@ const ConfettiParticle: React.FC<{
     opacity: opacity.value,
   }));
 
-  const sz = 6 + Math.random() * 6;
   return (
     <Animated.View
       style={[
         {
           position: 'absolute',
-          width: sz,
-          height: sz,
-          borderRadius: Math.random() > 0.5 ? sz / 2 : 2,
+          width: seed.sz,
+          height: seed.sz,
+          borderRadius: seed.borderRadius,
           backgroundColor: color,
         },
         style,
@@ -1226,6 +1246,7 @@ export const RewardSessionSummary: React.FC<RewardSessionSummaryProps> = ({
                   activeOpacity={0.7}
                   accessibilityRole="button"
                   accessibilityLabel="Share your quiz results"
+                  accessibilityHint="Opens the share sheet to share your score with others"
                 >
                   <Share2 size={ICON_SIZE.md} color={colors.primary} strokeWidth={1.5} />
                   <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>Share</Text>

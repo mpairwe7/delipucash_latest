@@ -116,7 +116,6 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiRespon
     // refreshable). Clear auth state so the user is redirected to login instead
     // of seeing cryptic "Request failed" errors on every screen.
     if (response.status === 403) {
-      const { useAuthStore } = await import('@/utils/auth/store');
       useAuthStore.getState().setAuth(null);
     }
 

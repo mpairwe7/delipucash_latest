@@ -359,7 +359,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const attemptHistory = useInstantRewardStore((s) => s.attemptHistory);
 
   // ── Zustand: reactive selector for redemption eligibility ──
-  const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
+  const { data: rewardConfig } = useRewardConfig();
+  const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
 
   // ── Last successful redemption for quick-redeem shortcut ──
   const redemptionHistory = useInstantRewardStore((s) => s.redemptionHistory);
@@ -399,7 +400,6 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Sync Zustand wallet with server-side points to prevent drift ──
   // (Duolingo/Cash App pattern: source of truth is always the server)
-  const { data: rewardConfig } = useRewardConfig();
   useEffect(() => {
     if (user?.points != null && rewardConfig) {
       syncWalletFromServer(pointsToUgx(user.points, rewardConfig));

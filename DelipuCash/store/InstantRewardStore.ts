@@ -18,21 +18,14 @@ import { persist, createJSONStorage, devtools } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getStreakBonus } from '@/utils/quiz-utils';
+import type { RewardConfig } from '@/services/configHooks';
 
 // ===========================================
 // Constants
 // ===========================================
 
-/**
- * RewardConfig type — mirrors the AppConfig from the backend.
- * Imported by components via configHooks.ts; re-exported here for convenience.
- */
-export interface RewardConfig {
-  surveyCompletionPoints: number;
-  pointsToCashNumerator: number;
-  pointsToCashDenominator: number;
-  minWithdrawalPoints: number;
-}
+// Re-export RewardConfig for convenience (single source of truth is configHooks.ts)
+export type { RewardConfig } from '@/services/configHooks';
 
 /**
  * Reward constants for instant reward questions.
@@ -822,13 +815,15 @@ export const selectTotalRewardsEarned = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalRewardsEarned ?? 0;
 
 /**
- * Reactive selector for canRedeem.
- * Uses walletBalance (which is now the raw points count from the server).
- * minWithdrawalPoints defaults to REWARD_CONSTANTS.MIN_REDEMPTION_POINTS (50)
- * until the config is loaded and passed at the component level.
+ * Reactive selector factory for canRedeem.
+ * Pass `config?.minWithdrawalPoints` from `useRewardConfig()` at the call-site.
+ * Falls back to REWARD_CONSTANTS.MIN_REDEMPTION_POINTS (50) if no config loaded yet.
+ *
+ * Usage: `useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints))`
  */
-export const selectCanRedeem = (state: InstantRewardUIState): boolean => {
-  return state.walletBalance >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+export const selectCanRedeem = (minWithdrawalPoints?: number) => (state: InstantRewardUIState): boolean => {
+  const min = minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+  return state.walletBalance >= min;
 };
 
 export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>

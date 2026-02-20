@@ -312,7 +312,8 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       sessionSummary: s.sessionSummary,
     }))
   );
-  const canRedeemRewards = useInstantRewardStore(selectCanRedeem);
+  const { data: rewardConfig } = useRewardConfig();
+  const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
   const endSession = useInstantRewardStore((s) => s.endSession);
   const startSession = useInstantRewardStore((s) => s.startSession);
   const resetSession = useInstantRewardStore((s) => s.resetSession);
@@ -348,7 +349,6 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   }, [userEmail, initializeAttemptHistory]);
 
   // Sync Zustand wallet balance from server-side user points (prevents drift)
-  const { data: rewardConfig } = useRewardConfig();
   useEffect(() => {
     if (user?.points != null && rewardConfig) {
       updateWalletBalance(pointsToUgx(user.points, rewardConfig));

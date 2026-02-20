@@ -374,6 +374,22 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     ? getRedemptionOptions(rewardConfig).filter((opt) => opt.points <= availablePoints)
     : [];
 
+  // Announce step transitions to screen readers
+  useEffect(() => {
+    if (!visible) return;
+    const label = STEP_LABELS[step];
+    if (label) {
+      const idx = ORDERED_STEPS.indexOf(step);
+      AccessibilityInfo.announceForAccessibility(
+        `Step ${idx + 1} of ${ORDERED_STEPS.length}: ${label}`,
+      );
+    } else if (step === 'PROCESSING') {
+      AccessibilityInfo.announceForAccessibility('Processing your redemption, please wait.');
+    } else if (step === 'ERROR') {
+      AccessibilityInfo.announceForAccessibility(`Redemption failed. ${error || ''}`);
+    }
+  }, [step, visible]);
+
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleSelectType = useCallback((type: RewardRedemptionType) => {
@@ -578,7 +594,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
           >
             <AlertCircle size={ICON_SIZE.lg} color={colors.warning} strokeWidth={1.5} />
             <Text style={[styles.noOptionsText, { color: colors.text }]}>
-              You need {REWARD_CONSTANTS.MIN_REDEMPTION_POINTS - availablePoints} more points to redeem
+              You need {(rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS) - availablePoints} more points to redeem
             </Text>
             <Text style={[styles.noOptionsHint, { color: colors.textMuted }]}>
               Answer more questions to earn rewards!

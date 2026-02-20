@@ -1,8 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { SplashScreen, Stack, usePathname } from 'expo-router';
+import { SplashScreen, Stack, usePathname, router } from 'expo-router';
 import { StatusBar, setStatusBarHidden, setStatusBarStyle } from 'expo-status-bar';
 import * as NavigationBar from 'expo-navigation-bar';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { AppState, LogBox, Platform, ErrorUtils } from 'react-native';
 import type { AppStateStatus } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -162,6 +162,31 @@ const asyncStoragePersister = createAsyncStoragePersister({
   throttleTime: 2000,
 });
 
+// ============================================================================
+// Auth transition watcher — clears query cache on passive auth clear
+// ============================================================================
+// When auth transitions from authenticated → null via passive paths (403
+// response, failed refresh), the query cache MUST be cleared to prevent the
+// previous user's data from leaking if a different user logs in.
+// This runs at module level (outside React) because passive auth clears
+// can happen from any service (tokenRefresh.ts, api.ts fetchJson 403).
+// The explicit signOut() in useAuth.ts already calls queryClient.clear(),
+// but these passive paths don't — this is the centralized safety net.
+// (2026 best-practice: Instagram, Threads, X all use centralized auth
+// transition observers to ensure cache/state isolation between users.)
+let previousAuthState: boolean = false; // tracks "was authenticated"
+useAuthStore.subscribe((state) => {
+  const isNowAuthenticated = !!state.auth;
+  if (previousAuthState && !isNowAuthenticated) {
+    // Auth transitioned from non-null → null (passive logout)
+    queryClient.clear();
+    // Also clear the persisted offline cache so stale user data
+    // doesn't rehydrate for a different user on next cold start.
+    AsyncStorage.removeItem('REACT_QUERY_OFFLINE_CACHE').catch(() => {});
+  }
+  previousAuthState = isNowAuthenticated;
+});
+
 /** Invisible component that runs global background tasks inside the provider tree */
 function GlobalProcessors() {
   useOfflineQueueProcessor();
@@ -313,8 +338,34 @@ export default function RootLayout() {
     return () => subscription.remove();
   }, []);
 
-  // Read auth state for RevenueCat user sync
+  // Read auth state for RevenueCat user sync + passive logout detection
   const auth = useAuthStore(s => s.auth);
+
+  // 2026 best-practice: Navigate to login when auth is passively cleared.
+  // Passive auth clears happen from 403 responses or failed token refresh —
+  // unlike explicit signOut() which calls router.replace() directly, these
+  // paths only call setAuth(null). This effect catches all cases by watching
+  // the auth state transition. Uses a ref to detect the non-null → null
+  // transition (not just "auth is null", which is also true on cold start
+  // before the user has ever signed in).
+  const wasAuthenticatedRef = useRef(!!auth);
+  useEffect(() => {
+    const wasAuthenticated = wasAuthenticatedRef.current;
+    const isNowAuthenticated = !!auth;
+    wasAuthenticatedRef.current = isNowAuthenticated;
+
+    // Only redirect on transition from authenticated → unauthenticated
+    if (wasAuthenticated && !isNowAuthenticated && isReady) {
+      // Small delay to let state settle (avoids navigation during render)
+      setTimeout(() => {
+        try {
+          router.replace('/(auth)/login');
+        } catch {
+          // Navigation may not be ready yet — index.tsx will handle it
+        }
+      }, 50);
+    }
+  }, [auth, isReady]);
 
   // Initialize RevenueCat Purchases SDK
   useEffect(() => {

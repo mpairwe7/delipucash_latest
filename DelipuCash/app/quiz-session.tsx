@@ -900,7 +900,7 @@ export default function QuizSessionScreen({
                 </Text>
               </View>
               <Text style={[styles.redemptionSubtitle, { color: colors.textMuted }]}>
-                Minimum {MIN_REDEMPTION_POINTS} points required
+                Minimum {rewardConfig?.minWithdrawalPoints ?? MIN_REDEMPTION_POINTS} points required
               </Text>
 
               {/* Redemption Type Selection */}
@@ -1031,7 +1031,7 @@ export default function QuizSessionScreen({
               </View>
 
               <PrimaryButton
-                title={`Redeem ${selectedRedemptionAmount > 0 ? formatCurrency(pointsToCash(selectedRedemptionAmount)) : ''}`}
+                title={`Redeem ${selectedRedemptionAmount > 0 ? formatCurrency(pointsToCash(selectedRedemptionAmount, rewardConfig)) : ''}`}
                 onPress={handleRedeemReward}
                 disabled={selectedRedemptionAmount === 0 || !phoneNumber || isRedeeming}
                 loading={isRedeeming}

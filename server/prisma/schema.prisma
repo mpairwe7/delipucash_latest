@@ -61,6 +61,14 @@ model AppUser {
   rewardRedemptions        RewardRedemption[]
   surveyFileUploads        SurveyFileUpload[]
   surveyTemplates          SurveyTemplate[]
+  // Follow graph
+  followers                CreatorFollow[]  @relation("FollowTarget")
+  following                CreatorFollow[]  @relation("FollowInitiator")
+  followersCount           Int              @default(0)
+  followingCount           Int              @default(0)
+  // Safety: user blocks
+  blockedUsers             UserBlock[]      @relation("Blocker")
+  blockedBy                UserBlock[]      @relation("Blocked")
 }
 
 model Video {
@@ -97,6 +105,9 @@ model Video {
   // Locale metadata for localized trending
   country          String?   // ISO 3166-1 alpha-2 (e.g., "US", "NG")
   language         String?   // ISO 639-1 (e.g., "en", "yo")
+
+  // Discoverability metadata
+  topicTags        String[]  @default([])
 
   comments       Comment[]
   videoLikes     VideoLike[]
@@ -813,6 +824,39 @@ model VideoFeedback {
   @@unique([userId, videoId, action])
   @@index([userId])
   @@index([videoId])
+}
+
+// CreatorFollow — Explicit follow graph for the Following tab.
+// Replaces the engagement-proxy approach (likes/bookmarks as implicit follows).
+model CreatorFollow {
+  id                   String   @id @default(uuid()) @db.Uuid
+  followerId           String   @db.Uuid
+  followingId          String   @db.Uuid
+  notificationsEnabled Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  follower  AppUser @relation("FollowInitiator", fields: [followerId], references: [id])
+  following AppUser @relation("FollowTarget", fields: [followingId], references: [id])
+
+  @@unique([followerId, followingId])
+  @@index([followingId])
+  @@index([followerId])
+}
+
+// UserBlock — Server-side block enforcement for safety.
+// Blocked users' content is excluded from all feeds.
+model UserBlock {
+  id        String   @id @default(uuid()) @db.Uuid
+  blockerId String   @db.Uuid
+  blockedId String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  blocker AppUser @relation("Blocker", fields: [blockerId], references: [id])
+  blocked AppUser @relation("Blocked", fields: [blockedId], references: [id])
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
 }
 
 // SSE Event Log — stores events for Server-Sent Events delivery.

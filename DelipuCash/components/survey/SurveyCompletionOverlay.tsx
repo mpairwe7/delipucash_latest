@@ -424,7 +424,7 @@ export const SurveyCompletionOverlay: React.FC<SurveyCompletionOverlayProps> = (
       >
         {/* ── Confetti Burst ── */}
         {!reducedMotion && (
-          <View style={styles.confettiContainer} pointerEvents="none">
+          <View style={styles.confettiContainer} pointerEvents="none" importantForAccessibility="no">
             {Array.from({ length: CONFETTI_COUNT }).map((_, i) => (
               <ConfettiParticle
                 key={i}

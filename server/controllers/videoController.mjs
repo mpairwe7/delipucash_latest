@@ -438,6 +438,7 @@ export const getVideoById = asyncHandler(async (req, res) => {
 // ============================================================================
 
 const MIN_TRENDING_VIEWS = 10; // Quality gate: minimum views to be trending-eligible
+const MAX_VIDEOS_PER_CREATOR_TRENDING = 3; // Abuse prevention: cap per creator
 
 export const getTrendingVideos = asyncHandler(async (req, res) => {
   try {
@@ -458,13 +459,14 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
       ...(language && { language }),
     };
 
-    const [videos, total, userLikes, userBookmarks] = await Promise.all([
+    // Fetch blocked users and feedback for safety filtering
+    const [videos, total, userLikes, userBookmarks, blockedUsers, userFeedback] = await Promise.all([
       prisma.video.findMany({
         where,
         include: {
-          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true, followersCount: true } },
         },
-        take: Math.min(limit * 3, 150),
+        take: Math.min(limit * 5, 250), // Extra headroom for per-creator cap
         orderBy: { createdAt: 'desc' },
       }),
       prisma.video.count({ where }),
@@ -474,62 +476,110 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
       authUserId
         ? prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } })
         : Promise.resolve([]),
+      authUserId
+        ? prisma.userBlock.findMany({ where: { blockerId: authUserId }, select: { blockedId: true } })
+        : Promise.resolve([]),
+      authUserId
+        ? prisma.videoFeedback.findMany({
+            where: { userId: authUserId, action: { in: ['not_interested', 'hide_creator'] } },
+            select: { videoId: true, action: true },
+          })
+        : Promise.resolve([]),
     ]);
 
     const likedSet = new Set(userLikes.map(l => l.videoId));
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+    const blockedSet = new Set(blockedUsers.map(b => b.blockedId));
+    const hiddenVideoIds = new Set(userFeedback.filter(f => f.action === 'not_interested').map(f => f.videoId));
+    const hiddenCreatorVideoIds = new Set();
+    const hiddenCreatorIdsFromFeedback = new Set();
+    for (const fb of userFeedback) {
+      if (fb.action === 'hide_creator') hiddenCreatorIdsFromFeedback.add(fb.videoId);
+    }
+
     const now = Date.now();
 
-    // Enhanced score formula including share rate + completion rate
-    const scored = await Promise.all(videos.map(async (video) => {
-      const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
-      const shareRate = video.views > 0 ? (video.sharesCount || 0) / video.views : 0;
-      const completionRate = video.views > 0 ? (video.completionsCount || 0) / video.views : 0;
+    // Score and filter
+    const scored = await Promise.all(videos
+      .filter(video => {
+        // Safety: exclude blocked creators
+        if (blockedSet.has(video.userId)) return false;
+        // Safety: exclude hidden videos
+        if (hiddenVideoIds.has(video.id)) return false;
+        return true;
+      })
+      .map(async (video) => {
+        const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
+        const shareRate = video.views > 0 ? (video.sharesCount || 0) / video.views : 0;
+        const completionRate = video.views > 0 ? (video.completionsCount || 0) / video.views : 0;
+        const followerCount = video.user?.followersCount || 1;
 
-      const engagementScore =
-        (video.likes * 2) +
-        video.views +
-        (video.commentsCount * 3) +
-        (shareRate * 50) +
-        (completionRate * 40);
-      const trendingScore = engagementScore / Math.pow(hoursAge + 2, 1.5);
+        const engagementScore =
+          (video.likes * 2) +
+          video.views +
+          (video.commentsCount * 3) +
+          (shareRate * 50) +
+          (completionRate * 40);
 
-      const signed = await signVideoUrls(video);
-      return {
-        id: video.id,
-        title: video.title || 'Untitled Video',
-        description: video.description || '',
-        videoUrl: signed.videoUrl,
-        thumbnail: signed.thumbnail,
-        userId: video.userId,
-        likes: video.likes || 0,
-        views: video.views || 0,
-        isLiked: likedSet.has(video.id),
-        isBookmarked: bookmarkedSet.has(video.id),
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(),
-        duration: video.duration || 0,
-        comments: [],
-        user: video.user ? {
-          id: video.user.id,
-          firstName: video.user.firstName || 'Anonymous',
-          lastName: video.user.lastName || '',
-          avatar: video.user.avatar,
-        } : null,
-        trendingScore,
-      };
-    }));
+        // Velocity normalization: divide by sqrt(followers) to prevent spam
+        const normalizedEngagement = engagementScore / Math.sqrt(followerCount + 1);
+        const trendingScore = normalizedEngagement / Math.pow(hoursAge + 2, 1.5);
+
+        // Determine trending reason
+        let trendingReason = 'popular_this_week';
+        if (shareRate > 0.1) trendingReason = 'viral_shares';
+        else if (completionRate > 0.5) trendingReason = 'high_completion';
+        else if (hoursAge < 12 && engagementScore > 50) trendingReason = 'rapid_engagement';
+        else if (followerCount < 50 && trendingScore > 5) trendingReason = 'rising_creator';
+
+        const signed = await signVideoUrls(video);
+        return {
+          id: video.id,
+          title: video.title || 'Untitled Video',
+          description: video.description || '',
+          videoUrl: signed.videoUrl,
+          thumbnail: signed.thumbnail,
+          userId: video.userId,
+          likes: video.likes || 0,
+          views: video.views || 0,
+          isLiked: likedSet.has(video.id),
+          isBookmarked: bookmarkedSet.has(video.id),
+          commentsCount: video.commentsCount || 0,
+          createdAt: video.createdAt.toISOString(),
+          updatedAt: video.updatedAt.toISOString(),
+          duration: video.duration || 0,
+          topicTags: video.topicTags || [],
+          comments: [],
+          user: video.user ? {
+            id: video.user.id,
+            firstName: video.user.firstName || 'Anonymous',
+            lastName: video.user.lastName || '',
+            avatar: video.user.avatar,
+          } : null,
+          trendingScore,
+          trendingReason,
+        };
+      }));
 
     scored.sort((a, b) => b.trendingScore - a.trendingScore);
-    const paged = scored.slice(skip, skip + limit);
-    const totalPages = Math.ceil(Math.min(scored.length, total) / limit);
+
+    // Per-creator cap: max MAX_VIDEOS_PER_CREATOR_TRENDING videos per creator
+    const creatorCounts = new Map();
+    const capped = scored.filter(video => {
+      const count = creatorCounts.get(video.userId) || 0;
+      if (count >= MAX_VIDEOS_PER_CREATOR_TRENDING) return false;
+      creatorCounts.set(video.userId, count + 1);
+      return true;
+    });
+
+    const paged = capped.slice(skip, skip + limit);
+    const totalPages = Math.ceil(Math.min(capped.length, total) / limit);
 
     res.json({
       success: true,
       message: 'Trending videos fetched successfully',
       data: paged,
-      pagination: { page, limit, total: scored.length, totalPages, hasMore: page < totalPages },
+      pagination: { page, limit, total: capped.length, totalPages, hasMore: page < totalPages },
     });
   } catch (error) {
     console.error('VideoController: getTrendingVideos - Error:', error);
@@ -538,9 +588,9 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
 });
 
 // ============================================================================
-// FOLLOWING — Implicit follow via engagement signals (likes + bookmarks)
-// Finds creators the user has liked/bookmarked, returns their recent videos.
-// This provides a meaningful "Following" feed without a dedicated Follow model.
+// FOLLOWING — Real follow graph with engagement-proxy fallback
+// Uses CreatorFollow model first; falls back to likes/bookmarks for users
+// who haven't explicitly followed anyone yet (migration bridge).
 // ============================================================================
 
 export const getFollowingVideos = asyncHandler(async (req, res) => {
@@ -554,38 +604,58 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
     const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 20));
     const skip = (page - 1) * limit;
 
-    // Step 1: Find creator IDs the user has engaged with (liked or bookmarked their videos)
-    const [likedCreators, bookmarkedCreators] = await Promise.all([
-      prisma.videoLike.findMany({
-        where: { userId: authUserId },
-        select: { video: { select: { userId: true } } },
-      }),
-      prisma.videoBookmark.findMany({
-        where: { userId: authUserId },
-        select: { video: { select: { userId: true } } },
-      }),
-    ]);
+    // Step 1: Get explicitly followed creator IDs
+    const explicitFollows = await prisma.creatorFollow.findMany({
+      where: { followerId: authUserId },
+      select: { followingId: true },
+    });
+    let followedCreatorIds = explicitFollows.map(f => f.followingId);
 
-    const engagedCreatorIds = [
-      ...new Set([
-        ...likedCreators.map(l => l.video.userId),
-        ...bookmarkedCreators.map(b => b.video.userId),
-      ]),
-    ].filter(id => id !== authUserId); // Exclude own videos
+    // Step 2: Fallback to engagement-proxy if user has 0 explicit follows
+    let usingFallback = false;
+    if (followedCreatorIds.length === 0) {
+      usingFallback = true;
+      const [likedCreators, bookmarkedCreators] = await Promise.all([
+        prisma.videoLike.findMany({
+          where: { userId: authUserId },
+          select: { video: { select: { userId: true } } },
+        }),
+        prisma.videoBookmark.findMany({
+          where: { userId: authUserId },
+          select: { video: { select: { userId: true } } },
+        }),
+      ]);
+      followedCreatorIds = [
+        ...new Set([
+          ...likedCreators.map(l => l.video.userId),
+          ...bookmarkedCreators.map(b => b.video.userId),
+        ]),
+      ];
+    }
 
-    if (engagedCreatorIds.length === 0) {
+    // Exclude own videos and blocked users
+    const blockedUsers = await prisma.userBlock.findMany({
+      where: { blockerId: authUserId },
+      select: { blockedId: true },
+    });
+    const blockedSet = new Set(blockedUsers.map(b => b.blockedId));
+    followedCreatorIds = followedCreatorIds.filter(id => id !== authUserId && !blockedSet.has(id));
+
+    if (followedCreatorIds.length === 0) {
       return res.json({
         success: true,
         data: [],
         pagination: { page, limit, total: 0, totalPages: 0, hasMore: false },
-        message: 'Like or bookmark videos to see more from those creators',
+        message: usingFallback
+          ? 'Like or bookmark videos to see more from those creators'
+          : 'Follow creators to see their videos here',
       });
     }
 
-    // Step 2: Fetch recent videos from engaged creators
+    // Step 3: Fetch recent videos from followed creators
     const [videos, total, userLikes, userBookmarks] = await Promise.all([
       prisma.video.findMany({
-        where: { userId: { in: engagedCreatorIds } },
+        where: { userId: { in: followedCreatorIds } },
         include: {
           user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
         },
@@ -593,15 +663,9 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
         skip,
         take: limit,
       }),
-      prisma.video.count({ where: { userId: { in: engagedCreatorIds } } }),
-      prisma.videoLike.findMany({
-        where: { userId: authUserId },
-        select: { videoId: true },
-      }),
-      prisma.videoBookmark.findMany({
-        where: { userId: authUserId },
-        select: { videoId: true },
-      }),
+      prisma.video.count({ where: { userId: { in: followedCreatorIds } } }),
+      prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
+      prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
     ]);
 
     const likedSet = new Set(userLikes.map(l => l.videoId));
@@ -620,10 +684,12 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
         views: video.views || 0,
         isLiked: likedSet.has(video.id),
         isBookmarked: bookmarkedSet.has(video.id),
+        isFollowing: true,
         commentsCount: video.commentsCount || 0,
         createdAt: video.createdAt.toISOString(),
         updatedAt: video.updatedAt.toISOString(),
         duration: video.duration || 0,
+        topicTags: video.topicTags || [],
         comments: [],
         user: video.user ? {
           id: video.user.id,
@@ -1560,6 +1626,8 @@ export const ingestVideoEvents = asyncHandler(async (req, res) => {
 // GET /api/videos/personalized — Falls back to recency for cold start / anon
 // ============================================================================
 
+const MAX_VIDEOS_PER_CREATOR_PERSONALIZED = 2; // Diversity: max per creator in a single page
+
 export const getPersonalizedVideos = asyncHandler(async (req, res) => {
   try {
     const authUserId = req.user?.id;
@@ -1579,7 +1647,7 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
 
     const baseWhere = excludeIds.length > 0 ? { id: { notIn: excludeIds } } : undefined;
 
-    // Cold start / anonymous: fall back to recency-sorted feed
+    // Cold start / anonymous: fall back to recency-sorted feed with recommendation reasons
     if (!authUserId) {
       const [videos, total, activeLivestreams] = await Promise.all([
         prisma.video.findMany({
@@ -1597,27 +1665,59 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
 
       const formattedVideos = await Promise.all(videos.map(async (video) => {
         const signed = await signVideoUrls(video);
+        // Determine reason for anonymous users
+        let recommendationReason = 'popular_this_week';
+        if ((video.views || 0) < 100) recommendationReason = 'new_creator_spotlight';
         return {
           id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
           videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
           likes: video.likes || 0, views: video.views || 0, isLiked: false, isBookmarked: false,
           commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
           updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
+          topicTags: video.topicTags || [],
           isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
           user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+          recommendationReason,
         };
       }));
       const totalPages = Math.ceil(total / limit);
       return res.json({ success: true, data: formattedVideos, pagination: { page, limit, total, totalPages, hasMore: page < totalPages } });
     }
 
-    // Warm start: score based on user's telemetry event history
+    // ── AUTHENTICATED USER FLOW ──
+
     const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
-    const recentEvents = await prisma.videoEvent.groupBy({
-      by: ['videoId', 'eventType'],
-      where: { userId: authUserId, createdAt: { gte: fourteenDaysAgo } },
-      _count: true,
-    });
+
+    // Parallel data fetch: telemetry, follows, blocks, feedback
+    const [recentEvents, explicitFollows, blockedUsers, userFeedback] = await Promise.all([
+      prisma.videoEvent.groupBy({
+        by: ['videoId', 'eventType'],
+        where: { userId: authUserId, createdAt: { gte: fourteenDaysAgo } },
+        _count: true,
+      }),
+      prisma.creatorFollow.findMany({
+        where: { followerId: authUserId },
+        select: { followingId: true },
+      }),
+      prisma.userBlock.findMany({
+        where: { blockerId: authUserId },
+        select: { blockedId: true },
+      }),
+      prisma.videoFeedback.findMany({
+        where: { userId: authUserId, action: { in: ['not_interested', 'hide_creator'] } },
+        select: { videoId: true, action: true },
+      }),
+    ]);
+
+    // Safety sets
+    const blockedSet = new Set(blockedUsers.map(b => b.blockedId));
+    const hiddenVideoIds = new Set(userFeedback.filter(f => f.action === 'not_interested').map(f => f.videoId));
+    const followedCreatorIds = new Set(explicitFollows.map(f => f.followingId));
+
+    // Cold-start tier based on event count
+    const totalEventCount = recentEvents.length;
+    const isColdStart = totalEventCount < 10;
+    const isWarmStart = totalEventCount >= 10 && totalEventCount < 50;
 
     // Build per-video signal map
     const videoSignals = new Map();
@@ -1640,14 +1740,22 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
       ? await prisma.video.findMany({ where: { id: { in: watchedVideoIds } }, select: { userId: true } })
       : [];
     const preferredCreators = new Set(watchedVideos.map(v => v.userId));
+    // Merge followed creators into preferred
+    for (const id of followedCreatorIds) preferredCreators.add(id);
 
-    // Fetch candidates (3x limit for scoring headroom)
+    // All interacted creators (for cold-start exploration exclusion)
+    const interactedCreators = new Set([...preferredCreators, ...followedCreatorIds]);
+
+    // Fetch candidates (5x limit for scoring headroom + diversity enforcement)
     const [candidates, total, activeLivestreams, userLikes, userBookmarks] = await Promise.all([
       prisma.video.findMany({
-        where: baseWhere,
+        where: {
+          ...baseWhere,
+          userId: { notIn: [...blockedSet] },
+        },
         include: { user: { select: { id: true, firstName: true, lastName: true, avatar: true } } },
         orderBy: { createdAt: 'desc' },
-        take: limit * 3,
+        take: limit * 5,
       }),
       prisma.video.count(baseWhere ? { where: baseWhere } : undefined),
       prisma.livestream.findMany({ where: { status: 'live' }, select: { userId: true, sessionId: true } }),
@@ -1660,35 +1768,93 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
     const now = Date.now();
 
-    // Score each candidate
-    const scored = candidates.map(video => {
+    // Filter out hidden content
+    const filteredCandidates = candidates.filter(video => {
+      if (hiddenVideoIds.has(video.id)) return false;
+      if (blockedSet.has(video.userId)) return false;
+      return true;
+    });
+
+    // Score each candidate with recommendation reasons
+    const scored = filteredCandidates.map(video => {
       const hoursAge = (now - video.createdAt.getTime()) / (1000 * 60 * 60);
       const recencyBoost = Math.max(0, 10 - hoursAge / 24);
+      const isFollowed = followedCreatorIds.has(video.userId);
       const creatorBoost = preferredCreators.has(video.userId) ? 5 : 0;
+      const followBoost = isFollowed ? 8 : 0;
       const engagementScore = (video.likes * 2) + video.views + (video.commentsCount * 3);
       const normalizedEngagement = Math.log10(engagementScore + 1) * 3;
       const userSig = videoSignals.get(video.id);
       const skipPenalty = userSig?.skipped ? -8 : 0;
       const likeBoost = userSig?.liked ? 3 : 0;
       const avgWatchWeight = preferredCreators.has(video.userId) ? 4 : 0;
-      const score = avgWatchWeight + normalizedEngagement + likeBoost + skipPenalty + recencyBoost + creatorBoost;
-      return { video, score };
+      const newCreatorBoost = (video.views || 0) < 100 ? 3 : 0;
+      const explorationBoost = !interactedCreators.has(video.userId) ? 2 : 0;
+
+      const score = avgWatchWeight + normalizedEngagement + likeBoost + skipPenalty
+        + recencyBoost + creatorBoost + followBoost + newCreatorBoost + explorationBoost;
+
+      // Determine recommendation reason
+      let recommendationReason = 'popular_this_week';
+      if (isFollowed) recommendationReason = 'from_followed_creator';
+      else if (creatorBoost > 0) recommendationReason = 'because_you_liked_similar';
+      else if (newCreatorBoost > 0) recommendationReason = 'new_creator_spotlight';
+      else if (engagementScore > 100 && hoursAge < 48) recommendationReason = 'trending_in_your_area';
+
+      return { video, score, recommendationReason };
     });
 
     scored.sort((a, b) => b.score - a.score);
-    const topVideos = scored.slice(skip, skip + limit);
 
-    const formattedVideos = await Promise.all(topVideos.map(async ({ video }) => {
+    // Cold-start bandit: reserve slots for exploration
+    let finalVideos;
+    if (isColdStart) {
+      // 50% explore (unseen creators) + 50% top scored
+      const exploreVideos = scored.filter(s => !interactedCreators.has(s.video.userId));
+      const topVideos = scored.filter(s => interactedCreators.has(s.video.userId) || preferredCreators.has(s.video.userId));
+      const halfLimit = Math.floor(limit / 2);
+      finalVideos = [
+        ...exploreVideos.slice(0, halfLimit).map(s => ({ ...s, recommendationReason: 'new_creator_spotlight' })),
+        ...topVideos.slice(0, limit - halfLimit),
+      ];
+    } else if (isWarmStart) {
+      // 30% explore + 70% personalized
+      const exploreCount = Math.floor(limit * 0.3);
+      const exploreVideos = scored.filter(s => !interactedCreators.has(s.video.userId));
+      const topVideos = scored.filter(s => interactedCreators.has(s.video.userId) || engagementScore > 0);
+      finalVideos = [
+        ...topVideos.slice(0, limit - exploreCount),
+        ...exploreVideos.slice(0, exploreCount).map(s => ({ ...s, recommendationReason: 'new_creator_spotlight' })),
+      ];
+    } else {
+      finalVideos = scored;
+    }
+
+    // Diversity enforcement: max N videos per creator in a single page
+    const creatorCounts = new Map();
+    const diverseVideos = finalVideos.filter(({ video }) => {
+      const count = creatorCounts.get(video.userId) || 0;
+      if (count >= MAX_VIDEOS_PER_CREATOR_PERSONALIZED) return false;
+      creatorCounts.set(video.userId, count + 1);
+      return true;
+    });
+
+    const paged = diverseVideos.slice(skip, skip + limit);
+
+    const formattedVideos = await Promise.all(paged.map(async ({ video, recommendationReason }) => {
       const signed = await signVideoUrls(video);
       return {
         id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
         videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
         likes: video.likes || 0, views: video.views || 0,
         isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
+        isFollowing: followedCreatorIds.has(video.userId),
         commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
         updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
+        topicTags: video.topicTags || [],
         isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
         user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+        recommendationReason,
       };
     }));
 
@@ -1696,7 +1862,7 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
     res.json({
       success: true,
       data: formattedVideos,
-      pagination: { page, limit, total, totalPages, hasMore: scored.length > skip + limit },
+      pagination: { page, limit, total, totalPages, hasMore: diverseVideos.length > skip + limit },
     });
   } catch (error) {
     console.error('VideoController: getPersonalizedVideos - Error:', error);

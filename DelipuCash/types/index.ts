@@ -128,6 +128,11 @@ export interface Video {
   sponsorName?: string;
   ctaUrl?: string;
   ctaText?: string;
+  // 2026: Personalization & discoverability metadata
+  recommendationReason?: string;
+  trendingReason?: string;
+  topicTags?: string[];
+  isFollowing?: boolean;
 }
 
 export interface Comment {

@@ -101,6 +101,7 @@ import {
   useExploreVideos,
   useVideoFeedback,
   useRecordVideoCompletion,
+  useBlockUser,
 } from '@/services/videoHooks';
 import {
   VerticalVideoFeed,
@@ -122,10 +123,12 @@ import { Video, Ad } from '@/types';
 import {
   useVideoFeedStore,
   selectFeedMode,
+  selectActiveTab,
   selectLikedVideoIds,
   selectBookmarkedVideoIds,
   selectSeenVideoIds,
   useFeedUI,
+  type FeedTab,
 } from '@/store/VideoFeedStore';
 import { useHiddenContentStore } from '@/store/HiddenContentStore';
 import { useSearch } from '@/hooks/useSearch';
@@ -140,7 +143,7 @@ import { useAuth } from '@/utils/auth/useAuth';
 import { useVideoPremium } from '@/services/purchasesHooks';
 import { InlinePremiumSection, type InlinePremiumSectionRef } from '@/components/payment';
 import { generateVideoShareUrl } from '@/utils/share';
-import { blendFeed } from '@/utils/feedBlender';
+import { blendFeed, getColdStartTier } from '@/utils/feedBlender';
 import { insertAdsIntoFeed, DEFAULT_AD_CONFIG, type FeedItem } from '@/utils/feedAdEngine';
 
 // ============================================================================
@@ -148,8 +151,6 @@ import { insertAdsIntoFeed, DEFAULT_AD_CONFIG, type FeedItem } from '@/utils/fee
 // ============================================================================
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-type FeedTab = 'for-you' | 'following' | 'trending';
 
 // 2026 Standard: Engagement-driven ad insertion with session caps
 const AD_INSERTION_CONFIG = {
@@ -369,6 +370,7 @@ export default function VideosScreen(): React.ReactElement {
   // ============================================================================
 
   const feedMode = useVideoFeedStore(selectFeedMode);
+  const activeTab = useVideoFeedStore(selectActiveTab);
   const ui = useFeedUI();
   const likedVideoIds = useVideoFeedStore(selectLikedVideoIds);
   const bookmarkedVideoIds = useVideoFeedStore(selectBookmarkedVideoIds);
@@ -383,6 +385,7 @@ export default function VideosScreen(): React.ReactElement {
   const markNotInterested = useHiddenContentStore(s => s.markNotInterested);
 
   // Actions — individual selectors (stable references, no full-store subscription)
+  const setActiveTab = useVideoFeedStore(s => s.setActiveTab);
   const setFeedMode = useVideoFeedStore(s => s.setFeedMode);
   const toggleLike = useVideoFeedStore(s => s.toggleLike);
   const toggleBookmark = useVideoFeedStore(s => s.toggleBookmark);
@@ -406,7 +409,6 @@ export default function VideosScreen(): React.ReactElement {
   // LOCAL STATE - 2026 Enhanced
   // ============================================================================
 
-  const [activeTab, setActiveTab] = useState<FeedTab>('for-you');
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [liveStreamVisible, setLiveStreamVisible] = useState(false);
   const [liveStreamMode, setLiveStreamMode] = useState<'live' | 'record'>('record');
@@ -518,6 +520,7 @@ export default function VideosScreen(): React.ReactElement {
   // User controls + completion tracking
   const { mutate: submitFeedback } = useVideoFeedback();
   const { mutate: recordCompletion } = useRecordVideoCompletion();
+  const { mutate: blockUser } = useBlockUser();
 
   const { data: unreadCount } = useUnreadCount();
   const { mutate: likeVideoMutate } = useLikeVideo();
@@ -697,12 +700,15 @@ export default function VideosScreen(): React.ReactElement {
     switch (activeTab) {
       case 'for-you':
         // Blend personalized + explore + trending for diversity
+        // Cold-start tier based on session watch count as proxy for engagement history
         baseVideos = blendFeed(
           forYouVideos,
           exploreVideos || [],
           trendingVideos,
           seenVideoIds,
           videosWatchedCount,
+          undefined, // use default config
+          getColdStartTier(videosWatchedCount),
         );
         break;
       case 'trending':
@@ -766,8 +772,8 @@ export default function VideosScreen(): React.ReactElement {
     switch (activeTab) {
       case 'following':
         return {
-          title: 'No creators to follow yet',
-          subtitle: 'Like or bookmark videos to see more from those creators here',
+          title: 'No videos from creators you follow',
+          subtitle: 'Follow creators to see their latest videos here',
         };
       case 'trending':
         return {
@@ -1054,11 +1060,31 @@ export default function VideosScreen(): React.ReactElement {
         if (video.userId) hideCreator(video.userId);
         submitFeedback({ videoId: video.id, action: 'hide_creator' });
         break;
+      case 'block_creator':
+        if (video.userId) {
+          Alert.alert(
+            'Block Creator',
+            `Block ${video.user?.firstName || 'this creator'}? You won't see their content anymore.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Block',
+                style: 'destructive',
+                onPress: () => {
+                  blockUser(video.userId!);
+                  hideCreator(video.userId!);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                },
+              },
+            ],
+          );
+        }
+        break;
       case 'report':
         submitFeedback({ videoId: video.id, action: 'report' });
         break;
     }
-  }, [markNotInterested, hideCreator, submitFeedback]);
+  }, [markNotInterested, hideCreator, submitFeedback, blockUser]);
 
   const handleVideoEnd = useCallback((video: Video) => {
     // 2026: Record completion for trending score
@@ -1093,8 +1119,8 @@ export default function VideosScreen(): React.ReactElement {
   const handleTabChange = useCallback((tab: FeedTab) => {
     // 2026: Rigid haptic for tab switch - distinct from soft interactions
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-    setActiveTab(tab);
-  }, []);
+    setActiveTab(tab); // Persisted via VideoFeedStore Zustand persist middleware
+  }, [setActiveTab]);
 
   const toggleViewMode = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

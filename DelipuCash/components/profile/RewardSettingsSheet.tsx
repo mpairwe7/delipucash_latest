@@ -177,6 +177,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       onRequestClose={handleClose}
       statusBarTranslucent
       navigationBarTranslucent
+      accessibilityViewIsModal
     >
       <KeyboardAvoidingView
         style={styles.root}

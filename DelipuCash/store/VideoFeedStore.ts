@@ -13,8 +13,9 @@
  */
 
 import { create } from 'zustand';
-import { subscribeWithSelector, devtools } from 'zustand/middleware';
+import { subscribeWithSelector, devtools, persist, createJSONStorage } from 'zustand/middleware';
 import { useShallow } from 'zustand/react/shallow';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Video } from '@/types';
 
 // ============================================================================
@@ -87,10 +88,18 @@ export interface FeedUIState {
   fullPlayerVideoId: string | null;
 }
 
+export interface FeedCursor {
+  page: number;
+  lastFetchedAt: number;
+}
+
 export interface VideoFeedState {
   // Feed configuration
   feedMode: FeedMode;
   activeTab: FeedTab;
+
+  // Per-tab pagination cursors (persisted)
+  feedCursors: Record<FeedTab, FeedCursor>;
   
   // Video data (indexed for O(1) lookup)
   videos: Video[];
@@ -191,6 +200,10 @@ export interface VideoFeedActions {
   markSeen: (videoIds: string[]) => void;
   clearSeen: () => void;
 
+  // Feed cursors (persisted pagination state)
+  setFeedCursor: (tab: FeedTab, cursor: Partial<FeedCursor>) => void;
+  getFeedCursor: (tab: FeedTab) => FeedCursor;
+
   // Utilities
   getVideoById: (videoId: string) => Video | undefined;
   getVideoAtIndex: (index: number) => Video | undefined;
@@ -239,9 +252,17 @@ const initialUI: FeedUIState = {
   fullPlayerVideoId: null,
 };
 
+const initialFeedCursors: Record<FeedTab, FeedCursor> = {
+  'for-you': { page: 1, lastFetchedAt: 0 },
+  following: { page: 1, lastFetchedAt: 0 },
+  trending: { page: 1, lastFetchedAt: 0 },
+  live: { page: 1, lastFetchedAt: 0 },
+};
+
 const initialState: VideoFeedState = {
   feedMode: 'vertical',
   activeTab: 'for-you',
+  feedCursors: initialFeedCursors,
   videos: [],
   videoMap: new Map(),
   activeVideo: initialActiveVideo,
@@ -266,6 +287,7 @@ const initialState: VideoFeedState = {
 
 export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
   devtools(
+  persist(
   subscribeWithSelector((set, get) => ({
     ...initialState,
 
@@ -855,6 +877,24 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     // ========================================================================
+    // FEED CURSORS (persisted pagination state)
+    // ========================================================================
+
+    setFeedCursor: (tab, cursor) => {
+      const { feedCursors } = get();
+      set({
+        feedCursors: {
+          ...feedCursors,
+          [tab]: { ...feedCursors[tab], ...cursor },
+        },
+      });
+    },
+
+    getFeedCursor: (tab) => {
+      return get().feedCursors[tab] ?? { page: 1, lastFetchedAt: 0 };
+    },
+
+    // ========================================================================
     // UTILITIES
     // ========================================================================
 
@@ -896,6 +936,16 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
       set(initialState);
     },
   })),
+  {
+    name: 'video-feed-store',
+    storage: createJSONStorage(() => AsyncStorage),
+    partialize: (state) => ({
+      activeTab: state.activeTab,
+      feedMode: state.feedMode,
+      watchedVideoIds: state.watchedVideoIds,
+      feedCursors: state.feedCursors,
+    }),
+  }),
   { name: 'VideoFeedStore', enabled: __DEV__ },
   )
 );
@@ -914,6 +964,7 @@ export const selectLikedVideoIds = (state: VideoFeedState) => state.likedVideoId
 export const selectBookmarkedVideoIds = (state: VideoFeedState) => state.bookmarkedVideoIds;
 
 export const selectSeenVideoIds = (state: VideoFeedState) => state.seenVideoIds;
+export const selectFeedCursors = (state: VideoFeedState) => state.feedCursors;
 
 // Derived selectors
 export const selectIsVideoLiked = (videoId: string) => (state: VideoFeedState) =>

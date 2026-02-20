@@ -58,6 +58,11 @@ export const videoQueryKeys = {
   trendingInfinite: (filters: Record<string, unknown>) => [...videoQueryKeys.all, 'trending-infinite', filters] as const,
   searchInfinite: (query: string) => [...videoQueryKeys.all, 'search-infinite', query] as const,
   explore: () => [...videoQueryKeys.all, 'explore'] as const,
+  // Follow graph keys
+  follows: () => ['follows'] as const,
+  followStatus: (creatorId: string) => ['follows', 'status', creatorId] as const,
+  followCounts: (userId: string) => ['follows', 'counts', userId] as const,
+  blocked: () => ['follows', 'blocked'] as const,
 } as const;
 
 // ============================================================================
@@ -1142,4 +1147,113 @@ export default {
   useVideoFeedback,
   useRecordVideoCompletion,
   useExploreVideos,
+  // Follow graph hooks
+  useFollowCreator,
+  useUnfollowCreator,
+  useFollowStatus,
+  useFollowCounts,
+  useBlockUser,
 };
+
+// ============================================================================
+// FOLLOW GRAPH HOOKS — Explicit follow/unfollow with optimistic updates
+// ============================================================================
+
+/** Follow a creator — optimistic UI with rollback */
+export function useFollowCreator() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (creatorId: string) => {
+      const response = await videoApi.followCreator(creatorId);
+      if (!response.success) throw new Error(response.error || 'Failed to follow');
+      return response.data;
+    },
+    onMutate: async (creatorId: string) => {
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
+      const prev = queryClient.getQueryData(videoQueryKeys.followStatus(creatorId));
+      queryClient.setQueryData(videoQueryKeys.followStatus(creatorId), { isFollowing: true, notificationsEnabled: true });
+      return { prev };
+    },
+    onError: (_err, creatorId, context) => {
+      if (context?.prev) queryClient.setQueryData(videoQueryKeys.followStatus(creatorId), context.prev);
+    },
+    onSettled: (_data, _err, creatorId) => {
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.followCounts(creatorId) });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+    },
+  });
+}
+
+/** Unfollow a creator — optimistic UI with rollback */
+export function useUnfollowCreator() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (creatorId: string) => {
+      const response = await videoApi.unfollowCreator(creatorId);
+      if (!response.success) throw new Error(response.error || 'Failed to unfollow');
+      return response.data;
+    },
+    onMutate: async (creatorId: string) => {
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
+      const prev = queryClient.getQueryData(videoQueryKeys.followStatus(creatorId));
+      queryClient.setQueryData(videoQueryKeys.followStatus(creatorId), { isFollowing: false, notificationsEnabled: false });
+      return { prev };
+    },
+    onError: (_err, creatorId, context) => {
+      if (context?.prev) queryClient.setQueryData(videoQueryKeys.followStatus(creatorId), context.prev);
+    },
+    onSettled: (_data, _err, creatorId) => {
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.followCounts(creatorId) });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+    },
+  });
+}
+
+/** Check follow status for a creator */
+export function useFollowStatus(creatorId: string | undefined) {
+  return useQuery({
+    queryKey: videoQueryKeys.followStatus(creatorId || ''),
+    queryFn: async () => {
+      if (!creatorId) return { isFollowing: false, notificationsEnabled: false };
+      const response = await videoApi.getFollowStatus(creatorId);
+      if (!response.success) return { isFollowing: false, notificationsEnabled: false };
+      return response.data;
+    },
+    enabled: !!creatorId,
+    staleTime: 1000 * 60, // 1 minute
+  });
+}
+
+/** Get follower/following counts for a user */
+export function useFollowCounts(userId: string | undefined) {
+  return useQuery({
+    queryKey: videoQueryKeys.followCounts(userId || ''),
+    queryFn: async () => {
+      if (!userId) return { followersCount: 0, followingCount: 0 };
+      const response = await videoApi.getFollowCounts(userId);
+      if (!response.success) return { followersCount: 0, followingCount: 0 };
+      return response.data;
+    },
+    enabled: !!userId,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+}
+
+/** Block a user — invalidates all feed queries */
+export function useBlockUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await videoApi.blockUser(userId);
+      if (!response.success) throw new Error(response.error || 'Failed to block user');
+      return response.data;
+    },
+    onSuccess: () => {
+      // Invalidate all feed queries since blocked content should be removed
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.follows() });
+    },
+  });
+}

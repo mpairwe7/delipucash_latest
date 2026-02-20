@@ -35,6 +35,30 @@ export interface BlendConfig {
   freshnessInterval: number;
 }
 
+/** Cold-start tiers: controls explore ratio based on user engagement history */
+export type ColdStartTier = 'cold' | 'warm' | 'established';
+
+export function getColdStartTier(userEventCount: number): ColdStartTier {
+  if (userEventCount < 10) return 'cold';
+  if (userEventCount < 50) return 'warm';
+  return 'established';
+}
+
+/** Returns adjusted blend config for cold-start users */
+export function getAdaptedConfig(config: BlendConfig, tier: ColdStartTier): BlendConfig {
+  switch (tier) {
+    case 'cold':
+      // 50% explore for discovery
+      return { ...config, personalizedRatio: 0.30, exploreRatio: 0.50, trendingRatio: 0.20 };
+    case 'warm':
+      // 30% explore for warm-up
+      return { ...config, personalizedRatio: 0.50, exploreRatio: 0.30, trendingRatio: 0.20 };
+    case 'established':
+    default:
+      return config;
+  }
+}
+
 export const DEFAULT_BLEND_CONFIG: BlendConfig = {
   personalizedRatio: 0.70,
   exploreRatio: 0.20,
@@ -86,14 +110,18 @@ export function blendFeed(
   seenIds: Set<string>,
   videosWatched: number,
   config: BlendConfig = DEFAULT_BLEND_CONFIG,
+  coldStartTier: ColdStartTier = 'established',
 ): Video[] {
-  // 1. Adapt ratios after threshold
-  let pRatio = config.personalizedRatio;
-  let eRatio = config.exploreRatio;
-  let tRatio = config.trendingRatio;
+  // 0. Apply cold-start adjustments before adaptive logic
+  const adaptedConfig = getAdaptedConfig(config, coldStartTier);
 
-  if (videosWatched >= config.adaptiveThreshold) {
-    eRatio = config.adaptiveExploreRatio;
+  // 1. Adapt ratios after threshold
+  let pRatio = adaptedConfig.personalizedRatio;
+  let eRatio = adaptedConfig.exploreRatio;
+  let tRatio = adaptedConfig.trendingRatio;
+
+  if (videosWatched >= adaptedConfig.adaptiveThreshold) {
+    eRatio = adaptedConfig.adaptiveExploreRatio;
     // Reduce personalized to compensate
     pRatio = 1 - eRatio - tRatio;
   }

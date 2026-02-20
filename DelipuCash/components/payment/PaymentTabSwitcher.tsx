@@ -103,7 +103,7 @@ export const PaymentTabSwitcher = React.memo<PaymentTabSwitcherProps>(({
 
   return (
     <View
-      accessibilityRole="tabbar"
+      role="tablist"
       accessibilityLabel="Payment method tabs"
       style={[styles.container, { backgroundColor: containerBg, borderColor: withAlpha(colors.border, 0.3) }]}
     >

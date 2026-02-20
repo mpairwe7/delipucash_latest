@@ -182,7 +182,13 @@ export default function WithdrawScreen(): React.ReactElement {
   };
 
   const renderStepIndicator = (): React.ReactElement => (
-    <View style={styles.stepIndicator}>
+    <View
+      style={styles.stepIndicator}
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Step ${step} of 4`}
+      accessibilityValue={{ min: 1, max: 4, now: step }}
+    >
       {[1, 2, 3, 4].map((s) => (
         <View
           key={s}
@@ -257,10 +263,12 @@ export default function WithdrawScreen(): React.ReactElement {
               value={form.values.amount}
               onChangeText={(value) => form.handleChange("amount", value)}
               onBlur={() => form.handleBlur("amount")}
+              accessibilityLabel="Withdrawal amount"
+              accessibilityHint="Enter the amount you want to withdraw"
             />
           </View>
           {form.errors.amount && form.touched.amount && (
-            <View style={styles.errorRow}>
+            <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="assertive">
               <AlertCircle size={14} color={colors.error} strokeWidth={1.5} />
               <Text style={[styles.errorText, { color: colors.error }]}>
                 {form.errors.amount}
@@ -301,10 +309,12 @@ export default function WithdrawScreen(): React.ReactElement {
               value={form.values.phoneNumber}
               onChangeText={(value) => form.handleChange("phoneNumber", value)}
               onBlur={() => form.handleBlur("phoneNumber")}
+              accessibilityLabel="Phone number"
+              accessibilityHint="Enter the mobile money phone number"
             />
           </View>
           {form.errors.phoneNumber && form.touched.phoneNumber && (
-            <View style={styles.errorRow}>
+            <View style={styles.errorRow} accessibilityRole="alert" accessibilityLiveRegion="assertive">
               <AlertCircle size={14} color={colors.error} strokeWidth={1.5} />
               <Text style={[styles.errorText, { color: colors.error }]}>
                 {form.errors.phoneNumber}
@@ -318,6 +328,8 @@ export default function WithdrawScreen(): React.ReactElement {
           <TouchableOpacity
             style={[styles.secondaryButton, { backgroundColor: colors.secondary }]}
             onPress={() => setStep(1)}
+            accessibilityRole="button"
+            accessibilityLabel="Back to payment method selection"
           >
             <Text style={[styles.buttonText, { color: colors.text }]}>Back</Text>
           </TouchableOpacity>
@@ -325,6 +337,8 @@ export default function WithdrawScreen(): React.ReactElement {
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={handleSubmit}
+            accessibilityRole="button"
+            accessibilityLabel="Continue to confirmation"
           >
             <Text style={[styles.buttonText, { color: colors.primaryText }]}>
               Continue
@@ -406,6 +420,8 @@ export default function WithdrawScreen(): React.ReactElement {
             style={[styles.secondaryButton, { backgroundColor: colors.secondary }]}
             onPress={() => setStep(2)}
             disabled={withdrawMutation.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Back to enter details"
           >
             <Text style={[styles.buttonText, { color: colors.text }]}>Back</Text>
           </TouchableOpacity>
@@ -414,6 +430,8 @@ export default function WithdrawScreen(): React.ReactElement {
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={handleConfirm}
             disabled={withdrawMutation.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Confirm withdrawal"
           >
             {withdrawMutation.isPending ? (
               <ActivityIndicator size="small" color={colors.primaryText} />
@@ -433,11 +451,15 @@ export default function WithdrawScreen(): React.ReactElement {
 
     return (
       <View style={styles.successContainer}>
-        <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]}>
+        <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]} importantForAccessibility="no">
           <CheckCircle size={48} color={colors.success} strokeWidth={1.5} />
         </View>
 
-        <Text style={[styles.successTitle, { color: colors.text }]}>
+        <Text
+          style={[styles.successTitle, { color: colors.text }]}
+          accessibilityRole="header"
+          accessibilityLiveRegion="assertive"
+        >
           Withdrawal Initiated
         </Text>
 
@@ -450,6 +472,8 @@ export default function WithdrawScreen(): React.ReactElement {
         <TouchableOpacity
           style={[styles.doneButton, { backgroundColor: colors.primary }]}
           onPress={handleDone}
+          accessibilityRole="button"
+          accessibilityLabel="Done, return to previous screen"
         >
           <Text style={[styles.buttonText, { color: colors.primaryText }]}>
             Done
@@ -489,7 +513,11 @@ export default function WithdrawScreen(): React.ReactElement {
             Available balance: {formatCurrency(walletBalance)}
           </Text>
           {userPoints > 0 && (
-            <Text style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}>
+            <Text
+              style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}
+              accessibilityLabel={`Points balance: ${userPoints} points${pointsCashValue > 0 ? `, approximately ${formatCurrency(pointsCashValue)}` : ''}`}
+              accessibilityLiveRegion="polite"
+            >
               Points: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
             </Text>
           )}

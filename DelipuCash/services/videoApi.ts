@@ -91,6 +91,19 @@ const VIDEO_ROUTES = {
   explore: "/api/videos/explore",
 } as const;
 
+// Follow graph routes — aligned with backend followRoutes.mjs
+const FOLLOW_ROUTES = {
+  follow: (creatorId: string) => `/api/follows/${creatorId}/follow`,
+  unfollow: (creatorId: string) => `/api/follows/${creatorId}/unfollow`,
+  status: (creatorId: string) => `/api/follows/${creatorId}/status`,
+  counts: (userId: string) => `/api/follows/${userId}/counts`,
+  followers: (userId: string) => `/api/follows/${userId}/followers`,
+  following: (userId: string) => `/api/follows/${userId}/following`,
+  block: (userId: string) => `/api/follows/${userId}/block`,
+  unblock: (userId: string) => `/api/follows/${userId}/unblock`,
+  blocked: '/api/follows/blocked',
+} as const;
+
 // Helper to fetch JSON with optional auth
 async function fetchJson<T>(
   path: string,
@@ -883,6 +896,70 @@ export const videoApi = {
    */
   async getStats(): Promise<ApiResponse<VideoStats>> {
     return { success: false, data: {} as VideoStats, error: 'Stats not yet available' };
+  },
+
+  // ==========================================================================
+  // FOLLOW GRAPH — Creator follow/unfollow + block management
+  // ==========================================================================
+
+  async followCreator(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean; followId?: string }>> {
+    const token = getAuthToken();
+    if (!token) return { success: false, data: { isFollowing: false }, error: 'Authentication required' };
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.follow(creatorId)), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false }, error: json.message };
+  },
+
+  async unfollowCreator(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean }>> {
+    const token = getAuthToken();
+    if (!token) return { success: false, data: { isFollowing: false }, error: 'Authentication required' };
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.unfollow(creatorId)), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false }, error: json.message };
+  },
+
+  async getFollowStatus(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean; notificationsEnabled: boolean }>> {
+    const token = getAuthToken();
+    if (!token) return { success: false, data: { isFollowing: false, notificationsEnabled: false }, error: 'Authentication required' };
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.status(creatorId)), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false, notificationsEnabled: false }, error: json.message };
+  },
+
+  async getFollowCounts(userId: string): Promise<ApiResponse<{ followersCount: number; followingCount: number }>> {
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.counts(userId)));
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: json.data || { followersCount: 0, followingCount: 0 }, error: json.message };
+  },
+
+  async blockUser(userId: string): Promise<ApiResponse<{ success: boolean }>> {
+    const token = getAuthToken();
+    if (!token) return { success: false, data: { success: false }, error: 'Authentication required' };
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.block(userId)), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: { success: json.success ?? res.ok }, error: json.message };
+  },
+
+  async unblockUser(userId: string): Promise<ApiResponse<{ success: boolean }>> {
+    const token = getAuthToken();
+    if (!token) return { success: false, data: { success: false }, error: 'Authentication required' };
+    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.unblock(userId)), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return { success: json.success ?? res.ok, data: { success: json.success ?? res.ok }, error: json.message };
   },
 };
 
