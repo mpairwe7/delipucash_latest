@@ -92,7 +92,7 @@ import {
 import { X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { useResponsiveLayout } from "@/hooks/useResponsiveLayout";
+import { useResponsiveLayout, FONT_SCALE } from "@/hooks/useResponsiveLayout";
 
 // ============================================================================
 // MEMOIZED COMPONENTS
@@ -221,6 +221,13 @@ export default function SurveysScreen(): React.ReactElement {
   const layout = useResponsiveLayout();
   const { isTablet } = layout;
   const width = layout.width;
+
+  // Responsive padding — adapts to phone size class
+  const horizontalPadding = useMemo(() => layout.select({
+    phone: layout.isSmallPhone ? SPACING.sm : SPACING.md,
+    largePhone: SPACING.base,
+    tablet: SPACING.lg,
+  }), [layout]);
 
   // Store state (individual selectors — avoid full-store subscriptions)
   const activeTab = useSurveyUIStore(s => s.activeTab);
@@ -820,7 +827,7 @@ export default function SurveysScreen(): React.ReactElement {
             <FileText size={48} color={colors.textMuted} strokeWidth={1.5} accessible={false} />
             <Text
               style={[styles.emptyTitle, { color: colors.text }]}
-              maxFontSizeMultiplier={1.3}
+              maxFontSizeMultiplier={FONT_SCALE.heading}
             >
               {activeTab === 'my-surveys' ? 'No surveys yet' :
                activeTab === 'running' ? 'No active surveys' :
@@ -830,7 +837,7 @@ export default function SurveysScreen(): React.ReactElement {
             </Text>
             <Text
               style={[styles.emptySubtitle, { color: colors.textMuted }]}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={FONT_SCALE.body}
             >
               {activeTab === 'my-surveys'
                 ? 'Create your first survey to start collecting insights'
@@ -881,13 +888,13 @@ export default function SurveysScreen(): React.ReactElement {
           <Text
             style={[styles.headerTitle, { color: colors.text }]}
             accessibilityRole="header"
-            maxFontSizeMultiplier={1.3}
+            maxFontSizeMultiplier={FONT_SCALE.heading}
           >
             Surveys
           </Text>
           <Text
             style={[styles.headerSubtitle, { color: colors.textMuted }]}
-            maxFontSizeMultiplier={1.2}
+            maxFontSizeMultiplier={FONT_SCALE.body}
           >
             Create, manage & analyze
           </Text>
@@ -910,13 +917,13 @@ export default function SurveysScreen(): React.ReactElement {
         <Search size={18} color={colors.textMuted} />
         <Text
           style={[styles.searchPlaceholder, { color: colors.textMuted }]}
-          maxFontSizeMultiplier={1.2}
+          maxFontSizeMultiplier={FONT_SCALE.body}
         >
           {search || 'Search surveys...'}
         </Text>
         {isSearching && (
           <View style={[styles.searchBadge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-            <Text style={[styles.searchBadgeText, { color: colors.primary }]} maxFontSizeMultiplier={1.2}>
+            <Text style={[styles.searchBadgeText, { color: colors.primary }]} maxFontSizeMultiplier={FONT_SCALE.body}>
               {searchedSurveys.length}
             </Text>
           </View>
@@ -949,13 +956,13 @@ export default function SurveysScreen(): React.ReactElement {
                 styles.subscriptionTitle,
                 { color: colors.info }
               ]}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={FONT_SCALE.body}
             >
               Admin Access
             </Text>
             <Text
               style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={FONT_SCALE.body}
             >
               Unlimited survey creation and full feature access
             </Text>
@@ -1007,13 +1014,13 @@ export default function SurveysScreen(): React.ReactElement {
                 styles.subscriptionTitle,
                 { color: hasActiveSubscription ? colors.success : colors.warning }
               ]}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={FONT_SCALE.body}
             >
               {hasActiveSubscription ? "Active Subscription" : "No Active Subscription"}
             </Text>
             <Text
               style={[styles.subscriptionSubtitle, { color: colors.textMuted }]}
-              maxFontSizeMultiplier={1.2}
+              maxFontSizeMultiplier={FONT_SCALE.body}
             >
               {hasActiveSubscription
                 ? `${remainingDays} days remaining${subscriptionStatus?.willRenew ? ' • Auto-renewing' : ''}`
@@ -1065,7 +1072,7 @@ export default function SurveysScreen(): React.ReactElement {
                     { color: isActive ? colors.primary : colors.textMuted },
                     isActive && styles.tabLabelActive,
                   ]}
-                  maxFontSizeMultiplier={1.2}
+                  maxFontSizeMultiplier={FONT_SCALE.body}
                 >
                   {tab.label}
                 </Text>
@@ -1081,7 +1088,7 @@ export default function SurveysScreen(): React.ReactElement {
                         styles.tabBadgeText,
                         { color: isActive ? colors.primaryText : colors.textMuted },
                       ]}
-                      maxFontSizeMultiplier={1.2}
+                      maxFontSizeMultiplier={FONT_SCALE.body}
                     >
                       {tab.count}
                     </Text>
@@ -1132,7 +1139,7 @@ export default function SurveysScreen(): React.ReactElement {
       <View style={styles.sectionHeader}>
         <Text
           style={[styles.sectionTitle, { color: colors.text }]}
-          maxFontSizeMultiplier={1.2}
+          maxFontSizeMultiplier={FONT_SCALE.body}
         >
           {activeTab === 'my-surveys' ? 'Your Surveys' :
            activeTab === 'discover' ? 'Featured Surveys' :
@@ -1142,7 +1149,7 @@ export default function SurveysScreen(): React.ReactElement {
         </Text>
         <Text
           style={[styles.sectionCount, { color: colors.textMuted }]}
-          maxFontSizeMultiplier={1.2}
+          maxFontSizeMultiplier={FONT_SCALE.body}
         >
           {currentSurveys.length} {currentSurveys.length === 1 ? 'survey' : 'surveys'}
         </Text>
@@ -1173,6 +1180,7 @@ export default function SurveysScreen(): React.ReactElement {
           styles.listContent,
           {
             paddingTop: insets.top,
+            paddingHorizontal: horizontalPadding,
             paddingBottom: insets.bottom + SPACING['3xl'] + 100, // Space for FAB
             maxWidth: layout.contentMaxWidth,
             alignSelf: 'center' as const,
@@ -1188,7 +1196,7 @@ export default function SurveysScreen(): React.ReactElement {
           />
         }
         // Performance optimizations
-        removeClippedSubviews
+        removeClippedSubviews={true}
         maxToRenderPerBatch={5}
         updateCellsBatchingPeriod={50}
         windowSize={5}

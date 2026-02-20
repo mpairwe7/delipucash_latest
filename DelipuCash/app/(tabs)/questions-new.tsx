@@ -459,6 +459,13 @@ export default function QuestionsScreen(): React.ReactElement {
   const { data: user } = useUser();
   const { isReady: authReady, isAuthenticated } = useAuth();
 
+  // Responsive padding — adapts to phone size class
+  const horizontalPadding = useMemo(() => layout.select({
+    phone: layout.isSmallPhone ? SPACING.md : SPACING.base,
+    largePhone: SPACING.lg,
+    tablet: SPACING.xl,
+  }), [layout]);
+
   // Refs
   const flatListRef = useRef<FlatList>(null);
   const scrollOffsets = useRef<Record<FeedTabId, number>>({
@@ -982,6 +989,7 @@ export default function QuestionsScreen(): React.ReactElement {
           styles.header,
           {
             paddingTop: insets.top + SPACING.sm,
+            paddingHorizontal: horizontalPadding,
             backgroundColor: colors.background,
           },
         ]}
@@ -1027,6 +1035,7 @@ export default function QuestionsScreen(): React.ReactElement {
           contentContainerStyle={[
             styles.listContent,
             {
+              paddingHorizontal: horizontalPadding,
               paddingBottom: insets.bottom + 80,
               maxWidth: layout.contentMaxWidth,
               alignSelf: 'center' as const,

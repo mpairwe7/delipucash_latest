@@ -124,7 +124,7 @@ import {
   BetweenContentAd,
   AdPlacementWrapper,
 } from "@/components/ads";
-import { useResponsiveLayout } from '@/hooks/useResponsiveLayout';
+import { useResponsiveLayout, FONT_SCALE } from '@/hooks/useResponsiveLayout';
 import { isSmallScreen } from '@/utils/responsive';
 
 // Section identifiers for FlatList
@@ -698,7 +698,7 @@ export default function HomePage(): React.ReactElement {
                       style={styles.walletLabel}
                       accessibilityRole="text"
                       allowFontScaling
-                      maxFontSizeMultiplier={1.2}
+                      maxFontSizeMultiplier={FONT_SCALE.body}
                     >
                       Wallet Balance
                     </Text>
@@ -708,7 +708,7 @@ export default function HomePage(): React.ReactElement {
                     accessibilityLabel={`Wallet balance: ${user?.walletBalance?.toLocaleString() || 0} Ugandan shillings`}
                     accessibilityLiveRegion="polite"
                     allowFontScaling
-                    maxFontSizeMultiplier={1.3}
+                    maxFontSizeMultiplier={FONT_SCALE.heading}
                   >
                     UGX {user?.walletBalance?.toLocaleString() || "0"}
                   </Text>
@@ -840,7 +840,7 @@ export default function HomePage(): React.ReactElement {
                   <Text
                     style={[styles.opportunitiesSubtitle, { color: colors.textSecondary }]}
                     allowFontScaling
-                    maxFontSizeMultiplier={1.2}
+                    maxFontSizeMultiplier={FONT_SCALE.body}
                   >
                     Personalized earning opportunities
                   </Text>
@@ -935,7 +935,7 @@ export default function HomePage(): React.ReactElement {
                   <Text
                     style={[styles.surveyStatusText, { color: colors.textMuted }]}
                     allowFontScaling
-                    maxFontSizeMultiplier={1.2}
+                    maxFontSizeMultiplier={FONT_SCALE.body}
                   >
                     Active now
                   </Text>
@@ -970,7 +970,7 @@ export default function HomePage(): React.ReactElement {
                       style={[styles.emptyStateText, { color: colors.textMuted }]}
                       accessibilityRole="text"
                       allowFontScaling
-                      maxFontSizeMultiplier={1.2}
+                      maxFontSizeMultiplier={FONT_SCALE.body}
                     >
                       No live surveys — check back soon!
                     </Text>
@@ -995,7 +995,7 @@ export default function HomePage(): React.ReactElement {
                   <Text
                     style={[styles.surveyStatusText, { color: colors.warning }]}
                     allowFontScaling
-                    maxFontSizeMultiplier={1.2}
+                    maxFontSizeMultiplier={FONT_SCALE.body}
                   >
                     Upcoming
                   </Text>

@@ -43,6 +43,7 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { normalizeText, triggerHaptic } from "@/utils/quiz-utils";
+import { lockPortrait } from "@/hooks/useScreenOrientation";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -284,6 +285,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Lock to portrait — quiz layouts are designed exclusively for portrait orientation
+  useEffect(() => { lockPortrait(); }, []);
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
@@ -1024,7 +1028,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         <ScrollView
           style={styles.scroll}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + SPACING['2xl'] }]}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -1526,7 +1530,6 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: SPACING.lg,
-    paddingBottom: SPACING["2xl"],
   },
   hero: {
     borderRadius: RADIUS.lg,

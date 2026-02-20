@@ -77,6 +77,7 @@ import {
   getRedemptionOptions,
 } from '@/services/quizApi';
 import useUser from '@/utils/useUser';
+import { lockPortrait } from '@/hooks/useScreenOrientation';
 import { formatCurrency } from '@/services';
 import {
   QuizSessionState,
@@ -300,6 +301,9 @@ export default function QuizSessionScreen({
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
   const { width: screenWidth } = useWindowDimensions();
+
+  // Lock to portrait — quiz layouts are designed exclusively for portrait orientation
+  useEffect(() => { lockPortrait(); }, []);
 
   const { data: userData } = useUser();
   const userId = userData?.id || '';

@@ -21,7 +21,6 @@ import {
   TextInput,
   ScrollView,
   KeyboardAvoidingView,
-  Keyboard,
   Platform,
   Alert,
   Image,
@@ -160,9 +159,9 @@ function UploadModalComponent({
       setUploadPhase('retrying');
     } else if (isUploading) {
       setUploadPhase('uploading');
-    } else if (uploadPhase !== 'idle') {
+    } else {
       // Reset to idle only when not uploading/processing
-      setUploadPhase('idle');
+      setUploadPhase(prev => (prev === 'idle' ? prev : 'idle'));
     }
   }, [isUploading, isProcessing, retryAttempt]);
 
@@ -178,19 +177,9 @@ function UploadModalComponent({
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [selectedFile, setSelectedFile] = useState<SelectedFileInfo | null>(null);
   const [selectedThumbnail, setSelectedThumbnail] = useState<SelectedThumbnail | null>(null);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const resetForm = useCallback(() => {
     setTitle('');
@@ -361,7 +350,12 @@ function UploadModalComponent({
       size: selectedFile.size,
       uri: selectedFile.uri,
     });
-    const fileId = upload?.fileId || '';
+    if (!upload?.fileId) {
+      const uploadError = useVideoStore.getState().lastError || 'Unable to start upload';
+      Alert.alert('Upload Error', uploadError);
+      return;
+    }
+    const fileId = upload.fileId;
 
     const maxRetries = 2;
     let attempt = 0;
@@ -369,6 +363,12 @@ function UploadModalComponent({
 
     while (attempt <= maxRetries) {
       try {
+        // Keep store status aligned with retry/upload phase
+        useVideoStore.getState().updateUploadProgress(fileId, {
+          status: 'uploading',
+          error: undefined,
+        });
+
         // Hooks now throw on service-level failure (success: false)
         const result = selectedThumbnail
           ? await uploadMedia({
@@ -435,7 +435,7 @@ function UploadModalComponent({
     if (fileId) failUpload(fileId, message);
 
     let userMessage = message;
-    let actions: Array<{ text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }> = [
+    let actions: { text: string; onPress?: () => void; style?: 'default' | 'cancel' | 'destructive' }[] = [
       { text: 'OK', style: 'cancel' }
     ];
 
@@ -457,7 +457,7 @@ function UploadModalComponent({
   }, [
     title, description, selectedFile, selectedThumbnail, userId,
     uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,
-    onUploadComplete, resetForm, onClose,
+    onUploadComplete, onClose,
   ]);
 
   const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
@@ -474,7 +474,18 @@ function UploadModalComponent({
   // Sync progress to store via getState() — never subscribes, never re-triggers renders
   useEffect(() => {
     const fid = fileIdRef.current;
-    if (!fid || !isUploading) return;
+    if (!fid) return;
+
+    // Upload bytes already sent; server is processing.
+    if (isProcessing) {
+      useVideoStore.getState().updateUploadProgress(fid, {
+        progress: 100,
+        status: 'processing',
+      });
+      return;
+    }
+
+    if (!isUploading) return;
 
     // Guard: skip if value hasn't changed (prevents infinite loop)
     if (uploadProgress === lastSyncedProgressRef.current) return;
@@ -483,9 +494,21 @@ function UploadModalComponent({
     const diff = uploadProgress - lastSyncedProgressRef.current;
     if (diff >= 1 || uploadProgress === 100 || uploadProgress === 0) {
       lastSyncedProgressRef.current = uploadProgress;
-      useVideoStore.getState().updateUploadProgress(fid, { progress: uploadProgress });
+      const currentUpload = useVideoStore.getState().currentUpload;
+      const fileSize =
+        currentUpload && currentUpload.fileId === fid
+          ? currentUpload.fileSize
+          : 0;
+      const clampedProgress = Math.min(Math.max(uploadProgress, 0), 100);
+      const uploadedBytes = Math.round((clampedProgress / 100) * fileSize);
+
+      useVideoStore.getState().updateUploadProgress(fid, {
+        progress: clampedProgress,
+        uploadedBytes,
+        status: clampedProgress >= 100 ? 'processing' : 'uploading',
+      });
     }
-  }, [uploadProgress, isUploading]);
+  }, [uploadProgress, isUploading, isProcessing]);
 
   return (
     <Modal

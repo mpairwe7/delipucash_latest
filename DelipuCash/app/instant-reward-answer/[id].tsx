@@ -22,6 +22,7 @@ import {
   normalizeText,
   triggerHaptic,
 } from "@/utils/quiz-utils";
+import { lockPortrait } from "@/hooks/useScreenOrientation";
 import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay, QuestionTimer, SessionClosedModal } from "@/components/quiz";
 import { LinearGradient } from "expo-linear-gradient";
 import { Href, router, useLocalSearchParams } from "expo-router";
@@ -281,6 +282,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
+
+  // Lock to portrait — quiz layouts are designed exclusively for portrait orientation
+  useEffect(() => { lockPortrait(); }, []);
 
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [result, setResult] = useState<RewardAnswerResult | null>(null);
@@ -1125,7 +1129,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ padding: SPACING.lg, paddingBottom: insets.bottom + SPACING['2xl'] }}
-          removeClippedSubviews
+          removeClippedSubviews={true}
           scrollEventThrottle={16}
           refreshControl={
             <RefreshControl

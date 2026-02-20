@@ -16,7 +16,7 @@
  * ```tsx
  * const { isTablet, gridColumns, select, responsiveValue } = useResponsiveLayout();
  *
- * const padding = select({ phone: 16, tablet: 24 });
+ * const padding = select({ phone: 16, largePhone: 20, tablet: 24 });
  * const iconSize = responsiveValue(20, 24, 28);
  *
  * <FlatList
@@ -52,6 +52,20 @@ export const BREAKPOINTS = {
 } as const;
 
 // ============================================================================
+// FONT SCALE CONSTANTS — centralized maxFontSizeMultiplier values
+// ============================================================================
+
+/** Centralized font scale multipliers for maxFontSizeMultiplier prop */
+export const FONT_SCALE = {
+  /** Body text, labels, subtitles — WCAG AA */
+  body: 1.2,
+  /** Headings, titles — WCAG AA */
+  heading: 1.3,
+  /** Accessibility-critical text (screen reader content) — WCAG AAA */
+  a11y: 1.5,
+} as const;
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -63,6 +77,8 @@ export interface ResponsiveLayout {
 
   /** width < 768 */
   isPhone: boolean;
+  /** width >= 414 && width < 768 (iPhone Plus/Max class) */
+  isLargePhone: boolean;
   /** width >= 768 */
   isTablet: boolean;
   /** width >= 1024 */
@@ -82,9 +98,9 @@ export interface ResponsiveLayout {
   /** System font scale clamped to 1.5 max for layout stability */
   fontScale: number;
 
-  /** Pick a value by device class. Tablet fallback used if largeTablet omitted. */
-  select: <T>(opts: { phone: T; tablet?: T; largeTablet?: T }) => T;
-  /** Scale a spacing value: 1x phone, 1.25x tablet, 1.5x largeTablet */
+  /** Pick a value by device class. Resolution: largeTablet → tablet → largePhone → phone */
+  select: <T>(opts: { phone: T; largePhone?: T; tablet?: T; largeTablet?: T }) => T;
+  /** Scale a spacing value: 1x phone, 1.1x largePhone, 1.25x tablet, 1.5x largeTablet */
   scaledSpacing: (base: number) => number;
   /** Drop-in replacement for all duplicated getResponsiveSize functions */
   responsiveValue: (small: number, medium: number, large: number) => number;
@@ -99,6 +115,7 @@ export function useResponsiveLayout(): ResponsiveLayout {
 
   return useMemo((): ResponsiveLayout => {
     const isSmallPhone = width < BREAKPOINTS.md;
+    const isLargePhone = width >= BREAKPOINTS.lg && width < BREAKPOINTS.tablet;
     const isPhone = width < BREAKPOINTS.tablet;
     const isTablet = width >= BREAKPOINTS.tablet;
     const isLargeTablet = width >= BREAKPOINTS.largeTablet;
@@ -112,15 +129,17 @@ export function useResponsiveLayout(): ResponsiveLayout {
     // Content max width: caps readability on wide screens
     const contentMaxWidth = isTablet ? 900 : 600;
 
-    function select<T>(opts: { phone: T; tablet?: T; largeTablet?: T }): T {
+    function select<T>(opts: { phone: T; largePhone?: T; tablet?: T; largeTablet?: T }): T {
       if (isLargeTablet && opts.largeTablet !== undefined) return opts.largeTablet;
       if (isTablet && opts.tablet !== undefined) return opts.tablet;
+      if (isLargePhone && opts.largePhone !== undefined) return opts.largePhone;
       return opts.phone;
     }
 
     function scaledSpacing(base: number): number {
       if (isLargeTablet) return Math.round(base * 1.5);
       if (isTablet) return Math.round(base * 1.25);
+      if (isLargePhone) return Math.round(base * 1.1);
       return base;
     }
 
@@ -135,6 +154,7 @@ export function useResponsiveLayout(): ResponsiveLayout {
       width,
       height,
       isPhone,
+      isLargePhone,
       isTablet,
       isLargeTablet,
       isSmallPhone,
