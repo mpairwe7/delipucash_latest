@@ -103,6 +103,7 @@ import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
 import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
+import { useToast } from '@/components/ui/Toast';
 
 // Theme
 import {
@@ -335,6 +336,7 @@ export default function ProfileScreen(): React.ReactElement {
   const layout = useResponsiveLayout();
   const toggleTheme = useThemeStore(s => s.toggleTheme);
   const { signOut } = useAuth();
+  const { showToast } = useToast();
   
   // Data fetching
   const { data: user, loading: userLoading, refetch: refetchUser } = useUser();
@@ -367,6 +369,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [showRewardSettings, setShowRewardSettings] = useState(false);
   const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
   const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
+  // Tracks whether the pending disable-2FA mutation is a resend (vs verify)
+  const [isDisable2FAResending, setIsDisable2FAResending] = useState(false);
 
   // Subscription status (via RevenueCat entitlements)
   const hasSurveySubscription = canCreateSurvey;
@@ -635,12 +639,12 @@ export default function ProfileScreen(): React.ReactElement {
             }
           },
           onError: (error) => {
-            Alert.alert('Error', error.message || 'Failed to send verification code.');
+            showToast({ type: 'error', message: error.message || 'Failed to send verification code.' });
           },
         }
       );
     }
-  }, [twoFactorEnabled, updateTwoFactorMutation]);
+  }, [twoFactorEnabled, updateTwoFactorMutation, showToast]);
 
   // State for disable-2FA OTP step
   const [showDisable2FAOTPModal, setShowDisable2FAOTPModal] = useState(false);
@@ -649,7 +653,7 @@ export default function ProfileScreen(): React.ReactElement {
 
   const handleConfirmDisable2FA = useCallback(() => {
     if (!disable2FAPassword.trim()) {
-      Alert.alert('Error', 'Password is required to disable 2FA.');
+      showToast({ type: 'error', message: 'Password is required to disable 2FA.' });
       return;
     }
     // Step 1: Send password → backend sends OTP code
@@ -668,15 +672,15 @@ export default function ProfileScreen(): React.ReactElement {
             setTwoFactorEnabled(false);
             setShowDisable2FAPrompt(false);
             setDisable2FAPassword('');
-            Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
+            showToast({ type: 'success', message: 'Two-factor authentication has been disabled.' });
           }
         },
         onError: (error) => {
-          Alert.alert('Error', error.message || 'Failed to disable 2FA.');
+          showToast({ type: 'error', message: error.message || 'Failed to disable 2FA.' });
         },
       }
     );
-  }, [disable2FAPassword, updateTwoFactorMutation]);
+  }, [disable2FAPassword, updateTwoFactorMutation, showToast]);
 
   /** Step 2: Verify OTP code to complete disabling 2FA */
   const handleVerifyDisable2FA = useCallback((code: string) => {
@@ -689,27 +693,30 @@ export default function ProfileScreen(): React.ReactElement {
           setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
           setDisable2FAError(null);
-          Alert.alert('2FA Disabled', 'Two-factor authentication has been disabled.');
+          showToast({ type: 'success', message: 'Two-factor authentication has been disabled.' });
         },
         onError: (err) => {
           setDisable2FAError(err.message || 'Invalid verification code.');
         },
       }
     );
-  }, [disable2FAPassword, updateTwoFactorMutation]);
+  }, [disable2FAPassword, updateTwoFactorMutation, showToast]);
 
   /** Resend disable-2FA OTP code */
   const handleResendDisable2FA = useCallback(() => {
     setDisable2FAError(null);
+    setIsDisable2FAResending(true);
     updateTwoFactorMutation.mutate(
       { enabled: false, password: disable2FAPassword },
       {
         onSuccess: (data) => {
+          setIsDisable2FAResending(false);
           if (data.codeSent) {
             setDisable2FAOtpExpiresAt(Date.now() + (data.expiresIn || 180) * 1000);
           }
         },
         onError: (err) => {
+          setIsDisable2FAResending(false);
           setDisable2FAError(err.message || 'Failed to resend verification code.');
         },
       }
@@ -723,13 +730,13 @@ export default function ProfileScreen(): React.ReactElement {
         setTwoFactorEnabled(true);
         setShow2FAModal(false);
         setEnable2FAError(null);
-        Alert.alert('2FA Enabled', 'Two-factor authentication is now active.');
+        showToast({ type: 'success', message: 'Two-factor authentication is now active.' });
       },
       onError: (err) => {
         setEnable2FAError(err.message || 'Invalid verification code.');
       },
     });
-  }, [verify2FAMutation]);
+  }, [verify2FAMutation, showToast]);
 
   const handleResend2FA = useCallback(() => {
     setEnable2FAError(null);
@@ -1145,9 +1152,10 @@ export default function ProfileScreen(): React.ReactElement {
           setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
           setDisable2FAError(null);
+          setIsDisable2FAResending(false);
         }}
-        isVerifying={updateTwoFactorMutation.isPending}
-        isResending={updateTwoFactorMutation.isPending}
+        isVerifying={updateTwoFactorMutation.isPending && !isDisable2FAResending}
+        isResending={isDisable2FAResending}
         error={disable2FAError}
       />
 

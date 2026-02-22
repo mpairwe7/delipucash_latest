@@ -34,19 +34,19 @@
  * ```
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Modal,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Dimensions,
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
   AccessibilityInfo,
   Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import { Shield, KeyRound, X, RefreshCw, AlertCircle } from 'lucide-react-native';
 import Animated, {
@@ -71,9 +71,10 @@ import {
 } from '@/utils/theme';
 import { AccessibleText } from './AccessibleText';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 export type OTPModalVariant = 'enable2FA' | 'disable2FA' | 'verification' | 'passwordReset';
+
+/** Resend cooldown duration in seconds (industry standard: 30s) */
+const RESEND_COOLDOWN_SECONDS = 30;
 
 export interface OTPVerificationModalProps {
   /** Whether modal is visible */
@@ -135,10 +136,14 @@ export function OTPVerificationModal({
   testID,
 }: OTPVerificationModalProps): React.ReactElement {
   const { colors } = useTheme();
+  const { width: SCREEN_WIDTH } = useWindowDimensions();
   const [code, setCode] = useState('');
   const [countdown, setCountdown] = useState(0);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const hiddenInputRef = useRef<TextInput>(null);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resendCooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
 
   // Animation values
@@ -151,10 +156,19 @@ export function OTPVerificationModal({
     if (!visible) {
       setCode('');
       setCountdown(0);
+      setResendCooldown(0);
       autoSubmittedRef.current = false;
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
       if (countdownRef.current) {
         clearInterval(countdownRef.current);
         countdownRef.current = null;
+      }
+      if (resendCooldownRef.current) {
+        clearInterval(resendCooldownRef.current);
+        resendCooldownRef.current = null;
       }
     }
   }, [visible]);
@@ -195,11 +209,14 @@ export function OTPVerificationModal({
     }
   }, [visible, expiresAt]);
 
-  // Auto-focus hidden input when modal opens
+  // Focus hidden input when modal opens (after animation completes)
   useEffect(() => {
     if (visible) {
-      setTimeout(() => {
+      // Delay focus until after modal entrance animation (300ms) — autoFocus
+      // alone is unreliable inside animated modals on both platforms.
+      focusTimerRef.current = setTimeout(() => {
         hiddenInputRef.current?.focus();
+        focusTimerRef.current = null;
       }, 300);
 
       // Icon pulse animation
@@ -221,6 +238,13 @@ export function OTPVerificationModal({
         -1,
         true
       );
+
+      return () => {
+        if (focusTimerRef.current) {
+          clearTimeout(focusTimerRef.current);
+          focusTimerRef.current = null;
+        }
+      };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -291,6 +315,21 @@ export function OTPVerificationModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCode('');
     autoSubmittedRef.current = false;
+    // Start cooldown to prevent spam (industry standard: 30s)
+    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    if (resendCooldownRef.current) {
+      clearInterval(resendCooldownRef.current);
+    }
+    resendCooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(resendCooldownRef.current!);
+          resendCooldownRef.current = null;
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
     onResend?.();
   }, [onResend]);
 
@@ -303,45 +342,46 @@ export function OTPVerificationModal({
     hiddenInputRef.current?.focus();
   }, []);
 
-  // Derive modal content based on variant
-  const getVariantConfig = () => {
+  // Derive modal content based on variant — memoized to avoid JSX re-creation on every render
+  const config = useMemo(() => {
     switch (variant) {
       case 'enable2FA':
         return {
-          icon: <Shield size={32} color={colors.primary} />,
+          icon: icon ?? <Shield size={32} color={colors.primary} />,
           iconBg: withAlpha(colors.primary, 0.1),
           defaultTitle: 'Verify Your Email',
           defaultSubtitle: `We've sent a 6-digit code to ${maskedEmail || 'your email'}. Enter it below to enable two-factor authentication.`,
         };
       case 'disable2FA':
         return {
-          icon: <KeyRound size={32} color={colors.warning} />,
+          icon: icon ?? <KeyRound size={32} color={colors.warning} />,
           iconBg: withAlpha(colors.warning, 0.1),
           defaultTitle: 'Disable Two-Factor Authentication',
           defaultSubtitle: `Enter the verification code sent to ${maskedEmail || 'your email'} to confirm disabling 2FA.`,
         };
       case 'passwordReset':
         return {
-          icon: <KeyRound size={32} color={colors.info} />,
+          icon: icon ?? <KeyRound size={32} color={colors.info} />,
           iconBg: withAlpha(colors.info, 0.1),
           defaultTitle: 'Reset Password',
           defaultSubtitle: `Enter the verification code sent to ${maskedEmail || 'your email'}.`,
         };
       default:
         return {
-          icon: <Shield size={32} color={colors.primary} />,
+          icon: icon ?? <Shield size={32} color={colors.primary} />,
           iconBg: withAlpha(colors.primary, 0.1),
           defaultTitle: 'Verification Required',
           defaultSubtitle: 'Enter the verification code to continue.',
         };
     }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant, maskedEmail, colors.primary, colors.warning, colors.info, icon]);
 
-  const config = getVariantConfig();
   const isExpired = expiresAt ? Date.now() > expiresAt : false;
   const canVerify = code.length === codeLength && !isExpired && !isVerifying;
+  const canResend = !isResending && resendCooldown === 0;
 
-  // Digit box dimensions
+  // Digit box dimensions — reactive to screen width from useWindowDimensions
   const boxGap = SPACING.sm;
   const maxBoxWidth = 48;
   const availableWidth = Math.min(SCREEN_WIDTH - SPACING.xl * 2, 400) - SPACING.xl * 2;
@@ -395,7 +435,7 @@ export function OTPVerificationModal({
               iconAnimatedStyle,
             ]}
           >
-            {icon || config.icon}
+            {config.icon}
           </Animated.View>
 
           {/* Title */}
@@ -456,13 +496,11 @@ export function OTPVerificationModal({
             onChangeText={handleCodeChange}
             keyboardType="number-pad"
             maxLength={codeLength}
-            autoFocus
             editable={!isExpired && !isVerifying}
             textContentType="oneTimeCode"
             autoComplete="one-time-code"
-            accessibilityLabel={`${codeLength}-digit verification code`}
-            accessibilityHint="Enter the code sent to your email"
-            accessibilityValue={{ text: code.length > 0 ? `${code.length} of ${codeLength} digits entered` : 'No digits entered' }}
+            importantForAccessibility="no-hide-descendants"
+            accessibilityElementsHidden
             caretHidden
           />
 
@@ -471,8 +509,10 @@ export function OTPVerificationModal({
             <Pressable
               style={[styles.digitBoxRow, { gap: boxGap }]}
               onPress={focusInput}
+              accessible
               accessibilityLabel={`Verification code input, ${code.length} of ${codeLength} digits entered`}
-              accessibilityRole="none"
+              accessibilityHint="Tap to open keyboard"
+              accessibilityRole="button"
             >
               {Array.from({ length: codeLength }).map((_, index) => {
                 const digit = code[index];
@@ -577,12 +617,26 @@ export function OTPVerificationModal({
             <TouchableOpacity
               style={styles.resendButton}
               onPress={handleResend}
-              disabled={isResending}
+              disabled={!canResend}
               accessibilityRole="button"
-              accessibilityLabel="Resend verification code"
+              accessibilityLabel={
+                resendCooldown > 0
+                  ? `Resend code available in ${resendCooldown} seconds`
+                  : 'Resend verification code'
+              }
+              accessibilityState={{ disabled: !canResend }}
             >
               {isResending ? (
                 <ActivityIndicator size="small" color={colors.primary} />
+              ) : resendCooldown > 0 ? (
+                <AccessibleText
+                  variant="bodySmall"
+                  medium
+                  customColor={colors.textMuted}
+                  accessibilityElementsHidden
+                >
+                  Resend in {resendCooldown}s
+                </AccessibleText>
               ) : (
                 <View style={styles.resendContent}>
                   <RefreshCw size={14} color={colors.primary} />
@@ -610,7 +664,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   content: {
-    width: Math.min(SCREEN_WIDTH - SPACING.xl * 2, 400),
+    maxWidth: 400,
+    width: '90%',
     borderRadius: RADIUS['2xl'],
     padding: SPACING.xl,
     alignItems: 'center',
