@@ -550,3 +550,15 @@ export {
   selectLastUsedPhone,
   selectLastUsedProvider,
 } from './PaymentFlowStore';
+
+// ============================================================================
+// Transaction UI Store — Transaction screen filter & detail state
+// ============================================================================
+export {
+  useTransactionUIStore,
+  selectSelectedFilter,
+  selectSelectedTransactionId,
+  selectSetSelectedFilter,
+  selectOpenDetail,
+  selectCloseDetail,
+} from './TransactionUIStore';

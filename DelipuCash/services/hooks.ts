@@ -221,14 +221,36 @@ export function useRevokeSession(): UseMutationResult<{ revoked: boolean }, Erro
 }
 
 /**
- * Response type for 2FA toggle
+ * Response type for 2FA toggle.
+ * When the server actually toggles 2FA (returns `enabled`), it also issues
+ * fresh tokens because all other sessions are revoked.
  */
 interface TwoFactorToggleResponse {
   enabled?: boolean;
   codeSent?: boolean;
   email?: string;
   expiresIn?: number;
+  token?: string;
+  refreshToken?: string;
   devCode?: string;
+}
+
+/** Persist fresh tokens into the auth store (used after password change / 2FA toggle). */
+function persistFreshTokens(data: { token?: string; refreshToken?: string }) {
+  if (!data?.token || !data?.refreshToken) {
+    console.warn('[persistFreshTokens] Response missing token or refreshToken — skipping');
+    return;
+  }
+  const current = useAuthStore.getState().auth;
+  if (!current) {
+    console.warn('[persistFreshTokens] Auth store is null — tokens not persisted');
+    return;
+  }
+  useAuthStore.getState().setAuth({
+    ...current,
+    token: data.token,
+    refreshToken: data.refreshToken,
+  });
 }
 
 /**
@@ -251,9 +273,12 @@ export function useUpdateTwoFactor(): UseMutationResult<
       return response.data;
     },
     onSuccess: (data) => {
-      // Only invalidate if 2FA was actually toggled (not just code sent)
+      // Only persist tokens + invalidate if 2FA was actually toggled (enabled !== undefined).
+      // If enabled is undefined, we're in the code-sending step — no tokens issued yet.
       if (data.enabled !== undefined) {
+        persistFreshTokens(data);
         queryClient.invalidateQueries({ queryKey: queryKeys.user });
+        queryClient.invalidateQueries({ queryKey: queryKeys.userSessions });
       }
     },
   });
@@ -262,7 +287,7 @@ export function useUpdateTwoFactor(): UseMutationResult<
 /**
  * Hook to verify 2FA code (to complete enabling 2FA)
  */
-export function useVerify2FACode(): UseMutationResult<{ enabled: boolean }, Error, string> {
+export function useVerify2FACode(): UseMutationResult<{ enabled: boolean; token?: string; refreshToken?: string }, Error, string> {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -272,8 +297,10 @@ export function useVerify2FACode(): UseMutationResult<{ enabled: boolean }, Erro
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      persistFreshTokens(data);
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      queryClient.invalidateQueries({ queryKey: queryKeys.userSessions });
     },
   });
 }
@@ -297,15 +324,26 @@ export function useResend2FACode(): UseMutationResult<
 }
 
 /**
- * Hook to change password
+ * Hook to change password.
+ * Backend revokes all sessions and issues a fresh token pair — persist it
+ * so the current device stays logged in.
  */
-export function useChangePassword(): UseMutationResult<{ success: boolean }, Error, { currentPassword: string; newPassword: string }> {
+export function useChangePassword(): UseMutationResult<{ token?: string; refreshToken?: string }, Error, { currentPassword: string; newPassword: string }> {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationKey: ['user', 'changePassword'],
     mutationFn: async ({ currentPassword, newPassword }) => {
       const response = await api.user.changePassword(currentPassword, newPassword);
       if (!response.success) throw new Error(response.error);
       return response.data;
+    },
+    onSuccess: (data) => {
+      // Backend revoked all sessions and issued a fresh token pair.
+      // Persist centrally so callers don't need to duplicate this logic.
+      persistFreshTokens(data);
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      queryClient.invalidateQueries({ queryKey: queryKeys.userSessions });
     },
   });
 }

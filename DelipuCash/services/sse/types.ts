@@ -22,6 +22,8 @@ export type SSEEventType =
   | 'livestream.ended'
   | 'livestream.viewerCount'
   | 'livestream.chat'
+  | 'transaction.new'
+  | 'transaction.statusUpdate'
   | 'reconnect';
 
 // Payload types per event
@@ -121,6 +123,18 @@ export interface LivestreamChatPayload {
   userName: string;
   text: string;
   timestamp: string;
+}
+
+export interface TransactionNewPayload {
+  type: 'reward' | 'withdrawal' | 'deposit' | 'payment';
+  amount: number;
+  description: string;
+}
+
+export interface TransactionStatusUpdatePayload {
+  transactionId: string;
+  status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
+  amount: number;
 }
 
 export type SSEConnectionStatus =

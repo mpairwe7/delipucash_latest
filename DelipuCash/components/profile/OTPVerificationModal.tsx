@@ -58,6 +58,7 @@ import Animated, {
   withRepeat,
   withSequence,
   withTiming,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
@@ -144,6 +145,7 @@ export function OTPVerificationModal({
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resendCooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
 
   // Animation values
@@ -151,7 +153,7 @@ export function OTPVerificationModal({
   const iconPulse = useSharedValue(1);
   const cursorOpacity = useSharedValue(1);
 
-  // Clear code on close
+  // Clear code on close + cancel pending timers/animations
   useEffect(() => {
     if (!visible) {
       setCode('');
@@ -162,6 +164,10 @@ export function OTPVerificationModal({
         clearTimeout(focusTimerRef.current);
         focusTimerRef.current = null;
       }
+      if (autoSubmitTimerRef.current) {
+        clearTimeout(autoSubmitTimerRef.current);
+        autoSubmitTimerRef.current = null;
+      }
       if (countdownRef.current) {
         clearInterval(countdownRef.current);
         countdownRef.current = null;
@@ -170,7 +176,11 @@ export function OTPVerificationModal({
         clearInterval(resendCooldownRef.current);
         resendCooldownRef.current = null;
       }
+      // Stop looping animations when modal closes
+      cancelAnimation(iconPulse);
+      cancelAnimation(cursorOpacity);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
   // Clear code and reset auto-submit when error changes (new error = allow retry)
@@ -179,24 +189,38 @@ export function OTPVerificationModal({
       setCode('');
       autoSubmittedRef.current = false;
       triggerShake();
+      // Re-focus the hidden input so the user can immediately type again
+      setTimeout(() => hiddenInputRef.current?.focus(), 100);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [error]);
 
-  // Countdown timer
+  // Countdown timer — set initial value synchronously to avoid a 1-second
+  // flash of "0:00" / "expired" before the first interval tick.
   useEffect(() => {
     if (visible && expiresAt) {
       if (countdownRef.current) {
         clearInterval(countdownRef.current);
       }
 
+      // Immediately compute the first value so the UI never shows stale "0:00"
+      const initialRemaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      setCountdown(initialRemaining);
+
+      if (initialRemaining <= 0) return; // already expired, no interval needed
+
       countdownRef.current = setInterval(() => {
         const remaining = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
         setCountdown(remaining);
 
-        if (remaining <= 0 && countdownRef.current) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
+        if (remaining <= 0) {
+          if (countdownRef.current) {
+            clearInterval(countdownRef.current);
+            countdownRef.current = null;
+          }
+          // Clear stale code on expiration so user doesn't try to submit expired input
+          setCode('');
+          autoSubmittedRef.current = false;
         }
       }, 1000);
 
@@ -244,6 +268,8 @@ export function OTPVerificationModal({
           clearTimeout(focusTimerRef.current);
           focusTimerRef.current = null;
         }
+        cancelAnimation(iconPulse);
+        cancelAnimation(cursorOpacity);
       };
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,6 +307,7 @@ export function OTPVerificationModal({
 
     // Auto-submit when all digits entered
     if (digits.length === codeLength && !autoSubmittedRef.current && !isVerifying) {
+      // Set ref BEFORE scheduling timeout to prevent double auto-submit from rapid input
       autoSubmittedRef.current = true;
       const isExpired = expiresAt ? Date.now() > expiresAt : false;
       if (isExpired) {
@@ -289,8 +316,11 @@ export function OTPVerificationModal({
         return;
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Small delay so user sees the last digit appear
-      setTimeout(() => onVerify(digits), 150);
+      // Small delay so user sees the last digit appear; stored in ref for cleanup on unmount
+      autoSubmitTimerRef.current = setTimeout(() => {
+        autoSubmitTimerRef.current = null;
+        onVerify(digits);
+      }, 150);
     }
   }, [codeLength, expiresAt, isVerifying, onVerify, triggerShake]);
 
@@ -311,7 +341,7 @@ export function OTPVerificationModal({
     onVerify(code);
   }, [code, codeLength, expiresAt, onVerify, triggerShake]);
 
-  const handleResend = useCallback(() => {
+  const handleResend = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCode('');
     autoSubmittedRef.current = false;
@@ -330,7 +360,11 @@ export function OTPVerificationModal({
         return prev - 1;
       });
     }, 1000);
-    onResend?.();
+    try {
+      await onResend?.();
+    } catch {
+      // Parent handles errors — no unhandled rejection
+    }
   }, [onResend]);
 
   const handleClose = useCallback(() => {

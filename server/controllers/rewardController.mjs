@@ -3,6 +3,7 @@ import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { getRewardConfig as fetchRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Add Reward Points
 export const addReward = asyncHandler(async (req, res) => {
@@ -222,6 +223,13 @@ export const claimDailyReward = asyncHandler(async (req, res) => {
     }),
   ]);
 
+  // Notify SSE subscribers about new transaction
+  publishEvent(userId, 'transaction.new', {
+    type: 'reward',
+    amount: totalReward,
+    description: 'Daily Reward',
+  });
+
   return res.json({
     success: true,
     data: {
@@ -437,6 +445,13 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       error: 'Payment processing failed. Your points have been refunded.',
     });
   }
+
+  // Notify SSE subscribers about redemption status update
+  publishEvent(userId, 'transaction.statusUpdate', {
+    transactionId: redemption.id,
+    status: paymentResult.success ? 'SUCCESSFUL' : 'FAILED',
+    amount: cashValue,
+  });
 
   if (paymentResult.success) {
     return res.json({

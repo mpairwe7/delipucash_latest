@@ -3,6 +3,7 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -855,6 +856,14 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           }
 
           const { position, maxWinners } = winnerResult;
+
+          // SSE: notify about instant reward deposit
+          publishEvent(authenticatedUser.id, 'transaction.new', {
+            type: 'deposit',
+            amount: rewardAmountUGX,
+            description: `Instant Reward Won — Position #${position}`,
+          });
+
           response = {
             ...response,
             message: `Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`,
@@ -913,6 +922,13 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
               description: `Correct answer to reward question: ${rewardQuestion.text.substring(0, 50)}...`
             }
           });
+        });
+
+        // SSE: notify about regular reward earned
+        publishEvent(authenticatedUser.id, 'transaction.new', {
+          type: 'reward',
+          amount: rewardPoints,
+          description: 'Reward Question Answered',
         });
 
         response.pointsAwarded = rewardAmountUGX;

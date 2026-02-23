@@ -19,6 +19,8 @@ import {
   RewardQuestion,
     Survey,
     Transaction,
+    TransactionSummary,
+    TransactionsResponse,
     UploadSurvey,
     UserStats,
     Video,
@@ -92,10 +94,18 @@ const getDefaultHeaders = (): Record<string, string> => ({
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiResponse<T>> {
   const url = `${apiBaseUrl}${path}`;
 
-  const doFetch = async (headers: Record<string, string>) => {
+  // Separate headers from other init options so `...initRest` can't overwrite
+  // the merged headers object. The `runtimeHeaders` parameter (auth token) takes
+  // highest priority so a refreshed token always wins over stale init headers.
+  const { headers: initHeaders, ...initRest } = init || {};
+  const safeInitHeaders = (initHeaders && typeof initHeaders === 'object' && !Array.isArray(initHeaders))
+    ? initHeaders as Record<string, string>
+    : {};
+
+  const doFetch = async (runtimeHeaders: Record<string, string>) => {
     return fetch(url, {
-      headers: { ...getDefaultHeaders(), ...headers, ...(init?.headers || {}) },
-      ...init,
+      ...initRest,
+      headers: { ...getDefaultHeaders(), ...safeInitHeaders, ...runtimeHeaders },
     });
   };
 
@@ -267,6 +277,7 @@ export const API_ROUTES = {
   // Transactions
   transactions: {
     list: "/api/transactions",
+    summary: "/api/transactions/summary",
     get: (id: string) => `/api/transactions/${id}`,
   },
   // Payments
@@ -364,27 +375,32 @@ export const userApi = {
   /**
    * Get user login sessions
    * Backend: GET /api/users/login-activity (requires auth token)
+   * Server returns { success, data: [...] } — unwrap the nested data.
    */
   async getSessions(): Promise<ApiResponse<LoginSession[]>> {
-    return fetchJson<LoginSession[]>(API_ROUTES.user.sessions, {
+    const response = await fetchJson<any>(API_ROUTES.user.sessions, {
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Revoke a login session
    * Backend: POST /api/users/sessions/:sessionId/revoke
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async revokeSession(sessionId: string): Promise<ApiResponse<{ revoked: boolean }>> {
-    return fetchJson<{ revoked: boolean }>(`/api/users/sessions/${sessionId}/revoke`, {
+    const response = await fetchJson<any>(`/api/users/sessions/${sessionId}/revoke`, {
       method: 'POST',
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Toggle 2FA settings (enable/disable)
    * Backend: PUT /api/auth/two-factor
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async updateTwoFactor(enabled: boolean, password?: string, code?: string): Promise<ApiResponse<{
     enabled?: boolean;
@@ -392,68 +408,79 @@ export const userApi = {
     email?: string;
     expiresIn?: number;
   }>> {
-    return fetchJson<any>('/api/auth/two-factor', {
+    const response = await fetchJson<any>('/api/auth/two-factor', {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ enabled, password, code }),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Verify 2FA code to complete enabling 2FA
    * Backend: POST /api/auth/two-factor/verify
+   * Server returns { success, data: { enabled } } — unwrap the nested data.
    */
   async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean }>> {
-    return fetchJson<{ enabled: boolean }>('/api/auth/two-factor/verify', {
+    const response = await fetchJson<any>('/api/auth/two-factor/verify', {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ code }),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Resend 2FA verification code
    * Backend: POST /api/auth/two-factor/resend
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async resend2FACode(): Promise<ApiResponse<{ codeSent: boolean; email: string; expiresIn: number }>> {
-    return fetchJson<any>('/api/auth/two-factor/resend', {
+    const response = await fetchJson<any>('/api/auth/two-factor/resend', {
       method: 'POST',
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Change password
    * Backend: PUT /api/auth/change-password (requires auth token)
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
-    return fetchJson<{ success: boolean }>(API_ROUTES.auth.changePassword, {
+    const response = await fetchJson<any>(API_ROUTES.auth.changePassword, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ currentPassword, newPassword }),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Update privacy settings
    * Backend: PUT /api/users/privacy (requires auth token)
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async updatePrivacySettings(settings: { shareProfile: boolean; shareActivity: boolean }): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
-    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy, {
+    const response = await fetchJson<any>(API_ROUTES.user.privacy, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(settings),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 
   /**
    * Get privacy settings
    * Backend: GET /api/users/privacy (requires auth token)
+   * Server returns { success, data: {...} } — unwrap the nested data.
    */
   async getPrivacySettings(): Promise<ApiResponse<{ shareProfile: boolean; shareActivity: boolean }>> {
-    return fetchJson<{ shareProfile: boolean; shareActivity: boolean }>(API_ROUTES.user.privacy, {
+    const response = await fetchJson<any>(API_ROUTES.user.privacy, {
       headers: getAuthHeaders(),
     });
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.data?.error || response.error };
   },
 };
 
@@ -872,24 +899,42 @@ export const responsesApi = {
 // ===========================================
 export const transactionsApi = {
   /**
-   * Get user transactions
+   * Get user transactions (unified, paginated)
+   * Server returns { success, data: { transactions, pagination, summary? } }
+   * — unwrap the nested `data` to match the `TransactionsResponse` shape.
    */
-  async getAll(params?: { page?: number; limit?: number; type?: string }): Promise<PaginatedResponse<Transaction>> {
+  async getAll(params?: {
+    page?: number;
+    limit?: number;
+    type?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<ApiResponse<TransactionsResponse>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.limit) searchParams.append('limit', String(params.limit));
-    if (params?.type) searchParams.append('type', params.type);
-    
+    if (params?.type && params.type !== 'all') searchParams.append('type', params.type);
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.startDate) searchParams.append('startDate', params.startDate);
+    if (params?.endDate) searchParams.append('endDate', params.endDate);
+
     const queryString = searchParams.toString();
-    const path = queryString ? `${API_ROUTES.transactions.list}?${queryString}` : API_ROUTES.transactions.list;
-    
-    const response = await fetchJson<{ data: Transaction[]; pagination: any }>(path);
-    return {
-      success: response.success,
-      data: response.data?.data || response.data || [],
-      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
-      error: response.error,
-    };
+    const path = queryString
+      ? `${API_ROUTES.transactions.list}?${queryString}`
+      : API_ROUTES.transactions.list;
+
+    const response = await fetchJson<{ data: TransactionsResponse }>(path);
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
+  },
+
+  /**
+   * Get lightweight transaction summary (wallet card)
+   * Server returns { success, data: { totalEarned, ... } } — unwrap nested data.
+   */
+  async getSummary(): Promise<ApiResponse<TransactionSummary>> {
+    const response = await fetchJson<{ data: TransactionSummary }>(API_ROUTES.transactions.summary);
+    return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
   },
 
   /**

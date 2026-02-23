@@ -15,6 +15,7 @@ import { useAuthStore } from '@/utils/auth/store';
 import { queryKeys } from '@/services/hooks';
 import { questionQueryKeys } from '@/services/questionHooks';
 import { videoQueryKeys } from '@/services/videoHooks';
+import { transactionQueryKeys } from '@/services/transactionHooks';
 import { useVideoStore } from '@/store/VideoStore';
 import type { SSEEventType, LivestreamViewerCountPayload } from './types';
 
@@ -88,6 +89,24 @@ export function useSSEConnection(): void {
         'payment.status',
         () => {
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: queryKeys.user });
+          queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+        },
+      ],
+      [
+        'transaction.new',
+        () => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+        },
+      ],
+      [
+        'transaction.statusUpdate',
+        () => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
           queryClient.invalidateQueries({ queryKey: queryKeys.user });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
         },

@@ -34,6 +34,7 @@ import surveyCollabRoutes from './routes/surveyCollabRoutes.mjs';
 import surveyImportRoutes from './routes/surveyImportRoutes.mjs';
 import configRoutes from './routes/configRoutes.mjs';
 import followRoutes from './routes/followRoutes.mjs';
+import transactionRoutes from './routes/transactionRoutes.mjs';
 import { resetPasswordRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
 import { videoOgRedirect } from './controllers/ogController.mjs';
 
@@ -134,6 +135,7 @@ app.use('/api/surveys', surveyImportRoutes); // Survey import preview & samples
 app.use('/api/sse', sseRoutes); // Server-Sent Events stream
 app.use('/api/config', configRoutes); // App configuration (reward rates, etc.)
 app.use('/api/follows', followRoutes); // Creator follow graph + user blocks
+app.use('/api/transactions', transactionRoutes); // Unified transaction history
 
 // Health check endpoint for Vercel
 app.get('/api/health', (req, res) => {

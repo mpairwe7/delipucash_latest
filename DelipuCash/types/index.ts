@@ -509,7 +509,7 @@ export interface PaginatedResponse<T> {
   message?: string;
 }
 
-// Transaction type for display purposes
+// Transaction type for display purposes (legacy — kept for backward compat)
 export interface Transaction {
   id: string;
   type: "reward" | "withdrawal" | "deposit" | "payment";
@@ -520,6 +520,44 @@ export interface Transaction {
   paymentMethod?: string;
   phoneNumber?: string;
   createdAt: string;
+}
+
+// Unified transaction from the aggregation endpoint
+export type TransactionType = "reward" | "withdrawal" | "deposit" | "payment";
+export type TransactionFilterType = "all" | TransactionType;
+
+export interface UnifiedTransaction {
+  id: string;
+  type: TransactionType;
+  amount: number;
+  status: PaymentStatus;
+  description: string;
+  referenceId: string | null;
+  paymentMethod: string | null;
+  phoneNumber: string | null;
+  source: "Reward" | "RewardRedemption" | "Payment" | "InstantRewardWinner";
+  sourceId: string;
+  createdAt: string;
+}
+
+export interface TransactionSummary {
+  totalEarned: number;
+  totalCashWon: number;
+  totalWithdrawn: number;
+  pendingWithdrawals: number;
+  currentBalance: number;
+}
+
+export interface TransactionsResponse {
+  transactions: UnifiedTransaction[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore: boolean;
+  };
+  summary?: TransactionSummary;
 }
 
 // User stats

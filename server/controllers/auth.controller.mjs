@@ -61,19 +61,27 @@ const check2FALockout = (user) => {
 };
 
 /**
- * Record a failed 2FA attempt. Locks the account after MAX_2FA_ATTEMPTS failures.
+ * Record a failed 2FA attempt. Uses atomic increment to avoid TOCTOU race
+ * conditions where concurrent requests could both read the same counter.
+ * Locks the account after MAX_2FA_ATTEMPTS failures.
  */
-const record2FAFailure = async (userId, currentAttempts) => {
-  const newAttempts = currentAttempts + 1;
-  const data = { twoFactorAttempts: newAttempts };
+const record2FAFailure = async (userId) => {
+  const updated = await prisma.appUser.update({
+    where: { id: userId },
+    data: { twoFactorAttempts: { increment: 1 } },
+    select: { twoFactorAttempts: true },
+  });
 
-  if (newAttempts >= MAX_2FA_ATTEMPTS) {
-    data.twoFactorLockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
-    data.twoFactorCode = null;
-    data.twoFactorCodeExpiry = null;
+  if (updated.twoFactorAttempts >= MAX_2FA_ATTEMPTS) {
+    await prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        twoFactorLockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS),
+        twoFactorCode: null,
+        twoFactorCodeExpiry: null,
+      },
+    });
   }
-
-  await prisma.appUser.update({ where: { id: userId }, data });
 };
 
 // User Signup
@@ -176,63 +184,74 @@ export const changePassword = asyncHandler(async (req, res, next) => {
   const { currentPassword, newPassword } = req.body;
   const userId = req.user.id; // From JWT token
 
-  console.log('🔐 Password change request received for user ID:', userId);
-  console.log('📝 Request body:', { currentPassword: '***', newPassword: '***' });
-
   try {
+    // --- Input validation ---
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      return res.status(400).json({ success: false, error: "Current password is required" });
+    }
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      return res.status(400).json({ success: false, error: "New password must be at least 8 characters long" });
+    }
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
+      return res.status(400).json({ success: false, error: "New password must contain uppercase, lowercase, and a number" });
+    }
+    if (currentPassword === newPassword) {
+      return res.status(400).json({ success: false, error: "New password must be different from current password" });
+    }
+
     // Find the user
     const user = await prisma.appUser.findUnique({
       where: { id: userId },
-      select: { password: true, email: true, firstName: true, lastName: true }
+      select: { id: true, password: true }
     });
 
     if (!user) {
-      console.log('❌ User not found for ID:', userId);
-      return next(errorHandler(404, "User not found"));
+      return res.status(404).json({ success: false, error: "User not found" });
     }
-
-    console.log('✅ User found:', { email: user.email, firstName: user.firstName, lastName: user.lastName });
 
     // Verify current password
     const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
     if (!isCurrentPasswordValid) {
-      console.log('❌ Current password verification failed for user:', user.email);
-      return next(errorHandler(400, "Current password is incorrect"));
+      return res.status(400).json({ success: false, error: "Current password is incorrect" });
     }
-
-    console.log('✅ Current password verified successfully for user:', user.email);
 
     // Hash the new password
     const hashedNewPassword = await bcrypt.hash(newPassword, 10);
-    console.log('🔒 New password hashed successfully');
 
-    // Update the password
-    await prisma.appUser.update({
-      where: { id: userId },
-      data: { password: hashedNewPassword }
+    // Update password and revoke ALL sessions in a transaction.
+    // A fresh token pair is issued after the transaction so the current
+    // device stays logged in — all other devices are forced to re-login.
+    await prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id: userId },
+        data: { password: hashedNewPassword, updatedAt: new Date() }
+      });
+
+      await tx.loginSession.updateMany({
+        where: { userId, isActive: true },
+        data: {
+          isActive: false,
+          logoutTime: new Date(),
+          refreshTokenHash: null,
+          refreshTokenExpiresAt: null,
+        },
+      });
     });
 
-    // Revoke ALL active sessions — forces re-login on every device
-    await prisma.loginSession.updateMany({
-      where: { userId, isActive: true },
-      data: {
-        isActive: false,
-        logoutTime: new Date(),
-        refreshTokenHash: null,
-        refreshTokenExpiresAt: null,
-      },
-    });
-
-    console.log('✅ Password updated and all sessions revoked for user:', user.email);
+    // Issue a fresh token pair so the current device stays logged in
+    const { accessToken, refreshToken } = await issueTokenPair(userId, req);
 
     res.status(200).json({
       success: true,
+      data: {
+        token: accessToken,
+        refreshToken,
+      },
       message: "Password changed successfully"
     });
 
-    console.log('🎉 Password change completed successfully for user:', user.email);
   } catch (error) {
-    console.error("❌ Failed to change password:", error);
+    console.error("Failed to change password:", error);
     next(errorHandler(500, "Failed to change password"));
   }
 });
@@ -589,41 +608,45 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         }
 
         if (!verifyOTPCode(code, user.twoFactorCode)) {
-          await record2FAFailure(user.id, user.twoFactorAttempts);
+          await record2FAFailure(user.id);
           return res.status(400).json({
             success: false,
             error: "Invalid verification code"
           });
         }
 
-        // Disable 2FA and clear all 2FA fields
-        await prisma.appUser.update({
-          where: { id: userId },
-          data: {
-            twoFactorEnabled: false,
-            twoFactorCode: null,
-            twoFactorCodeExpiry: null,
-            twoFactorAttempts: 0,
-            twoFactorLockedUntil: null,
-            updatedAt: new Date(),
-          },
+        // Disable 2FA, clear all 2FA fields, and invalidate other sessions in a transaction
+        await prisma.$transaction(async (tx) => {
+          await tx.appUser.update({
+            where: { id: userId },
+            data: {
+              twoFactorEnabled: false,
+              twoFactorCode: null,
+              twoFactorCodeExpiry: null,
+              twoFactorAttempts: 0,
+              twoFactorLockedUntil: null,
+              updatedAt: new Date(),
+            },
+          });
+
+          // Invalidate all OTHER sessions — clear refresh tokens too
+          await tx.loginSession.updateMany({
+            where: { userId, isActive: true },
+            data: {
+              isActive: false,
+              logoutTime: new Date(),
+              refreshTokenHash: null,
+              refreshTokenExpiresAt: null,
+            },
+          });
         });
 
-        // Invalidate all OTHER sessions (keep current device logged in)
-        const currentToken = req.headers['authorization']?.split(' ')[1];
-        await prisma.loginSession.updateMany({
-          where: {
-            userId,
-            isActive: true,
-            ...(currentToken ? { NOT: { sessionToken: currentToken } } : {}),
-          },
-          data: { isActive: false, logoutTime: new Date() },
-        });
+        // Issue a fresh token pair so the current device stays logged in
+        const { accessToken, refreshToken } = await issueTokenPair(userId, req);
 
-        console.log('✅ 2FA disabled for user ID:', userId);
         return res.status(200).json({
           success: true,
-          data: { enabled: false },
+          data: { enabled: false, token: accessToken, refreshToken },
           message: "Two-factor authentication disabled successfully"
         });
       }
@@ -652,7 +675,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         });
       }
 
-      console.log('📧 Disable-2FA verification code sent to:', user.email);
+      console.log('📧 Disable-2FA verification code sent for user:', userId);
       return res.status(200).json({
         success: true,
         data: {
@@ -693,7 +716,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         });
       }
 
-      console.log('📧 2FA verification code sent to:', user.email);
+      console.log('📧 2FA verification code sent for user:', userId);
       return res.status(200).json({
         success: true,
         data: {
@@ -732,7 +755,7 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
 
   console.log('🔐 2FA verification attempt for user ID:', userId);
 
-  if (!code || code.length !== 6) {
+  if (!code || typeof code !== 'string' || code.length !== 6) {
     return res.status(400).json({
       success: false,
       error: "Invalid verification code format"
@@ -792,41 +815,45 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
 
     // Verify the code
     if (!verifyOTPCode(code, user.twoFactorCode)) {
-      await record2FAFailure(user.id, user.twoFactorAttempts);
+      await record2FAFailure(user.id);
       return res.status(400).json({
         success: false,
         error: "Invalid verification code"
       });
     }
 
-    // Enable 2FA, clear code, and reset brute-force counters
-    await prisma.appUser.update({
-      where: { id: userId },
-      data: {
-        twoFactorEnabled: true,
-        twoFactorCode: null,
-        twoFactorCodeExpiry: null,
-        twoFactorAttempts: 0,
-        twoFactorLockedUntil: null,
-        updatedAt: new Date(),
-      },
+    // Enable 2FA, clear code, and invalidate other sessions in a transaction
+    await prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id: userId },
+        data: {
+          twoFactorEnabled: true,
+          twoFactorCode: null,
+          twoFactorCodeExpiry: null,
+          twoFactorAttempts: 0,
+          twoFactorLockedUntil: null,
+          updatedAt: new Date(),
+        },
+      });
+
+      // Invalidate all OTHER sessions — clear refresh tokens too
+      await tx.loginSession.updateMany({
+        where: { userId, isActive: true },
+        data: {
+          isActive: false,
+          logoutTime: new Date(),
+          refreshTokenHash: null,
+          refreshTokenExpiresAt: null,
+        },
+      });
     });
 
-    // Invalidate all OTHER sessions (keep current device logged in)
-    const currentToken = req.headers['authorization']?.split(' ')[1];
-    await prisma.loginSession.updateMany({
-      where: {
-        userId,
-        isActive: true,
-        ...(currentToken ? { NOT: { sessionToken: currentToken } } : {}),
-      },
-      data: { isActive: false, logoutTime: new Date() },
-    });
+    // Issue a fresh token pair so the current device stays logged in
+    const { accessToken, refreshToken } = await issueTokenPair(userId, req);
 
-    console.log('✅ 2FA enabled successfully for user ID:', userId);
     return res.status(200).json({
       success: true,
-      data: { enabled: true },
+      data: { enabled: true, token: accessToken, refreshToken },
       message: "Two-factor authentication enabled successfully"
     });
 
@@ -861,28 +888,30 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       return next(errorHandler(404, "User not found"));
     }
 
-    if (user.twoFactorEnabled) {
+    // Allow resend for BOTH enable flow (twoFactorEnabled=false, code pending)
+    // and disable flow (twoFactorEnabled=true, code pending).
+    // Only block if there's no pending code at all (no toggle in progress).
+    if (!user.twoFactorCodeExpiry) {
       return res.status(400).json({
         success: false,
-        error: "Two-factor authentication is already enabled"
+        error: "No pending verification. Please start the 2FA setup flow first."
       });
     }
 
     // Rate limit: Allow resend only after 1 minute
     // Code expiry is set to now + 3 min, so sendTime = expiryTime - 3 min
-    if (user.twoFactorCodeExpiry) {
-      const codeSentAt = user.twoFactorCodeExpiry.getTime() - 3 * 60 * 1000;
-      const timeSinceLastCode = Date.now() - codeSentAt;
-      if (timeSinceLastCode < 60 * 1000) {
-        const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
-        return res.status(429).json({
-          success: false,
-          error: `Please wait ${waitSeconds} seconds before requesting a new code`
-        });
-      }
+    const codeSentAt = user.twoFactorCodeExpiry.getTime() - 3 * 60 * 1000;
+    const timeSinceLastCode = Date.now() - codeSentAt;
+    if (timeSinceLastCode < 60 * 1000) {
+      const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
+      return res.status(429).json({
+        success: false,
+        error: `Please wait ${waitSeconds} seconds before requesting a new code`
+      });
     }
 
-    // Generate new code and reset brute-force counters (fresh code = fresh window)
+    // Generate new code but KEEP brute-force counters — resend should NOT reset
+    // the attempt counter; only successful verification resets it.
     const otpCode = generateOTPCode();
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
@@ -892,8 +921,6 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       data: {
         twoFactorCode: hashedCode,
         twoFactorCodeExpiry: expiryTime,
-        twoFactorAttempts: 0,
-        twoFactorLockedUntil: null,
       },
     });
 
@@ -906,7 +933,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       });
     }
 
-    console.log('📧 New 2FA code sent to:', user.email);
+    console.log('📧 New 2FA code resent');
     return res.status(200).json({
       success: true,
       data: {
@@ -930,16 +957,17 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
  * Note: Called during login flow, uses email from request body
  */
 export const send2FALoginCode = asyncHandler(async (req, res, next) => {
-  const { email } = req.body;
+  const rawEmail = req.body?.email;
 
-  console.log('📧 Login 2FA code request for:', email);
-
-  if (!email) {
+  if (!rawEmail || typeof rawEmail !== 'string') {
     return res.status(400).json({
       success: false,
       error: "Email is required"
     });
   }
+
+  const email = rawEmail.toLowerCase().trim();
+  console.log('📧 Login 2FA code request for user');
 
   try {
     const user = await prisma.appUser.findUnique({
@@ -953,18 +981,13 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    if (!user) {
-      // Don't reveal if user exists
+    // Return the same generic response for non-existent users AND users
+    // without 2FA enabled to prevent user/2FA-status enumeration.
+    if (!user || !user.twoFactorEnabled) {
       return res.status(200).json({
         success: true,
-        message: "If an account exists, a verification code has been sent"
-      });
-    }
-
-    if (!user.twoFactorEnabled) {
-      return res.status(400).json({
-        success: false,
-        error: "Two-factor authentication is not enabled for this account"
+        data: { codeSent: true, email: email.replace(/(.{2})(.*)(@.*)/, '$1***$3'), expiresIn: 600 },
+        message: "If an account with 2FA exists, a verification code has been sent"
       });
     }
 
@@ -985,14 +1008,12 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Store hashed code and reset brute-force counters (fresh code = fresh window)
+    // Store hashed code — keep brute-force counters across resends
     await prisma.appUser.update({
       where: { id: user.id },
       data: {
         twoFactorCode: hashedCode,
         twoFactorCodeExpiry: expiryTime,
-        twoFactorAttempts: 0,
-        twoFactorLockedUntil: null,
       },
     });
 
@@ -1005,7 +1026,7 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
       });
     }
 
-    console.log('📧 Login 2FA code sent to:', user.email);
+    console.log('📧 Login 2FA code sent');
     return res.status(200).json({
       success: true,
       data: {
@@ -1028,11 +1049,13 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
  * POST /api/auth/two-factor/verify-login
  */
 export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
-  const { email, code } = req.body;
+  const rawEmail = req.body?.email;
+  const { code } = req.body;
+  const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase().trim() : '';
 
-  console.log('🔐 Login 2FA verification for:', email);
+  console.log('🔐 Login 2FA verification attempt');
 
-  if (!email || !code || code.length !== 6) {
+  if (!email || !code || typeof code !== 'string' || code.length !== 6) {
     return res.status(400).json({
       success: false,
       error: "Email and valid 6-digit code are required"
@@ -1098,31 +1121,41 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
     }
 
     if (!verifyOTPCode(code, user.twoFactorCode)) {
-      await record2FAFailure(user.id, user.twoFactorAttempts);
+      await record2FAFailure(user.id);
       return res.status(400).json({
         success: false,
         error: "Invalid verification code"
       });
     }
 
-    // Clear the used code and reset brute-force counters
-    await prisma.appUser.update({
-      where: { id: user.id },
-      data: {
-        twoFactorCode: null,
-        twoFactorCodeExpiry: null,
-        twoFactorAttempts: 0,
-        twoFactorLockedUntil: null,
-      },
+    // Verify → clear → token in a transaction to prevent TOCTOU race
+    // (concurrent requests with the same code both verifying before either clears).
+    await prisma.$transaction(async (tx) => {
+      await tx.appUser.update({
+        where: { id: user.id },
+        data: {
+          twoFactorCode: null,
+          twoFactorCodeExpiry: null,
+          twoFactorAttempts: 0,
+          twoFactorLockedUntil: null,
+        },
+      });
     });
 
     // Issue access + refresh token pair for successful 2FA login
     const { accessToken, refreshToken } = await issueTokenPair(user.id, req);
 
-    // Strip sensitive fields before returning user data
-    const { password: _pw, twoFactorCode: _tc, twoFactorCodeExpiry: _te, ...safeUser } = user;
+    // Strip sensitive and internal fields before returning user data
+    const {
+      password: _pw,
+      twoFactorCode: _tc,
+      twoFactorCodeExpiry: _te,
+      twoFactorAttempts: _ta,
+      twoFactorLockedUntil: _tl,
+      ...safeUser
+    } = user;
 
-    console.log('✅ 2FA login successful for:', email);
+    console.log('✅ 2FA login successful');
     return res.status(200).json({
       success: true,
       message: "Two-factor authentication verified",
@@ -1162,7 +1195,7 @@ const hashResetToken = (token) => {
 export const forgotPassword = asyncHandler(async (req, res, next) => {
   const { email } = req.body;
 
-  console.log('🔐 Password reset requested for:', email);
+  console.log('🔐 Password reset requested');
 
   if (!email) {
     return res.status(400).json({
@@ -1181,7 +1214,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
     // Always return success even if user not found (security best practice)
     // This prevents email enumeration attacks
     if (!user) {
-      console.log('⚠️ Password reset requested for non-existent email:', email);
+      console.log('⚠️ Password reset requested for non-existent account');
       return res.status(200).json({
         success: true,
         message: "If an account with that email exists, we've sent a password reset link."
@@ -1202,7 +1235,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
       },
     });
 
-    console.log('✅ Reset token generated and stored for user:', user.email);
+    console.log('✅ Reset token generated and stored for user:', user.id);
 
     // Build the reset link.
     // Primary link = HTTPS URL on the backend which serves a smart redirect page.
@@ -1224,7 +1257,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
         console.error('❌ Failed to send password reset email:', emailResult.error);
         // Don't expose this error to the user
       } else {
-        console.log('✅ Password reset email sent to:', user.email);
+        console.log('✅ Password reset email sent for user:', user.id);
       }
     } else {
       console.warn('⚠️ Email not configured. Reset token:', resetToken);
@@ -1253,7 +1286,7 @@ export const forgotPassword = asyncHandler(async (req, res, next) => {
 export const resetPassword = asyncHandler(async (req, res, next) => {
   const { token, email, newPassword } = req.body;
 
-  console.log('🔐 Password reset attempt for:', email);
+  console.log('🔐 Password reset attempt');
 
   if (!token || !email || !newPassword) {
     return res.status(400).json({
@@ -1263,10 +1296,16 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
   }
 
   // Validate password strength
-  if (newPassword.length < 8) {
+  if (typeof newPassword !== 'string' || newPassword.length < 8) {
     return res.status(400).json({
       success: false,
-      message: "Password must be at least 8 characters long"
+      error: "Password must be at least 8 characters long"
+    });
+  }
+  if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(newPassword)) {
+    return res.status(400).json({
+      success: false,
+      error: "Password must contain uppercase, lowercase, and a number"
     });
   }
 
@@ -1286,7 +1325,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
     });
 
     if (!user) {
-      console.log('❌ Invalid or expired reset token for:', email);
+      console.log('❌ Invalid or expired reset token');
       return res.status(400).json({
         success: false,
         message: "Invalid or expired reset token. Please request a new password reset."
@@ -1317,7 +1356,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
       },
     });
 
-    console.log('✅ Password reset successful and all sessions revoked for:', user.email);
+    console.log('✅ Password reset successful and all sessions revoked for user:', user.id);
 
     return res.status(200).json({
       success: true,
@@ -1337,7 +1376,7 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
 export const validateResetToken = asyncHandler(async (req, res, next) => {
   const { token, email } = req.body;
 
-  console.log('🔐 Validating reset token for:', email);
+  console.log('🔐 Validating reset token');
 
   if (!token || !email) {
     return res.status(400).json({
