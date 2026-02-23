@@ -36,9 +36,6 @@ import {
   Modal,
   RefreshControl,
   TextInput,
-  Pressable,
-  KeyboardAvoidingView,
-  ScrollView,
   AccessibilityInfo,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -68,10 +65,6 @@ import {
   LogOut,
   ChevronRight,
   Settings2,
-  Eye,
-  EyeOff,
-  X,
-  Lock,
 } from 'lucide-react-native';
 
 // Components
@@ -85,6 +78,7 @@ import {
   AccessibleText,
   AnimatedCard,
   EditProfileModal,
+  ChangePasswordModal,
   TransactionsCard,
 } from '@/components/profile';
 import type { ProfileQuickAction } from '@/components/profile/QuickActionsGrid';
@@ -370,15 +364,6 @@ export default function ProfileScreen(): React.ReactElement {
   const [showDisable2FAPrompt, setShowDisable2FAPrompt] = useState(false);
   const [disable2FAPassword, setDisable2FAPassword] = useState('');
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
-  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [changePasswordError, setChangePasswordError] = useState<string | null>(null);
-  const newPasswordRef = useRef<TextInput>(null);
-  const confirmPasswordRef = useRef<TextInput>(null);
   const [maskedEmail, setMaskedEmail] = useState('');
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -780,58 +765,23 @@ export default function ProfileScreen(): React.ReactElement {
     });
   }, [resend2FAMutation]);
 
-  const resetChangePasswordState = useCallback(() => {
-    setCurrentPasswordInput('');
-    setNewPasswordInput('');
-    setConfirmPasswordInput('');
-    setShowCurrentPassword(false);
-    setShowNewPassword(false);
-    setShowConfirmPassword(false);
-    setChangePasswordError(null);
-  }, []);
+  // Tracks whether password change succeeded so the toast fires AFTER
+  // the modal's success animation and auto-close (not during the save callback).
+  const passwordChangeSucceeded = useRef(false);
 
   const handleChangePassword = useCallback(() => {
-    resetChangePasswordState();
+    passwordChangeSucceeded.current = false;
     setShowChangePasswordModal(true);
-  }, [resetChangePasswordState]);
+  }, []);
 
-  const handleConfirmChangePassword = useCallback(() => {
-    setChangePasswordError(null);
-    const current = currentPasswordInput;
-    const next = newPasswordInput.trim();
-    const confirm = confirmPasswordInput.trim();
-    if (!current) {
-      setChangePasswordError('Current password is required.');
-      return;
-    }
-    if (!next || next.length < 8) {
-      setChangePasswordError('New password must be at least 8 characters.');
-      return;
-    }
-    if (next !== confirm) {
-      setChangePasswordError('New passwords do not match.');
-      return;
-    }
-    if (current === next) {
-      setChangePasswordError('New password must be different from current password.');
-      return;
-    }
-    changePasswordMutation.mutate(
-      { currentPassword: current, newPassword: next },
-      {
-        onSuccess: () => {
-          // Token persistence is handled centrally in useChangePassword hook
-          setShowChangePasswordModal(false);
-          resetChangePasswordState();
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          showToast({ type: 'success', message: 'Password changed successfully!' });
-        },
-        onError: (e) => {
-          setChangePasswordError(e.message || 'Failed to change password.');
-        },
-      }
+  const handleConfirmChangePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    await changePasswordMutation.mutateAsync(
+      { currentPassword, newPassword },
     );
-  }, [currentPasswordInput, newPasswordInput, confirmPasswordInput, changePasswordMutation, resetChangePasswordState, showToast]);
+    // Don't toast here — modal shows success check animation first.
+    // Toast fires in onClose after the 1200ms auto-close.
+    passwordChangeSucceeded.current = true;
+  }, [changePasswordMutation]);
 
   const handleManageSessions = useCallback(() => {
     const activeSessions = sessions.filter(s => s.isActive);
@@ -1201,196 +1151,18 @@ export default function ProfileScreen(): React.ReactElement {
       />
 
       {/* Change Password Modal */}
-      <Modal
+      <ChangePasswordModal
         visible={showChangePasswordModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          if (changePasswordMutation.isPending) return;
+        onChangePassword={handleConfirmChangePassword}
+        onClose={() => {
           setShowChangePasswordModal(false);
-          resetChangePasswordState();
+          if (passwordChangeSucceeded.current) {
+            passwordChangeSucceeded.current = false;
+            showToast({ type: 'success', message: 'Password changed successfully!' });
+          }
         }}
-        statusBarTranslucent
-        navigationBarTranslucent
-        accessibilityViewIsModal
-      >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <Pressable
-            style={styles.cpModalOverlay}
-            onPress={() => {
-              if (changePasswordMutation.isPending) return;
-              setShowChangePasswordModal(false);
-              resetChangePasswordState();
-            }}
-          >
-            <Pressable
-              style={[styles.cpSheet, { backgroundColor: colors.card }]}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <ScrollView
-                bounces={false}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-              >
-                {/* Handle bar */}
-                <View style={styles.cpHandleBar}>
-                  <View style={[styles.cpHandle, { backgroundColor: colors.border }]} />
-                </View>
-
-                {/* Header */}
-                <View style={styles.cpHeader}>
-                  <View style={[styles.cpIconCircle, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-                    <Lock size={22} color={colors.primary} />
-                  </View>
-                  <AccessibleText variant="h3" style={{ marginTop: SPACING.md }}>
-                    Change Password
-                  </AccessibleText>
-                  <AccessibleText variant="body" color="textMuted" style={{ marginTop: SPACING.xs, textAlign: 'center' }}>
-                    Enter your current password and choose a new one.
-                  </AccessibleText>
-                </View>
-
-                {/* Inline error */}
-                {changePasswordError && (
-                  <View style={[styles.cpErrorBanner, { backgroundColor: withAlpha(colors.error, 0.08) }]}>
-                    <AccessibleText variant="caption" customColor={colors.error}>
-                      {changePasswordError}
-                    </AccessibleText>
-                  </View>
-                )}
-
-                {/* Current password */}
-                <View style={{ marginBottom: SPACING.md }}>
-                  <AccessibleText variant="caption" color="textMuted" style={{ marginBottom: SPACING.xs, marginLeft: SPACING.xxs }}>
-                    Current Password
-                  </AccessibleText>
-                  <View style={[styles.cpInputRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
-                    <TextInput
-                      value={currentPasswordInput}
-                      onChangeText={(text) => { setCurrentPasswordInput(text); setChangePasswordError(null); }}
-                      placeholder="Enter current password"
-                      placeholderTextColor={colors.textMuted}
-                      secureTextEntry={!showCurrentPassword}
-                      editable={!changePasswordMutation.isPending}
-                      autoFocus
-                      returnKeyType="next"
-                      onSubmitEditing={() => newPasswordRef.current?.focus()}
-                      style={[styles.cpInputText, { color: colors.text }]}
-                      accessibilityLabel="Current password"
-                    />
-                    <Pressable
-                      onPress={() => setShowCurrentPassword((v) => !v)}
-                      hitSlop={8}
-                      accessibilityLabel={showCurrentPassword ? 'Hide current password' : 'Show current password'}
-                      accessibilityRole="button"
-                    >
-                      {showCurrentPassword
-                        ? <EyeOff size={20} color={colors.textMuted} />
-                        : <Eye size={20} color={colors.textMuted} />}
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* New password */}
-                <View style={{ marginBottom: SPACING.md }}>
-                  <AccessibleText variant="caption" color="textMuted" style={{ marginBottom: SPACING.xs, marginLeft: SPACING.xxs }}>
-                    New Password
-                  </AccessibleText>
-                  <View style={[styles.cpInputRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
-                    <TextInput
-                      ref={newPasswordRef}
-                      value={newPasswordInput}
-                      onChangeText={(text) => { setNewPasswordInput(text); setChangePasswordError(null); }}
-                      placeholder="Min 8 characters"
-                      placeholderTextColor={colors.textMuted}
-                      secureTextEntry={!showNewPassword}
-                      editable={!changePasswordMutation.isPending}
-                      returnKeyType="next"
-                      onSubmitEditing={() => confirmPasswordRef.current?.focus()}
-                      style={[styles.cpInputText, { color: colors.text }]}
-                      accessibilityLabel="New password"
-                      accessibilityHint="Minimum 8 characters"
-                    />
-                    <Pressable
-                      onPress={() => setShowNewPassword((v) => !v)}
-                      hitSlop={8}
-                      accessibilityLabel={showNewPassword ? 'Hide new password' : 'Show new password'}
-                      accessibilityRole="button"
-                    >
-                      {showNewPassword
-                        ? <EyeOff size={20} color={colors.textMuted} />
-                        : <Eye size={20} color={colors.textMuted} />}
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Confirm password */}
-                <View style={{ marginBottom: SPACING.lg }}>
-                  <AccessibleText variant="caption" color="textMuted" style={{ marginBottom: SPACING.xs, marginLeft: SPACING.xxs }}>
-                    Confirm New Password
-                  </AccessibleText>
-                  <View style={[styles.cpInputRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
-                    <TextInput
-                      ref={confirmPasswordRef}
-                      value={confirmPasswordInput}
-                      onChangeText={(text) => { setConfirmPasswordInput(text); setChangePasswordError(null); }}
-                      placeholder="Re-enter new password"
-                      placeholderTextColor={colors.textMuted}
-                      secureTextEntry={!showConfirmPassword}
-                      editable={!changePasswordMutation.isPending}
-                      returnKeyType="done"
-                      onSubmitEditing={handleConfirmChangePassword}
-                      style={[styles.cpInputText, { color: colors.text }]}
-                      accessibilityLabel="Confirm new password"
-                    />
-                    <Pressable
-                      onPress={() => setShowConfirmPassword(v => !v)}
-                      hitSlop={8}
-                      accessibilityLabel={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
-                      accessibilityRole="button"
-                    >
-                      {showConfirmPassword ? (
-                        <EyeOff size={20} color={colors.textMuted} />
-                      ) : (
-                        <Eye size={20} color={colors.textMuted} />
-                      )}
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Buttons */}
-                <View style={styles.cpButtons}>
-                  <AnimatedCard
-                    variant="outlined"
-                    disabled={changePasswordMutation.isPending}
-                    onPress={() => {
-                      if (changePasswordMutation.isPending) return;
-                      setShowChangePasswordModal(false);
-                      resetChangePasswordState();
-                    }}
-                    style={{ flex: 1, marginRight: SPACING.sm, opacity: changePasswordMutation.isPending ? 0.5 : 1 }}
-                  >
-                    <AccessibleText variant="body" style={{ textAlign: 'center' }}>Cancel</AccessibleText>
-                  </AnimatedCard>
-                  <AnimatedCard
-                    variant="filled"
-                    onPress={handleConfirmChangePassword}
-                    disabled={changePasswordMutation.isPending}
-                    style={{ flex: 1, opacity: changePasswordMutation.isPending ? 0.7 : 1 }}
-                  >
-                    <AccessibleText variant="body" medium customColor="#FFFFFF" style={{ textAlign: 'center' }}>
-                      {changePasswordMutation.isPending ? 'Changing...' : 'Change Password'}
-                    </AccessibleText>
-                  </AnimatedCard>
-                </View>
-              </ScrollView>
-            </Pressable>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Modal>
+        isSaving={changePasswordMutation.isPending}
+      />
 
       {/* Edit Profile Modal */}
       <EditProfileModal
@@ -1473,62 +1245,5 @@ const styles = StyleSheet.create({
   },
   modalButtons: {
     flexDirection: 'row' as const,
-  },
-  // Change-password bottom-sheet modal
-  cpModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
-  },
-  cpSheet: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: SPACING.xl,
-    paddingBottom: SPACING['2xl'],
-    maxHeight: '85%',
-  },
-  cpHandleBar: {
-    alignItems: 'center',
-    paddingTop: SPACING.md,
-    paddingBottom: SPACING.sm,
-  },
-  cpHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-  },
-  cpHeader: {
-    alignItems: 'center',
-    marginBottom: SPACING.lg,
-  },
-  cpIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cpErrorBanner: {
-    borderRadius: 10,
-    paddingVertical: SPACING.sm,
-    paddingHorizontal: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  cpInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 50,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: SPACING.md,
-  },
-  cpInputText: {
-    flex: 1,
-    fontSize: 16,
-    height: '100%',
-  },
-  cpButtons: {
-    flexDirection: 'row' as const,
-    marginTop: SPACING.xs,
   },
 });

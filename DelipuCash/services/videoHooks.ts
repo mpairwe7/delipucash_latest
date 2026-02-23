@@ -216,10 +216,10 @@ export function useLikeVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    // Optimistic update — detail + infinite list caches
+    // Optimistic update — detail + ALL infinite feed caches
     onMutate: async ({ videoId, isLiked }) => {
       await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.lists() });
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.all });
 
       // Snapshot detail
       const previousVideo = queryClient.getQueryData<VideoWithDetails>(
@@ -238,24 +238,22 @@ export function useLikeVideo(): UseMutationResult<
         );
       }
 
-      // Optimistically update infinite list pages
-      queryClient.setQueriesData<{ pages: Array<{ videos: Video[] }>; pageParams: number[] }>(
-        { queryKey: videoQueryKeys.lists() },
-        (old) => {
-          if (!old?.pages) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              videos: page.videos.map((v: Video) =>
-                v.id === videoId
-                  ? { ...v, likes: isLiked ? v.likes - 1 : v.likes + 1, isLiked: !isLiked }
-                  : v
-              ),
-            })),
-          };
-        }
-      );
+      // Optimistically update ALL infinite feed caches (personalized, trending, following, lists)
+      const updateVideoInPages = (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            videos: (page.videos || []).map((v: Video) =>
+              v.id === videoId
+                ? { ...v, likes: isLiked ? v.likes - 1 : v.likes + 1, isLiked: !isLiked }
+                : v
+            ),
+          })),
+        };
+      };
+      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, updateVideoInPages);
 
       return { previousVideo };
     },
@@ -263,8 +261,8 @@ export function useLikeVideo(): UseMutationResult<
       if (context?.previousVideo) {
         queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
       }
-      // Rollback list by refetching
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
+      // Rollback all feeds by refetching
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
     },
     onSettled: (_, __, { videoId }) => {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
@@ -297,10 +295,10 @@ export function useBookmarkVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    // Optimistic update — detail + infinite list caches
+    // Optimistic update — detail + ALL infinite feed caches
     onMutate: async ({ videoId, isBookmarked }) => {
       await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.lists() });
+      await queryClient.cancelQueries({ queryKey: videoQueryKeys.all });
 
       const previousVideo = queryClient.getQueryData<VideoWithDetails>(
         videoQueryKeys.detail(videoId)
@@ -314,22 +312,20 @@ export function useBookmarkVideo(): UseMutationResult<
         );
       }
 
-      // Optimistically update infinite list pages
-      queryClient.setQueriesData<{ pages: Array<{ videos: Video[] }>; pageParams: number[] }>(
-        { queryKey: videoQueryKeys.lists() },
-        (old) => {
-          if (!old?.pages) return old;
-          return {
-            ...old,
-            pages: old.pages.map((page) => ({
-              ...page,
-              videos: page.videos.map((v: Video) =>
-                v.id === videoId ? { ...v, isBookmarked: !isBookmarked } : v
-              ),
-            })),
-          };
-        }
-      );
+      // Optimistically update ALL infinite feed caches
+      const updateVideoInPages = (old: any) => {
+        if (!old?.pages) return old;
+        return {
+          ...old,
+          pages: old.pages.map((page: any) => ({
+            ...page,
+            videos: (page.videos || []).map((v: Video) =>
+              v.id === videoId ? { ...v, isBookmarked: !isBookmarked } : v
+            ),
+          })),
+        };
+      };
+      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, updateVideoInPages);
 
       return { previousVideo };
     },
@@ -337,7 +333,7 @@ export function useBookmarkVideo(): UseMutationResult<
       if (context?.previousVideo) {
         queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
       }
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
     },
     onSettled: (_, __, { videoId }) => {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
@@ -1084,9 +1080,8 @@ export function useVideoFeedback(): UseMutationResult<
       return response.data;
     },
     onSettled: () => {
-      // Invalidate all feed queries so hidden content is filtered out
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.trending() });
+      // Invalidate ALL feed queries so hidden content is filtered out everywhere
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
     },
   });
 }

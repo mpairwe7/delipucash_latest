@@ -38,6 +38,8 @@ import {
   Coins,
   ArrowRightLeft,
   Wallet,
+  Sparkles,
+  Zap,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -82,6 +84,8 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
   const [cashNumerator, setCashNumerator] = useState('');
   const [cashDenominator, setCashDenominator] = useState('');
   const [minWithdrawal, setMinWithdrawal] = useState('');
+  const [defaultRegularReward, setDefaultRegularReward] = useState('');
+  const [defaultInstantReward, setDefaultInstantReward] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Sync form from server config when sheet opens
@@ -91,6 +95,8 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setCashNumerator(String(config.pointsToCashNumerator));
       setCashDenominator(String(config.pointsToCashDenominator));
       setMinWithdrawal(String(config.minWithdrawalPoints));
+      setDefaultRegularReward(String(config.defaultRegularRewardAmount));
+      setDefaultInstantReward(String(config.defaultInstantRewardAmount));
       setError(null);
     }
   }, [visible, config]);
@@ -103,6 +109,25 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     const perPoint = num / den;
     return `${den} points = ${num.toLocaleString()} UGX (${perPoint.toLocaleString()} UGX/point)`;
   }, [cashNumerator, cashDenominator]);
+
+  // Reward default previews
+  const regularRewardPreview = useMemo(() => {
+    const ugx = Number(defaultRegularReward);
+    const den = Number(cashDenominator);
+    const num = Number(cashNumerator);
+    if (!ugx || ugx <= 0 || !den || !num) return null;
+    const pts = Math.ceil((ugx * den) / num);
+    return `${ugx.toLocaleString()} UGX = ${pts} points per regular question`;
+  }, [defaultRegularReward, cashNumerator, cashDenominator]);
+
+  const instantRewardPreview = useMemo(() => {
+    const ugx = Number(defaultInstantReward);
+    const den = Number(cashDenominator);
+    const num = Number(cashNumerator);
+    if (!ugx || ugx <= 0 || !den || !num) return null;
+    const pts = Math.ceil((ugx * den) / num);
+    return `${ugx.toLocaleString()} UGX = ${pts} points per instant question`;
+  }, [defaultInstantReward, cashNumerator, cashDenominator]);
 
   // Withdrawal preview
   const withdrawalPreview = useMemo(() => {
@@ -119,6 +144,8 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     const cn = Number(cashNumerator);
     const cd = Number(cashDenominator);
     const mw = Number(minWithdrawal);
+    const drr = Number(defaultRegularReward);
+    const dir = Number(defaultInstantReward);
 
     if (!Number.isInteger(pps) || pps < 1) {
       setError('Points per survey must be a positive whole number.');
@@ -136,9 +163,17 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setError('Minimum withdrawal must be a positive whole number.');
       return false;
     }
+    if (!Number.isInteger(drr) || drr < 1 || drr > 1000000) {
+      setError('Default regular reward must be between 1 and 1,000,000 UGX.');
+      return false;
+    }
+    if (!Number.isInteger(dir) || dir < 1 || dir > 1000000) {
+      setError('Default instant reward must be between 1 and 1,000,000 UGX.');
+      return false;
+    }
     setError(null);
     return true;
-  }, [pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal]);
+  }, [pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward]);
 
   const handleSave = useCallback(async () => {
     if (!validate()) return;
@@ -151,6 +186,8 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
         pointsToCashNumerator: Number(cashNumerator),
         pointsToCashDenominator: Number(cashDenominator),
         minWithdrawalPoints: Number(minWithdrawal),
+        defaultRegularRewardAmount: Number(defaultRegularReward),
+        defaultInstantRewardAmount: Number(defaultInstantReward),
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -160,7 +197,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setError(err.message || 'Failed to save settings.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [validate, pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, updateConfig, onClose]);
+  }, [validate, pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward, updateConfig, onClose]);
 
   const handleClose = useCallback(() => {
     if (!updateConfig.isPending) {
@@ -204,7 +241,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
             <View style={styles.headerText}>
               <Text style={[styles.title, { color: colors.text }]}>Reward Settings</Text>
               <Text style={[styles.subtitle, { color: colors.textMuted }]}>
-                Configure survey points and withdrawal rates
+                Configure points, reward defaults and rates
               </Text>
             </View>
             <Pressable
@@ -233,6 +270,47 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
               onChangeText={setPointsPerSurvey}
               colors={colors}
             />
+
+            {/* Reward Question Defaults */}
+            <View style={styles.sectionDivider}>
+              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+              <Text style={[styles.sectionDividerText, { color: colors.textMuted }]}>
+                Reward Question Defaults
+              </Text>
+              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+            </View>
+
+            <SettingField
+              icon={<Coins size={18} color="#4CAF50" />}
+              label="Default regular reward (UGX)"
+              hint="Auto-filled when creating regular reward questions"
+              value={defaultRegularReward}
+              onChangeText={setDefaultRegularReward}
+              colors={colors}
+            />
+            {regularRewardPreview && (
+              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                <Text style={[styles.previewText, { color: colors.success }]}>
+                  {regularRewardPreview}
+                </Text>
+              </Animated.View>
+            )}
+
+            <SettingField
+              icon={<Sparkles size={18} color="#FF9800" />}
+              label="Default instant reward (UGX)"
+              hint="Auto-filled when creating instant reward questions"
+              value={defaultInstantReward}
+              onChangeText={setDefaultInstantReward}
+              colors={colors}
+            />
+            {instantRewardPreview && (
+              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                <Text style={[styles.previewText, { color: colors.success }]}>
+                  {instantRewardPreview}
+                </Text>
+              </Animated.View>
+            )}
 
             {/* Conversion rate */}
             <View style={styles.fieldGroup}>
@@ -497,6 +575,22 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
     flex: 1,
+  },
+  sectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    marginVertical: SPACING.xs,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  sectionDividerText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   footer: {
     padding: SPACING.lg,

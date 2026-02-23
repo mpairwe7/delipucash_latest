@@ -39,6 +39,9 @@ export type { RecentActivityCardProps, ActivityItem } from './RecentActivityCard
 export { EditProfileModal } from './EditProfileModal';
 export type { EditProfileModalProps, EditProfileData } from './EditProfileModal';
 
+export { ChangePasswordModal } from './ChangePasswordModal';
+export type { ChangePasswordModalProps } from './ChangePasswordModal';
+
 export { TransactionsCard } from './TransactionsCard';
 export type { TransactionsCardProps, RecentTransaction } from './TransactionsCard';
 

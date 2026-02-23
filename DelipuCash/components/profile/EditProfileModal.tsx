@@ -135,7 +135,7 @@ const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 // ANIMATED INPUT FIELD (with focus state, error animation, character counter)
 // ============================================================================
 
-interface FormFieldProps {
+export interface FormFieldProps {
   label: string;
   value: string;
   onChangeText: (text: string) => void;
@@ -152,12 +152,14 @@ interface FormFieldProps {
   inputRef?: React.RefObject<TextInput | null>;
   maxLength?: number;
   showCharCount?: boolean;
+  secureTextEntry?: boolean;
+  rightElement?: React.ReactNode;
   accessibilityLabel: string;
   accessibilityHint?: string;
   colors: ReturnType<typeof useTheme>['colors'];
 }
 
-function FormField({
+export function FormField({
   label,
   value,
   onChangeText,
@@ -174,6 +176,8 @@ function FormField({
   inputRef,
   maxLength,
   showCharCount = false,
+  secureTextEntry,
+  rightElement,
   accessibilityLabel,
   accessibilityHint,
   colors,
@@ -268,6 +272,7 @@ function FormField({
           onSubmitEditing={onSubmitEditing}
           blurOnSubmit={returnKeyType === 'done'}
           maxLength={maxLength}
+          secureTextEntry={secureTextEntry}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           accessibilityLabel={accessibilityLabel}
@@ -275,6 +280,7 @@ function FormField({
           accessibilityState={{ disabled: readOnly }}
           selectionColor={colors.primary}
         />
+        {rightElement}
       </Animated.View>
 
       {/* Error message */}

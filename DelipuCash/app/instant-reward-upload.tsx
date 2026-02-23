@@ -17,14 +17,20 @@ import {
   OptionInputGroup,
   CorrectAnswerSelector,
   RewardAmountInput,
+  RewardAmountWithDefault,
   ReviewRow,
   reviewStyles,
   buildOptionsPayload,
   optionIndexToKey,
+  QuestionTypePicker,
+  AcceptedAnswersInput,
+  TextInputOptionsEditor,
+  buildTextInputOptionsPayload,
 } from "@/components/reward";
 import type { WizardStep } from "@/components/reward";
 import { useCreateRewardQuestion } from "@/services/hooks";
 import { UserRole } from "@/types";
+import type { RewardQuestionType, AnswerMatchMode } from "@/types";
 import { triggerHaptic } from "@/utils/quiz-utils";
 import { useToast } from "@/components/ui/Toast";
 import {
@@ -94,7 +100,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const { data: user, loading: userLoading } = useUser();
   const createQuestion = useCreateRewardQuestion();
   const { showToast } = useToast();
-  const { data: rewardConfig } = useRewardConfig();
+  const { data: rewardConfig, isLoading: configLoading } = useRewardConfig();
   const submitDebounceRef = useRef(false);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -112,9 +118,16 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const [currentStep, setCurrentStep] = useState(0);
 
   // Form state
+  const [questionType, setQuestionType] = useState<RewardQuestionType>("multiple_choice");
   const [questionText, setQuestionText] = useState("");
   const [options, setOptions] = useState<[string, string, string, string]>(["", "", "", ""]);
   const [correctAnswerIndex, setCorrectAnswerIndex] = useState(-1);
+  const [acceptedAnswers, setAcceptedAnswers] = useState("");
+  const [matchMode, setMatchMode] = useState<AnswerMatchMode>("case_insensitive");
+  const [textPlaceholder, setTextPlaceholder] = useState("");
+  const [textHint, setTextHint] = useState("");
+  const [textMaxLength, setTextMaxLength] = useState("");
+  const [useDefaultReward, setUseDefaultReward] = useState(true);
   const [rewardAmount, setRewardAmount] = useState("");
   const [rewardPoints, setRewardPoints] = useState("");
   const isSyncingRef = useRef(false);
@@ -150,6 +163,44 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     });
   }, []);
 
+  // Reset type-specific fields when questionType changes to prevent stale data
+  const prevQuestionTypeRef = useRef(questionType);
+  useEffect(() => {
+    if (prevQuestionTypeRef.current === questionType) return;
+    prevQuestionTypeRef.current = questionType;
+    if (questionType === "text_input") {
+      setOptions(["", "", "", ""]);
+      setCorrectAnswerIndex(-1);
+    } else {
+      setAcceptedAnswers("");
+      setMatchMode("case_insensitive");
+      setTextPlaceholder("");
+      setTextHint("");
+      setTextMaxLength("");
+    }
+  }, [questionType]);
+
+  // ── Default reward toggle ──────────────────────────────────────────────
+
+  const defaultInstantAmount = rewardConfig?.defaultInstantRewardAmount ?? 500;
+  const defaultInstantPoints = useMemo(() => {
+    if (!rewardConfig) return Math.ceil(defaultInstantAmount / 125) || 1;
+    return Math.ceil(
+      (defaultInstantAmount * rewardConfig.pointsToCashDenominator) /
+        rewardConfig.pointsToCashNumerator,
+    );
+  }, [rewardConfig, defaultInstantAmount]);
+
+  const handleDefaultToggle = useCallback(
+    (useDefault: boolean) => {
+      setUseDefaultReward(useDefault);
+      if (!useDefault && !rewardAmount.trim()) {
+        handleRewardAmountChange(String(defaultInstantAmount));
+      }
+    },
+    [defaultInstantAmount, rewardAmount, handleRewardAmountChange],
+  );
+
   // ── Validation ──────────────────────────────────────────────────────────
 
   const validateStep = useCallback((step: number): boolean => {
@@ -172,34 +223,50 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         return true;
       }
       case 1: {
-        const filledOpts = options.filter((o) => o.trim().length > 0);
-        if (filledOpts.length < 2) {
-          triggerHaptic("warning");
-          showToast({
-            message: "At least 2 options are required",
-            type: "warning",
-          });
-          return false;
-        }
-        if (correctAnswerIndex < 0 || !options[correctAnswerIndex]?.trim()) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Please select the correct answer",
-            type: "warning",
-          });
-          return false;
+        if (questionType === "text_input") {
+          const parsed = acceptedAnswers.split("|").map((a) => a.trim()).filter((a) => a.length > 0);
+          if (parsed.length < 1) {
+            triggerHaptic("warning");
+            showToast({ message: "At least 1 accepted answer is required", type: "warning" });
+            return false;
+          }
+          if (parsed.length > 20) {
+            triggerHaptic("warning");
+            showToast({ message: "Maximum 20 accepted answers allowed", type: "warning" });
+            return false;
+          }
+        } else {
+          const filledOpts = options.filter((o) => o.trim().length > 0);
+          if (filledOpts.length < 2) {
+            triggerHaptic("warning");
+            showToast({
+              message: "At least 2 options are required",
+              type: "warning",
+            });
+            return false;
+          }
+          if (correctAnswerIndex < 0 || !options[correctAnswerIndex]?.trim()) {
+            triggerHaptic("warning");
+            showToast({
+              message: "Please select the correct answer",
+              type: "warning",
+            });
+            return false;
+          }
         }
         return true;
       }
       case 2: {
-        const parsedReward = parseFloat(rewardAmount);
-        if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward < 1 || parsedReward > 1_000_000) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Reward amount must be between 1 and 1,000,000 UGX",
-            type: "warning",
-          });
-          return false;
+        if (!useDefaultReward) {
+          const parsedReward = parseFloat(rewardAmount);
+          if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward < 1 || parsedReward > 1_000_000) {
+            triggerHaptic("warning");
+            showToast({
+              message: "Reward amount must be between 1 and 1,000,000 UGX",
+              type: "warning",
+            });
+            return false;
+          }
         }
         const parsedMaxWinners = parseInt(maxWinners);
         if (isNaN(parsedMaxWinners) || parsedMaxWinners < 1 || parsedMaxWinners > 10) {
@@ -240,14 +307,21 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       default:
         return true;
     }
-  }, [questionText, options, correctAnswerIndex, rewardAmount, maxWinners, expiryHours, phoneNumber, paymentProvider, showToast]);
+  }, [questionText, questionType, options, correctAnswerIndex, acceptedAnswers, useDefaultReward, rewardAmount, maxWinners, expiryHours, phoneNumber, paymentProvider, showToast]);
 
   // ── Form reset ─────────────────────────────────────────────────────────
 
   const resetForm = useCallback(() => {
+    setQuestionType("multiple_choice");
     setQuestionText("");
     setOptions(["", "", "", ""]);
     setCorrectAnswerIndex(-1);
+    setAcceptedAnswers("");
+    setMatchMode("case_insensitive");
+    setTextPlaceholder("");
+    setTextHint("");
+    setTextMaxLength("");
+    setUseDefaultReward(true);
     setRewardAmount("");
     setRewardPoints("");
     setMaxWinners("2");
@@ -275,21 +349,27 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       return;
     }
 
-    const parsedReward = parseFloat(rewardAmount);
+    const parsedReward = useDefaultReward ? 0 : parseFloat(rewardAmount);
     const parsedMaxWinners = parseInt(maxWinners) || 2;
     const parsedExpiryHours = parseInt(expiryHours) || 24;
     const expiryTime = new Date(
       Date.now() + parsedExpiryHours * 60 * 60 * 1000
     ).toISOString();
 
-    const optionsPayload = buildOptionsPayload(options);
-    const correctAnswerKey = optionIndexToKey(correctAnswerIndex);
+    // Branch payload on questionType
+    const isTextInput = questionType === "text_input";
+    const optionsPayload = isTextInput
+      ? buildTextInputOptionsPayload(textPlaceholder, textHint, textMaxLength)
+      : buildOptionsPayload(options);
+    const correctAnswerValue = isTextInput
+      ? acceptedAnswers.trim()
+      : optionIndexToKey(correctAnswerIndex);
 
     try {
       await createQuestion.mutateAsync({
         text: questionText.trim(),
         options: optionsPayload,
-        correctAnswer: correctAnswerKey,
+        correctAnswer: correctAnswerValue,
         rewardAmount: parsedReward,
         expiryTime,
         userId: user.id,
@@ -297,6 +377,8 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         maxWinners: parsedMaxWinners,
         paymentProvider,
         phoneNumber: phoneNumber.trim(),
+        questionType,
+        matchMode,
       });
 
       triggerHaptic("success");
@@ -315,7 +397,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         type: "error",
       });
     }
-  }, [user, questionText, options, correctAnswerIndex, rewardAmount, maxWinners, expiryHours, paymentProvider, phoneNumber, createQuestion, showToast, resetForm]);
+  }, [user, questionType, questionText, options, correctAnswerIndex, acceptedAnswers, matchMode, textPlaceholder, textHint, textMaxLength, useDefaultReward, rewardAmount, maxWinners, expiryHours, paymentProvider, phoneNumber, createQuestion, showToast, resetForm]);
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
@@ -407,6 +489,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         subtitle="Create a high-impact instant reward question"
         icon={<Sparkles size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
       />
+      <QuestionTypePicker selectedType={questionType} onSelect={setQuestionType} />
       <View style={styles.formGroup}>
         <Text style={[styles.label, { color: colors.text }]}>Question Text *</Text>
         <TextInput
@@ -449,21 +532,47 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
 
   const renderAnswersStep = () => (
     <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-1">
-      <SectionHeader
-        title="Answer Options"
-        subtitle="Provide 2-4 multiple choice options"
-        icon={<CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
-      />
-      <OptionInputGroup options={options} onChangeOption={handleOptionChange} />
+      {questionType === "multiple_choice" ? (
+        <>
+          <SectionHeader
+            title="Answer Options"
+            subtitle="Provide 2-4 multiple choice options"
+            icon={<CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+          />
+          <OptionInputGroup options={options} onChangeOption={handleOptionChange} />
 
-      <View style={styles.formGroup}>
-        <Text style={[styles.label, { color: colors.text }]}>Correct Answer *</Text>
-        <CorrectAnswerSelector
-          options={options}
-          selectedIndex={correctAnswerIndex}
-          onSelect={setCorrectAnswerIndex}
-        />
-      </View>
+          <View style={styles.formGroup}>
+            <Text style={[styles.label, { color: colors.text }]}>Correct Answer *</Text>
+            <CorrectAnswerSelector
+              options={options}
+              selectedIndex={correctAnswerIndex}
+              onSelect={setCorrectAnswerIndex}
+            />
+          </View>
+        </>
+      ) : (
+        <>
+          <SectionHeader
+            title="Accepted Answers"
+            subtitle="Define the correct answer(s) users must type"
+            icon={<CheckCircle2 size={ICON_SIZE.sm} color={colors.success} strokeWidth={1.5} />}
+          />
+          <AcceptedAnswersInput
+            value={acceptedAnswers}
+            onChange={setAcceptedAnswers}
+            matchMode={matchMode}
+            onMatchModeChange={setMatchMode}
+          />
+          <TextInputOptionsEditor
+            placeholder={textPlaceholder}
+            hint={textHint}
+            maxLength={textMaxLength}
+            onPlaceholderChange={setTextPlaceholder}
+            onHintChange={setTextHint}
+            onMaxLengthChange={setTextMaxLength}
+          />
+        </>
+      )}
     </Animated.View>
   );
 
@@ -475,12 +584,17 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         icon={<Coins size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
       />
 
-      <RewardAmountInput
+      <RewardAmountWithDefault
+        useDefault={useDefaultReward}
+        onToggle={handleDefaultToggle}
+        defaultAmount={defaultInstantAmount}
+        defaultPoints={defaultInstantPoints}
         rewardAmount={rewardAmount}
         rewardPoints={rewardPoints}
         onAmountChange={handleRewardAmountChange}
         onPointsChange={handleRewardPointsChange}
         conversionHint={conversionHint}
+        isLoading={configLoading}
       />
 
       <View style={styles.formRow}>
@@ -594,9 +708,13 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   );
 
   const renderReviewStep = () => {
-    const correctKey = optionIndexToKey(correctAnswerIndex);
-    const optionsMap = buildOptionsPayload(options);
-    const parsedReward = parseFloat(rewardAmount) || 0;
+    const isTextInput = questionType === "text_input";
+    const correctKey = isTextInput ? "" : optionIndexToKey(correctAnswerIndex);
+    const optionsMap = isTextInput ? {} : buildOptionsPayload(options);
+    const parsedReward = useDefaultReward ? defaultInstantAmount : (parseFloat(rewardAmount) || 0);
+    const parsedAccepted = isTextInput
+      ? acceptedAnswers.split("|").map((a) => a.trim()).filter((a) => a.length > 0)
+      : [];
 
     return (
       <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-3">
@@ -619,6 +737,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
               <Edit3 size={14} color={colors.primary} />
             </Pressable>
           </View>
+          <ReviewRow label="Type" value={isTextInput ? "Type Answer" : "Multiple Choice"} />
           <Text style={[reviewStyles.reviewText, { color: colors.text }]}>{questionText.trim()}</Text>
         </View>
 
@@ -635,35 +754,61 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
               <Edit3 size={14} color={colors.primary} />
             </Pressable>
           </View>
-          {Object.entries(optionsMap).map(([key, text]) => (
-            <View key={key} style={reviewStyles.reviewOptionRow}>
-              <Text
-                style={[
-                  reviewStyles.reviewOptionKey,
-                  {
-                    color: key === correctKey ? colors.success : colors.textMuted,
-                    fontFamily:
-                      key === correctKey
-                        ? TYPOGRAPHY.fontFamily.bold
-                        : TYPOGRAPHY.fontFamily.medium,
-                  },
-                ]}
-              >
-                {key}.
-              </Text>
-              <Text
-                style={[
-                  reviewStyles.reviewOptionText,
-                  {
-                    color: key === correctKey ? colors.success : colors.text,
-                  },
-                ]}
-              >
-                {text}
-                {key === correctKey ? " ✓" : ""}
-              </Text>
-            </View>
-          ))}
+          {isTextInput ? (
+            <>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: SPACING.xs, marginBottom: SPACING.sm }}>
+                {parsedAccepted.map((answer, i) => (
+                  <View
+                    key={`${answer}-${i}`}
+                    style={{
+                      paddingHorizontal: SPACING.sm,
+                      paddingVertical: SPACING.xs,
+                      borderRadius: RADIUS.full,
+                      backgroundColor: withAlpha(colors.success, 0.1),
+                    }}
+                  >
+                    <Text style={{ color: colors.success, fontSize: TYPOGRAPHY.fontSize.sm, fontFamily: TYPOGRAPHY.fontFamily.medium }}>
+                      {answer}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <ReviewRow label="Match Mode" value={matchMode === "exact" ? "Exact Match" : "Ignore Case"} />
+              {textPlaceholder.trim() ? <ReviewRow label="Placeholder" value={textPlaceholder.trim()} /> : null}
+              {textHint.trim() ? <ReviewRow label="Hint" value={textHint.trim()} /> : null}
+              {textMaxLength.trim() ? <ReviewRow label="Max Length" value={textMaxLength.trim()} /> : null}
+            </>
+          ) : (
+            Object.entries(optionsMap).map(([key, text]) => (
+              <View key={key} style={reviewStyles.reviewOptionRow}>
+                <Text
+                  style={[
+                    reviewStyles.reviewOptionKey,
+                    {
+                      color: key === correctKey ? colors.success : colors.textMuted,
+                      fontFamily:
+                        key === correctKey
+                          ? TYPOGRAPHY.fontFamily.bold
+                          : TYPOGRAPHY.fontFamily.medium,
+                    },
+                  ]}
+                >
+                  {key}.
+                </Text>
+                <Text
+                  style={[
+                    reviewStyles.reviewOptionText,
+                    {
+                      color: key === correctKey ? colors.success : colors.text,
+                    },
+                  ]}
+                >
+                  {text}
+                  {key === correctKey ? " ✓" : ""}
+                </Text>
+              </View>
+            ))
+          )}
         </View>
 
         {/* Config section */}
@@ -679,7 +824,24 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
               <Edit3 size={14} color={colors.primary} />
             </Pressable>
           </View>
-          <ReviewRow label="Reward" value={`${parsedReward.toLocaleString()} UGX`} />
+          <ReviewRow
+            label="Reward"
+            value={
+              useDefaultReward
+                ? `${parsedReward.toLocaleString()} UGX (default)`
+                : `${parsedReward.toLocaleString()} UGX (custom)`
+            }
+          />
+          <ReviewRow
+            label="Points"
+            value={
+              useDefaultReward
+                ? `${defaultInstantPoints} points`
+                : rewardConfig
+                  ? `${Math.ceil((parsedReward * rewardConfig.pointsToCashDenominator) / rewardConfig.pointsToCashNumerator)} points`
+                  : `${Math.ceil(parsedReward / 125) || 1} points`
+            }
+          />
           <ReviewRow label="Max Winners" value={maxWinners} />
           <ReviewRow label="Expiry" value={`${expiryHours} hours`} />
           <ReviewRow label="Provider" value={paymentProvider === "MTN" ? "MTN" : "Airtel"} />

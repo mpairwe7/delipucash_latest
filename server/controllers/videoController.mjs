@@ -5,18 +5,72 @@ import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
 
 /**
  * Replace public R2 URLs with signed download URLs.
- * Falls back to the stored URL if no R2 key exists (e.g. legacy videos).
+ * Falls back to the stored URL if no R2 key exists (e.g. legacy/external videos).
+ * Gracefully degrades to stored URLs if R2 signing fails (prevents feed 500s).
  */
 async function signVideoUrls(video) {
-  const [videoUrl, thumbnail] = await Promise.all([
-    video.r2VideoKey
-      ? getSignedDownloadUrl(video.r2VideoKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
-      : Promise.resolve(video.videoUrl),
-    video.r2ThumbnailKey
-      ? getSignedDownloadUrl(video.r2ThumbnailKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
-      : Promise.resolve(video.thumbnail),
-  ]);
-  return { videoUrl, thumbnail };
+  try {
+    const [videoUrl, thumbnail] = await Promise.all([
+      video.r2VideoKey
+        ? getSignedDownloadUrl(video.r2VideoKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+        : Promise.resolve(video.videoUrl),
+      video.r2ThumbnailKey
+        ? getSignedDownloadUrl(video.r2ThumbnailKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
+        : Promise.resolve(video.thumbnail),
+    ]);
+    return { videoUrl, thumbnail };
+  } catch (error) {
+    console.error('[signVideoUrls] R2 signing failed, using stored URLs:', error.message);
+    return { videoUrl: video.videoUrl, thumbnail: video.thumbnail };
+  }
+}
+
+/**
+ * Shared Video response formatter — ensures ALL feed endpoints return the
+ * identical shape expected by the frontend Video interface.
+ *
+ * @param {object} video        Prisma video record (with .user included)
+ * @param {object} signed       { videoUrl, thumbnail } from signVideoUrls
+ * @param {object} opts         Per-endpoint overrides
+ * @param {boolean} opts.isLiked
+ * @param {boolean} opts.isBookmarked
+ * @param {boolean} opts.isFollowing
+ * @param {boolean} opts.isLive
+ * @param {string|null} opts.livestreamSessionId
+ * @param {string} opts.recommendationReason
+ * @param {string} opts.trendingReason
+ */
+function formatVideoResponse(video, signed, opts = {}) {
+  return {
+    id: video.id,
+    title: video.title || 'Untitled Video',
+    description: video.description || '',
+    videoUrl: signed.videoUrl,
+    thumbnail: signed.thumbnail,
+    userId: video.userId,
+    likes: video.likes || 0,
+    views: video.views || 0,
+    isLiked: opts.isLiked ?? false,
+    isBookmarked: opts.isBookmarked ?? false,
+    isFollowing: opts.isFollowing ?? false,
+    commentsCount: video.commentsCount || 0,
+    createdAt: video.createdAt.toISOString(),
+    updatedAt: video.updatedAt.toISOString(),
+    duration: video.duration || 0,
+    topicTags: video.topicTags || [],
+    comments: [],
+    isLive: opts.isLive ?? false,
+    livestreamSessionId: opts.livestreamSessionId ?? null,
+    user: video.user ? {
+      id: video.user.id,
+      firstName: video.user.firstName || 'Anonymous',
+      lastName: video.user.lastName || '',
+      avatar: video.user.avatar,
+    } : null,
+    // Optional feed metadata (omitted if undefined — JSON.stringify strips them)
+    ...(opts.recommendationReason && { recommendationReason: opts.recommendationReason }),
+    ...(opts.trendingReason && { trendingReason: opts.trendingReason }),
+  };
 }
 
 // Create a Video
@@ -304,31 +358,12 @@ export const getAllVideos = asyncHandler(async (req, res) => {
 
     const formattedVideos = await Promise.all(videos.map(async (video) => {
       const signed = await signVideoUrls(video);
-      return {
-        id: video.id,
-        title: video.title || 'Untitled Video',
-        description: video.description || '',
-        videoUrl: signed.videoUrl,
-        thumbnail: signed.thumbnail,
-        userId: video.userId,
-        likes: video.likes || 0,
-        views: video.views || 0,
+      return formatVideoResponse(video, signed, {
         isLiked: likedSet.has(video.id),
         isBookmarked: bookmarkedSet.has(video.id),
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(),
-        duration: video.duration || 0,
-        comments: [],
         isLive: liveUserMap.has(video.userId),
         livestreamSessionId: liveUserMap.get(video.userId) || null,
-        user: video.user ? {
-          id: video.user.id,
-          firstName: video.user.firstName || 'Anonymous',
-          lastName: video.user.lastName || '',
-          avatar: video.user.avatar,
-        } : null,
-      };
+      });
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -399,31 +434,12 @@ export const getVideoById = asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      data: {
-        id: video.id,
-        title: video.title || 'Untitled Video',
-        description: video.description || '',
-        videoUrl: signed.videoUrl,
-        thumbnail: signed.thumbnail,
-        userId: video.userId,
-        likes: video.likes || 0,
-        views: video.views || 0,
+      data: formatVideoResponse(video, signed, {
         isLiked: !!userLike,
         isBookmarked: !!userBookmark,
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(),
-        duration: video.duration || 0,
-        comments: [],
         isLive: !!activeLivestream,
         livestreamSessionId: activeLivestream?.sessionId || null,
-        user: video.user ? {
-          id: video.user.id,
-          firstName: video.user.firstName || 'Anonymous',
-          lastName: video.user.lastName || '',
-          avatar: video.user.avatar,
-        } : null,
-      },
+      }),
     });
   } catch (error) {
     console.error('VideoController: getVideoById - Error occurred:', error);
@@ -459,8 +475,8 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
       ...(language && { language }),
     };
 
-    // Fetch blocked users and feedback for safety filtering
-    const [videos, total, userLikes, userBookmarks, blockedUsers, userFeedback] = await Promise.all([
+    // Fetch blocked users, feedback, and active livestreams for safety filtering + live badges
+    const [videos, total, activeLivestreams, userLikes, userBookmarks, blockedUsers, userFeedback] = await Promise.all([
       prisma.video.findMany({
         where,
         include: {
@@ -470,6 +486,7 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
         orderBy: { createdAt: 'desc' },
       }),
       prisma.video.count({ where }),
+      prisma.livestream.findMany({ where: { status: 'live' }, select: { userId: true, sessionId: true } }),
       authUserId
         ? prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } })
         : Promise.resolve([]),
@@ -487,6 +504,7 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
         : Promise.resolve([]),
     ]);
 
+    const liveUserMap = new Map(activeLivestreams.map(ls => [ls.userId, ls.sessionId]));
     const likedSet = new Set(userLikes.map(l => l.videoId));
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
     const blockedSet = new Set(blockedUsers.map(b => b.blockedId));
@@ -538,34 +556,18 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
 
         const signed = await signVideoUrls(video);
         return {
-          id: video.id,
-          title: video.title || 'Untitled Video',
-          description: video.description || '',
-          videoUrl: signed.videoUrl,
-          thumbnail: signed.thumbnail,
-          userId: video.userId,
-          likes: video.likes || 0,
-          views: video.views || 0,
-          isLiked: likedSet.has(video.id),
-          isBookmarked: bookmarkedSet.has(video.id),
-          commentsCount: video.commentsCount || 0,
-          createdAt: video.createdAt.toISOString(),
-          updatedAt: video.updatedAt.toISOString(),
-          duration: video.duration || 0,
-          topicTags: video.topicTags || [],
-          comments: [],
-          user: video.user ? {
-            id: video.user.id,
-            firstName: video.user.firstName || 'Anonymous',
-            lastName: video.user.lastName || '',
-            avatar: video.user.avatar,
-          } : null,
-          trendingScore,
-          trendingReason,
+          ...formatVideoResponse(video, signed, {
+            isLiked: likedSet.has(video.id),
+            isBookmarked: bookmarkedSet.has(video.id),
+            isLive: liveUserMap.has(video.userId),
+            livestreamSessionId: liveUserMap.get(video.userId) || null,
+            trendingReason,
+          }),
+          _trendingScore: trendingScore, // Internal: used for sorting only, stripped before response
         };
       }));
 
-    scored.sort((a, b) => b.trendingScore - a.trendingScore);
+    scored.sort((a, b) => b._trendingScore - a._trendingScore);
 
     // Per-creator cap: max MAX_VIDEOS_PER_CREATOR_TRENDING videos per creator
     const creatorCounts = new Map();
@@ -579,10 +581,13 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
     const paged = capped.slice(skip, skip + limit);
     const totalPages = Math.ceil(Math.min(capped.length, total) / limit);
 
+    // Strip internal scoring field before sending to client
+    const cleanPaged = paged.map(({ _trendingScore, ...video }) => video);
+
     res.json({
       success: true,
       message: 'Trending videos fetched successfully',
-      data: paged,
+      data: cleanPaged,
       pagination: { page, limit, total: capped.length, totalPages, hasMore: page < totalPages },
     });
   } catch (error) {
@@ -631,8 +636,8 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
       ]);
       followedCreatorIds = [
         ...new Set([
-          ...likedCreators.map(l => l.video.userId),
-          ...bookmarkedCreators.map(b => b.video.userId),
+          ...likedCreators.filter(l => l.video).map(l => l.video.userId),
+          ...bookmarkedCreators.filter(b => b.video).map(b => b.video.userId),
         ]),
       ];
     }
@@ -656,8 +661,8 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
       });
     }
 
-    // Step 3: Fetch recent videos from followed creators
-    const [videos, total, userLikes, userBookmarks] = await Promise.all([
+    // Step 3: Fetch recent videos from followed creators + livestream status
+    const [videos, total, activeLivestreams, userLikes, userBookmarks] = await Promise.all([
       prisma.video.findMany({
         where: { userId: { in: followedCreatorIds } },
         include: {
@@ -668,40 +673,24 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
         take: limit,
       }),
       prisma.video.count({ where: { userId: { in: followedCreatorIds } } }),
+      prisma.livestream.findMany({ where: { status: 'live' }, select: { userId: true, sessionId: true } }),
       prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
       prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
     ]);
 
+    const liveUserMap = new Map(activeLivestreams.map(ls => [ls.userId, ls.sessionId]));
     const likedSet = new Set(userLikes.map(l => l.videoId));
     const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
 
     const formattedVideos = await Promise.all(videos.map(async (video) => {
       const signed = await signVideoUrls(video);
-      return {
-        id: video.id,
-        title: video.title || 'Untitled Video',
-        description: video.description || '',
-        videoUrl: signed.videoUrl,
-        thumbnail: signed.thumbnail,
-        userId: video.userId,
-        likes: video.likes || 0,
-        views: video.views || 0,
+      return formatVideoResponse(video, signed, {
         isLiked: likedSet.has(video.id),
         isBookmarked: bookmarkedSet.has(video.id),
         isFollowing: true,
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(),
-        duration: video.duration || 0,
-        topicTags: video.topicTags || [],
-        comments: [],
-        user: video.user ? {
-          id: video.user.id,
-          firstName: video.user.firstName || 'Anonymous',
-          lastName: video.user.lastName || '',
-          avatar: video.user.avatar,
-        } : null,
-      };
+        isLive: liveUserMap.has(video.userId),
+        livestreamSessionId: liveUserMap.get(video.userId) || null,
+      });
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -793,19 +782,7 @@ export const likeVideo = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Check if already liked
-    const existingLike = await prisma.videoLike.findUnique({
-      where: { userId_videoId: { userId, videoId: id } },
-    });
-
-    if (existingLike) {
-      return res.status(409).json({
-        message: 'Video already liked',
-        video: { ...video, isLiked: true },
-      });
-    }
-
-    // Create like + increment counter atomically
+    // Attempt create + increment atomically — no pre-check needed
     const [, updatedVideo] = await prisma.$transaction([
       prisma.videoLike.create({ data: { userId, videoId: id } }),
       prisma.video.update({
@@ -831,12 +808,20 @@ export const likeVideo = asyncHandler(async (req, res) => {
       video: { ...updatedVideo, videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, isLiked: true },
     });
   } catch (error) {
+    // P2002: Unique constraint violation — already liked (race condition / double-tap)
+    if (error.code === 'P2002') {
+      const current = await prisma.video.findUnique({ where: { id: req.params.id } });
+      return res.json({
+        message: 'Video already liked',
+        video: { ...current, isLiked: true },
+      });
+    }
     console.error('Error liking video:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
 });
 
-// Bookmark a Video — per-user toggle
+// Bookmark a Video — per-user toggle (idempotent)
 export const bookmarkVideo = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
@@ -847,30 +832,32 @@ export const bookmarkVideo = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Check if already bookmarked
+    // Check current bookmark state
     const existingBookmark = await prisma.videoBookmark.findUnique({
       where: { userId_videoId: { userId, videoId: id } },
     });
 
     if (existingBookmark) {
-      // Remove bookmark
-      await prisma.videoBookmark.delete({
-        where: { userId_videoId: { userId, videoId: id } },
-      });
-      return res.json({
-        message: 'Bookmark removed',
-        isBookmarked: false,
-        videoId: id,
-      });
+      // Remove bookmark — catch P2025 for race condition
+      try {
+        await prisma.videoBookmark.delete({
+          where: { userId_videoId: { userId, videoId: id } },
+        });
+      } catch (e) {
+        if (e.code !== 'P2025') throw e;
+        // Already deleted by concurrent request — treat as success
+      }
+      return res.json({ message: 'Bookmark removed', isBookmarked: false, videoId: id });
     }
 
-    // Add bookmark
-    await prisma.videoBookmark.create({ data: { userId, videoId: id } });
-    res.json({
-      message: 'Video bookmarked',
-      isBookmarked: true,
-      videoId: id,
-    });
+    // Add bookmark — catch P2002 for race condition
+    try {
+      await prisma.videoBookmark.create({ data: { userId, videoId: id } });
+    } catch (e) {
+      if (e.code !== 'P2002') throw e;
+      // Already created by concurrent request — treat as success
+    }
+    res.json({ message: 'Video bookmarked', isBookmarked: true, videoId: id });
   } catch (error) {
     console.error('Error bookmarking video:', error);
     res.status(500).json({ message: 'Something went wrong' });
@@ -1093,19 +1080,7 @@ export const unlikeVideo = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Check if like exists
-    const existingLike = await prisma.videoLike.findUnique({
-      where: { userId_videoId: { userId, videoId: id } },
-    });
-
-    if (!existingLike) {
-      return res.status(409).json({
-        message: 'Video not liked',
-        video: { ...video, isLiked: false },
-      });
-    }
-
-    // Delete like + decrement counter atomically
+    // Attempt delete + decrement atomically — no pre-check needed
     const [, updatedVideo] = await prisma.$transaction([
       prisma.videoLike.delete({
         where: { userId_videoId: { userId, videoId: id } },
@@ -1125,6 +1100,14 @@ export const unlikeVideo = asyncHandler(async (req, res) => {
       video: { ...updatedVideo, videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, isLiked: false },
     });
   } catch (error) {
+    // P2025: Record not found — already unliked (race condition / double-tap)
+    if (error.code === 'P2025') {
+      const current = await prisma.video.findUnique({ where: { id: req.params.id } });
+      return res.json({
+        message: 'Video already unliked',
+        video: { ...current, isLiked: false },
+      });
+    }
     console.error('Error unliking video:', error);
     res.status(500).json({ message: 'Something went wrong' });
   }
@@ -1669,20 +1652,12 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
 
       const formattedVideos = await Promise.all(videos.map(async (video) => {
         const signed = await signVideoUrls(video);
-        // Determine reason for anonymous users
-        let recommendationReason = 'popular_this_week';
-        if ((video.views || 0) < 100) recommendationReason = 'new_creator_spotlight';
-        return {
-          id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
-          videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
-          likes: video.likes || 0, views: video.views || 0, isLiked: false, isBookmarked: false,
-          commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
-          updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
-          topicTags: video.topicTags || [],
-          isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
-          user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+        const recommendationReason = (video.views || 0) < 100 ? 'new_creator_spotlight' : 'popular_this_week';
+        return formatVideoResponse(video, signed, {
+          isLive: liveUserMap.has(video.userId),
+          livestreamSessionId: liveUserMap.get(video.userId) || null,
           recommendationReason,
-        };
+        });
       }));
       const totalPages = Math.ceil(total / limit);
       return res.json({ success: true, data: formattedVideos, pagination: { page, limit, total, totalPages, hasMore: page < totalPages } });
@@ -1847,19 +1822,14 @@ export const getPersonalizedVideos = asyncHandler(async (req, res) => {
 
     const formattedVideos = await Promise.all(paged.map(async ({ video, recommendationReason }) => {
       const signed = await signVideoUrls(video);
-      return {
-        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
-        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
-        likes: video.likes || 0, views: video.views || 0,
-        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
+      return formatVideoResponse(video, signed, {
+        isLiked: likedSet.has(video.id),
+        isBookmarked: bookmarkedSet.has(video.id),
         isFollowing: followedCreatorIds.has(video.userId),
-        commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
-        topicTags: video.topicTags || [],
-        isLive: liveUserMap.has(video.userId), livestreamSessionId: liveUserMap.get(video.userId) || null,
-        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
+        isLive: liveUserMap.has(video.userId),
+        livestreamSessionId: liveUserMap.get(video.userId) || null,
         recommendationReason,
-      };
+      });
     }));
 
     const totalPages = Math.ceil(total / limit);
@@ -1932,20 +1902,16 @@ export const searchVideos = asyncHandler(async (req, res) => {
 
       const signed = await signVideoUrls(video);
       return {
-        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
-        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
-        likes: video.likes || 0, views: video.views || 0,
-        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
-        commentsCount: video.commentsCount || 0,
-        createdAt: video.createdAt.toISOString(), updatedAt: video.updatedAt.toISOString(),
-        duration: video.duration || 0, comments: [],
-        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
-        relevance,
+        ...formatVideoResponse(video, signed, {
+          isLiked: likedSet.has(video.id),
+          isBookmarked: bookmarkedSet.has(video.id),
+        }),
+        _relevance: relevance, // Internal: used for sorting only
       };
     }));
 
-    scored.sort((a, b) => b.relevance - a.relevance || 0);
-    const paged = scored.slice(0, limit);
+    scored.sort((a, b) => b._relevance - a._relevance || 0);
+    const paged = scored.slice(0, limit).map(({ _relevance, ...video }) => video);
     const totalPages = Math.ceil(total / limit);
 
     res.json({
@@ -2052,15 +2018,10 @@ export const getExploreVideos = asyncHandler(async (req, res) => {
 
     const formattedVideos = await Promise.all(videos.map(async (video) => {
       const signed = await signVideoUrls(video);
-      return {
-        id: video.id, title: video.title || 'Untitled Video', description: video.description || '',
-        videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, userId: video.userId,
-        likes: video.likes || 0, views: video.views || 0,
-        isLiked: likedSet.has(video.id), isBookmarked: bookmarkedSet.has(video.id),
-        commentsCount: video.commentsCount || 0, createdAt: video.createdAt.toISOString(),
-        updatedAt: video.updatedAt.toISOString(), duration: video.duration || 0, comments: [],
-        user: video.user ? { id: video.user.id, firstName: video.user.firstName || 'Anonymous', lastName: video.user.lastName || '', avatar: video.user.avatar } : null,
-      };
+      return formatVideoResponse(video, signed, {
+        isLiked: likedSet.has(video.id),
+        isBookmarked: bookmarkedSet.has(video.id),
+      });
     }));
 
     res.json({ success: true, data: formattedVideos });

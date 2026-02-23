@@ -1416,15 +1416,17 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
  */
 export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Error, {
   text: string;
-  options: string[] | Record<string, string>;
+  options: string[] | Record<string, string> | { placeholder?: string; hint?: string; maxLength?: number };
   correctAnswer: string;
   rewardAmount: number;
   expiryTime?: string;
-  userId: string;
+  userId?: string;
   isInstantReward?: boolean;
   maxWinners?: number;
   paymentProvider?: string;
   phoneNumber?: string;
+  questionType?: 'multiple_choice' | 'text_input';
+  matchMode?: 'exact' | 'case_insensitive';
 }> {
   const queryClient = useQueryClient();
 

@@ -4,6 +4,7 @@ import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
+import { getRewardConfig } from '../lib/rewardConfig.mjs';
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -30,6 +31,8 @@ function formatRewardQuestionPublic(rq, { includeAnswer = false } = {}) {
     text: rq.text,
     options: rq.options,
     rewardAmount: rq.rewardAmount,
+    questionType: rq.questionType || 'multiple_choice',
+    matchMode: rq.matchMode || 'case_insensitive',
     expiryTime: rq.expiryTime instanceof Date ? rq.expiryTime.toISOString() : (rq.expiryTime || null),
     isActive: rq.isActive,
     userId: rq.userId,
@@ -75,8 +78,6 @@ function maskEmail(email) {
 // Create a new reward question
 export const createRewardQuestion = asyncHandler(async (req, res) => {
   try {
-    console.log("Creating reward question with data:", req.body);
-
     const {
       text,
       options,
@@ -86,17 +87,45 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       isInstantReward = false,
       maxWinners = 2,
       paymentProvider,
-      phoneNumber
+      phoneNumber,
+      questionType = 'multiple_choice',
+      matchMode: rawMatchMode = 'case_insensitive',
     } = req.body;
 
     // Token-bound identity: use authenticated user from JWT
     const userId = req.user?.id;
 
-    // Validate required fields
-    if (!text || !options || !correctAnswer || !rewardAmount || !userId) {
+    // Validate questionType and matchMode enums
+    const VALID_QUESTION_TYPES = ['multiple_choice', 'text_input'];
+    const VALID_MATCH_MODES = ['exact', 'case_insensitive'];
+    if (!VALID_QUESTION_TYPES.includes(questionType)) {
+      return res.status(400).json({ message: "questionType must be 'multiple_choice' or 'text_input'" });
+    }
+    // matchMode only applies to text_input; force 'exact' for multiple_choice
+    let matchMode;
+    if (questionType === 'text_input') {
+      if (!VALID_MATCH_MODES.includes(rawMatchMode)) {
+        return res.status(400).json({ message: "matchMode must be 'exact' or 'case_insensitive'" });
+      }
+      matchMode = rawMatchMode;
+    } else {
+      matchMode = 'exact';
+    }
+
+    // Validate required fields (rewardAmount is optional — falls back to config default)
+    if (!text || !correctAnswer || !userId) {
       return res.status(400).json({
-        message: "Text, options, correctAnswer, and rewardAmount are required"
+        message: "Text and correctAnswer are required"
       });
+    }
+
+    // Resolve reward amount: use explicit value or fall back to config default
+    let resolvedRewardAmount = rewardAmount;
+    if (!resolvedRewardAmount || Number(resolvedRewardAmount) <= 0) {
+      const config = await getRewardConfig();
+      resolvedRewardAmount = isInstantReward
+        ? config.defaultInstantRewardAmount
+        : config.defaultRegularRewardAmount;
     }
 
     // Validate text is a non-empty string with max 2000 characters
@@ -107,27 +136,54 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       return res.status(400).json({ message: "Text must be at most 2000 characters" });
     }
 
-    // Validate options is a non-null object with 2-10 entries
-    if (typeof options !== 'object' || options === null || Array.isArray(options)) {
-      return res.status(400).json({ message: "Options must be a non-null object" });
-    }
-    const optionKeys = Object.keys(options);
-    if (optionKeys.length < 2 || optionKeys.length > 10) {
-      return res.status(400).json({ message: "Options must have between 2 and 10 entries" });
+    // Branch validation on questionType
+    if (questionType === 'text_input') {
+      // text_input: correctAnswer is pipe-delimited accepted answers
+      if (typeof correctAnswer !== 'string' || correctAnswer.trim().length === 0) {
+        return res.status(400).json({ message: "correctAnswer must be a non-empty string for text_input questions" });
+      }
+      const acceptedAnswers = correctAnswer.split('|').map(a => a.trim()).filter(a => a.length > 0);
+      if (acceptedAnswers.length < 1 || acceptedAnswers.length > 20) {
+        return res.status(400).json({ message: "text_input questions must have between 1 and 20 accepted answers (pipe-delimited)" });
+      }
+      // options is optional metadata for text_input (placeholder, hint, maxLength)
+      if (options != null && typeof options !== 'object') {
+        return res.status(400).json({ message: "Options for text_input must be an object or null" });
+      }
+    } else {
+      // multiple_choice: existing validation
+      if (!options) {
+        return res.status(400).json({ message: "Options are required for multiple_choice questions" });
+      }
+      if (typeof options !== 'object' || options === null || Array.isArray(options)) {
+        return res.status(400).json({ message: "Options must be a non-null object" });
+      }
+      const optionKeys = Object.keys(options);
+      if (optionKeys.length < 2 || optionKeys.length > 10) {
+        return res.status(400).json({ message: "Options must have between 2 and 10 entries" });
+      }
+
+      // Validate option values are non-empty trimmed strings
+      for (const key of optionKeys) {
+        if (typeof options[key] !== 'string' || options[key].trim().length === 0) {
+          return res.status(400).json({ message: `Option ${key} must be a non-empty string` });
+        }
+      }
+
+      // Validate correctAnswer exists as a key in the options object
+      if (!optionKeys.includes(correctAnswer)) {
+        return res.status(400).json({ message: "correctAnswer must be one of the option keys" });
+      }
     }
 
-    // Validate correctAnswer exists as a key in the options object
-    if (!optionKeys.includes(correctAnswer)) {
-      return res.status(400).json({ message: "correctAnswer must be one of the option keys" });
-    }
-
-    // Validate reward amount bounds
-    if (rewardAmount <= 0) {
+    // Coerce and validate reward amount bounds
+    const parsedRewardAmount = Number(resolvedRewardAmount);
+    if (isNaN(parsedRewardAmount) || parsedRewardAmount <= 0) {
       return res.status(400).json({
         message: "Reward amount must be greater than 0"
       });
     }
-    if (rewardAmount > 1000000) {
+    if (parsedRewardAmount > 1000000) {
       return res.status(400).json({
         message: "Reward amount must not exceed 1,000,000"
       });
@@ -161,13 +217,32 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // Trim text and option values before storage
+    const trimmedText = text.trim();
+
+    let storedOptions;
+    let storedCorrectAnswer;
+    if (questionType === 'text_input') {
+      // For text_input: options is metadata (or null), correctAnswer is pipe-delimited
+      storedOptions = options || {};
+      storedCorrectAnswer = correctAnswer.split('|').map(a => a.trim()).filter(a => a.length > 0).join('|');
+    } else {
+      // For multiple_choice: trim option values, keep correctAnswer as key
+      storedOptions = Object.fromEntries(
+        Object.entries(options).map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+      );
+      storedCorrectAnswer = correctAnswer;
+    }
+
     // Create reward question
     const rewardQuestion = await prisma.rewardQuestion.create({
       data: {
-        text,
-        options,
-        correctAnswer,
-        rewardAmount,
+        text: trimmedText,
+        options: storedOptions,
+        correctAnswer: storedCorrectAnswer,
+        rewardAmount: parsedRewardAmount,
+        questionType,
+        matchMode,
         expiryTime: expiryTime ? new Date(expiryTime) : null,
         isActive: true,
         userId,
@@ -197,8 +272,8 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error creating reward question:", error);
-    res.status(500).json({ message: "Something went wrong" });
+    console.error("Error creating reward question:", error.message);
+    res.status(500).json({ message: "Failed to create reward question. Please try again." });
   }
 });
 
@@ -668,6 +743,13 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
       });
     }
 
+    // Guard against oversized payloads (prevents Buffer.from memory exhaustion in safeCompare)
+    if (typeof selectedAnswer !== 'string' || selectedAnswer.length > 1000) {
+      return res.status(400).json({
+        message: "Answer must be a string of at most 1,000 characters"
+      });
+    }
+
     // Token-bound identity: resolve user from verified JWT (set by verifyToken middleware)
     if (!req.user?.id) {
       return res.status(401).json({ message: "Authentication required" });
@@ -746,7 +828,19 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     }
 
     // Check if answer is correct (constant-time comparison to prevent timing attacks)
-    const isCorrect = safeCompare(selectedAnswer, rewardQuestion.correctAnswer);
+    let isCorrect;
+    if (rewardQuestion.questionType === 'text_input') {
+      const accepted = rewardQuestion.correctAnswer.split('|').map(a => a.trim());
+      const mode = rewardQuestion.matchMode || 'case_insensitive';
+      if (mode === 'exact') {
+        isCorrect = accepted.some(a => safeCompare(selectedAnswer.trim(), a));
+      } else {
+        const input = selectedAnswer.trim().toLowerCase();
+        isCorrect = accepted.some(a => safeCompare(input, a.toLowerCase()));
+      }
+    } else {
+      isCorrect = safeCompare(selectedAnswer, rewardQuestion.correctAnswer);
+    }
 
     // Only reveal correctAnswer if the answer is correct, or the question is expired/completed (safe to reveal)
     const isExpired = rewardQuestion.expiryTime && new Date() > rewardQuestion.expiryTime;
@@ -767,8 +861,19 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
     // If answer is correct, handle reward logic
     if (isCorrect) {
-      // Dynamic reward amount from question model (fallback to 500 UGX / 5 points)
-      const rewardAmountUGX = rewardQuestion.rewardAmount || 500;
+      // Dynamic reward amount from question model (fallback to config default)
+      let rewardAmountUGX = rewardQuestion.rewardAmount;
+      if (!rewardAmountUGX || rewardAmountUGX <= 0) {
+        try {
+          const config = await getRewardConfig();
+          rewardAmountUGX = rewardQuestion.isInstantReward
+            ? config.defaultInstantRewardAmount
+            : config.defaultRegularRewardAmount;
+        } catch (configError) {
+          console.error('[submitAnswer] Failed to fetch reward config, using hardcoded fallback:', configError.message);
+          rewardAmountUGX = 500; // Last-resort fallback
+        }
+      }
       const rewardPoints = Math.round(rewardAmountUGX / 100) || 5;
 
       if (rewardQuestion.isInstantReward) {

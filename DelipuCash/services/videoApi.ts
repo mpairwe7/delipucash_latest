@@ -343,6 +343,7 @@ export const videoApi = {
     const queryString = params.toString();
     const path = queryString ? `${VIDEO_ROUTES.list}?${queryString}` : VIDEO_ROUTES.list;
 
+    const token = getAuthToken();
     const response = await fetchJson<{
       data: Video[];
       pagination: {
@@ -351,7 +352,7 @@ export const videoApi = {
         total: number;
         totalPages: number;
       };
-    }>(path);
+    }>(path, undefined, token);
 
     if (response.success) {
       const videos = getPlayableVideos(extractVideos(response.data));
@@ -408,7 +409,8 @@ export const videoApi = {
     if (country) qs.append('country', country);
     if (language) qs.append('language', language);
 
-    const response = await fetchJson<{ data: Video[]; pagination?: any }>(`${VIDEO_ROUTES.trending}?${qs.toString()}`);
+    const token = getAuthToken();
+    const response = await fetchJson<{ data: Video[]; pagination?: any }>(`${VIDEO_ROUTES.trending}?${qs.toString()}`, undefined, token);
     return {
       success: response.success,
       data: getPlayableVideos(extractVideos(response.data)),
@@ -428,13 +430,16 @@ export const videoApi = {
    * Get following videos — videos from creators the user has engaged with (liked/bookmarked)
    */
   async getFollowing(page: number = 1, limit: number = 15): Promise<ApiResponse<Video[]> & { pagination?: any }> {
+    const token = getAuthToken();
     const response = await fetchJson<{ data: Video[]; pagination: any }>(
       `${VIDEO_ROUTES.following}?page=${page}&limit=${limit}`,
+      undefined,
+      token,
     );
     return {
       success: response.success,
       data: getPlayableVideos(extractVideos(response.data)),
-      pagination: response.data && 'pagination' in (response as any) ? (response as any).pagination : undefined,
+      pagination: response.data?.pagination,
       error: response.error,
     };
   },
@@ -847,17 +852,21 @@ export const videoApi = {
   // ============================================================================
 
   /**
-   * Get single video by ID — no dedicated GET /:id backend route
-   * Fetches /all and filters client-side.
-   * TODO: Add GET /api/videos/:id backend route for efficiency
+   * Get single video by ID — uses dedicated GET /api/videos/:id backend route
+   * Returns fresh signed URLs for playback.
    */
   async getById(videoId: string): Promise<ApiResponse<VideoWithDetails>> {
-    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=100`);
+    const token = getAuthToken();
+    const response = await fetchJson<{ data: VideoWithDetails }>(
+      VIDEO_ROUTES.get(videoId),
+      undefined,
+      token,
+    );
     if (!response.success) return { success: false, data: {} as VideoWithDetails, error: response.error };
-    const videos = getPlayableVideos(extractVideos(response.data));
-    const video = (Array.isArray(videos) ? videos : []).find((v: Video) => v.id === videoId);
-    if (!video) return { success: false, data: {} as VideoWithDetails, error: 'Video not found' };
-    return { success: true, data: video as VideoWithDetails };
+    // Backend wraps video in { success, data: { ...video } }
+    const raw = response.data?.data || response.data;
+    if (!raw || !raw.id) return { success: false, data: {} as VideoWithDetails, error: 'Video not found' };
+    return { success: true, data: normalizeVideo(raw as Video) as VideoWithDetails };
   },
 
   /**

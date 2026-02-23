@@ -259,12 +259,23 @@ export interface SurveyResponse {
   updatedAt: string;
 }
 
+export type RewardQuestionType = 'multiple_choice' | 'text_input';
+export type AnswerMatchMode = 'exact' | 'case_insensitive';
+
+export interface TextInputOptions {
+  placeholder?: string;
+  hint?: string;
+  maxLength?: number;
+}
+
 export interface RewardQuestion {
   id: string;
   text: string;
   options: Record<string, unknown>;
   correctAnswer?: string;
   rewardAmount: number;
+  questionType?: RewardQuestionType;
+  matchMode?: AnswerMatchMode;
   expiryTime: string | null;
   isActive: boolean;
   userId: string;

@@ -24,6 +24,8 @@ export const getRewardConfig = asyncHandler(async (_req, res) => {
     pointsToCashNumerator: config.pointsToCashNumerator,
     pointsToCashDenominator: config.pointsToCashDenominator,
     minWithdrawalPoints: config.minWithdrawalPoints,
+    defaultRegularRewardAmount: config.defaultRegularRewardAmount,
+    defaultInstantRewardAmount: config.defaultInstantRewardAmount,
   });
 });
 
@@ -37,6 +39,8 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
     pointsToCashNumerator,
     pointsToCashDenominator,
     minWithdrawalPoints,
+    defaultRegularRewardAmount,
+    defaultInstantRewardAmount,
   } = req.body;
 
   // Validate — all fields must be positive integers when provided
@@ -74,6 +78,22 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
     updates.minWithdrawalPoints = v;
   }
 
+  if (defaultRegularRewardAmount !== undefined) {
+    const v = Number(defaultRegularRewardAmount);
+    if (!Number.isInteger(v) || v < 1 || v > 1000000) {
+      return res.status(400).json({ error: 'defaultRegularRewardAmount must be a positive integer between 1 and 1,000,000.' });
+    }
+    updates.defaultRegularRewardAmount = v;
+  }
+
+  if (defaultInstantRewardAmount !== undefined) {
+    const v = Number(defaultInstantRewardAmount);
+    if (!Number.isInteger(v) || v < 1 || v > 1000000) {
+      return res.status(400).json({ error: 'defaultInstantRewardAmount must be a positive integer between 1 and 1,000,000.' });
+    }
+    updates.defaultInstantRewardAmount = v;
+  }
+
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No valid fields provided to update.' });
   }
@@ -99,6 +119,8 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
       pointsToCashNumerator: config.pointsToCashNumerator,
       pointsToCashDenominator: config.pointsToCashDenominator,
       minWithdrawalPoints: config.minWithdrawalPoints,
+      defaultRegularRewardAmount: config.defaultRegularRewardAmount,
+      defaultInstantRewardAmount: config.defaultInstantRewardAmount,
     },
   });
 });

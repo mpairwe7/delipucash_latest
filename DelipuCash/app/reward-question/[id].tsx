@@ -34,7 +34,8 @@ import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
-import { RewardAnswerResult } from "@/types";
+import { RewardAnswerResult, RewardQuestionType, TextInputOptions } from "@/types";
+import { TextAnswerInput } from "@/components/reward";
 import {
   BORDER_WIDTH,
   COMPONENT_SIZE,
@@ -310,6 +311,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
   const [overlayEarned, setOverlayEarned] = useState(0);
   const [overlayEarnedPoints, setOverlayEarnedPoints] = useState(0);
+  const [textAnswer, setTextAnswer] = useState('');
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
@@ -437,6 +439,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Reset ALL local state when navigating to a new question ──
   useEffect(() => {
     setSelectedOption(null);
+    setTextAnswer('');
     setResult(null);
     setRevealedCorrectAnswer(null);
     setIsExpired(false);
@@ -507,14 +510,19 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Stable callback for CountdownTimer to signal expiry ──
   const handleTimerExpired = useCallback(() => setIsExpired(true), []);
 
+  // ── Question type detection ──
+  const questionType: RewardQuestionType = (question?.questionType as RewardQuestionType) || 'multiple_choice';
+  const isTextInput = questionType === 'text_input';
+  const textInputMeta: TextInputOptions = isTextInput ? (question?.options as TextInputOptions ?? {}) : {};
+
   // ── Derived state ──
   const options = useMemo(() => {
-    if (!question?.options) return [] as { key: string; label: string }[];
+    if (!question?.options || isTextInput) return [] as { key: string; label: string }[];
     return Object.entries(question.options).map(([key, label]) => ({
       key,
       label: String(label),
     }));
-  }, [question?.options]);
+  }, [question?.options, isTextInput]);
 
   const spotsLeft = useMemo(() => {
     if (!question) return 0;
@@ -591,7 +599,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   );
 
   const handleSubmit = useCallback((): void => {
-    const answer = selectedOption || "";
+    const answer = isTextInput ? textAnswer.trim() : (selectedOption || "");
 
     if (!question) return;
 
@@ -633,7 +641,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     if (!answer) {
       triggerHaptic("warning");
       showToast({
-        message: "Select the option you think is correct.",
+        message: isTextInput ? "Type your answer before submitting." : "Select the option you think is correct.",
         type: "warning",
       });
       return;
@@ -795,6 +803,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   }, [
     question,
     selectedOption,
+    textAnswer,
+    isTextInput,
     isAuthenticated,
     userPhone,
     hasAlreadyAttempted,
@@ -1263,42 +1273,55 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               {question.text}
             </Text>
 
-            {/* Options — radiogroup for accessibility */}
-            <View
-              style={styles.optionsList}
-              accessibilityRole="radiogroup"
-              accessibilityLabel="Answer options"
-            >
-              {options.map((option) => {
-                const isSelected =
-                  selectedOption === option.key ||
-                  previousAttempt?.selectedAnswer === option.key;
-                const correctKey =
-                  revealedCorrectAnswer || previousAttempt?.selectedAnswer;
-                const isCorrectOption = Boolean(
-                  (result?.isCorrect || previousAttempt?.isCorrect) &&
-                    correctKey &&
-                    normalizeText(correctKey) === normalizeText(option.key)
-                );
-                const wasSelectedPreviously =
-                  previousAttempt?.selectedAnswer === option.key;
-                const isOptionDisabled = isClosed || hasAlreadyAttempted;
+            {/* Answer input — text input for text_input questions, radiogroup for MC */}
+            {isTextInput ? (
+              <TextAnswerInput
+                value={textAnswer}
+                onChangeText={setTextAnswer}
+                placeholder={textInputMeta.placeholder}
+                hint={textInputMeta.hint}
+                maxLength={textInputMeta.maxLength}
+                disabled={isClosed || hasAlreadyAttempted}
+                previousAnswer={previousAttempt?.selectedAnswer}
+                colors={colors}
+              />
+            ) : (
+              <View
+                style={styles.optionsList}
+                accessibilityRole="radiogroup"
+                accessibilityLabel="Answer options"
+              >
+                {options.map((option) => {
+                  const isSelected =
+                    selectedOption === option.key ||
+                    previousAttempt?.selectedAnswer === option.key;
+                  const correctKey =
+                    revealedCorrectAnswer || previousAttempt?.selectedAnswer;
+                  const isCorrectOption = Boolean(
+                    (result?.isCorrect || previousAttempt?.isCorrect) &&
+                      correctKey &&
+                      normalizeText(correctKey) === normalizeText(option.key)
+                  );
+                  const wasSelectedPreviously =
+                    previousAttempt?.selectedAnswer === option.key;
+                  const isOptionDisabled = isClosed || hasAlreadyAttempted;
 
-                return (
-                  <OptionItem
-                    key={option.key}
-                    optionKey={option.key}
-                    label={option.label}
-                    isSelected={isSelected}
-                    isCorrect={isCorrectOption}
-                    wasSelectedPreviously={wasSelectedPreviously}
-                    isDisabled={isOptionDisabled}
-                    onPress={handleSelectOption}
-                    colors={colors}
-                  />
-                );
-              })}
-            </View>
+                  return (
+                    <OptionItem
+                      key={option.key}
+                      optionKey={option.key}
+                      label={option.label}
+                      isSelected={isSelected}
+                      isCorrect={isCorrectOption}
+                      wasSelectedPreviously={wasSelectedPreviously}
+                      isDisabled={isOptionDisabled}
+                      onPress={handleSelectOption}
+                      colors={colors}
+                    />
+                  );
+                })}
+              </View>
+            )}
 
             {/* Feedback Card */}
             {(result || previousAttempt) && (

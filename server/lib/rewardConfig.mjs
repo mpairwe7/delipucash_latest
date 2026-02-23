@@ -22,6 +22,8 @@ const DEFAULTS = {
   pointsToCashNumerator: 2500,
   pointsToCashDenominator: 20,
   minWithdrawalPoints: 50,
+  defaultRegularRewardAmount: 500,
+  defaultInstantRewardAmount: 500,
 };
 
 // ---------------------------------------------------------------------------

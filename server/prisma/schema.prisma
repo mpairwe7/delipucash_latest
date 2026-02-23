@@ -415,6 +415,8 @@ model RewardQuestion {
   options         Json
   correctAnswer   String
   rewardAmount    Int                       @default(0)
+  questionType    String                    @default("multiple_choice") // "multiple_choice" | "text_input"
+  matchMode       String                    @default("case_insensitive") // "exact" | "case_insensitive"
   expiryTime      DateTime?
   isActive        Boolean                   @default(true)
   userId          String                    @db.Uuid
@@ -714,13 +716,15 @@ model LoginSession {
 }
 
 model AppConfig {
-  id                     String   @id @default("singleton")
-  surveyCompletionPoints Int      @default(10)
-  pointsToCashNumerator  Int      @default(2500)
-  pointsToCashDenominator Int     @default(20)
-  minWithdrawalPoints    Int      @default(50)
-  updatedAt              DateTime @updatedAt
-  updatedBy              String?  @db.Uuid
+  id                         String   @id @default("singleton")
+  surveyCompletionPoints     Int      @default(10)
+  pointsToCashNumerator      Int      @default(2500)
+  pointsToCashDenominator    Int      @default(20)
+  minWithdrawalPoints        Int      @default(50)
+  defaultRegularRewardAmount Int      @default(500)
+  defaultInstantRewardAmount Int      @default(500)
+  updatedAt                  DateTime @updatedAt
+  updatedBy                  String?  @db.Uuid
 }
 
 enum PaymentStatus {

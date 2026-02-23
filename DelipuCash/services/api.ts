@@ -1140,15 +1140,17 @@ export const rewardsApi = {
    */
   async createRewardQuestion(data: {
     text: string;
-    options: string[] | Record<string, string>;
+    options: string[] | Record<string, string> | { placeholder?: string; hint?: string; maxLength?: number };
     correctAnswer: string;
     rewardAmount: number;
     expiryTime?: string;
-    userId: string;
+    userId?: string;
     isInstantReward?: boolean;
     maxWinners?: number;
     paymentProvider?: string;
     phoneNumber?: string;
+    questionType?: 'multiple_choice' | 'text_input';
+    matchMode?: 'exact' | 'case_insensitive';
   }): Promise<ApiResponse<RewardQuestion>> {
     const response = await fetchJson<{ message: string; rewardQuestion: RewardQuestion }>(API_ROUTES.rewards.createQuestion, {
       method: 'POST',
