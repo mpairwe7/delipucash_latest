@@ -335,6 +335,8 @@ export default function SurveysScreen(): React.ReactElement {
     setQuery: setSearch,
     filteredResults: searchedSurveys,
     isSearching,
+    hasNoResults: searchHasNoResults,
+    clearSearch,
     recentSearches,
     removeFromHistory,
     clearHistory,
@@ -869,6 +871,22 @@ export default function SurveysScreen(): React.ReactElement {
   // List header rendered via memoized callback
   const ListHeader = useMemo(() => (
     <View style={styles.listHeader}>
+      {/* Search Feedback */}
+      {isSearching && (
+        <View style={styles.searchFeedback}>
+          <Text style={[styles.searchFeedbackText, { color: colors.textMuted }]}>
+            {searchHasNoResults
+              ? `No surveys found for "${search}"`
+              : `Found ${currentSurveys.length} survey${currentSurveys.length !== 1 ? 's' : ''}`}
+          </Text>
+          <Pressable onPress={clearSearch} accessibilityRole="button" accessibilityLabel="Clear search">
+            <Text style={[styles.clearSearchText, { color: colors.primary }]}>
+              Clear
+            </Text>
+          </Pressable>
+        </View>
+      )}
+
       {/* Admin Badge — shown for admins with full access */}
       {authReady && isAuthenticated && isAdmin && (
         <View
@@ -1045,9 +1063,9 @@ export default function SurveysScreen(): React.ReactElement {
       </View>
     </View>
   ), [
-    authReady, colors, currentSurveys.length, activeTab, handleTabChange,
+    authReady, clearSearch, colors, currentSurveys.length, activeTab, handleTabChange,
     hasActiveSubscription, isAdmin, isAuthenticated, isSearching, isTablet, remainingDays, search,
-    searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, cardViewStyle
+    searchHasNoResults, searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, cardViewStyle
   ]);
 
   // Key extractor
@@ -1236,6 +1254,23 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.base,
     alignItems: "center",
     justifyContent: "center",
+  },
+
+  // Search Feedback
+  searchFeedback: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.xs,
+  },
+  searchFeedbackText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  clearSearchText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 
   // Subscription Banner

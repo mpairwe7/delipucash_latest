@@ -295,7 +295,7 @@ function SearchOverlayComponent({
             {query.length === 0 && (
               <Pressable
                 onPress={() => inputRef.current?.focus()}
-                style={[styles.micButton, { backgroundColor: pillBg }]}
+                style={[styles.searchHintButton, { backgroundColor: pillBg }]}
                 accessibilityLabel="Focus search input"
                 accessibilityRole="button"
               >
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     paddingVertical: 0,
   },
-  micButton: {
+  searchHintButton: {
     width: COMPONENT_SIZE.touchTarget,
     height: COMPONENT_SIZE.touchTarget,
     borderRadius: COMPONENT_SIZE.touchTarget / 2,
