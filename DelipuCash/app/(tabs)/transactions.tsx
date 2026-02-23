@@ -17,7 +17,6 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Wallet,
   TrendingUp,
   TrendingDown,
   Gift,
