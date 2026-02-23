@@ -145,11 +145,17 @@ export const getTransactions = asyncHandler(async (req, res) => {
   // For status filter: Reward rows are always SUCCESSFUL, skip if filtering for non-SUCCESSFUL
   const skipRewardsByStatus = statusFilter && statusFilter !== 'SUCCESSFUL';
 
+  // Database-level pagination: fetch only enough rows from each table to cover
+  // the current page position. For page 1/limit 20: 20 per table (80 max).
+  // For page 3/limit 20: 60 per table (240 max). This is O(page*limit) per
+  // table instead of O(total) — critical for users with large tx history.
+  const fetchLimit = (page - 1) * limit + limit; // = page * limit
+
   // Run data queries + count queries in parallel
   // Count queries give us the true total across all tables
   const [rewards, redemptions, payments, winners, rewardCount, redemptionCount, paymentCount, winnerCount] =
     await Promise.all([
-      // --- Data queries (fetch current page + buffer) ---
+      // --- Data queries (bounded by fetchLimit per table) ---
       shouldQueryRewards && !skipRewardsByStatus
         ? prisma.reward.findMany({
             where: {
@@ -157,6 +163,7 @@ export const getTransactions = asyncHandler(async (req, res) => {
               ...(hasDateFilter ? { createdAt: dateWhere } : {}),
             },
             orderBy: { createdAt: 'desc' },
+            take: fetchLimit,
           })
         : [],
 
@@ -168,6 +175,7 @@ export const getTransactions = asyncHandler(async (req, res) => {
               ...(hasDateFilter ? { requestedAt: dateWhere } : {}),
             },
             orderBy: { requestedAt: 'desc' },
+            take: fetchLimit,
           })
         : [],
 
@@ -179,6 +187,7 @@ export const getTransactions = asyncHandler(async (req, res) => {
               ...(hasDateFilter ? { createdAt: dateWhere } : {}),
             },
             orderBy: { createdAt: 'desc' },
+            take: fetchLimit,
           })
         : [],
 
@@ -190,6 +199,7 @@ export const getTransactions = asyncHandler(async (req, res) => {
               ...(hasDateFilter ? { createdAt: dateWhere } : {}),
             },
             orderBy: { createdAt: 'desc' },
+            take: fetchLimit,
           })
         : [],
 

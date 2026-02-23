@@ -99,6 +99,7 @@ export function useSSEConnection(): void {
         () => {
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
           queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.summary() });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
         },
       ],
@@ -107,6 +108,7 @@ export function useSSEConnection(): void {
         () => {
           queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
           queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.summary() });
           queryClient.invalidateQueries({ queryKey: queryKeys.user });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
         },

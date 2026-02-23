@@ -29,7 +29,7 @@ import {
   StyleSheet,
   Dimensions,
 } from 'react-native';
-import { Flame, Wallet } from 'lucide-react-native';
+import { Flame, Search, Wallet } from 'lucide-react-native';
 import Svg, { Circle, G } from 'react-native-svg';
 import Animated, {
   FadeIn,
@@ -44,6 +44,7 @@ import {
   SPACING,
   TYPOGRAPHY,
   RADIUS,
+  COMPONENT_SIZE,
   withAlpha,
 } from '@/utils/theme';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -73,6 +74,8 @@ export interface PersonalizedHeaderProps {
   xpProgress?: number;
   /** Handler for notification bell press */
   onNotificationPress?: () => void;
+  /** Handler for search button press */
+  onSearchPress?: () => void;
   /** Handler for wallet tap */
   onWalletPress?: () => void;
   /** Handler for streak tap */
@@ -249,6 +252,7 @@ export function PersonalizedHeader({
   level,
   xpProgress,
   onNotificationPress,
+  onSearchPress,
   onWalletPress,
   onStreakPress,
   onProfilePress,
@@ -326,18 +330,33 @@ export function PersonalizedHeader({
         </Animated.View>
       </Animated.View>
 
-      {/* Right side: Streak ring & notifications */}
+      {/* Right side: Search, Streak ring & notifications */}
       <Animated.View
         entering={FadeInRight.delay(150).duration(400)}
         style={styles.actionsContainer}
       >
+        {/* Search button */}
+        {onSearchPress && (
+          <Pressable
+            onPress={() => {
+              triggerHaptic('light');
+              onSearchPress();
+            }}
+            style={[styles.headerButton, { backgroundColor: withAlpha(colors.primary, 0.1) }]}
+            accessibilityLabel="Search"
+            accessibilityRole="button"
+          >
+            <Search size={20} color={colors.primary} strokeWidth={1.5} />
+          </Pressable>
+        )}
+
         {/* Streak ring */}
         <StreakRing
           current={currentStreak}
           goal={streakGoal}
           onPress={onStreakPress}
         />
-        
+
         {/* Notification bell */}
         <View style={styles.notificationWrapper}>
           <NotificationBell
@@ -398,7 +417,14 @@ const styles = StyleSheet.create({
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: SPACING.md,
+    gap: SPACING.sm,
+  },
+  headerButton: {
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: RADIUS.base,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   streakRingContainer: {
     width: RING_SIZE,

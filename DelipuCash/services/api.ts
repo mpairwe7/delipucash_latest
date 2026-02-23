@@ -407,6 +407,8 @@ export const userApi = {
     codeSent?: boolean;
     email?: string;
     expiresIn?: number;
+    token?: string;
+    refreshToken?: string;
   }>> {
     const response = await fetchJson<any>('/api/auth/two-factor', {
       method: 'PUT',
@@ -421,7 +423,7 @@ export const userApi = {
    * Backend: POST /api/auth/two-factor/verify
    * Server returns { success, data: { enabled } } — unwrap the nested data.
    */
-  async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean }>> {
+  async verify2FACode(code: string): Promise<ApiResponse<{ enabled: boolean; token?: string; refreshToken?: string }>> {
     const response = await fetchJson<any>('/api/auth/two-factor/verify', {
       method: 'POST',
       headers: getAuthHeaders(),
@@ -448,7 +450,7 @@ export const userApi = {
    * Backend: PUT /api/auth/change-password (requires auth token)
    * Server returns { success, data: {...} } — unwrap the nested data.
    */
-  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ success: boolean }>> {
+  async changePassword(currentPassword: string, newPassword: string): Promise<ApiResponse<{ token?: string; refreshToken?: string }>> {
     const response = await fetchJson<any>(API_ROUTES.auth.changePassword, {
       method: 'PUT',
       headers: getAuthHeaders(),
@@ -1138,7 +1140,7 @@ export const rewardsApi = {
    */
   async createRewardQuestion(data: {
     text: string;
-    options: string[];
+    options: string[] | Record<string, string>;
     correctAnswer: string;
     rewardAmount: number;
     expiryTime?: string;
@@ -1148,10 +1150,11 @@ export const rewardsApi = {
     paymentProvider?: string;
     phoneNumber?: string;
   }): Promise<ApiResponse<RewardQuestion>> {
-    return fetchJson<RewardQuestion>(API_ROUTES.rewards.createQuestion, {
+    const response = await fetchJson<{ message: string; rewardQuestion: RewardQuestion }>(API_ROUTES.rewards.createQuestion, {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return { success: response.success, data: response.data?.rewardQuestion ?? (response.data as any), error: response.error };
   },
 
   /**

@@ -10,7 +10,7 @@ import {
   deleteRewardQuestion,
   submitRewardQuestionAnswer
 } from '../controllers/rewardQuestionController.mjs';
-import { verifyToken } from '../utils/verifyUser.mjs';
+import { verifyToken, requireModerator } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
 
@@ -21,10 +21,10 @@ router.get('/instant', verifyToken, getInstantRewardQuestions);
 router.get('/user/:userId', verifyToken, getRewardQuestionsByUser);
 router.get('/:id', verifyToken, getRewardQuestionById);
 
-// Protected routes (require authentication)
-router.post('/create', verifyToken, createRewardQuestion);
-router.put('/:id/update', verifyToken, updateRewardQuestion);
-router.delete('/:id/delete', verifyToken, deleteRewardQuestion);
+// Protected routes (require admin/moderator role)
+router.post('/create', verifyToken, requireModerator, createRewardQuestion);
+router.put('/:id/update', verifyToken, requireModerator, updateRewardQuestion);
+router.delete('/:id/delete', verifyToken, requireModerator, deleteRewardQuestion);
 router.post('/:id/answer', verifyToken, submitRewardQuestionAnswer);
 router.post('/submit-answer', verifyToken, submitRewardQuestionAnswer);
 

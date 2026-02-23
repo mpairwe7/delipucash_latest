@@ -80,8 +80,10 @@ export function useInfiniteTransactions(filters: TransactionFilters = {}) {
       return response.data!;
     },
     initialPageParam: 1,
-    getNextPageParam: (lastPage) =>
-      lastPage.pagination.hasMore ? lastPage.pagination.page + 1 : undefined,
+    getNextPageParam: (lastPage) => {
+      if (!lastPage?.pagination?.hasMore) return undefined;
+      return lastPage.pagination.page + 1;
+    },
     staleTime: 60_000,
     refetchInterval,
     refetchIntervalInBackground: false,
@@ -131,6 +133,7 @@ export type FlatListItem = SectionedItem | TransactionItem;
 
 function getDateSection(dateStr: string): DateSection {
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return 'Earlier'; // Guard against invalid dates
   const now = new Date();
 
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -157,7 +160,7 @@ export function useFlatTransactions(filters: TransactionFilters = {}) {
   const flatData: FlatListItem[] = useMemo(() => {
     if (!query.data?.pages) return [];
 
-    const transactions = query.data.pages.flatMap((p) => p.transactions);
+    const transactions = query.data.pages.flatMap((p) => p?.transactions ?? []);
     const items: FlatListItem[] = [];
     let lastSection: DateSection | null = null;
 
@@ -181,8 +184,9 @@ export function useFlatTransactions(filters: TransactionFilters = {}) {
 
   // Total from server pagination (accurate across all pages, not just loaded ones)
   const activeTotal = useMemo(() => {
-    if (!query.data?.pages?.length) return 0;
-    return query.data.pages[0].pagination.total;
+    const firstPage = query.data?.pages?.[0];
+    if (!firstPage?.pagination) return 0;
+    return firstPage.pagination.total;
   }, [query.data?.pages]);
 
   return {

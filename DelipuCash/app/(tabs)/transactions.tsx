@@ -54,7 +54,7 @@ import {
   selectSetSelectedFilter,
   selectOpenDetail,
   selectCloseDetail,
-} from "@/store/TransactionUIStore";
+} from "@/store";
 import type { UnifiedTransaction, TransactionFilterType, TransactionSummary } from "@/types";
 
 // ---------------------------------------------------------------------------

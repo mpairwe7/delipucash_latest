@@ -1416,7 +1416,7 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
  */
 export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Error, {
   text: string;
-  options: string[];
+  options: string[] | Record<string, string>;
   correctAnswer: string;
   rewardAmount: number;
   expiryTime?: string;
@@ -1438,6 +1438,7 @@ export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Err
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.regularRewardQuestions });
     },
   });
 }

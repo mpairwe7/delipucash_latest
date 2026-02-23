@@ -1,12 +1,11 @@
 /**
- * Instant Reward Upload Screen — 4-step wizard
- * Admin-only screen for creating instant reward questions.
+ * Regular Reward Upload Screen — 3-step wizard
+ * Admin-only screen for creating regular (non-instant) reward questions.
  *
  * Steps:
- * 1. Question — question text with char counter
- * 2. Answers — option inputs + correct answer selector
- * 3. Config  — reward amount, max winners, expiry, payment provider, phone
- * 4. Review  — read-only preview with edit links
+ * 1. Question & Answers — question text, options, correct answer selector
+ * 2. Rewards — reward amount/points sync, optional expiry days, optional max winners
+ * 3. Review — read-only preview with edit links
  */
 
 import { PrimaryButton, SectionHeader } from "@/components";
@@ -35,22 +34,18 @@ import {
   SPACING,
   TYPOGRAPHY,
   useTheme,
-  withAlpha,
 } from "@/utils/theme";
 import useUser from "@/utils/useUser";
 import { router } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import {
-  Award,
   CheckCircle2,
   Coins,
   Edit3,
   Eye,
   HelpCircle,
-  Settings,
-  Sparkles,
 } from "lucide-react-native";
-import React, { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -76,8 +71,7 @@ import { useRewardConfig } from "@/services/configHooks";
 
 const STEPS: WizardStep[] = [
   { id: "question", title: "Question", icon: HelpCircle },
-  { id: "answers", title: "Answers", icon: CheckCircle2 },
-  { id: "config", title: "Config", icon: Settings },
+  { id: "rewards", title: "Rewards", icon: Coins },
   { id: "review", title: "Review", icon: Eye },
 ];
 
@@ -88,7 +82,7 @@ const MIN_QUESTION_LENGTH = 10;
 // SCREEN
 // ============================================================================
 
-export default function InstantRewardUploadScreen(): React.ReactElement {
+export default function RegularRewardUploadScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, statusBarStyle } = useTheme();
   const { data: user, loading: userLoading } = useUser();
@@ -118,10 +112,8 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const [rewardAmount, setRewardAmount] = useState("");
   const [rewardPoints, setRewardPoints] = useState("");
   const isSyncingRef = useRef(false);
-  const [maxWinners, setMaxWinners] = useState("2");
-  const [expiryHours, setExpiryHours] = useState("24");
-  const [paymentProvider, setPaymentProvider] = useState("MTN");
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [expiryDays, setExpiryDays] = useState("");
+  const [maxWinners, setMaxWinners] = useState("");
 
   // Bidirectional sync: UGX ↔ Points
   const handleRewardAmountChange = useCallback((text: string) => {
@@ -169,9 +161,6 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           });
           return false;
         }
-        return true;
-      }
-      case 1: {
         const filledOpts = options.filter((o) => o.trim().length > 0);
         if (filledOpts.length < 2) {
           triggerHaptic("warning");
@@ -191,7 +180,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         }
         return true;
       }
-      case 2: {
+      case 1: {
         const parsedReward = parseFloat(rewardAmount);
         if (!rewardAmount.trim() || isNaN(parsedReward) || parsedReward < 1 || parsedReward > 1_000_000) {
           triggerHaptic("warning");
@@ -201,46 +190,34 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           });
           return false;
         }
-        const parsedMaxWinners = parseInt(maxWinners);
-        if (isNaN(parsedMaxWinners) || parsedMaxWinners < 1 || parsedMaxWinners > 10) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Max winners must be between 1 and 10",
-            type: "warning",
-          });
-          return false;
+        if (expiryDays.trim()) {
+          const parsed = parseInt(expiryDays);
+          if (isNaN(parsed) || parsed < 1 || parsed > 365) {
+            triggerHaptic("warning");
+            showToast({
+              message: "Expiry must be between 1 and 365 days",
+              type: "warning",
+            });
+            return false;
+          }
         }
-        const parsedExpiry = parseInt(expiryHours);
-        if (isNaN(parsedExpiry) || parsedExpiry < 1 || parsedExpiry > 168) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Expiry must be between 1 and 168 hours",
-            type: "warning",
-          });
-          return false;
-        }
-        if (!phoneNumber.trim()) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Phone number is required for payouts",
-            type: "warning",
-          });
-          return false;
-        }
-        if (!paymentProvider) {
-          triggerHaptic("warning");
-          showToast({
-            message: "Please select a payment provider",
-            type: "warning",
-          });
-          return false;
+        if (maxWinners.trim()) {
+          const parsed = parseInt(maxWinners);
+          if (isNaN(parsed) || parsed < 1 || parsed > 100) {
+            triggerHaptic("warning");
+            showToast({
+              message: "Max winners must be between 1 and 100",
+              type: "warning",
+            });
+            return false;
+          }
         }
         return true;
       }
       default:
         return true;
     }
-  }, [questionText, options, correctAnswerIndex, rewardAmount, maxWinners, expiryHours, phoneNumber, paymentProvider, showToast]);
+  }, [questionText, options, correctAnswerIndex, rewardAmount, expiryDays, maxWinners, showToast]);
 
   // ── Form reset ─────────────────────────────────────────────────────────
 
@@ -250,10 +227,8 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     setCorrectAnswerIndex(-1);
     setRewardAmount("");
     setRewardPoints("");
-    setMaxWinners("2");
-    setExpiryHours("24");
-    setPaymentProvider("MTN");
-    setPhoneNumber("");
+    setExpiryDays("");
+    setMaxWinners("");
     setCurrentStep(0);
   }, []);
 
@@ -276,14 +251,15 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     }
 
     const parsedReward = parseFloat(rewardAmount);
-    const parsedMaxWinners = parseInt(maxWinners) || 2;
-    const parsedExpiryHours = parseInt(expiryHours) || 24;
-    const expiryTime = new Date(
-      Date.now() + parsedExpiryHours * 60 * 60 * 1000
-    ).toISOString();
-
     const optionsPayload = buildOptionsPayload(options);
     const correctAnswerKey = optionIndexToKey(correctAnswerIndex);
+
+    // Build optional fields
+    const parsedExpiryDays = expiryDays.trim() ? parseInt(expiryDays) : undefined;
+    const expiryTime = parsedExpiryDays
+      ? new Date(Date.now() + parsedExpiryDays * 24 * 60 * 60 * 1000).toISOString()
+      : undefined;
+    const parsedMaxWinners = maxWinners.trim() ? parseInt(maxWinners) : undefined;
 
     try {
       await createQuestion.mutateAsync({
@@ -293,15 +269,13 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         rewardAmount: parsedReward,
         expiryTime,
         userId: user.id,
-        isInstantReward: true,
+        isInstantReward: false,
         maxWinners: parsedMaxWinners,
-        paymentProvider,
-        phoneNumber: phoneNumber.trim(),
       });
 
       triggerHaptic("success");
       showToast({
-        message: "Instant reward question uploaded successfully!",
+        message: "Reward question created successfully!",
         type: "success",
         duration: 4000,
       });
@@ -311,11 +285,11 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       triggerHaptic("error");
       showToast({
         message:
-          error instanceof Error ? error.message : "Failed to upload question",
+          error instanceof Error ? error.message : "Failed to create question",
         type: "error",
       });
     }
-  }, [user, questionText, options, correctAnswerIndex, rewardAmount, maxWinners, expiryHours, paymentProvider, phoneNumber, createQuestion, showToast, resetForm]);
+  }, [user, questionText, options, correctAnswerIndex, rewardAmount, expiryDays, maxWinners, createQuestion, showToast, resetForm]);
 
   // ── Navigation ──────────────────────────────────────────────────────────
 
@@ -345,12 +319,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     setCurrentStep(step);
   }, []);
 
-  // ── Derived values for review ───────────────────────────────────────────
-
-  const filledOptions = useMemo(
-    () => options.filter((o) => o.trim().length > 0),
-    [options]
-  );
+  // ── Derived values ──────────────────────────────────────────────────────
 
   const conversionHint = rewardConfig
     ? `${rewardConfig.pointsToCashDenominator} points = ${rewardConfig.pointsToCashNumerator} UGX`
@@ -376,7 +345,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         <StatusBar style={statusBarStyle} />
         <Text style={[styles.accessDeniedTitle, { color: colors.text }]}>Access Denied</Text>
         <Text style={[styles.accessDeniedSubtitle, { color: colors.textMuted }]}>
-          Only administrators can upload instant reward questions.
+          Only administrators can create reward questions.
         </Text>
         <PrimaryButton title="Go Back" onPress={() => router.back()} style={{ marginTop: SPACING.lg }} />
       </View>
@@ -390,10 +359,8 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       case 0:
         return renderQuestionStep();
       case 1:
-        return renderAnswersStep();
+        return renderRewardsStep();
       case 2:
-        return renderConfigStep();
-      case 3:
         return renderReviewStep();
       default:
         return null;
@@ -403,10 +370,11 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   const renderQuestionStep = () => (
     <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-0">
       <SectionHeader
-        title="Question Details"
-        subtitle="Create a high-impact instant reward question"
-        icon={<Sparkles size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
+        title="Question & Answers"
+        subtitle="Create a reward question with multiple choice options"
+        icon={<HelpCircle size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
       />
+
       <View style={styles.formGroup}>
         <Text style={[styles.label, { color: colors.text }]}>Question Text *</Text>
         <TextInput
@@ -428,7 +396,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           textAlignVertical="top"
           maxLength={MAX_QUESTION_LENGTH}
           accessibilityLabel="Question text input"
-          accessibilityHint="Enter the question text for the instant reward"
+          accessibilityHint="Enter the question text for the reward"
         />
         <Text
           style={[
@@ -444,11 +412,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           {questionText.length}/{MAX_QUESTION_LENGTH}
         </Text>
       </View>
-    </Animated.View>
-  );
 
-  const renderAnswersStep = () => (
-    <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-1">
       <SectionHeader
         title="Answer Options"
         subtitle="Provide 2-4 multiple choice options"
@@ -467,11 +431,11 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     </Animated.View>
   );
 
-  const renderConfigStep = () => (
-    <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-2">
+  const renderRewardsStep = () => (
+    <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-1">
       <SectionHeader
         title="Reward Settings"
-        subtitle="Configure payout and expiry"
+        subtitle="Configure reward amount and optional limits"
         icon={<Coins size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />}
       />
 
@@ -485,7 +449,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
 
       <View style={styles.formRow}>
         <View style={[styles.formGroup, { flex: 1, marginRight: SPACING.xs }]}>
-          <Text style={[styles.label, { color: colors.text }]}>Max Winners (1-10) *</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Expiry (days)</Text>
           <TextInput
             style={[
               styles.uploadInput,
@@ -495,100 +459,33 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
                 backgroundColor: colors.card,
               },
             ]}
-            placeholder="2"
+            placeholder="No expiry"
+            placeholderTextColor={colors.textMuted}
+            value={expiryDays}
+            onChangeText={setExpiryDays}
+            keyboardType="numeric"
+            accessibilityLabel="Expiry in days (optional)"
+          />
+        </View>
+        <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
+          <Text style={[styles.label, { color: colors.text }]}>Max Winners</Text>
+          <TextInput
+            style={[
+              styles.uploadInput,
+              {
+                color: colors.text,
+                borderColor: colors.border,
+                backgroundColor: colors.card,
+              },
+            ]}
+            placeholder="Unlimited"
             placeholderTextColor={colors.textMuted}
             value={maxWinners}
             onChangeText={setMaxWinners}
             keyboardType="numeric"
-            accessibilityLabel="Maximum number of winners"
+            accessibilityLabel="Maximum number of winners (optional)"
           />
         </View>
-        <View style={[styles.formGroup, { flex: 1, marginLeft: SPACING.xs }]}>
-          <Text style={[styles.label, { color: colors.text }]}>Expiry (hours) *</Text>
-          <TextInput
-            style={[
-              styles.uploadInput,
-              {
-                color: colors.text,
-                borderColor: colors.border,
-                backgroundColor: colors.card,
-              },
-            ]}
-            placeholder="24"
-            placeholderTextColor={colors.textMuted}
-            value={expiryHours}
-            onChangeText={setExpiryHours}
-            keyboardType="numeric"
-            accessibilityLabel="Expiry in hours"
-          />
-        </View>
-      </View>
-
-      <SectionHeader
-        title="Payment Details"
-        subtitle="How winners will receive rewards"
-        icon={<Award size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />}
-      />
-
-      <View style={styles.formGroup}>
-        <Text style={[styles.label, { color: colors.text }]}>Payment Provider *</Text>
-        <View style={styles.paymentProviderRow}>
-          {(["MTN", "AIRTEL"] as const).map((provider) => (
-            <Pressable
-              key={provider}
-              style={[
-                styles.paymentProviderOption,
-                {
-                  borderColor:
-                    paymentProvider === provider
-                      ? colors.primary
-                      : colors.border,
-                  backgroundColor:
-                    paymentProvider === provider
-                      ? withAlpha(colors.primary, 0.1)
-                      : colors.card,
-                },
-              ]}
-              onPress={() => {
-                triggerHaptic("selection");
-                setPaymentProvider(provider);
-              }}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: paymentProvider === provider }}
-              accessibilityLabel={`${provider} payment provider`}
-            >
-              <Text
-                style={[
-                  styles.paymentProviderText,
-                  {
-                    color:
-                      paymentProvider === provider
-                        ? colors.primary
-                        : colors.text,
-                  },
-                ]}
-              >
-                {provider === "MTN" ? "MTN" : "Airtel"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.formGroup}>
-        <Text style={[styles.label, { color: colors.text }]}>Phone Number *</Text>
-        <TextInput
-          style={[
-            styles.uploadInput,
-            { color: colors.text, borderColor: colors.border, backgroundColor: colors.card },
-          ]}
-          placeholder="+256 700 000 000"
-          placeholderTextColor={colors.textMuted}
-          value={phoneNumber}
-          onChangeText={setPhoneNumber}
-          keyboardType="phone-pad"
-          accessibilityLabel="Phone number for payouts"
-        />
       </View>
     </Animated.View>
   );
@@ -599,7 +496,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
     const parsedReward = parseFloat(rewardAmount) || 0;
 
     return (
-      <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-3">
+      <Animated.View entering={SlideInRight} exiting={SlideOutLeft} key="step-2">
         <SectionHeader
           title="Review"
           subtitle="Confirm all details before submitting"
@@ -609,32 +506,19 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
         {/* Question section */}
         <View style={[reviewStyles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={reviewStyles.reviewCardHeader}>
-            <Text style={[reviewStyles.reviewCardTitle, { color: colors.textMuted }]}>Question</Text>
+            <Text style={[reviewStyles.reviewCardTitle, { color: colors.textMuted }]}>Question & Answers</Text>
             <Pressable
               onPress={() => handleStepPress(0)}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Edit question"
+              accessibilityLabel="Edit question and answers"
             >
               <Edit3 size={14} color={colors.primary} />
             </Pressable>
           </View>
-          <Text style={[reviewStyles.reviewText, { color: colors.text }]}>{questionText.trim()}</Text>
-        </View>
-
-        {/* Answers section */}
-        <View style={[reviewStyles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={reviewStyles.reviewCardHeader}>
-            <Text style={[reviewStyles.reviewCardTitle, { color: colors.textMuted }]}>Answers</Text>
-            <Pressable
-              onPress={() => handleStepPress(1)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Edit answers"
-            >
-              <Edit3 size={14} color={colors.primary} />
-            </Pressable>
-          </View>
+          <Text style={[reviewStyles.reviewText, { color: colors.text, marginBottom: SPACING.sm }]}>
+            {questionText.trim()}
+          </Text>
           {Object.entries(optionsMap).map(([key, text]) => (
             <View key={key} style={reviewStyles.reviewOptionRow}>
               <Text
@@ -666,24 +550,28 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           ))}
         </View>
 
-        {/* Config section */}
+        {/* Rewards section */}
         <View style={[reviewStyles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={reviewStyles.reviewCardHeader}>
-            <Text style={[reviewStyles.reviewCardTitle, { color: colors.textMuted }]}>Configuration</Text>
+            <Text style={[reviewStyles.reviewCardTitle, { color: colors.textMuted }]}>Rewards</Text>
             <Pressable
-              onPress={() => handleStepPress(2)}
+              onPress={() => handleStepPress(1)}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel="Edit configuration"
+              accessibilityLabel="Edit rewards"
             >
               <Edit3 size={14} color={colors.primary} />
             </Pressable>
           </View>
           <ReviewRow label="Reward" value={`${parsedReward.toLocaleString()} UGX`} />
-          <ReviewRow label="Max Winners" value={maxWinners} />
-          <ReviewRow label="Expiry" value={`${expiryHours} hours`} />
-          <ReviewRow label="Provider" value={paymentProvider === "MTN" ? "MTN" : "Airtel"} />
-          <ReviewRow label="Phone" value={phoneNumber} />
+          <ReviewRow
+            label="Expiry"
+            value={expiryDays.trim() ? `${expiryDays} days` : "No expiry"}
+          />
+          <ReviewRow
+            label="Max Winners"
+            value={maxWinners.trim() ? maxWinners : "Unlimited"}
+          />
         </View>
       </Animated.View>
     );
@@ -713,7 +601,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
           keyboardShouldPersistTaps="handled"
         >
           <WizardScreenHeader
-            title="Create Instant Reward"
+            title="Create Regular Reward"
             onBack={() => router.back()}
           />
           <WizardStepIndicator
@@ -731,7 +619,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
             onBack={handleBack}
             onNext={handleNext}
             isSubmitting={createQuestion.isPending}
-            submitLabel="Create Instant Reward"
+            submitLabel="Create Reward"
           />
         </View>
       </KeyboardAvoidingView>
@@ -787,22 +675,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     textAlign: "right",
     marginTop: SPACING.xs,
-  },
-  paymentProviderRow: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  paymentProviderOption: {
-    flex: 1,
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.lg,
-    borderRadius: RADIUS.md,
-    borderWidth: BORDER_WIDTH.thin,
-    alignItems: "center",
-  },
-  paymentProviderText: {
-    fontSize: TYPOGRAPHY.fontSize.sm,
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
   },
 
   // Access denied

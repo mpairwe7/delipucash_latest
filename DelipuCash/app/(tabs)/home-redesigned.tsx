@@ -81,7 +81,7 @@ import {
   StatCard,
   SurveyCard,
   VideoCard,
-  SearchBar,
+  SearchOverlay,
   ProgressCard,
   ExploreCard,
   Section,
@@ -98,7 +98,7 @@ import {
   EarningOpportunitiesList,
   type EarningOpportunity,
 } from "@/components/home";
-import { useHomeUIStore, selectSearchQuery, selectActiveModal } from "@/store/HomeUIStore";
+import { useHomeUIStore, selectActiveModal } from "@/store/HomeUIStore";
 import {
   useTrendingVideos,
   useRecentQuestions,
@@ -125,11 +125,11 @@ import {
   AdPlacementWrapper,
 } from "@/components/ads";
 import { useResponsiveLayout, FONT_SCALE } from '@/hooks/useResponsiveLayout';
+import { useSearch } from '@/hooks/useSearch';
 import { isSmallScreen } from '@/utils/responsive';
 
 // Section identifiers for FlatList
 type SectionType =
-  | "header"
   | "hero-reward"
   | "quick-actions"
   | "wallet-stats"
@@ -258,11 +258,25 @@ export default function HomePage(): React.ReactElement {
   const { colors, style: statusBarStyle } = useStatusBar(); // Industry-standard status bar with focus tracking
   const { data: user, loading: userLoading, refetch } = useUser();
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   // UI state from Zustand store (persisted across navigations)
-  const searchQuery = useHomeUIStore(selectSearchQuery);
-  const setSearchQuery = useHomeUIStore(s => s.setSearchQuery);
   const activeModal = useHomeUIStore(selectActiveModal);
   const setActiveModal = useHomeUIStore(s => s.setActiveModal);
+
+  // Search — history + suggestions powered by useSearch; actual filtering happens on videos screen
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    recentSearches,
+    removeFromHistory,
+    clearHistory,
+    submitSearch,
+  } = useSearch({
+    data: [] as any[],
+    searchFields: [],
+    storageKey: '@home_search_history',
+    debounceMs: 250,
+  });
   const { showToast } = useToast();
 
   // Scroll animation value
@@ -354,7 +368,6 @@ export default function HomePage(): React.ReactElement {
   // This prevents layout jumps when data arrives asynchronously.
   const sections: DashboardSection[] = useMemo(() => {
     const sectionsList: DashboardSection[] = [
-      { id: "header", type: "header" },
       { id: "hero-reward", type: "hero-reward" },
       { id: "quick-actions", type: "quick-actions" },
       { id: "wallet-stats", type: "wallet-stats" },
@@ -500,11 +513,13 @@ export default function HomePage(): React.ReactElement {
   }, []);
 
   const handleSearch = useCallback((query: string) => {
+    setSearchOverlayVisible(false);
     if (!query.trim()) return;
+    submitSearch(query);
     triggerHaptic('light');
     // Navigate to the videos tab with search query as param
     router.push(`/(tabs)/videos-new?search=${encodeURIComponent(query.trim())}` as Href);
-  }, []);
+  }, [submitSearch]);
 
   // Ad handlers
   const handleAdClick = useCallback((ad: any) => {
@@ -620,36 +635,6 @@ export default function HomePage(): React.ReactElement {
   const renderSection: ListRenderItem<DashboardSection> = useCallback(
     ({ item, index }) => {
       switch (item.type) {
-        case "header":
-          return (
-            <Animated.View style={[styles.sectionContainer, headerAnimatedStyle]}>
-              <PersonalizedHeader
-                userName={user?.firstName || "User"}
-                walletBalance={user?.walletBalance || 0}
-                currentStreak={dailyReward?.currentStreak || 0}
-                streakGoal={30}
-                unreadNotifications={unreadCount || 0}
-                onNotificationPress={() => router.push("/notifications" as Href)}
-                onWalletPress={() => router.push("/(tabs)/withdraw")}
-                onStreakPress={() => {
-                  triggerHaptic('light');
-                  // Could open streak details modal
-                }}
-              />
-              
-              {/* Search Bar */}
-              <Animated.View entering={FadeInDown.delay(100).duration(300)}>
-                <SearchBar
-                  placeholder="Search videos, surveys, questions..."
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  onSubmit={handleSearch}
-                  style={styles.searchBar}
-                />
-              </Animated.View>
-            </Animated.View>
-          );
-
         case "hero-reward":
           if (!dailyReward) return null;
           return (
@@ -1138,7 +1123,6 @@ export default function HomePage(): React.ReactElement {
       earningOpportunities,
       searchQuery,
       claimDailyReward.isPending,
-      headerAnimatedStyle,
       handleClaimDailyReward,
       handleAnswerQuestion,
       handleWatchVideo,
@@ -1182,7 +1166,34 @@ export default function HomePage(): React.ReactElement {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Status bar — SDK 54 edge-to-edge handles translucency automatically */}
       <StatusBar style={statusBarStyle} animated />
-      
+
+      {/* Sticky Header — fixed above FlatList for consistent navigation (matches Questions screen) */}
+      <Animated.View
+        entering={FadeIn.duration(300)}
+        style={[
+          styles.stickyHeader,
+          {
+            paddingTop: insets.top + SPACING.sm,
+            paddingHorizontal: horizontalPadding,
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
+        <PersonalizedHeader
+          userName={user?.firstName || "User"}
+          walletBalance={user?.walletBalance || 0}
+          currentStreak={dailyReward?.currentStreak || 0}
+          streakGoal={30}
+          unreadNotifications={unreadCount || 0}
+          onNotificationPress={() => router.push("/notifications" as Href)}
+          onSearchPress={() => setSearchOverlayVisible(true)}
+          onWalletPress={() => router.push("/(tabs)/withdraw")}
+          onStreakPress={() => {
+            triggerHaptic('light');
+          }}
+        />
+      </Animated.View>
+
       <AnimatedFlatList
         ref={flatListRef}
         data={sections}
@@ -1193,7 +1204,7 @@ export default function HomePage(): React.ReactElement {
         contentContainerStyle={[
           styles.flatListContent,
           {
-            paddingTop: insets.top + SPACING.sm,
+            paddingTop: SPACING.sm,
             paddingHorizontal: horizontalPadding,
             maxWidth: layout.contentMaxWidth,
             alignSelf: 'center' as const,
@@ -1206,7 +1217,6 @@ export default function HomePage(): React.ReactElement {
             onRefresh={onRefresh}
             tintColor={colors.primary}
             colors={[colors.primary]}
-            progressViewOffset={insets.top}
           />
         }
         showsVerticalScrollIndicator={false}
@@ -1238,6 +1248,21 @@ export default function HomePage(): React.ReactElement {
           onAction={() => handleModalAction(activeExploreItem.route)}
         />
       )}
+
+      {/* Search Overlay */}
+      <SearchOverlay
+        visible={searchOverlayVisible}
+        onClose={() => setSearchOverlayVisible(false)}
+        query={searchQuery}
+        onChangeQuery={setSearchQuery}
+        onSubmit={handleSearch}
+        recentSearches={recentSearches}
+        onRemoveFromHistory={removeFromHistory}
+        onClearHistory={clearHistory}
+        placeholder="Search videos, surveys, questions..."
+        searchContext="Home"
+        trendingSearches={['Watch & earn', 'Surveys', 'Instant rewards', 'Cash out']}
+      />
     </View>
   );
 }
@@ -1245,6 +1270,9 @@ export default function HomePage(): React.ReactElement {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  stickyHeader: {
+    paddingBottom: SPACING.xs,
   },
   skeletonContainer: {
     flex: 1,
@@ -1254,9 +1282,6 @@ const styles = StyleSheet.create({
   },
   sectionContainer: {
     marginBottom: SPACING.sm,
-  },
-  searchBar: {
-    marginBottom: SPACING.md,
   },
 
   // Wallet card

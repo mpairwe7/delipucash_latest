@@ -30,7 +30,7 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ArrowLeft, X, Clock, TrendingUp, ArrowUpLeft, Search, Mic } from 'lucide-react-native';
+import { ArrowLeft, X, Clock, TrendingUp, ArrowUpLeft, Search } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
   useTheme,
@@ -192,6 +192,7 @@ function SearchOverlayComponent({
 
   const handleSubmit = useCallback(() => {
     if (query.trim().length > 0) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Keyboard.dismiss();
       onSubmit(query.trim());
       onClose();
@@ -224,7 +225,7 @@ function SearchOverlayComponent({
 
   const showSuggestions = query.length > 0 && suggestions.length > 0;
   const showRecent = query.length === 0 && recentSearches.length > 0;
-  const showTrending = query.length === 0 && trendingSearches.length > 0 && recentSearches.length === 0;
+  const showTrending = query.length === 0 && trendingSearches.length > 0;
 
   const pillBg = isDark ? '#272727' : '#F2F2F2';
 
@@ -290,11 +291,16 @@ function SearchOverlayComponent({
               )}
             </View>
 
-            {/* Mic button (YouTube circular, visible when no query) */}
+            {/* Search icon hint (visible when no query typed) */}
             {query.length === 0 && (
-              <View style={[styles.micButton, { backgroundColor: pillBg }]}>
-                <Mic size={20} color={colors.text} strokeWidth={2} />
-              </View>
+              <Pressable
+                onPress={() => inputRef.current?.focus()}
+                style={[styles.micButton, { backgroundColor: pillBg }]}
+                accessibilityLabel="Focus search input"
+                accessibilityRole="button"
+              >
+                <Search size={20} color={colors.textMuted} strokeWidth={1.5} />
+              </Pressable>
             )}
           </View>
 
@@ -308,9 +314,9 @@ function SearchOverlayComponent({
             {/* Suggestions */}
             {showSuggestions && (
               <View style={styles.section}>
-                {suggestions.map((item, index) => (
+                {suggestions.map((item) => (
                   <SearchItem
-                    key={`suggestion-${index}`}
+                    key={`suggestion-${item}`}
                     item={item}
                     onPress={handleSelectItem}
                     onFill={handleFillInput}
@@ -339,9 +345,9 @@ function SearchOverlayComponent({
                     </Text>
                   </Pressable>
                 </View>
-                {recentSearches.map((item, index) => (
+                {recentSearches.map((item) => (
                   <SearchItem
-                    key={`recent-${index}`}
+                    key={`recent-${item}`}
                     item={item}
                     onPress={handleSelectItem}
                     onRemove={onRemoveFromHistory}
@@ -359,9 +365,9 @@ function SearchOverlayComponent({
                 <Text style={[styles.sectionTitle, { color: colors.textMuted }, styles.sectionTitlePadded]}>
                   Trending searches
                 </Text>
-                {trendingSearches.map((item, index) => (
+                {trendingSearches.map((item) => (
                   <SearchItem
-                    key={`trending-${index}`}
+                    key={`trending-${item}`}
                     item={item}
                     onPress={handleSelectItem}
                     onFill={handleFillInput}

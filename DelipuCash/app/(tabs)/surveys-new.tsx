@@ -53,6 +53,7 @@ import { Survey, Ad, UserRole } from "@/types";
 import { useSurveyUIStore } from "@/store/SurveyUIStore";
 import {
   BORDER_WIDTH,
+  COMPONENT_SIZE,
   RADIUS,
   SHADOWS,
   SPACING,
@@ -431,11 +432,10 @@ export default function SurveysScreen(): React.ReactElement {
         break;
     }
 
-    // Apply search filter
+    // Apply search filter — Set-based O(n) lookup
     if (isSearching) {
-      return surveys.filter((s) =>
-        searchedSurveys.some((searched) => searched.id === s.id)
-      );
+      const searchedIds = new Set(searchedSurveys.map((s) => s.id));
+      return surveys.filter((s) => searchedIds.has(s.id));
     }
 
     return surveys;
@@ -869,54 +869,6 @@ export default function SurveysScreen(): React.ReactElement {
   // List header rendered via memoized callback
   const ListHeader = useMemo(() => (
     <View style={styles.listHeader}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTitleSection}>
-          <Text
-            style={[styles.headerTitle, { color: colors.text }]}
-            accessibilityRole="header"
-            maxFontSizeMultiplier={FONT_SCALE.heading}
-          >
-            Surveys
-          </Text>
-          <Text
-            style={[styles.headerSubtitle, { color: colors.textMuted }]}
-            maxFontSizeMultiplier={FONT_SCALE.body}
-          >
-            Create, manage & analyze
-          </Text>
-        </View>
-        <NotificationBell
-          count={unreadCount ?? 0}
-          onPress={() => router.push("/notifications" as Href)}
-        />
-      </View>
-
-      {/* Search */}
-      <TouchableOpacity
-        style={[styles.searchContainer, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => setSearchOverlayVisible(true)}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel="Search surveys"
-        accessibilityHint="Tap to open search and filter surveys"
-      >
-        <Search size={18} color={colors.textMuted} />
-        <Text
-          style={[styles.searchPlaceholder, { color: colors.textMuted }]}
-          maxFontSizeMultiplier={FONT_SCALE.body}
-        >
-          {search || 'Search surveys...'}
-        </Text>
-        {isSearching && (
-          <View style={[styles.searchBadge, { backgroundColor: withAlpha(colors.primary, 0.12) }]}>
-            <Text style={[styles.searchBadgeText, { color: colors.primary }]} maxFontSizeMultiplier={FONT_SCALE.body}>
-              {searchedSurveys.length}
-            </Text>
-          </View>
-        )}
-      </TouchableOpacity>
-
       {/* Admin Badge — shown for admins with full access */}
       {authReady && isAuthenticated && isAdmin && (
         <View
@@ -1095,7 +1047,7 @@ export default function SurveysScreen(): React.ReactElement {
   ), [
     authReady, colors, currentSurveys.length, activeTab, handleTabChange,
     hasActiveSubscription, isAdmin, isAuthenticated, isSearching, isTablet, remainingDays, search,
-    searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, unreadCount, cardViewStyle
+    searchedSurveys.length, setCardViewStyle, subscriptionStatus, tabs, cardViewStyle
   ]);
 
   // Key extractor
@@ -1104,6 +1056,51 @@ export default function SurveysScreen(): React.ReactElement {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} animated />
+
+      {/* Sticky Header — fixed above FlatList, stays visible on scroll (matches Questions screen pattern) */}
+      <View
+        style={[
+          styles.stickyHeader,
+          {
+            paddingTop: insets.top + SPACING.sm,
+            paddingHorizontal: horizontalPadding,
+            backgroundColor: colors.background,
+          },
+        ]}
+      >
+        <View style={styles.headerTitleSection}>
+          <Text
+            style={[styles.headerTitle, { color: colors.text }]}
+            accessibilityRole="header"
+            maxFontSizeMultiplier={FONT_SCALE.heading}
+          >
+            Surveys
+          </Text>
+          <Text
+            style={[styles.headerSubtitle, { color: colors.textMuted }]}
+            maxFontSizeMultiplier={FONT_SCALE.body}
+          >
+            Create, manage & analyze
+          </Text>
+        </View>
+        <View style={styles.headerRight}>
+          <Pressable
+            onPress={() => setSearchOverlayVisible(true)}
+            style={[
+              styles.headerButton,
+              { backgroundColor: withAlpha(colors.primary, 0.1) },
+            ]}
+            accessibilityLabel="Search surveys"
+            accessibilityRole="button"
+          >
+            <Search size={20} color={colors.primary} strokeWidth={1.5} />
+          </Pressable>
+          <NotificationBell
+            count={unreadCount ?? 0}
+            onPress={() => router.push("/notifications" as Href)}
+          />
+        </View>
+      </View>
 
       <FlatList
         ref={flatListRef}
@@ -1116,7 +1113,7 @@ export default function SurveysScreen(): React.ReactElement {
         contentContainerStyle={[
           styles.listContent,
           {
-            paddingTop: insets.top,
+            paddingTop: SPACING.sm,
             paddingHorizontal: horizontalPadding,
             paddingBottom: insets.bottom + SPACING['3xl'] + 100, // Space for FAB
             maxWidth: layout.contentMaxWidth,
@@ -1192,15 +1189,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  stickyHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    paddingBottom: SPACING.xs,
+  },
   listContent: {
     paddingHorizontal: SPACING.md,
   },
   listHeader: {
-    paddingTop: SPACING.lg,
+    paddingTop: SPACING.sm,
     marginBottom: SPACING.md,
   },
 
-  // Header
+  // Header (kept for reference / reuse)
   header: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -1221,29 +1224,18 @@ const styles = StyleSheet.create({
     marginTop: SPACING.xxs,
   },
 
-  // Search
-  searchContainer: {
+  // Header actions
+  headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    padding: SPACING.md,
-    borderRadius: RADIUS.xl,
-    borderWidth: 1,
-    marginBottom: SPACING.md,
     gap: SPACING.sm,
   },
-  searchPlaceholder: {
-    flex: 1,
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  searchBadge: {
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xxs,
-    borderRadius: RADIUS.full,
-  },
-  searchBadgeText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
+  headerButton: {
+    width: COMPONENT_SIZE.touchTarget,
+    height: COMPONENT_SIZE.touchTarget,
+    borderRadius: RADIUS.base,
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   // Subscription Banner

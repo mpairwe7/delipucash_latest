@@ -42,6 +42,7 @@ app-example
 /ios
 /android
 *.apk
+*.aab
 .env/
 .expo/
 node_modules/

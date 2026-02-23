@@ -48,6 +48,7 @@ import { Href, router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
+  Award,
   Gift,
   HelpCircle,
   MessageSquare,
@@ -492,6 +493,16 @@ export default function ProfileScreen(): React.ReactElement {
       route: '/instant-reward-upload',
       adminOnly: true,
       accessibilityHint: 'Create a new instant reward question',
+    },
+    {
+      id: 'create-regular-reward',
+      title: 'Create Regular Reward',
+      icon: Award,
+      iconColor: '#4CAF50',
+      iconBgColor: 'rgba(76, 175, 80, 0.1)',
+      route: '/regular-reward-upload',
+      adminOnly: true,
+      accessibilityHint: 'Create a new regular reward question',
     },
     {
       id: 'reward-settings',
