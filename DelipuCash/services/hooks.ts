@@ -14,6 +14,8 @@ import {
     Reward,
     RewardAnswerResult,
     RewardQuestion,
+    RewardQuestionType,
+    AnswerMatchMode,
     Survey,
     Transaction,
     UploadSurvey,
@@ -1425,8 +1427,8 @@ export function useCreateRewardQuestion(): UseMutationResult<RewardQuestion, Err
   maxWinners?: number;
   paymentProvider?: string;
   phoneNumber?: string;
-  questionType?: 'multiple_choice' | 'text_input';
-  matchMode?: 'exact' | 'case_insensitive';
+  questionType?: RewardQuestionType;
+  matchMode?: AnswerMatchMode;
 }> {
   const queryClient = useQueryClient();
 

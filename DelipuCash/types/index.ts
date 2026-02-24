@@ -274,8 +274,8 @@ export interface RewardQuestion {
   options: Record<string, unknown>;
   correctAnswer?: string;
   rewardAmount: number;
-  questionType?: RewardQuestionType;
-  matchMode?: AnswerMatchMode;
+  questionType: RewardQuestionType;
+  matchMode: AnswerMatchMode;
   expiryTime: string | null;
   isActive: boolean;
   userId: string;

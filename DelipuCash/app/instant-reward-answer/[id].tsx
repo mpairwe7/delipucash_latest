@@ -334,7 +334,6 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Dynamic reward amount from question model ──
   const rewardAmount = question?.rewardAmount || REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT;
-  const rewardPoints = cashToPoints(rewardAmount) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
 
   // ── Zustand: state via useShallow (grouped — prevents re-renders) ──
   const { walletBalance, sessionState, sessionType, sessionSummary } = useInstantRewardStore(
@@ -351,6 +350,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Zustand: reactive selector for redemption eligibility ──
   const { data: rewardConfig } = useRewardConfig();
+  const rewardPoints = cashToPoints(rewardAmount, rewardConfig ?? undefined) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
   const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
 
   // ── Last successful redemption for quick-redeem shortcut ──
@@ -804,8 +804,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           if (payload.isCorrect) {
             triggerHaptic('success');
 
-            // Credit wallet with question's actual reward amount
-            confirmReward(rewardAmount);
+            // Credit wallet with server-sent reward amount (single source of truth)
+            confirmReward(earnedAmount);
 
             // Build payment status message for winners
             if (payload.isWinner) {
@@ -818,14 +818,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               }
 
               showToast({
-                message: `Correct! +${formatCurrency(rewardAmount)} earned!${paymentMessage}`,
+                message: `Correct! +${formatCurrency(earnedAmount)} earned!${paymentMessage}`,
                 type: 'success',
                 action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
                 onAction: () => setTimeout(() => handleTransitionToNext(), 300),
               });
             } else {
               showToast({
-                message: `Correct! +${formatCurrency(rewardAmount)} earned!`,
+                message: `Correct! +${formatCurrency(earnedAmount)} earned!`,
                 type: 'success',
                 action: unansweredQuestions.length > 0 ? 'Next Question' : 'View Summary',
                 onAction: () => setTimeout(() => handleTransitionToNext(), 300),
@@ -1320,7 +1320,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               colors={colors}
             />
           ) : (
-            <View style={styles.optionsList}>
+            <View style={styles.optionsList} accessibilityRole="radiogroup" accessibilityLabel="Answer options">
               {optionDisplayProps.map((op) => (
                 <OptionItem
                   key={op.key}

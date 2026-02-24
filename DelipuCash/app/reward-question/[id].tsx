@@ -66,7 +66,7 @@ import {
   Users,
   Zap,
 } from "lucide-react-native";
-import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   RefreshControl,
@@ -344,7 +344,6 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Dynamic reward amount from question model ──
   const rewardAmount = question?.rewardAmount || REWARD_CONSTANTS.INSTANT_REWARD_AMOUNT;
-  const rewardPoints = cashToPoints(rewardAmount) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
 
   // ── Zustand: grouped read-state via useShallow (prevents re-renders) ──
   // TODO: Extract shared reward session/wallet/redemption logic into a base RewardStore
@@ -364,6 +363,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Zustand: reactive selector for redemption eligibility ──
   const { data: rewardConfig } = useRewardConfig();
+  const rewardPoints = cashToPoints(rewardAmount, rewardConfig ?? undefined) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
   const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
 
   // ── Last successful redemption for quick-redeem shortcut ──
@@ -447,6 +447,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     setIsExpired(false);
     setIsTransitioning(false);
     setShowResultOverlay(false);
+    setIsOptimisticLocked(false);
+    submitGuardRef.current = false;
     transitionOpacity.value = 1;
     transitionTranslateX.value = 0;
     recordQuestionStart();
@@ -541,9 +543,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           result?.isCorrect ||
           result?.isExpired ||
           result?.isCompleted ||
-          hasAlreadyAttempted
+          hasAlreadyAttempted ||
+          isOptimisticLocked
       ),
-    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted]
+    [isExpired, question?.isCompleted, spotsLeft, result, hasAlreadyAttempted, isOptimisticLocked]
   );
 
   // ── Reanimated transition style (native thread) ──
@@ -562,9 +565,13 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const executeTransition = useCallback(
     (nextId: string) => {
       goToNextQuestion();
+      // Reset transition values before navigating so the next screen starts clean
+      transitionOpacity.value = 1;
+      transitionTranslateX.value = 0;
+      setIsTransitioning(false);
       router.replace(`/reward-question/${nextId}` as Href);
     },
-    [goToNextQuestion]
+    [goToNextQuestion, transitionOpacity, transitionTranslateX]
   );
 
   // Auto-transition to next question or show session summary
@@ -649,6 +656,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       return;
     }
 
+    // Prevent double-tap submissions
+    if (submitGuardRef.current || isOptimisticLocked) return;
+    submitGuardRef.current = true;
+    setTimeout(() => { submitGuardRef.current = false; }, 2000);
+    setIsOptimisticLocked(true);
+
     triggerHaptic("medium");
 
     submitAnswer.mutate(
@@ -696,8 +709,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           if (payload.isCorrect) {
             triggerHaptic("success");
 
-            // Credit wallet with question's actual reward amount
-            confirmReward(rewardAmount);
+            // Credit wallet with server-sent reward amount (single source of truth)
+            confirmReward(earnedAmount);
 
             // Build payment status message for winners
             if (payload.isWinner) {
@@ -710,7 +723,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               }
 
               showToast({
-                message: `Correct! +${formatCurrency(rewardAmount)} earned!${paymentMessage}`,
+                message: `Correct! +${formatCurrency(earnedAmount)} earned!${paymentMessage}`,
                 type: "success",
                 action:
                   unansweredQuestions.length > 0
@@ -721,7 +734,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               });
             } else {
               showToast({
-                message: `Correct! +${formatCurrency(rewardAmount)} earned!`,
+                message: `Correct! +${formatCurrency(earnedAmount)} earned!`,
                 type: "success",
                 action:
                   unansweredQuestions.length > 0
@@ -759,6 +772,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           }
         },
         onError: (err) => {
+          submitGuardRef.current = false;
+          setIsOptimisticLocked(false);
           triggerHaptic("error");
           const errorMessage =
             err?.message || "Unable to submit your answer. Please try again.";
@@ -934,7 +949,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
     const isCorrect = result?.isCorrect || previousAttempt?.isCorrect;
     if (isCorrect) {
       const pts = result?.pointsAwarded ?? previousAttempt?.pointsEarned ?? rewardPoints;
-      const amt = result?.isCorrect ? rewardAmount : (previousAttempt?.rewardEarned || rewardAmount);
+      const amt = result?.isCorrect
+        ? (result.rewardEarned ?? rewardAmount)
+        : (previousAttempt?.rewardEarned || rewardAmount);
       return `You answered correctly and earned ${formatCurrency(amt)} (${pts} points)!`;
     }
     if (result && !previousAttempt) {

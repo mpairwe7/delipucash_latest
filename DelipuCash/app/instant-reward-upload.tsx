@@ -235,6 +235,12 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
             showToast({ message: "Maximum 20 accepted answers allowed", type: "warning" });
             return false;
           }
+          const uniqueAnswers = new Set(parsed.map((a) => a.toLowerCase()));
+          if (uniqueAnswers.size !== parsed.length) {
+            triggerHaptic("warning");
+            showToast({ message: "Duplicate accepted answers detected. Remove duplicates to continue.", type: "warning" });
+            return false;
+          }
         } else {
           const filledOpts = options.filter((o) => o.trim().length > 0);
           if (filledOpts.length < 2) {
@@ -243,6 +249,12 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
               message: "At least 2 options are required",
               type: "warning",
             });
+            return false;
+          }
+          const uniqueOpts = new Set(filledOpts.map((o) => o.trim().toLowerCase()));
+          if (uniqueOpts.size !== filledOpts.length) {
+            triggerHaptic("warning");
+            showToast({ message: "Duplicate options detected. Each option must be unique.", type: "warning" });
             return false;
           }
           if (correctAnswerIndex < 0 || !options[correctAnswerIndex]?.trim()) {
@@ -390,6 +402,7 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
       resetForm();
       navigateTimerRef.current = setTimeout(() => router.back(), 2000);
     } catch (error) {
+      submitDebounceRef.current = false;
       triggerHaptic("error");
       showToast({
         message:
@@ -423,9 +436,15 @@ export default function InstantRewardUploadScreen(): React.ReactElement {
   }, [currentStep]);
 
   const handleStepPress = useCallback((step: number) => {
+    // Only validate when jumping forward — back jumps are always allowed
+    if (step > currentStep) {
+      for (let i = currentStep; i < step; i++) {
+        if (!validateStep(i)) return;
+      }
+    }
     scrollRef.current?.scrollTo({ y: 0, animated: false });
     setCurrentStep(step);
-  }, []);
+  }, [currentStep, validateStep]);
 
   // ── Derived values for review ───────────────────────────────────────────
 

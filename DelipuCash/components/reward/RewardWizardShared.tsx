@@ -1030,8 +1030,10 @@ export const AcceptedAnswersInput = memo(function AcceptedAnswersInput({
         accessibilityLabel="Accepted answers, pipe-delimited"
         accessibilityHint="Separate multiple accepted answers with the pipe character"
       />
-      <Text style={[acceptedStyles.helper, { color: colors.textMuted }]}>
-        Separate accepted answers with | (pipe). Max 20 answers.
+      <Text style={[acceptedStyles.helper, { color: parsedAnswers.length >= 20 ? colors.error : colors.textMuted }]}>
+        {parsedAnswers.length >= 20
+          ? `Maximum 20 answers reached (${parsedAnswers.length}/20)`
+          : `Separate accepted answers with | (pipe). ${parsedAnswers.length}/20 answers.`}
       </Text>
 
       {/* Preview pills */}
@@ -1072,6 +1074,7 @@ export const AcceptedAnswersInput = memo(function AcceptedAnswersInput({
               }}
               accessibilityRole="radio"
               accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`Answer matching: ${label}`}
             >
               <Text
                 style={[
@@ -1184,7 +1187,11 @@ export const TextInputOptionsEditor = memo(function TextInputOptionsEditor({
       <TextInput
         style={[
           styles.uploadInput,
-          { color: colors.text, borderColor: colors.border, backgroundColor: colors.card },
+          {
+            color: colors.text,
+            borderColor: maxLength && !/^\d*$/.test(maxLength) ? colors.error : colors.border,
+            backgroundColor: colors.card,
+          },
         ]}
         placeholder="Max character length (e.g. 100)"
         placeholderTextColor={colors.textMuted}
@@ -1193,6 +1200,11 @@ export const TextInputOptionsEditor = memo(function TextInputOptionsEditor({
         keyboardType="numeric"
         accessibilityLabel="Maximum answer length"
       />
+      {maxLength !== "" && !/^\d+$/.test(maxLength) && (
+        <Text style={{ color: colors.error, fontSize: TYPOGRAPHY.fontSize.xs, marginTop: -SPACING.xs }}>
+          Must be a positive number
+        </Text>
+      )}
     </View>
   );
 });
@@ -1254,7 +1266,8 @@ export const TextAnswerInput = memo(function TextAnswerInput({
           maxLength={maxLength}
           autoCapitalize="none"
           autoCorrect={false}
-          accessibilityLabel="Type your answer"
+          returnKeyType="done"
+          accessibilityLabel={maxLength ? `Type your answer, max ${maxLength} characters` : "Type your answer"}
         />
       </View>
       {hint && (

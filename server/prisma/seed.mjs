@@ -100,14 +100,94 @@ async function seedAppConfig() {
   });
 }
 
+async function seedRewardQuestions(adminId) {
+  console.log('Seeding reward questions (including text_input)...');
+
+  const questions = [
+    // Multiple choice — regular
+    {
+      text: 'What is the largest lake in Africa by surface area?',
+      options: { A: 'Lake Tanganyika', B: 'Lake Victoria', C: 'Lake Malawi', D: 'Lake Chad' },
+      correctAnswer: 'B',
+      questionType: 'multiple_choice',
+      matchMode: 'exact',
+      rewardAmount: 500,
+      isInstantReward: false,
+      maxWinners: 50,
+      isActive: true,
+      userId: adminId,
+    },
+    // Text input — regular (case insensitive, multiple accepted)
+    {
+      text: 'What is the capital city of Uganda?',
+      options: { placeholder: 'Enter the city name', hint: 'Think about East Africa', maxLength: 50 },
+      correctAnswer: 'Kampala|kampala',
+      questionType: 'text_input',
+      matchMode: 'case_insensitive',
+      rewardAmount: 500,
+      isInstantReward: false,
+      maxWinners: 50,
+      isActive: true,
+      userId: adminId,
+    },
+    // Multiple choice — instant
+    {
+      text: 'Which planet is closest to the Sun?',
+      options: { A: 'Venus', B: 'Earth', C: 'Mercury', D: 'Mars' },
+      correctAnswer: 'C',
+      questionType: 'multiple_choice',
+      matchMode: 'exact',
+      rewardAmount: 1000,
+      isInstantReward: true,
+      maxWinners: 5,
+      isActive: true,
+      userId: adminId,
+      paymentProvider: 'MTN',
+      phoneNumber: '+256700000001',
+      expiryTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    },
+    // Text input — instant (exact match, multiple accepted spellings)
+    {
+      text: 'Name the chemical symbol for gold.',
+      options: { placeholder: 'Enter chemical symbol', maxLength: 5 },
+      correctAnswer: 'Au',
+      questionType: 'text_input',
+      matchMode: 'exact',
+      rewardAmount: 1000,
+      isInstantReward: true,
+      maxWinners: 3,
+      isActive: true,
+      userId: adminId,
+      paymentProvider: 'MTN',
+      phoneNumber: '+256700000001',
+      expiryTime: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 days
+    },
+  ];
+
+  for (const q of questions) {
+    const existing = await prisma.rewardQuestion.findFirst({
+      where: { text: q.text, userId: q.userId },
+    });
+    if (!existing) {
+      await prisma.rewardQuestion.create({ data: q });
+      console.log(`   Created: "${q.text}" (${q.questionType})`);
+    } else {
+      console.log(`   Skipped (exists): "${q.text}"`);
+    }
+  }
+}
+
 async function main() {
   console.log('Starting database seeding...\n');
 
   // Create default admin
-  await createDefaultAdmin();
+  const admin = await createDefaultAdmin();
 
   // Seed AppConfig singleton
   await seedAppConfig();
+
+  // Seed reward questions (requires admin user)
+  await seedRewardQuestions(admin.id);
 
   console.log('\nDatabase seeding completed successfully!');
 }

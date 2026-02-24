@@ -4,7 +4,7 @@ import asyncHandler from 'express-async-handler';
 import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
-import { getRewardConfig } from '../lib/rewardConfig.mjs';
+import { getRewardConfig, ugxToPoints } from '../lib/rewardConfig.mjs';
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -73,6 +73,21 @@ function maskEmail(email) {
   const [local, domain] = email.split('@');
   if (!domain) return '***';
   return `${local[0]}***@${domain}`;
+}
+
+/**
+ * Safety-net deduplication by primary key.
+ * Prisma findMany already returns unique rows, but offset/limit pagination
+ * can theoretically deliver the same record across adjacent page boundaries
+ * if data mutates between fetches. This guarantees uniqueness per response.
+ */
+function deduplicateById(records) {
+  const seen = new Set();
+  return records.filter(r => {
+    if (seen.has(r.id)) return false;
+    seen.add(r.id);
+    return true;
+  });
 }
 
 // Create a new reward question
@@ -310,7 +325,7 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
               },
             },
           },
-          orderBy: [{ createdAt: 'desc' }],
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip,
           take: limit,
         }),
@@ -318,7 +333,7 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
       prisma.rewardQuestion.count({ where }),
     ]);
 
-    const formattedRewardQuestions = rewardQuestions.map(rq => formatRewardQuestionPublic(rq));
+    const formattedRewardQuestions = deduplicateById(rewardQuestions).map(rq => formatRewardQuestionPublic(rq));
     const totalPages = Math.ceil(totalCount / limit);
 
     res.json({
@@ -366,7 +381,7 @@ export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
       ],
     };
 
-    const [rewardQuestions, totalCount] = await Promise.all([
+    const [rawQuestions, totalCount] = await Promise.all([
       prisma.rewardQuestion.findMany(
         buildOptimizedQuery('RewardQuestion', {
           where,
@@ -391,13 +406,16 @@ export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
               orderBy: { position: 'asc' },
             },
           },
-          orderBy: [{ createdAt: 'desc' }],
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip,
           take: limit,
         }),
       ),
       prisma.rewardQuestion.count({ where }),
     ]);
+
+    // Deduplicate by id (safety net for offset/limit pagination edge cases)
+    const rewardQuestions = deduplicateById(rawQuestions);
 
     // Fetch user's attempts for these questions so the client knows which are answered
     let userAttempts = [];
@@ -471,7 +489,7 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
       ],
     };
 
-    const [instantRewardQuestions, totalCount] = await Promise.all([
+    const [rawQuestions, totalCount] = await Promise.all([
       prisma.rewardQuestion.findMany(
         buildOptimizedQuery('RewardQuestion', {
           where,
@@ -498,13 +516,16 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
               },
             },
           },
-          orderBy: [{ createdAt: 'desc' }],
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
           skip,
           take: limit,
         }),
       ),
       prisma.rewardQuestion.count({ where }),
     ]);
+
+    // Deduplicate by id (safety net for offset/limit pagination edge cases)
+    const instantRewardQuestions = deduplicateById(rawQuestions);
 
     // Fetch user's attempts for these questions so the client knows which are answered
     let userAttempts = [];
@@ -863,18 +884,25 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     if (isCorrect) {
       // Dynamic reward amount from question model (fallback to config default)
       let rewardAmountUGX = rewardQuestion.rewardAmount;
-      if (!rewardAmountUGX || rewardAmountUGX <= 0) {
-        try {
-          const config = await getRewardConfig();
-          rewardAmountUGX = rewardQuestion.isInstantReward
-            ? config.defaultInstantRewardAmount
-            : config.defaultRegularRewardAmount;
-        } catch (configError) {
-          console.error('[submitAnswer] Failed to fetch reward config, using hardcoded fallback:', configError.message);
-          rewardAmountUGX = 500; // Last-resort fallback
-        }
+
+      // Always fetch config — needed for ugxToPoints conversion
+      let rewardConfig;
+      try {
+        rewardConfig = await getRewardConfig();
+      } catch (configError) {
+        console.error('[submitAnswer] Failed to fetch reward config, using hardcoded fallback:', configError.message);
+        rewardConfig = null;
       }
-      const rewardPoints = Math.round(rewardAmountUGX / 100) || 5;
+
+      if (!rewardAmountUGX || rewardAmountUGX <= 0) {
+        rewardAmountUGX = rewardConfig
+          ? (rewardQuestion.isInstantReward ? rewardConfig.defaultInstantRewardAmount : rewardConfig.defaultRegularRewardAmount)
+          : 500; // Last-resort fallback
+      }
+
+      const rewardPoints = rewardConfig
+        ? ugxToPoints(rewardAmountUGX, rewardConfig)
+        : (Math.round(rewardAmountUGX / 100) || 5);
 
       if (rewardQuestion.isInstantReward) {
         // Transactional winner allocation with optimistic locking to prevent race conditions
@@ -973,7 +1001,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             ...response,
             message: `Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`,
             isCorrect: true,
-            pointsAwarded: rewardAmountUGX,
+            pointsAwarded: rewardPoints,
             rewardEarned: rewardAmountUGX,
             isWinner: true,
             position,
@@ -986,7 +1014,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             ...response,
             message: `Correct answer! However, all winners have already been found for this question. You still earned ${rewardPoints} points!`,
             isCorrect: true,
-            pointsAwarded: rewardAmountUGX,
+            pointsAwarded: rewardPoints,
             rewardEarned: rewardAmountUGX,
             isWinner: false,
             position: null,
@@ -1036,7 +1064,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           description: 'Reward Question Answered',
         });
 
-        response.pointsAwarded = rewardAmountUGX;
+        response.pointsAwarded = rewardPoints;
         response.rewardEarned = rewardAmountUGX;
         response.message = `Correct! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`;
       }

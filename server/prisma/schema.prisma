@@ -438,6 +438,8 @@ model RewardQuestion {
   @@index([expiryTime])
   @@index([isInstantReward])
   @@index([isCompleted])
+  // Composite index matching the actual feed query WHERE clauses for optimal scan
+  @@index([isActive, isInstantReward, isCompleted, createdAt(sort: Desc)])
 }
 
 model RewardQuestionOnAttempt {

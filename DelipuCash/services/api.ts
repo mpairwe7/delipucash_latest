@@ -17,6 +17,8 @@ import {
     Reward,
     RewardAnswerResult,
   RewardQuestion,
+  RewardQuestionType,
+  AnswerMatchMode,
     Survey,
     Transaction,
     TransactionSummary,
@@ -1149,8 +1151,8 @@ export const rewardsApi = {
     maxWinners?: number;
     paymentProvider?: string;
     phoneNumber?: string;
-    questionType?: 'multiple_choice' | 'text_input';
-    matchMode?: 'exact' | 'case_insensitive';
+    questionType?: RewardQuestionType;
+    matchMode?: AnswerMatchMode;
   }): Promise<ApiResponse<RewardQuestion>> {
     const response = await fetchJson<{ message: string; rewardQuestion: RewardQuestion }>(API_ROUTES.rewards.createQuestion, {
       method: 'POST',
