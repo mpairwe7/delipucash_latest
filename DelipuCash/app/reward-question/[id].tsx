@@ -312,6 +312,8 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   const [overlayEarned, setOverlayEarned] = useState(0);
   const [overlayEarnedPoints, setOverlayEarnedPoints] = useState(0);
   const [textAnswer, setTextAnswer] = useState('');
+  const [isOptimisticLocked, setIsOptimisticLocked] = useState(false);
+  const submitGuardRef = useRef(false);
   const { showToast } = useToast();
 
   // Reanimated transition values (native thread)
