@@ -247,7 +247,7 @@ function FloatingActionButtonComponent({
           >
             <Sparkles size={14} color={fabColor} />
             <Text style={[styles.hintText, { color: colors.textMuted }]}>
-              Tap for options
+              Tap to create, hold for options
             </Text>
           </View>
         )}
