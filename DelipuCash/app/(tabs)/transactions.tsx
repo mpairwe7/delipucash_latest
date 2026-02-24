@@ -8,7 +8,10 @@ import {
   RefreshControl,
   ActivityIndicator,
   ScrollView,
+  Share,
+  Alert,
 } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, Href } from "expo-router";
 import {
@@ -22,6 +25,9 @@ import {
   Gift,
   CreditCard,
   Inbox,
+  Copy,
+  Share2,
+  RotateCcw,
   LucideIcon,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
@@ -427,7 +433,7 @@ const TransactionDetailSheet = memo<DetailSheetProps>(
       <BottomSheet
         ref={bottomSheetRef}
         index={-1}
-        snapPoints={["45%"]}
+        snapPoints={["60%"]}
         enablePanDownToClose
         onChange={handleChange}
         backdropComponent={renderBackdrop}
@@ -451,6 +457,22 @@ const TransactionDetailContent = memo<{ transaction: UnifiedTransaction; colors:
     const typeColor = getTypeColor(transaction.type, colors);
     const statusColor = getStatusColor(transaction.status, colors);
     const StatusIconComp = getStatusIcon(transaction.status);
+
+    const handleCopyReference = useCallback(async () => {
+      const refId = transaction.referenceId || transaction.id;
+      await Clipboard.setStringAsync(refId);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      Alert.alert("Copied", "Reference ID copied to clipboard");
+    }, [transaction.referenceId, transaction.id]);
+
+    const handleShare = useCallback(async () => {
+      const amount = `${transaction.amount > 0 ? "+" : ""}${formatCurrency(Math.abs(transaction.amount))}`;
+      const status = transaction.status.charAt(0) + transaction.status.slice(1).toLowerCase();
+      const msg = `DelipuCash Transaction\n${transaction.description}\nAmount: ${amount}\nStatus: ${status}\nDate: ${formatDate(transaction.createdAt)}${transaction.referenceId ? `\nRef: ${transaction.referenceId}` : ""}`;
+      try {
+        await Share.share({ message: msg });
+      } catch {}
+    }, [transaction]);
 
     return (
       <>
@@ -503,9 +525,18 @@ const TransactionDetailContent = memo<{ transaction: UnifiedTransaction; colors:
         {transaction.referenceId && (
           <View style={[styles.sheetRow, { borderBottomColor: colors.border }]}>
             <Text style={[styles.sheetRowLabel, { color: colors.textMuted }]}>Reference</Text>
-            <Text style={[styles.sheetRowValue, { color: colors.text }]} numberOfLines={1}>
-              {transaction.referenceId}
-            </Text>
+            <TouchableOpacity
+              style={styles.refRow}
+              onPress={handleCopyReference}
+              accessibilityRole="button"
+              accessibilityLabel="Copy reference ID"
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.sheetRowValue, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+                {transaction.referenceId}
+              </Text>
+              <Copy size={14} color={colors.textMuted} strokeWidth={2} />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -519,6 +550,69 @@ const TransactionDetailContent = memo<{ transaction: UnifiedTransaction; colors:
             </Text>
           </View>
         )}
+
+        {/* Action buttons */}
+        <View style={styles.sheetActions}>
+          <View style={styles.sheetActionsRow}>
+            <TouchableOpacity
+              style={[styles.sheetActionBtn, { backgroundColor: `${colors.primary}12` }]}
+              onPress={handleCopyReference}
+              accessibilityRole="button"
+              accessibilityLabel="Copy reference"
+              activeOpacity={0.7}
+            >
+              <Copy size={16} color={colors.primary} strokeWidth={2} />
+              <Text style={[styles.sheetActionBtnLabel, { color: colors.primary }]}>
+                Copy Ref
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.sheetActionBtn, { backgroundColor: `${colors.text}08` }]}
+              onPress={handleShare}
+              accessibilityRole="button"
+              accessibilityLabel="Share transaction"
+              activeOpacity={0.7}
+            >
+              <Share2 size={16} color={colors.text} strokeWidth={2} />
+              <Text style={[styles.sheetActionBtnLabel, { color: colors.text }]}>
+                Share
+              </Text>
+            </TouchableOpacity>
+
+            {transaction.status === "FAILED" && (
+              <TouchableOpacity
+                style={[styles.sheetActionBtn, { backgroundColor: `${colors.error}12` }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                  Alert.alert(
+                    "Retry Transaction",
+                    "Would you like to retry this transaction?",
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Retry",
+                        onPress: () => {
+                          if (transaction.type === "withdrawal") {
+                            router.push("/withdraw" as Href);
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Retry transaction"
+                activeOpacity={0.7}
+              >
+                <RotateCcw size={16} color={colors.error} strokeWidth={2} />
+                <Text style={[styles.sheetActionBtnLabel, { color: colors.error }]}>
+                  Retry
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </>
     );
   },
@@ -840,9 +934,11 @@ const styles = StyleSheet.create({
   // Filters
   filterContainer: {
     marginBottom: 12,
+    marginHorizontal: -16,
   },
   filterContent: {
     gap: 8,
+    paddingHorizontal: 16,
   },
   filterChip: {
     flexDirection: "row",
@@ -1027,6 +1123,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   sheetRowValue: {
+    fontFamily: "Roboto_500Medium",
+    fontSize: 13,
+  },
+  refRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  sheetActions: {
+    marginTop: 16,
+  },
+  sheetActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  sheetActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 6,
+  },
+  sheetActionBtnLabel: {
     fontFamily: "Roboto_500Medium",
     fontSize: 13,
   },

@@ -1044,6 +1044,7 @@ export function useQuestionCategories(): UseQueryResult<string[], Error> {
 
 /**
  * Hook to fetch transactions
+ * @deprecated Use useFlatTransactions from @/services/transactionHooks instead
  */
 export function useTransactions(params?: { type?: string; status?: string }): UseQueryResult<Transaction[], Error> {
   return useQuery({
@@ -1051,7 +1052,7 @@ export function useTransactions(params?: { type?: string; status?: string }): Us
     queryFn: async () => {
       const response = await api.transactions.getAll(params);
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      return (response.data as any)?.transactions ?? response.data;
     },
     staleTime: 1000 * 60,
   });
@@ -1083,14 +1084,14 @@ function useAdaptiveInterval(intervalMs: number): number | false {
 }
 
 // ===========================================
-// Notifications Hooks
+// Notifications Hooks (LEGACY)
+// Prefer notificationHooks.ts for new code — it provides infinite scroll,
+// server-side filtering, date grouping, and granular query keys.
 // ===========================================
 
 /**
- * Hook to fetch notifications.
- *
- * Adaptive: auto-polls every 60 s when SSE is down,
- * relies on SSE push-invalidation when connected.
+ * @deprecated Use `useFlatNotifications` from `@/services/notificationHooks` instead.
+ * Kept for backward compatibility (bell badges in tab screens).
  */
 export function useNotifications(): UseQueryResult<Notification[], Error> {
   const refetchInterval = useAdaptiveInterval(POLL_INTERVALS.notifications);
@@ -1100,7 +1101,8 @@ export function useNotifications(): UseQueryResult<Notification[], Error> {
     queryFn: async () => {
       const response = await api.notifications.getAll();
       if (!response.success) throw new Error(response.error);
-      return response.data;
+      // Extract notifications array from the NotificationsResponse shape
+      return response.data?.notifications ?? [];
     },
     staleTime: 1000 * 30,
     refetchInterval,
@@ -1110,10 +1112,8 @@ export function useNotifications(): UseQueryResult<Notification[], Error> {
 }
 
 /**
- * Hook to get unread notification count.
- *
- * Adaptive: auto-polls every 30 s when SSE is down (lightweight — single int),
- * relies on SSE push-invalidation when connected.
+ * @deprecated Use `useUnreadNotificationCount` from `@/services/notificationHooks` instead.
+ * Kept for backward compatibility (bell badges in tab screens).
  */
 export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error> {
   const isAuthReady = useAuthStore((s) => s.isReady && !!s.auth?.token);
@@ -1138,6 +1138,7 @@ export function useUnreadCount(enabled?: boolean): UseQueryResult<number, Error>
 /**
  * Hook to mark notification as read (with optimistic update)
  */
+/** @deprecated Use `useMarkNotificationRead` from `@/services/notificationHooks` instead. */
 export function useMarkNotificationRead(): UseMutationResult<Notification, Error, string> {
   const queryClient = useQueryClient();
 
@@ -1175,6 +1176,7 @@ export function useMarkNotificationRead(): UseMutationResult<Notification, Error
 
 /**
  * Hook to mark all notifications as read
+ * @deprecated Use useMarkAllNotificationsRead from @/services/notificationHooks instead
  */
 export function useMarkAllNotificationsRead() {
   const queryClient = useQueryClient();

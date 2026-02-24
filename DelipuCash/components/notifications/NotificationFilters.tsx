@@ -15,9 +15,9 @@ import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { SPACING, RADIUS, ANIMATION, useTheme, withAlpha } from '@/utils/theme';
-import type { NotificationCategory } from '@/services/notificationApi';
+import type { NotificationFilterType } from '@/types';
 
-export type FilterOption = 'all' | 'unread' | NotificationCategory;
+export type FilterOption = NotificationFilterType;
 
 interface FilterChipData {
   id: FilterOption;
@@ -29,7 +29,7 @@ interface NotificationFiltersProps {
   selectedFilter: FilterOption;
   onFilterChange: (filter: FilterOption) => void;
   unreadCount?: number;
-  categoryCounts?: Partial<Record<NotificationCategory, number>>;
+  categoryCounts?: Partial<Record<string, number>>;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -144,7 +144,7 @@ export const NotificationFilters: React.FC<NotificationFiltersProps> = ({
       return { ...filter, count: unreadCount };
     }
     if (filter.id in categoryCounts) {
-      return { ...filter, count: categoryCounts[filter.id as NotificationCategory] };
+      return { ...filter, count: categoryCounts[filter.id] };
     }
     return filter;
   });

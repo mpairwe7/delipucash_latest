@@ -83,6 +83,8 @@ import {
   Alert,
   Animated,
   FlatList,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -92,6 +94,7 @@ import {
   AccessibilityInfo,
   Pressable,
 } from "react-native";
+import { useSharedValue, withTiming } from "react-native-reanimated";
 import { X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -253,6 +256,10 @@ export default function SurveysScreen(): React.ReactElement {
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
   const premiumSectionRef = useRef<InlinePremiumSectionRef>(null);
+
+  // FAB auto-hide on scroll (matches question screen pattern)
+  const fabTranslateY = useSharedValue(0);
+  const lastScrollY = useRef(0);
 
   // Subscription status (via RevenueCat / Google Play Billing)
   const {
@@ -583,6 +590,23 @@ export default function SurveysScreen(): React.ReactElement {
     setRefreshing(false);
   }, [refetchRunning, refetchUpcoming, refetchCompleted, refetchSubscription, refetchSurveyAds, refetchBannerAds, refetchFeaturedAds]);
 
+  // Scroll handler — FAB auto-hide: hide on scroll down, show on scroll up
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const currentY = e.nativeEvent.contentOffset.y;
+      const dy = currentY - lastScrollY.current;
+
+      if (dy > 10 && currentY > 100) {
+        fabTranslateY.value = withTiming(120, { duration: 200 });
+      } else if (dy < -10) {
+        fabTranslateY.value = withTiming(0, { duration: 200 });
+      }
+
+      lastScrollY.current = currentY;
+    },
+    [fabTranslateY]
+  );
+
   // Ad handlers
   const handleAdClick = useCallback((ad: Ad) => {
     recordAdClick.mutate({ adId: ad.id, placement: 'survey' });
@@ -815,7 +839,7 @@ export default function SurveysScreen(): React.ReactElement {
           <View
             style={[styles.emptyCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             accessible
-            role="summary"
+            accessibilityRole="summary"
           >
             <FileText size={48} color={colors.textMuted} strokeWidth={1.5} accessible={false} />
             <Text
@@ -840,17 +864,12 @@ export default function SurveysScreen(): React.ReactElement {
               }
             </Text>
             {activeTab === 'my-surveys' && (
-              <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-                onPress={handleQuickCreate}
-                accessibilityRole="button"
-                accessibilityLabel="Create your first survey"
+              <Text
+                style={[styles.emptyHint, { color: colors.textMuted }]}
+                maxFontSizeMultiplier={FONT_SCALE.body}
               >
-                <Plus size={18} color={colors.primaryText} />
-                <Text style={[styles.emptyButtonText, { color: colors.primaryText }]}>
-                  Create Survey
-                </Text>
-              </TouchableOpacity>
+                Tap the + button to get started
+              </Text>
             )}
           </View>
         );
@@ -864,7 +883,6 @@ export default function SurveysScreen(): React.ReactElement {
     activeTab,
     handleAdClick,
     handleAdImpression,
-    handleQuickCreate,
     getSurveyPressHandler,
     getViewResponsesHandler,
     handleDismissAd,
@@ -1137,13 +1155,15 @@ export default function SurveysScreen(): React.ReactElement {
           {
             paddingTop: SPACING.sm,
             paddingHorizontal: horizontalPadding,
-            paddingBottom: insets.bottom + SPACING['3xl'] + 100, // Space for FAB
+            paddingBottom: insets.bottom + 80, // Space for FAB (matches question screen)
             maxWidth: layout.contentMaxWidth,
             alignSelf: 'center' as const,
             width: '100%',
           },
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={200}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -1151,10 +1171,10 @@ export default function SurveysScreen(): React.ReactElement {
             tintColor={colors.primary}
           />
         }
-        // Performance optimizations
+        // Performance optimizations (matches question screen proven values)
         removeClippedSubviews={true}
-        maxToRenderPerBatch={5}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={3}
+        updateCellsBatchingPeriod={300}
         windowSize={5}
         initialNumToRender={8}
         // Grid layout for tablet — uses reactive gridColumns from useResponsiveLayout
@@ -1163,11 +1183,13 @@ export default function SurveysScreen(): React.ReactElement {
         columnWrapperStyle={isTablet && cardViewStyle === 'grid' ? styles.gridRow : undefined}
       />
 
-      {/* FAB */}
+      {/* FAB — auto-hides on scroll, safe-area-aware position (matches question screen) */}
       <SurveyCreationFAB
         onSelect={handleCreationMode}
         onPrimaryPress={handleQuickCreate}
         disabled={loadingSubscription}
+        bottomOffset={insets.bottom + SPACING.lg}
+        translateY={fabTranslateY}
       />
 
       {/* Search Overlay */}
@@ -1216,7 +1238,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    paddingBottom: SPACING.xs,
+    paddingBottom: SPACING.sm,
   },
   listContent: {
     paddingHorizontal: SPACING.md,
@@ -1470,18 +1492,10 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 280,
   },
-  emptyButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: SPACING.md,
-    paddingHorizontal: SPACING.xl,
-    borderRadius: RADIUS.xl,
-    marginTop: SPACING.xl,
-    gap: SPACING.sm,
-    ...SHADOWS.md,
-  },
-  emptyButtonText: {
+  emptyHint: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.base,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: SPACING.lg,
+    textAlign: "center",
   },
 });

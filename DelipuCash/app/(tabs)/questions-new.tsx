@@ -133,6 +133,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   COMPONENT_SIZE,
+  SHADOWS,
   withAlpha,
 } from "@/utils/theme";
 import { triggerHaptic } from "@/utils/quiz-utils";
@@ -197,6 +198,7 @@ const FEED_TABS: FeedTab[] = [
 ];
 
 const AD_INSERTION_INTERVAL = 3;
+const FAB_SIZE = 56;
 
 // Stable viewability config (defined outside component to prevent recreation)
 const VIEWABILITY_CONFIG: ViewabilityConfig = {
@@ -1011,6 +1013,7 @@ export default function QuestionsScreen(): React.ReactElement {
               { backgroundColor: withAlpha(colors.primary, 0.1) },
             ]}
             accessibilityLabel="Search questions"
+            accessibilityHint="Opens the search overlay to find questions"
             accessibilityRole="button"
           >
             <Search size={20} color={colors.primary} strokeWidth={1.5} />
@@ -1074,23 +1077,50 @@ export default function QuestionsScreen(): React.ReactElement {
       {/* Floating Action Button — auto-hides on scroll */}
       <Animated.View
         style={[
-          styles.fab,
-          {
-            bottom: insets.bottom + SPACING.lg,
-            backgroundColor: colors.primary,
-          },
+          styles.fabWrapper,
+          { bottom: insets.bottom + SPACING.lg },
           fabAnimatedStyle,
         ]}
       >
+        {!showCreateWizard && (
+          <View
+            accessible={false}
+            pointerEvents="none"
+            style={[
+              styles.fabHint,
+              {
+                backgroundColor: colors.card,
+                borderColor: withAlpha(colors.text, 0.12),
+              },
+              SHADOWS.sm,
+            ]}
+          >
+            <Sparkles size={14} color={colors.primary} />
+            <Text style={[styles.fabHintText, { color: colors.textMuted }]}>
+              Tap to create
+            </Text>
+          </View>
+        )}
         <Pressable
           onPress={handleFABPress}
-          style={styles.fabTouchable}
+          style={[styles.fabCircle, { backgroundColor: colors.primary }]}
+          hitSlop={8}
           accessibilityLabel="Create new question"
           accessibilityRole="button"
           accessibilityHint="Double tap to open question creation wizard"
         >
-          <Plus size={28} color={colors.primaryText} strokeWidth={2} />
+          <Plus size={28} color={colors.primaryText} strokeWidth={2.5} />
         </Pressable>
+        {/* Pulse ring — matches survey FAB */}
+        {!showCreateWizard && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.fabPulseRing,
+              { borderColor: withAlpha(colors.primary, 0.3) },
+            ]}
+          />
+        )}
       </Animated.View>
 
       {/* Search Overlay */}
@@ -1263,23 +1293,47 @@ const styles = StyleSheet.create({
   // Instant Reward / Ask CTA styles moved to CTACards.tsx
 
   // FAB
-  fab: {
+  fabWrapper: {
     position: "absolute",
     right: SPACING.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    zIndex: 1000,
+  },
+  fabCircle: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
+    alignItems: "center",
+    justifyContent: "center",
     elevation: 6,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
   },
-  fabTouchable: {
-    width: "100%",
-    height: "100%",
+  fabHint: {
+    position: "absolute",
+    bottom: FAB_SIZE + SPACING.sm,
+    right: 0,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: SPACING.xs,
+  },
+  fabHintText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  fabPulseRing: {
+    position: "absolute",
+    width: FAB_SIZE + 16,
+    height: FAB_SIZE + 16,
+    borderRadius: (FAB_SIZE + 16) / 2,
+    borderWidth: 2,
+    bottom: -8,
+    left: -8,
   },
 
   // Footer loader for infinite scroll

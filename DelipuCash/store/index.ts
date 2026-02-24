@@ -562,3 +562,15 @@ export {
   selectOpenDetail,
   selectCloseDetail,
 } from './TransactionUIStore';
+
+// ============================================================================
+// Notification UI Store — Notification screen filter & detail state
+// ============================================================================
+export {
+  useNotificationUIStore,
+  selectNotificationFilter,
+  selectSelectedNotificationId,
+  selectSetNotificationFilter,
+  selectOpenNotificationDetail,
+  selectCloseNotificationDetail,
+} from './NotificationUIStore';

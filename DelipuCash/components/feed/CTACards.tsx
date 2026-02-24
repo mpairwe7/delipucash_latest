@@ -28,7 +28,7 @@ import {
   HelpCircle,
   MessageCircle,
   TrendingUp,
-  Plus,
+  ChevronRight,
 } from 'lucide-react-native';
 import {
   SPACING,
@@ -36,6 +36,14 @@ import {
   RADIUS,
   withAlpha,
 } from '@/utils/theme';
+
+// ============================================================================
+// Shared CTA constants — ensures visual consistency across all cards
+// ============================================================================
+
+const CTA_ICON_CONTAINER = 48;
+const CTA_ICON_SIZE = 24;
+const CTA_ACTION_CONTAINER = 32;
 
 // ============================================================================
 // Answer & Earn CTA
@@ -65,58 +73,61 @@ const AnswerEarnCTAComponent: React.FC<AnswerEarnCTAProps> = ({
   style,
 }) => (
   <Pressable
-    style={[styles.earnCta, { backgroundColor: colors.card }, style]}
+    style={[styles.ctaCard, { backgroundColor: colors.card }, style]}
     onPress={onPress}
     accessibilityLabel="Start answering questions to earn rewards"
+    accessibilityHint="Navigates to the answer questions screen"
     accessibilityRole="button"
   >
     <View
       style={[
-        styles.earnCtaIcon,
+        styles.ctaIconContainer,
         { backgroundColor: withAlpha(colors.primary, 0.15) },
       ]}
     >
-      <Gift size={28} color={colors.primary} strokeWidth={1.5} />
+      <Gift size={CTA_ICON_SIZE} color={colors.primary} strokeWidth={1.5} />
     </View>
-    <View style={styles.earnCtaContent}>
-      <Text style={[styles.earnCtaTitle, { color: colors.text }]}>
+    <View style={styles.ctaContent}>
+      <Text style={[styles.ctaTitle, { color: colors.text }]}>
         Answer Questions & Earn!
       </Text>
-      <Text style={[styles.earnCtaSubtitle, { color: colors.textMuted }]}>
+      <Text style={[styles.ctaSubtitle, { color: colors.textMuted }]}>
         Complete quizzes to earn points and cash rewards
       </Text>
-      <View style={styles.earnCtaStats}>
+      <View style={styles.ctaStats}>
         <View
           style={[
-            styles.earnCtaStat,
+            styles.ctaStat,
             { backgroundColor: withAlpha(colors.warning, 0.15) },
           ]}
         >
           <Star size={12} color={colors.warning} strokeWidth={2} />
-          <Text style={[styles.earnCtaStatText, { color: colors.warning }]}>
+          <Text style={[styles.ctaStatText, { color: colors.warning }]}>
             {pointsPerQuestion} pts/question
           </Text>
         </View>
         {streakActive && (
           <View
             style={[
-              styles.earnCtaStat,
+              styles.ctaStat,
               { backgroundColor: withAlpha(colors.error, 0.15) },
             ]}
           >
             <Flame size={12} color={colors.error} strokeWidth={2} />
-            <Text style={[styles.earnCtaStatText, { color: colors.error }]}>
+            <Text style={[styles.ctaStatText, { color: colors.error }]}>
               Streak bonus
             </Text>
           </View>
         )}
       </View>
     </View>
-    <View style={[styles.startButton, { backgroundColor: colors.primary }]}>
-      <Play size={16} color={colors.primaryText} strokeWidth={2} />
-      <Text style={[styles.startButtonText, { color: colors.primaryText }]}>
-        Start
-      </Text>
+    <View
+      style={[
+        styles.ctaAction,
+        { backgroundColor: withAlpha(colors.primary, 0.12) },
+      ]}
+    >
+      <Play size={16} color={colors.primary} strokeWidth={2.5} />
     </View>
   </Pressable>
 );
@@ -144,30 +155,36 @@ const InstantRewardCTAComponent: React.FC<InstantRewardCTAProps> = ({
   style,
 }) => (
   <Pressable
-    style={[styles.instantRewardCard, { backgroundColor: colors.card }, style]}
+    style={[styles.ctaCard, { backgroundColor: colors.card }, style]}
     onPress={onPress}
     accessibilityLabel="Browse instant reward questions for quick payouts"
+    accessibilityHint="Navigates to the instant reward questions screen"
     accessibilityRole="button"
   >
     <View
       style={[
-        styles.instantRewardIcon,
+        styles.ctaIconContainer,
         { backgroundColor: withAlpha(colors.warning, 0.15) },
       ]}
     >
-      <Sparkles size={24} color={colors.warning} strokeWidth={1.5} />
+      <Sparkles size={CTA_ICON_SIZE} color={colors.warning} strokeWidth={1.5} />
     </View>
-    <View style={styles.instantRewardContent}>
-      <Text style={[styles.instantRewardTitle, { color: colors.text }]}>
+    <View style={styles.ctaContent}>
+      <Text style={[styles.ctaTitle, { color: colors.text }]}>
         Answer Instant Reward Questions!
       </Text>
-      <Text
-        style={[styles.instantRewardSubtitle, { color: colors.textMuted }]}
-      >
+      <Text style={[styles.ctaSubtitle, { color: colors.textMuted }]}>
         Earn instant payouts for quality answers
       </Text>
     </View>
-    <Zap size={20} color={colors.warning} strokeWidth={2} />
+    <View
+      style={[
+        styles.ctaAction,
+        { backgroundColor: withAlpha(colors.warning, 0.12) },
+      ]}
+    >
+      <Zap size={16} color={colors.warning} strokeWidth={2.5} />
+    </View>
   </Pressable>
 );
 
@@ -195,68 +212,74 @@ const AskCommunityCTAComponent: React.FC<AskCommunityCTAProps> = ({
   style,
 }) => (
   <Pressable
-    style={[styles.askQuestionsCta, { backgroundColor: colors.card }, style]}
+    style={[styles.ctaCard, { backgroundColor: colors.card }, style]}
     onPress={onPress}
     accessibilityLabel="Ask a question and get answers from the community"
+    accessibilityHint="Opens the question creation wizard"
     accessibilityRole="button"
   >
     <View
       style={[
-        styles.askQuestionsIcon,
+        styles.ctaIconContainer,
         { backgroundColor: withAlpha(colors.info, 0.15) },
       ]}
     >
-      <HelpCircle size={24} color={colors.info} strokeWidth={1.5} />
+      <HelpCircle size={CTA_ICON_SIZE} color={colors.info} strokeWidth={1.5} />
     </View>
-    <View style={styles.askQuestionsContent}>
-      <Text style={[styles.askQuestionsTitle, { color: colors.text }]}>
+    <View style={styles.ctaContent}>
+      <Text style={[styles.ctaTitle, { color: colors.text }]}>
         Ask the Community
       </Text>
-      <Text
-        style={[styles.askQuestionsSubtitle, { color: colors.textMuted }]}
-      >
+      <Text style={[styles.ctaSubtitle, { color: colors.textMuted }]}>
         Get answers from experts and community members
       </Text>
-      <View style={styles.askQuestionsStats}>
+      <View style={styles.ctaStats}>
         <View
           style={[
-            styles.askQuestionsStat,
+            styles.ctaStat,
             { backgroundColor: withAlpha(colors.info, 0.15) },
           ]}
         >
           <MessageCircle size={12} color={colors.info} strokeWidth={2} />
-          <Text style={[styles.askQuestionsStatText, { color: colors.info }]}>
+          <Text style={[styles.ctaStatText, { color: colors.info }]}>
             Quick responses
           </Text>
         </View>
         <View
           style={[
-            styles.askQuestionsStat,
+            styles.ctaStat,
             { backgroundColor: withAlpha(colors.success, 0.15) },
           ]}
         >
           <TrendingUp size={12} color={colors.success} strokeWidth={2} />
           <Text
-            style={[styles.askQuestionsStatText, { color: colors.success }]}
+            style={[styles.ctaStatText, { color: colors.success }]}
           >
             Build reputation
           </Text>
         </View>
       </View>
     </View>
-    <Plus size={20} color={colors.info} strokeWidth={2} />
+    <View
+      style={[
+        styles.ctaAction,
+        { backgroundColor: withAlpha(colors.info, 0.12) },
+      ]}
+    >
+      <ChevronRight size={16} color={colors.info} strokeWidth={2.5} />
+    </View>
   </Pressable>
 );
 
 export const AskCommunityCTA = memo(AskCommunityCTAComponent);
 
 // ============================================================================
-// STYLES
+// STYLES — Unified CTA card design system
 // ============================================================================
 
 const styles = StyleSheet.create({
-  // Earn CTA
-  earnCta: {
+  // Shared CTA card base
+  ctaCard: {
     borderRadius: RADIUS.lg,
     padding: SPACING.base,
     flexDirection: 'row',
@@ -264,127 +287,47 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
     marginBottom: SPACING.md,
   },
-  earnCtaIcon: {
-    width: 56,
-    height: 56,
+  ctaIconContainer: {
+    width: CTA_ICON_CONTAINER,
+    height: CTA_ICON_CONTAINER,
     borderRadius: RADIUS.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  earnCtaContent: {
+  ctaContent: {
     flex: 1,
     gap: SPACING.xs,
   },
-  earnCtaTitle: {
+  ctaTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.lg,
+    fontSize: TYPOGRAPHY.fontSize.base,
   },
-  earnCtaSubtitle: {
+  ctaSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
-  earnCtaStats: {
+  ctaStats: {
     flexDirection: 'row',
     gap: SPACING.sm,
     marginTop: SPACING.xs,
   },
-  earnCtaStat: {
+  ctaStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: SPACING.xxs,
     paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
+    paddingVertical: SPACING.xxs,
     borderRadius: RADIUS.full,
   },
-  earnCtaStatText: {
+  ctaStatText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.xs,
   },
-  startButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.sm,
-    borderRadius: RADIUS.md,
-  },
-  startButtonText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-
-  // Instant Reward CTA
-  instantRewardCard: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  instantRewardIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.lg,
+  ctaAction: {
+    width: CTA_ACTION_CONTAINER,
+    height: CTA_ACTION_CONTAINER,
+    borderRadius: CTA_ACTION_CONTAINER / 2,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  instantRewardContent: {
-    flex: 1,
-    gap: 2,
-  },
-  instantRewardTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  instantRewardSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-
-  // Ask Community CTA
-  askQuestionsCta: {
-    borderRadius: RADIUS.lg,
-    padding: SPACING.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
-  },
-  askQuestionsIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: RADIUS.lg,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  askQuestionsContent: {
-    flex: 1,
-    gap: SPACING.xs,
-  },
-  askQuestionsTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-  },
-  askQuestionsSubtitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.sm,
-  },
-  askQuestionsStats: {
-    flexDirection: 'row',
-    gap: SPACING.sm,
-    marginTop: SPACING.xs,
-  },
-  askQuestionsStat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    borderRadius: RADIUS.full,
-  },
-  askQuestionsStatText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });

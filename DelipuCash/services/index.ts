@@ -49,8 +49,12 @@ export {
 // Support API
 export * from "./supportApi";
 
-// Notification API
-export * from "./notificationApi";
+// ============================================================================
+// Notification TanStack Query Hooks (Industry Standard)
+// Centralized notification hooks with infinite scroll, optimistic updates
+// These are the preferred notification hooks — use instead of legacy hooks.ts
+// ============================================================================
+export * from "./notificationHooks";
 
 // Survey API
 export { default as surveyApi } from "./surveyApi";

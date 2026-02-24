@@ -241,15 +241,15 @@ const NetworkBadge = React.memo(({ isDataSaver, onToggle }: { isDataSaver: boole
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         onToggle();
       }}
-      style={[styles.networkBadge, { backgroundColor: withAlpha(colors.text, 0.08), borderColor: withAlpha(colors.text, 0.06) }, isDataSaver && styles.networkBadgeActive]}
+      style={[styles.networkBadge, { backgroundColor: withAlpha(colors.text, 0.08), borderColor: withAlpha(colors.text, 0.06) }, isDataSaver && { backgroundColor: withAlpha(colors.warning, 0.15), borderColor: withAlpha(colors.warning, 0.3) }]}
       accessibilityRole="switch"
       accessibilityState={{ checked: isDataSaver }}
       accessibilityLabel={isDataSaver ? 'Data saver on. Tap to disable' : 'Data saver off. Tap to enable'}
     >
       {isDataSaver ? (
-        <WifiOff size={12} color="#FFA726" strokeWidth={2.5} />
+        <WifiOff size={12} color={colors.warning} strokeWidth={2.5} />
       ) : (
-        <Zap size={12} color="#4CAF50" strokeWidth={2.5} />
+        <Zap size={12} color={colors.success} strokeWidth={2.5} />
       )}
     </Pressable>
   );
@@ -259,6 +259,7 @@ NetworkBadge.displayName = 'NetworkBadge';
 
 /** 2026 Standard: Live viewer count pulse indicator */
 const LiveViewerCount = React.memo(({ count }: { count: number }) => {
+  const { colors } = useTheme();
   const pulse = useSharedValue(1);
   const reduceMotion = useReducedMotion();
 
@@ -279,10 +280,10 @@ const LiveViewerCount = React.memo(({ count }: { count: number }) => {
   if (count <= 0) return null;
 
   return (
-    <Animated.View style={[styles.liveViewerBadge, pulseStyle]}>
-      <View style={styles.liveViewerDot} />
-      <Eye size={10} color="#FFFFFF" strokeWidth={2.5} />
-      <Text style={styles.liveViewerText}>{count > 999 ? `${(count / 1000).toFixed(1)}K` : count}</Text>
+    <Animated.View style={[styles.liveViewerBadge, { backgroundColor: withAlpha(colors.error, 0.2), borderColor: withAlpha(colors.error, 0.3) }, pulseStyle]}>
+      <View style={[styles.liveViewerDot, { backgroundColor: colors.error }]} />
+      <Eye size={10} color={colors.primaryText} strokeWidth={2.5} />
+      <Text style={[styles.liveViewerText, { color: colors.primaryText }]}>{count > 999 ? `${(count / 1000).toFixed(1)}K` : count}</Text>
     </Animated.View>
   );
 });
@@ -291,15 +292,16 @@ LiveViewerCount.displayName = 'LiveViewerCount';
 
 /** 2026 Standard: AI-curated feed indicator chip */
 const AICuratedChip = React.memo(({ visible }: { visible: boolean }) => {
+  const { colors } = useTheme();
   if (!visible) return null;
   return (
-    <Animated.View 
-      entering={FadeIn.duration(400)} 
+    <Animated.View
+      entering={FadeIn.duration(400)}
       exiting={FadeOut.duration(200)}
-      style={styles.aiChip}
+      style={[styles.aiChip, { backgroundColor: withAlpha(colors.info, 0.2), borderColor: withAlpha(colors.info, 0.3) }]}
     >
-      <Sparkles size={10} color="#AB47BC" strokeWidth={2.5} />
-      <Text style={styles.aiChipText}>AI Curated</Text>
+      <Sparkles size={10} color={colors.info} strokeWidth={2.5} />
+      <Text style={[styles.aiChipText, { color: colors.info }]}>AI Curated</Text>
     </Animated.View>
   );
 });
@@ -1152,7 +1154,7 @@ export default function VideosScreen(): React.ReactElement {
 
   const fabActions = useMemo(() => [
     {
-      icon: <Wifi size={20} color="#FFFFFF" />,
+      icon: <Wifi size={20} color={colors.primaryText} />,
       label: 'Go Live',
       onPress: () => {
         setFabExpanded(false);
@@ -1161,7 +1163,7 @@ export default function VideosScreen(): React.ReactElement {
       color: colors.error,
     },
     {
-      icon: <Camera size={20} color="#FFFFFF" />,
+      icon: <Camera size={20} color={colors.primaryText} />,
       label: 'Record',
       onPress: () => {
         setFabExpanded(false);
@@ -1170,7 +1172,7 @@ export default function VideosScreen(): React.ReactElement {
       color: colors.warning,
     },
     {
-      icon: <Upload size={20} color="#FFFFFF" />,
+      icon: <Upload size={20} color={colors.primaryText} />,
       label: 'Upload',
       onPress: () => {
         setFabExpanded(false);
@@ -1226,7 +1228,7 @@ export default function VideosScreen(): React.ReactElement {
           style={[
             styles.header,
             {
-              paddingTop: insets.top + SPACING.xs,
+              paddingTop: insets.top + SPACING.sm,
               backgroundColor: colors.background,
             },
           ]}
@@ -1289,8 +1291,8 @@ export default function VideosScreen(): React.ReactElement {
               >
                 <Bell size={ICON_SIZE.sm} color={colors.text} strokeWidth={2} />
                 {(unreadCount ?? 0) > 0 && (
-                  <View style={[styles.notificationBadge, { borderColor: colors.background }]}>
-                    <Text style={styles.notificationCount}>
+                  <View style={[styles.notificationBadge, { backgroundColor: colors.error, borderColor: colors.background }]}>
+                    <Text style={[styles.notificationCount, { color: colors.primaryText }]}>
                       {(unreadCount ?? 0) > 99 ? '99+' : unreadCount}
                     </Text>
                   </View>
@@ -1387,7 +1389,7 @@ export default function VideosScreen(): React.ReactElement {
         <MiniPlayerWrapper
           onClose={closeMiniPlayer}
           onExpand={expandMiniPlayer}
-          bottomOffset={insets.bottom + SPACING.xl}
+          bottomOffset={insets.bottom + SPACING.lg}
         />
       )}
 
@@ -1427,7 +1429,7 @@ export default function VideosScreen(): React.ReactElement {
       <FloatingActionButton
         actions={fabActions}
         position="bottom-right"
-        bottomOffset={insets.bottom + SPACING.xl}
+        bottomOffset={insets.bottom + SPACING.lg}
         onExpandedChange={setFabExpanded}
         defaultExpanded={fabExpanded}
       />
@@ -1604,14 +1606,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
-    backgroundColor: withAlpha('#AB47BC', 0.2),
     borderWidth: 1,
-    borderColor: withAlpha('#AB47BC', 0.3),
   },
   aiChipText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: 9,
-    color: '#CE93D8',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
@@ -1625,10 +1624,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
   },
-  networkBadgeActive: {
-    backgroundColor: withAlpha('#FFA726', 0.15),
-    borderColor: withAlpha('#FFA726', 0.3),
-  },
 
   // ── LIVE VIEWER COUNT ──
   liveViewerBadge: {
@@ -1638,20 +1633,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACING.sm,
     paddingVertical: 3,
     borderRadius: RADIUS.full,
-    backgroundColor: withAlpha('#EF4444', 0.2),
     borderWidth: 1,
-    borderColor: withAlpha('#EF4444', 0.3),
   },
   liveViewerDot: {
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#EF4444',
   },
   liveViewerText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: 9,
-    color: '#FFFFFF',
   },
 
   // ── NOTIFICATIONS ──
@@ -1662,7 +1653,6 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#FF2D55',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 3,
@@ -1671,6 +1661,5 @@ const styles = StyleSheet.create({
   notificationCount: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: 9,
-    color: '#FFFFFF',
   },
 });

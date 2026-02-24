@@ -18,12 +18,13 @@ import React, { memo, useRef, useCallback, useState, useEffect } from 'react';
 import {
   View,
   Text,
+  Pressable,
   TouchableOpacity,
   StyleSheet,
   Animated,
   type ViewStyle,
 } from 'react-native';
-import { Plus } from 'lucide-react-native';
+import { Plus, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
   useTheme,
@@ -31,7 +32,7 @@ import {
   TYPOGRAPHY,
   RADIUS,
   SHADOWS,
-  Z_INDEX,
+  withAlpha,
 } from '@/utils/theme';
 
 /**
@@ -93,7 +94,7 @@ function FloatingActionButtonComponent({
   color,
   defaultExpanded = false,
   onExpandedChange,
-  bottomOffset = SPACING.xl,
+  bottomOffset = SPACING.lg,
   style,
   haptic = true,
   accessibilityLabel = 'Actions menu',
@@ -154,12 +155,12 @@ function FloatingActionButtonComponent({
     const base: ViewStyle = { bottom: bottomOffset };
     switch (position) {
       case 'bottom-left':
-        return { ...base, left: SPACING.base };
+        return { ...base, left: SPACING.lg };
       case 'bottom-center':
         return { ...base, alignSelf: 'center' };
       case 'bottom-right':
       default:
-        return { ...base, right: SPACING.base };
+        return { ...base, right: SPACING.lg };
     }
   };
 
@@ -230,23 +231,63 @@ function FloatingActionButtonComponent({
           ))}
         </Animated.View>
 
+        {/* Quick hint — visible only when collapsed */}
+        {!expanded && (
+          <View
+            accessible={false}
+            pointerEvents="none"
+            style={[
+              styles.hint,
+              {
+                backgroundColor: colors.card,
+                borderColor: withAlpha(colors.text, 0.12),
+              },
+              SHADOWS.sm,
+            ]}
+          >
+            <Sparkles size={14} color={fabColor} />
+            <Text style={[styles.hintText, { color: colors.textMuted }]}>
+              Tap for options
+            </Text>
+          </View>
+        )}
+
         {/* Main FAB button */}
-        <TouchableOpacity
+        <Pressable
           onPress={handleToggle}
-          activeOpacity={0.85}
+          hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel={accessibilityLabel}
+          accessibilityLabel={
+            expanded ? 'Close actions menu' : accessibilityLabel
+          }
+          accessibilityHint={
+            expanded
+              ? 'Double tap to close the actions menu'
+              : 'Double tap to open creation options'
+          }
           accessibilityState={{ expanded }}
-          style={[
+          style={({ pressed }) => [
             styles.fab,
             {
               backgroundColor: fabColor,
-              ...SHADOWS.lg,
+              opacity: pressed ? 0.75 : 1,
             },
+            SHADOWS.lg,
           ]}
         >
           {renderMainIcon()}
-        </TouchableOpacity>
+        </Pressable>
+
+        {/* Pulse ring — visible only when collapsed */}
+        {!expanded && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.pulseRing,
+              { borderColor: withAlpha(fabColor, 0.3) },
+            ]}
+          />
+        )}
       </View>
     </View>
   );
@@ -255,7 +296,7 @@ function FloatingActionButtonComponent({
 const styles = StyleSheet.create({
   wrapper: {
     position: 'absolute',
-    zIndex: Z_INDEX.sticky,
+    zIndex: 1000,
   },
   container: {
     alignItems: 'flex-end',
@@ -282,6 +323,34 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  pulseRing: {
+    position: 'absolute',
+    width: 56 + 16,
+    height: 56 + 16,
+    borderRadius: (56 + 16) / 2,
+    borderWidth: 2,
+    bottom: -8,
+    right: -8,
+  },
+  hint: {
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.sm,
+  },
+  hintText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });
 

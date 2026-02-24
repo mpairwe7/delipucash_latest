@@ -28,12 +28,16 @@ import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme, withAlpha } from '@/utils/theme';
-import type { NotificationItem as NotificationItemType, NotificationCategory } from '@/services/notificationApi';
+import type { Notification } from '@/types';
+
+type NotificationCategory =
+  | 'payments' | 'rewards' | 'surveys' | 'subscription'
+  | 'security' | 'achievements' | 'referrals' | 'welcome' | 'general';
 
 interface NotificationItemProps {
-  notification: NotificationItemType;
+  notification: Notification;
   index?: number;
-  onPress?: (notification: NotificationItemType) => void;
+  onPress?: (notification: Notification) => void;
   onMarkAsRead?: (id: string) => void;
 }
 
@@ -46,10 +50,10 @@ interface IconConfig {
 }
 
 const getNotificationIcon = (
-  category: NotificationCategory,
+  category: string | null,
   colors: any
 ): IconConfig => {
-  const configs: Record<NotificationCategory, IconConfig> = {
+  const configs: Record<string, IconConfig> = {
     payments: {
       icon: DollarSign,
       color: colors.success,
@@ -97,7 +101,7 @@ const getNotificationIcon = (
     },
   };
 
-  return configs[category] || configs.general;
+  return configs[category ?? 'general'] || configs.general;
 };
 
 const formatTimeAgo = (dateString: string): string => {

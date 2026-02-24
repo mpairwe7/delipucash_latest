@@ -482,6 +482,42 @@ export interface Notification {
   updatedAt: string;
 }
 
+// Notification screen types
+export type NotificationFilterType =
+  | 'all'
+  | 'unread'
+  | 'payments'
+  | 'rewards'
+  | 'surveys'
+  | 'security'
+  | 'subscription'
+  | 'achievements';
+
+export interface NotificationsResponse {
+  notifications: Notification[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasMore?: boolean;
+  };
+  summary?: {
+    unreadCount: number;
+    categoryCounts: Record<string, number>;
+  };
+}
+
+export interface NotificationStats {
+  total: number;
+  unread: number;
+  read: number;
+  archived: number;
+  categories: Record<string, number>;
+  types: Record<string, number>;
+  priorities: Record<string, number>;
+}
+
 export interface LoginSession {
   id: string;
   userId: string;

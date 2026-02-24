@@ -225,24 +225,34 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
     });
 
     console.log(`getUserNotifications: Returning ${notifications.length} notifications`);
-    
-    res.json({
+
+    const pageNum = parseInt(page);
+    const totalPages = Math.ceil(total / parseInt(limit));
+
+    const result = {
       success: true,
       data: notifications,
       pagination: {
-        page: parseInt(page),
+        page: pageNum,
         limit: parseInt(limit),
         total,
-        totalPages: Math.ceil(total / parseInt(limit))
+        totalPages,
+        hasMore: pageNum < totalPages,
       },
-      summary: {
+    };
+
+    // Include summary only on page 1 to reduce payload on subsequent pages
+    if (pageNum === 1) {
+      result.summary = {
         unreadCount,
         categoryCounts: categoryCounts.reduce((acc, item) => {
           acc[item.category] = item._count.category;
           return acc;
-        }, {})
-      }
-    });
+        }, {}),
+      };
+    }
+
+    res.json(result);
   } catch (error) {
     console.error('getUserNotifications: Error fetching notifications:', error);
     errorHandler(error, res);

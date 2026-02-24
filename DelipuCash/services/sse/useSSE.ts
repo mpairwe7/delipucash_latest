@@ -16,6 +16,7 @@ import { queryKeys } from '@/services/hooks';
 import { questionQueryKeys } from '@/services/questionHooks';
 import { videoQueryKeys } from '@/services/videoHooks';
 import { transactionQueryKeys } from '@/services/transactionHooks';
+import { notificationQueryKeys } from '@/services/notificationHooks';
 import { useVideoStore } from '@/store/VideoStore';
 import type { SSEEventType, LivestreamViewerCountPayload } from './types';
 
@@ -56,6 +57,8 @@ export function useSSEConnection(): void {
       [
         'notification.new',
         () => {
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+          // Legacy keys — bell badges in other screens still use hooks.ts
           queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
           queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
@@ -63,12 +66,15 @@ export function useSSEConnection(): void {
       [
         'notification.read',
         () => {
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.unreadCount() });
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.stats() });
           queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [
         'notification.readAll',
         () => {
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
           queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
           queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },

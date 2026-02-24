@@ -1,26 +1,39 @@
 /**
  * Survey Creation FAB (Floating Action Button)
- * Modern radial/expandable FAB with creation options (2025/2026)
- * 
+ * Modern radial/expandable FAB with creation options (2026)
+ *
  * Features:
  * - Expandable FAB with multiple creation options
- * - Animated expansion with staggered reveals
+ * - Animated expansion with staggered reveals (react-native-reanimated, UI thread)
+ * - Scroll-aware auto-hide via parent-driven translateY shared value
+ * - Safe-area-aware positioning via bottomOffset prop
  * - Haptic feedback
- * - Backdrop blur effect
+ * - Backdrop overlay
  * - Accessibility support with proper labels
  * - Options: Blank, Template, Import, Conversational (AI)
+ * - Reduced-motion support
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
+  Pressable,
   AccessibilityInfo,
   AccessibilityActionEvent,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  withSequence,
+  withDelay,
+  interpolate,
+  SharedValue,
+} from 'react-native-reanimated';
 import {
   Plus,
   FileText,
@@ -49,6 +62,10 @@ interface SurveyCreationFABProps {
   onSelect: (mode: CreationMode) => void;
   onPrimaryPress?: () => void;
   disabled?: boolean;
+  /** Safe-area-aware bottom offset (from parent: insets.bottom + SPACING.lg) */
+  bottomOffset?: number;
+  /** Parent-driven auto-hide translateY shared value (from scroll handler) */
+  translateY?: SharedValue<number>;
 }
 
 interface FABOption {
@@ -60,11 +77,68 @@ interface FABOption {
 }
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS — matches question screen FAB (56px)
 // ============================================================================
 
-const FAB_SIZE = 60;
-const OPTION_SIZE = 50;
+const FAB_SIZE = 56;
+const OPTION_SIZE = 48;
+const FALLBACK_BOTTOM = SPACING.xl + 80; // Legacy fallback when no bottomOffset prop
+
+// ============================================================================
+// ANIMATED OPTION ITEM — extracted so each item owns its own useAnimatedStyle
+// ============================================================================
+
+interface AnimatedOptionItemProps {
+  option: FABOption;
+  progress: SharedValue<number>;
+  colors: ReturnType<typeof useTheme>['colors'];
+  onSelect: (mode: CreationMode) => void;
+}
+
+const AnimatedOptionItem: React.FC<AnimatedOptionItemProps> = ({
+  option,
+  progress,
+  colors,
+  onSelect,
+}) => {
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(progress.value, [0, 1], [50, 0]) },
+      { scale: interpolate(progress.value, [0, 1], [0.5, 1]) },
+    ],
+    opacity: progress.value,
+  }));
+
+  return (
+    <Animated.View style={[styles.optionWrapper, animStyle]}>
+      <TouchableOpacity
+        style={styles.optionRow}
+        onPress={() => onSelect(option.mode)}
+        activeOpacity={0.8}
+        accessibilityRole="button"
+        accessibilityLabel={`${option.label}: ${option.description}`}
+      >
+        <View style={[styles.optionLabel, { backgroundColor: colors.card }]}>
+          <Text style={[styles.optionLabelText, { color: colors.text }]}>
+            {option.label}
+          </Text>
+          <Text style={[styles.optionDescText, { color: colors.textMuted }]}>
+            {option.description}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.optionButton,
+            { backgroundColor: option.color },
+            SHADOWS.md,
+          ]}
+        >
+          {option.icon}
+        </View>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
 
 // ============================================================================
 // COMPONENT
@@ -74,22 +148,26 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
   onSelect,
   onPrimaryPress,
   disabled,
+  bottomOffset,
+  translateY: parentTranslateY,
 }) => {
   const { colors, isDark } = useTheme();
   const [isExpanded, setIsExpanded] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
-
-  // Animation values
-  const fabRotation = useRef(new Animated.Value(0)).current;
-  const backdropOpacity = useRef(new Animated.Value(0)).current;
-  const optionAnimations = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-  ]).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
   const longPressTriggeredRef = useRef(false);
+
+  // Shared values (UI thread)
+  const fabRotation = useSharedValue(0);
+  const backdropOpacity = useSharedValue(0);
+  const scaleAnim = useSharedValue(1);
+  const isExpandedSV = useSharedValue(0); // 0 = collapsed, 1 = expanded
+
+  // Per-option animation progress (staggered spring)
+  const optionProgress0 = useSharedValue(0);
+  const optionProgress1 = useSharedValue(0);
+  const optionProgress2 = useSharedValue(0);
+  const optionProgress3 = useSharedValue(0);
+  const optionAnimations = [optionProgress0, optionProgress1, optionProgress2, optionProgress3];
 
   // Check reduced motion preference
   useEffect(() => {
@@ -100,6 +178,11 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     );
     return () => listener.remove();
   }, []);
+
+  // Sync React state → shared value for animated style
+  useEffect(() => {
+    isExpandedSV.value = isExpanded ? 1 : 0;
+  }, [isExpanded]);
 
   const options: FABOption[] = [
     {
@@ -132,7 +215,7 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     },
   ];
 
-  const toggleExpanded = () => {
+  const toggleExpanded = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const newExpanded = !isExpanded;
     setIsExpanded(newExpanded);
@@ -140,101 +223,56 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     const duration = reduceMotion ? 0 : 200;
 
     // FAB rotation
-    Animated.timing(fabRotation, {
-      toValue: newExpanded ? 1 : 0,
-      duration,
-      useNativeDriver: true,
-    }).start();
+    fabRotation.value = withTiming(newExpanded ? 1 : 0, { duration });
 
     // Backdrop fade
-    Animated.timing(backdropOpacity, {
-      toValue: newExpanded ? 1 : 0,
-      duration,
-      useNativeDriver: true,
-    }).start();
+    backdropOpacity.value = withTiming(newExpanded ? 1 : 0, { duration });
 
     // Options staggered animation
     if (newExpanded) {
       optionAnimations.forEach((anim, index) => {
-        Animated.spring(anim, {
-          toValue: 1,
-          delay: reduceMotion ? 0 : index * 50,
-          tension: 80,
-          friction: 8,
-          useNativeDriver: true,
-        }).start();
+        anim.value = reduceMotion
+          ? 1
+          : withDelay(index * 50, withSpring(1, { stiffness: 80, damping: 8 }));
       });
     } else {
       optionAnimations.forEach((anim) => {
-        Animated.timing(anim, {
-          toValue: 0,
-          duration: reduceMotion ? 0 : 150,
-          useNativeDriver: true,
-        }).start();
+        anim.value = reduceMotion ? 0 : withTiming(0, { duration: 150 });
       });
     }
-  };
+  }, [isExpanded, reduceMotion]);
 
-  const handleSelect = (mode: CreationMode) => {
+  const handleSelect = useCallback((mode: CreationMode) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Quick scale animation
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.9,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Quick scale pulse
+    scaleAnim.value = withSequence(
+      withTiming(0.9, { duration: 100 }),
+      withTiming(1, { duration: 100 })
+    );
 
-    // Collapse and callback
+    // Collapse all
     setIsExpanded(false);
-    Animated.parallel([
-      Animated.timing(fabRotation, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.timing(backdropOpacity, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      ...optionAnimations.map((anim) =>
-        Animated.timing(anim, {
-          toValue: 0,
-          duration: 100,
-          useNativeDriver: true,
-        })
-      ),
-    ]).start(() => {
-      onSelect(mode);
+    fabRotation.value = withTiming(0, { duration: 150 });
+    backdropOpacity.value = withTiming(0, { duration: 150 });
+    optionAnimations.forEach((anim) => {
+      anim.value = withTiming(0, { duration: 100 });
     });
-  };
 
-  const triggerPrimaryAction = () => {
+    // Callback after collapse animation settles
+    setTimeout(() => onSelect(mode), 160);
+  }, [onSelect]);
+
+  const triggerPrimaryAction = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.92,
-        duration: reduceMotion ? 0 : 85,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: reduceMotion ? 0 : 85,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    scaleAnim.value = withSequence(
+      withTiming(0.92, { duration: reduceMotion ? 0 : 85 }),
+      withTiming(1, { duration: reduceMotion ? 0 : 85 })
+    );
     onPrimaryPress?.();
-  };
+  }, [reduceMotion, onPrimaryPress]);
 
-  const handlePrimaryTap = () => {
+  const handlePrimaryTap = useCallback(() => {
     if (disabled) return;
     if (isExpanded) {
       toggleExpanded();
@@ -245,29 +283,28 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
       return;
     }
     toggleExpanded();
-  };
+  }, [disabled, isExpanded, onPrimaryPress, toggleExpanded, triggerPrimaryAction]);
 
-  const handlePrimaryLongPress = () => {
+  const handlePrimaryLongPress = useCallback(() => {
     if (disabled) return;
     longPressTriggeredRef.current = true;
-    // Guard against platforms where long-press may not emit onPress afterward.
     setTimeout(() => {
       longPressTriggeredRef.current = false;
     }, 350);
     if (!isExpanded) {
       toggleExpanded();
     }
-  };
+  }, [disabled, isExpanded, toggleExpanded]);
 
-  const handleMainFabPress = () => {
+  const handleMainFabPress = useCallback(() => {
     if (longPressTriggeredRef.current) {
       longPressTriggeredRef.current = false;
       return;
     }
     handlePrimaryTap();
-  };
+  }, [handlePrimaryTap]);
 
-  const handleMainFabAccessibilityAction = (event: AccessibilityActionEvent) => {
+  const handleMainFabAccessibilityAction = useCallback((event: AccessibilityActionEvent) => {
     switch (event.nativeEvent.actionName) {
       case 'activate':
         handlePrimaryTap();
@@ -278,12 +315,37 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
       default:
         break;
     }
-  };
+  }, [handlePrimaryTap, handlePrimaryLongPress]);
 
-  const fabRotationInterpolate = fabRotation.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '45deg'],
+  // ── Animated styles (UI thread) ──
+
+  const fabWrapperAnimatedStyle = useAnimatedStyle(() => {
+    // Auto-hide only when collapsed — don't hide during menu interaction
+    const scrollTranslateY = parentTranslateY
+      ? (isExpandedSV.value === 1 ? 0 : parentTranslateY.value)
+      : 0;
+
+    return {
+      transform: [
+        { scale: scaleAnim.value },
+        { translateY: scrollTranslateY },
+      ],
+    };
   });
+
+  const backdropAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
+
+  const fabRotationAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { rotate: `${interpolate(fabRotation.value, [0, 1], [0, 45])}deg` },
+    ],
+  }));
+
+  // Compute positions
+  const fabBottom = bottomOffset ?? FALLBACK_BOTTOM;
+  const optionsBottom = fabBottom + FAB_SIZE + SPACING.md;
 
   return (
     <>
@@ -292,11 +354,9 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
         <Animated.View
           style={[
             styles.backdrop,
+            backdropAnimatedStyle,
             {
-              opacity: backdropOpacity,
-              backgroundColor: isDark
-                ? 'rgba(0, 0, 0, 0.7)'
-                : 'rgba(0, 0, 0, 0.5)',
+              backgroundColor: withAlpha('#000000', isDark ? 0.7 : 0.5),
             },
           ]}
         >
@@ -311,64 +371,33 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
       )}
 
       {/* Options Menu */}
-      <View style={styles.optionsContainer} pointerEvents={isExpanded ? 'auto' : 'none'}>
-        {options.map((option, index) => {
-          const translateY = optionAnimations[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: [50, 0],
-          });
-          const scale = optionAnimations[index].interpolate({
-            inputRange: [0, 1],
-            outputRange: [0.5, 1],
-          });
-          const opacity = optionAnimations[index];
-
-          return (
-            <Animated.View
-              key={option.mode}
-              style={[
-                styles.optionWrapper,
-                {
-                  transform: [{ translateY }, { scale }],
-                  opacity,
-                },
-              ]}
-            >
-              <TouchableOpacity
-                style={styles.optionRow}
-                onPress={() => handleSelect(option.mode)}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel={`${option.label}: ${option.description}`}
-              >
-                <View style={[styles.optionLabel, { backgroundColor: colors.card }]}>
-                  <Text style={[styles.optionLabelText, { color: colors.text }]}>
-                    {option.label}
-                  </Text>
-                  <Text style={[styles.optionDescText, { color: colors.textMuted }]}>
-                    {option.description}
-                  </Text>
-                </View>
-                <View
-                  style={[
-                    styles.optionButton,
-                    { backgroundColor: option.color },
-                    SHADOWS.md,
-                  ]}
-                >
-                  {option.icon}
-                </View>
-              </TouchableOpacity>
-            </Animated.View>
-          );
-        })}
+      <View
+        style={[styles.optionsContainer, { bottom: optionsBottom }]}
+        pointerEvents={isExpanded ? 'auto' : 'none'}
+      >
+        {options.map((option, index) => (
+          <AnimatedOptionItem
+            key={option.mode}
+            option={option}
+            progress={optionAnimations[index]}
+            colors={colors}
+            onSelect={handleSelect}
+          />
+        ))}
       </View>
 
       {/* Main FAB */}
-      <Animated.View style={[styles.fabWrapper, { transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View
+        style={[
+          styles.fabWrapper,
+          { bottom: fabBottom },
+          fabWrapperAnimatedStyle,
+        ]}
+      >
         {!isExpanded && !disabled && !!onPrimaryPress && (
           <View
             accessible={false}
+            pointerEvents="none"
             style={[
               styles.quickHint,
               {
@@ -384,12 +413,12 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
             </Text>
           </View>
         )}
-        <TouchableOpacity
-          style={[
+        <Pressable
+          style={({ pressed }) => [
             styles.fab,
             {
               backgroundColor: isExpanded ? colors.error : colors.primary,
-              opacity: disabled ? 0.5 : 1,
+              opacity: disabled ? 0.5 : pressed ? 0.75 : 1,
             },
             SHADOWS.lg,
           ]}
@@ -397,7 +426,7 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
           onLongPress={handlePrimaryLongPress}
           delayLongPress={260}
           disabled={disabled}
-          activeOpacity={0.8}
+          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel={
             isExpanded
@@ -420,14 +449,16 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
           ]}
           onAccessibilityAction={handleMainFabAccessibilityAction}
         >
-          <Animated.View style={{ transform: [{ rotate: fabRotationInterpolate }] }}>
-            <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
+          <Animated.View style={fabRotationAnimatedStyle}>
+            <Plus size={28} color={colors.primaryText} strokeWidth={2.5} />
           </Animated.View>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Pulse animation ring when not expanded */}
+        {/* Pulse animation ring when not expanded — pointerEvents="none" is critical
+            so the ring doesn't steal touches from the FAB button underneath */}
         {!isExpanded && !disabled && (
           <View
+            pointerEvents="none"
             style={[
               styles.pulseRing,
               { borderColor: withAlpha(colors.primary, 0.3) },
@@ -447,37 +478,39 @@ interface CompactFABProps {
   onPress: () => void;
   disabled?: boolean;
   hasOptions?: boolean;
+  bottomOffset?: number;
 }
 
 export const CompactFAB: React.FC<CompactFABProps> = ({
   onPress,
   disabled,
   hasOptions,
+  bottomOffset,
 }) => {
   const { colors } = useTheme();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useSharedValue(1);
 
-  const handlePress = () => {
+  const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 0.9,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
+    scaleAnim.value = withSequence(
+      withTiming(0.9, { duration: 100 }),
+      withTiming(1, { duration: 100 })
+    );
     onPress();
-  };
+  }, [onPress]);
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scaleAnim.value }],
+  }));
 
   return (
-    <Animated.View style={[styles.fabWrapper, { transform: [{ scale: scaleAnim }] }]}>
+    <Animated.View
+      style={[
+        styles.fabWrapper,
+        { bottom: bottomOffset ?? FALLBACK_BOTTOM },
+        animStyle,
+      ]}
+    >
       <TouchableOpacity
         style={[
           styles.fab,
@@ -494,9 +527,9 @@ export const CompactFAB: React.FC<CompactFABProps> = ({
         accessibilityLabel="Create new survey"
       >
         {hasOptions ? (
-          <Sparkles size={26} color="#FFFFFF" />
+          <Sparkles size={26} color={colors.primaryText} />
         ) : (
-          <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
+          <Plus size={28} color={colors.primaryText} strokeWidth={2.5} />
         )}
       </TouchableOpacity>
     </Animated.View>
@@ -519,16 +552,11 @@ export const CreationModeSelector: React.FC<CreationModeSelectorProps> = ({
   onSelect,
 }) => {
   const { colors } = useTheme();
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const slideProgress = useSharedValue(0);
 
   useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: visible ? 1 : 0,
-      tension: 65,
-      friction: 11,
-      useNativeDriver: true,
-    }).start();
-  }, [visible, slideAnim]);
+    slideProgress.value = withSpring(visible ? 1 : 0, { stiffness: 65, damping: 11 });
+  }, [visible]);
 
   const options: FABOption[] = [
     {
@@ -561,10 +589,11 @@ export const CreationModeSelector: React.FC<CreationModeSelectorProps> = ({
     },
   ];
 
-  const translateY = slideAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [300, 0],
-  });
+  const sheetAnimStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: interpolate(slideProgress.value, [0, 1], [300, 0]) },
+    ],
+  }));
 
   if (!visible) return null;
 
@@ -578,10 +607,8 @@ export const CreationModeSelector: React.FC<CreationModeSelectorProps> = ({
       <Animated.View
         style={[
           styles.selectorSheet,
-          {
-            backgroundColor: colors.card,
-            transform: [{ translateY }],
-          },
+          { backgroundColor: colors.card },
+          sheetAnimStyle,
         ]}
       >
         <View style={[styles.selectorHandle, { backgroundColor: colors.border }]} />
@@ -647,7 +674,6 @@ const styles = StyleSheet.create({
   // Main FAB
   fabWrapper: {
     position: 'absolute',
-    bottom: SPACING.xl + 80, // Above bottom tabs
     right: SPACING.lg,
     zIndex: 1000,
   },
@@ -657,6 +683,11 @@ const styles = StyleSheet.create({
     borderRadius: FAB_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   quickHint: {
     position: 'absolute',
@@ -693,7 +724,6 @@ const styles = StyleSheet.create({
   // Options
   optionsContainer: {
     position: 'absolute',
-    bottom: SPACING.xl + 80 + FAB_SIZE + SPACING.md,
     right: SPACING.lg,
     zIndex: 999,
     alignItems: 'flex-end',

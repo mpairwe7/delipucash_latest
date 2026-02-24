@@ -10,6 +10,8 @@ import {
     Comment,
   LoginSession,
     Notification,
+    NotificationsResponse,
+    NotificationStats,
     PaginatedResponse,
   Payment,
     Question,
@@ -291,8 +293,10 @@ export const API_ROUTES = {
   // Notifications
   notifications: {
     list: "/api/notifications",
+    stats: "/api/notifications/stats",
     markRead: (id: string) => `/api/notifications/${id}/read`,
     markAllRead: "/api/notifications/read-all",
+    archive: (id: string) => `/api/notifications/${id}/archive`,
     delete: (id: string) => `/api/notifications/${id}`,
     unreadCount: "/api/notifications/unread-count",
   },
@@ -995,26 +999,58 @@ export const paymentsApi = {
 // ===========================================
 export const notificationsApi = {
   /**
-   * Get user notifications
+   * Get user notifications with server-side filtering and pagination.
+   * Returns full NotificationsResponse shape (notifications + pagination + summary).
    */
-  async getAll(params?: { page?: number; limit?: number; unreadOnly?: boolean }): Promise<PaginatedResponse<Notification>> {
+  async getAll(params?: {
+    page?: number;
+    limit?: number;
+    unreadOnly?: boolean;
+    category?: string;
+    type?: string;
+    priority?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<ApiResponse<NotificationsResponse>> {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.limit) searchParams.append('limit', String(params.limit));
     if (params?.unreadOnly) searchParams.append('unreadOnly', 'true');
+    if (params?.category) searchParams.append('category', params.category);
+    if (params?.type) searchParams.append('type', params.type);
+    if (params?.priority) searchParams.append('priority', params.priority);
+    if (params?.sortBy) searchParams.append('sortBy', params.sortBy);
+    if (params?.sortOrder) searchParams.append('sortOrder', params.sortOrder);
 
     const queryString = searchParams.toString();
-    const path = queryString ? `${API_ROUTES.notifications.list}?${queryString}` : API_ROUTES.notifications.list;
+    const path = queryString
+      ? `${API_ROUTES.notifications.list}?${queryString}`
+      : API_ROUTES.notifications.list;
 
-    const response = await fetchJson<{ data: Notification[]; pagination: any }>(path, {
-      headers: getAuthHeaders(),
-    });
+    const response = await fetchJson<{
+      data: Notification[];
+      pagination: NotificationsResponse['pagination'];
+      summary: NotificationsResponse['summary'];
+    }>(path, { headers: getAuthHeaders() });
+
     return {
       success: response.success,
-      data: response.data?.data || response.data || [],
-      pagination: response.data?.pagination || { page: 1, limit: 10, total: 0, totalPages: 0 },
+      data: {
+        notifications: response.data?.data ?? (response.data as any) ?? [],
+        pagination: response.data?.pagination ?? { page: 1, limit: 20, total: 0, totalPages: 0 },
+        summary: response.data?.summary,
+      },
       error: response.error,
     };
+  },
+
+  /**
+   * Get notification statistics (lightweight — no list payload).
+   */
+  async getStats(): Promise<ApiResponse<NotificationStats>> {
+    return fetchJson<NotificationStats>(API_ROUTES.notifications.stats, {
+      headers: getAuthHeaders(),
+    });
   },
 
   /**
@@ -1042,6 +1078,16 @@ export const notificationsApi = {
   async markAllRead(): Promise<ApiResponse<{ updated: number }>> {
     return fetchJson<{ updated: number }>(API_ROUTES.notifications.markAllRead, {
       method: 'POST',
+      headers: getAuthHeaders(),
+    });
+  },
+
+  /**
+   * Archive notification
+   */
+  async archive(notificationId: string): Promise<ApiResponse<Notification>> {
+    return fetchJson<Notification>(API_ROUTES.notifications.archive(notificationId), {
+      method: 'PUT',
       headers: getAuthHeaders(),
     });
   },
