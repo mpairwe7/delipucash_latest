@@ -111,6 +111,8 @@ export interface VerticalVideoFeedProps {
   onShare?: (video: Video) => void;
   /** Callback when user bookmarks a video */
   onBookmark?: (video: Video) => void;
+  /** Callback when user follows a creator (optional — FollowButton is self-contained) */
+  onFollow?: (creatorId: string) => void;
   /** Callback when user expands to full player */
   onExpandPlayer?: (video: Video) => void;
   /** 2026: Callback when ad CTA is pressed (sponsored videos) */
@@ -155,6 +157,7 @@ function VerticalVideoFeedComponent({
   onComment,
   onShare,
   onBookmark,
+  onFollow,
   onExpandPlayer,
   onAdCtaPress,
   onAdFeedback,
@@ -359,6 +362,14 @@ function VerticalVideoFeedComponent({
     [onBookmark]
   );
 
+  // Handle follow creator - stable reference passed to VideoFeedItem
+  const handleFollow = useCallback(
+    (creatorId: string) => {
+      onFollow?.(creatorId);
+    },
+    [onFollow]
+  );
+
   // Handle expand to full player - stable reference passed to VideoFeedItem
   const handleExpandPlayer = useCallback(
     (video: Video) => {
@@ -412,6 +423,7 @@ function VerticalVideoFeedComponent({
         onComment={handleComment}
         onShare={handleShare}
         onBookmark={handleBookmark}
+        onFollow={handleFollow}
         onExpand={handleExpandPlayer}
         onVideoEnd={onVideoEnd}
         onAdCtaPress={onAdCtaPress}
@@ -430,6 +442,7 @@ function VerticalVideoFeedComponent({
       handleComment,
       handleShare,
       handleBookmark,
+      handleFollow,
       handleExpandPlayer,
       onVideoEnd,
       onAdCtaPress,

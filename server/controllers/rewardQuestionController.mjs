@@ -5,6 +5,7 @@ import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { getRewardConfig, ugxToPoints } from '../lib/rewardConfig.mjs';
+import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -997,6 +998,9 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             description: `Instant Reward Won — Position #${position}`,
           });
 
+          // Persistent notification for reward earned
+          createNotificationFromTemplateHelper(authenticatedUser.id, 'REWARD_EARNED', { points: rewardPoints }).catch(() => {});
+
           response = {
             ...response,
             message: `Congratulations! You are the ${position}${position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th'} winner! You earned ${rewardAmountUGX} UGX (${rewardPoints} points)!`,
@@ -1063,6 +1067,9 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
           amount: rewardPoints,
           description: 'Reward Question Answered',
         });
+
+        // Persistent notification for reward earned
+        createNotificationFromTemplateHelper(authenticatedUser.id, 'REWARD_EARNED', { points: rewardPoints }).catch(() => {});
 
         response.pointsAwarded = rewardPoints;
         response.rewardEarned = rewardAmountUGX;

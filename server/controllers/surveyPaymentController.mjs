@@ -17,6 +17,7 @@ import {
   checkMtnCollectionStatus,
   checkAirtelCollectionStatus,
 } from './paymentController.mjs';
+import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 
 // ============================================================================
 // SUBSCRIPTION PLANS CONFIGURATION
@@ -533,33 +534,51 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
 
     // Update payment status based on result — atomically within a transaction
     if (result.success) {
-      await prisma.$transaction(async (tx) => {
-        const payment = await tx.payment.update({
+      const payment = await prisma.$transaction(async (tx) => {
+        const p = await tx.payment.update({
           where: { id: paymentId },
           data: { status: 'SUCCESSFUL' },
         });
 
         await tx.appUser.update({
-          where: { id: payment.userId },
+          where: { id: p.userId },
           data: { [statusField]: 'ACTIVE' },
         });
+
+        return p;
       });
 
       console.log(`[SurveyPayment] ${featureType} payment ${paymentId} completed successfully`);
+
+      // Persistent notification for subscription activation
+      if (payment.userId) {
+        const subscriptionType = featureType === 'VIDEO' ? 'Video Premium' : 'Survey Premium';
+        createNotificationFromTemplateHelper(payment.userId, 'SUBSCRIPTION_ACTIVE', { subscriptionType }).catch(() => {});
+      }
     } else {
-      await prisma.payment.update({
+      const payment = await prisma.payment.update({
         where: { id: paymentId },
         data: { status: 'FAILED' },
       });
       console.log(`[SurveyPayment] Payment ${paymentId} failed`);
+
+      // Persistent notification for payment failure
+      if (payment.userId) {
+        createNotificationFromTemplateHelper(payment.userId, 'PAYMENT_FAILED', { amount: payment.amount }).catch(() => {});
+      }
     }
   } catch (error) {
     console.error(`[SurveyPayment] Error processing ${provider} collection:`, error);
 
-    await prisma.payment.update({
+    const payment = await prisma.payment.update({
       where: { id: paymentId },
       data: { status: 'FAILED' },
     });
+
+    // Persistent notification for payment failure
+    if (payment.userId) {
+      createNotificationFromTemplateHelper(payment.userId, 'PAYMENT_FAILED', { amount: payment.amount }).catch(() => {});
+    }
   }
 };
 

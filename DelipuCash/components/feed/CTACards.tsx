@@ -144,13 +144,16 @@ interface InstantRewardCTAProps {
     text: string;
     textMuted: string;
     warning: string;
+    success: string;
   };
+  instantRewardAmount: number;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
 const InstantRewardCTAComponent: React.FC<InstantRewardCTAProps> = ({
   colors,
+  instantRewardAmount,
   onPress,
   style,
 }) => (
@@ -176,6 +179,30 @@ const InstantRewardCTAComponent: React.FC<InstantRewardCTAProps> = ({
       <Text style={[styles.ctaSubtitle, { color: colors.textMuted }]}>
         Earn instant payouts for quality answers
       </Text>
+      <View style={styles.ctaStats}>
+        <View
+          style={[
+            styles.ctaStat,
+            { backgroundColor: withAlpha(colors.success, 0.15) },
+          ]}
+        >
+          <Zap size={12} color={colors.success} strokeWidth={2} />
+          <Text style={[styles.ctaStatText, { color: colors.success }]}>
+            UGX {(instantRewardAmount ?? 500).toLocaleString()}/answer
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.ctaStat,
+            { backgroundColor: withAlpha(colors.warning, 0.15) },
+          ]}
+        >
+          <Sparkles size={12} color={colors.warning} strokeWidth={2} />
+          <Text style={[styles.ctaStatText, { color: colors.warning }]}>
+            Instant payout
+          </Text>
+        </View>
+      </View>
     </View>
     <View
       style={[

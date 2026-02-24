@@ -91,6 +91,7 @@ import {
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { useVideoFeedStore } from '@/store/VideoFeedStore';
+import { FollowButton } from './FollowButton';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 import { telemetry } from '@/services/telemetryApi';
 import { videoApi } from '@/services/videoApi';
@@ -128,6 +129,8 @@ export interface VideoFeedItemProps {
   onShare: (video: Video) => void;
   /** Bookmark handler - receives video object */
   onBookmark: (video: Video) => void;
+  /** Follow handler - receives creator ID */
+  onFollow?: (creatorId: string) => void;
   /** Expand to full player handler - receives video object */
   onExpand: (video: Video) => void;
   /** Video end handler - receives video object */
@@ -309,6 +312,7 @@ function VideoFeedItemComponent({
   onComment,
   onShare,
   onBookmark,
+  onFollow,
   onExpand,
   onVideoEnd,
   screenReaderEnabled = false,
@@ -382,6 +386,7 @@ function VideoFeedItemComponent({
   const thumbnailOpacity = useSharedValue(1);
   const controlsOpacity = useSharedValue(0);
   const likeScale = useSharedValue(1);
+  const bookmarkScale = useSharedValue(1);
   const playButtonScale = useSharedValue(1);
 
   // ============================================================================
@@ -856,6 +861,10 @@ function VideoFeedItemComponent({
     transform: [{ scale: likeScale.value }],
   }));
 
+  const bookmarkButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: bookmarkScale.value }],
+  }));
+
   const playButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: playButtonScale.value }],
   }));
@@ -1059,23 +1068,29 @@ function VideoFeedItemComponent({
               <Text style={styles.actionCount}>Share</Text>
             </Pressable>
 
-            {/* Bookmark */}
+            {/* Bookmark — 2026: Spring scale animation matching like button pattern */}
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
                 onBookmark(video);
+                bookmarkScale.value = withSequence(
+                  withSpring(1.35, { damping: 6, stiffness: 400 }),
+                  withSpring(1, { damping: 12 })
+                );
               }}
               style={styles.actionButton}
               accessibilityRole="button"
               accessibilityLabel={isBookmarked ? 'Remove bookmark' : 'Bookmark video'}
               accessibilityState={{ selected: isBookmarked }}
             >
-              <Bookmark
-                size={26}
-                color={isBookmarked ? colors.warning : '#FFFFFF'}
-                fill={isBookmarked ? colors.warning : 'transparent'}
-                strokeWidth={2}
-              />
+              <Animated.View style={bookmarkButtonStyle}>
+                <Bookmark
+                  size={26}
+                  color={isBookmarked ? colors.warning : '#FFFFFF'}
+                  fill={isBookmarked ? colors.warning : 'transparent'}
+                  strokeWidth={2}
+                />
+              </Animated.View>
             </Pressable>
 
             {/* More Options */}
@@ -1095,12 +1110,14 @@ function VideoFeedItemComponent({
             <View style={styles.creatorRow}>
               <View style={styles.creatorAvatar}>
                 <Text style={styles.avatarText}>
-                  {(video.title || 'U').charAt(0).toUpperCase()}
+                  {(video.user?.firstName || video.title || 'U').charAt(0).toUpperCase()}
                 </Text>
               </View>
               <View style={styles.creatorInfo}>
                 <View style={styles.creatorNameRow}>
-                  <Text style={styles.creatorName}>@creator</Text>
+                  <Text style={styles.creatorName} numberOfLines={1}>
+                    @{video.user?.firstName?.toLowerCase() || video.user?.lastName?.toLowerCase() || 'creator'}
+                  </Text>
                   {/* 2026: Verified badge */}
                   <BadgeCheck size={14} color="#1DA1F2" fill="#1DA1F2" />
                 </View>
@@ -1112,13 +1129,14 @@ function VideoFeedItemComponent({
                   </Text>
                 </View>
               </View>
-              <Pressable 
-                style={styles.followButton}
-                accessibilityRole="button"
-                accessibilityLabel="Follow creator"
-              >
-                <Text style={styles.followText}>Follow</Text>
-              </Pressable>
+              {video.userId && (
+                <FollowButton
+                  creatorId={video.userId}
+                  creatorName={video.user?.firstName || undefined}
+                  size="sm"
+                  variant="filled"
+                />
+              )}
             </View>
 
             {/* Video Title/Description */}
@@ -1385,18 +1403,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: 10,
     color: withAlpha('#FFFFFF', 0.5),
-  },
-  followButton: {
-    paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs + 1,
-    backgroundColor: '#FF2D55',
-    borderRadius: RADIUS.full,
-  },
-  followText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    color: '#FFFFFF',
-    letterSpacing: 0.3,
   },
   sponsoredBadge: {
     flexDirection: 'row',

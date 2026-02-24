@@ -67,6 +67,10 @@ export type { MiniPlayerProps } from './MiniPlayer';
 export { VideoActions } from './VideoActions';
 export type { VideoActionsProps } from './VideoActions';
 
+// Follow Button
+export { FollowButton } from './FollowButton';
+export type { FollowButtonProps } from './FollowButton';
+
 // Comments Components
 export { VideoComments } from './VideoComments';
 export type { VideoCommentsProps } from './VideoComments';

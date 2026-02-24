@@ -810,10 +810,17 @@ export const likeVideo = asyncHandler(async (req, res) => {
   } catch (error) {
     // P2002: Unique constraint violation — already liked (race condition / double-tap)
     if (error.code === 'P2002') {
-      const current = await prisma.video.findUnique({ where: { id: req.params.id } });
+      const current = await prisma.video.findUnique({
+        where: { id: req.params.id },
+        include: {
+          user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+        },
+      });
+      if (!current) return res.status(404).json({ message: 'Video not found' });
+      const signed = await signVideoUrls(current);
       return res.json({
         message: 'Video already liked',
-        video: { ...current, isLiked: true },
+        video: { ...current, videoUrl: signed.videoUrl, thumbnail: signed.thumbnail, isLiked: true },
       });
     }
     console.error('Error liking video:', error);

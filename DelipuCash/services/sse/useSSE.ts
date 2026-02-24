@@ -80,6 +80,18 @@ export function useSSEConnection(): void {
         },
       ],
       [
+        'notification.archive',
+        () => {
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+        },
+      ],
+      [
+        'notification.delete',
+        () => {
+          queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+        },
+      ],
+      [
         'question.new',
         () => {
           queryClient.invalidateQueries({ queryKey: questionQueryKeys.feeds() });
@@ -136,6 +148,34 @@ export function useSSEConnection(): void {
         'video.like',
         () => {
           queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+        },
+      ],
+      [
+        'video.bookmark',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.bookmarked() });
+        },
+      ],
+      [
+        'creator.new_follower',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+        },
+      ],
+      [
+        'creator.follow',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+        },
+      ],
+      [
+        'creator.unfollow',
+        () => {
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
         },
       ],
       [

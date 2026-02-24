@@ -25,6 +25,25 @@ import {
 import { Video, Comment } from '@/types';
 import { videoApi, VideoWithDetails, VideoAnalytics, VideoStats, LivestreamListItem } from './videoApi';
 import { useAuthStore } from '@/utils/auth/store';
+import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
+
+// ============================================================================
+// ADAPTIVE POLLING — SSE fallback for cross-device sync
+// ============================================================================
+
+/** Feed polling interval when SSE is down (2 minutes — lighter than notifications/transactions) */
+const VIDEO_FEED_POLL_INTERVAL_MS = 120_000;
+/** Follow status polling interval when SSE is down (60s — follow state is user-critical) */
+const FOLLOW_STATUS_POLL_INTERVAL_MS = 60_000;
+
+/**
+ * Returns polling interval when SSE is disconnected, `false` when SSE is live.
+ * Same pattern as transactionHooks.ts and notificationHooks.ts.
+ */
+function useAdaptiveInterval(intervalMs: number): number | false {
+  const needsPolling = useSSEStore(selectNeedsPolling);
+  return needsPolling ? intervalMs : false;
+}
 
 // ============================================================================
 // QUERY KEYS
@@ -619,6 +638,7 @@ export function useInfiniteFollowingVideos(params: { limit?: number; enabled?: b
   pageParams: number[];
 }> {
   const { limit = 15, enabled = true } = params;
+  const refetchInterval = useAdaptiveInterval(VIDEO_FEED_POLL_INTERVAL_MS);
 
   return useInfiniteQuery({
     queryKey: videoQueryKeys.following(),
@@ -638,6 +658,8 @@ export function useInfiniteFollowingVideos(params: { limit?: number; enabled?: b
     initialPageParam: 1,
     enabled,
     staleTime: 1000 * 60 * 2,
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -965,9 +987,10 @@ export function usePersonalizedFeed(params: {
   pageParams: number[];
 }> {
   const { limit = 15, excludeIds = [], enabled = true } = params;
+  const refetchInterval = useAdaptiveInterval(VIDEO_FEED_POLL_INTERVAL_MS);
 
   return useInfiniteQuery({
-    queryKey: videoQueryKeys.personalized({ limit, excludeCount: excludeIds.length }),
+    queryKey: videoQueryKeys.personalized({ limit }),
     queryFn: async ({ pageParam = 1 }) => {
       const response = await videoApi.getPersonalized({ page: pageParam, limit, excludeIds });
       if (!response.success) throw new Error(response.error || 'Failed to fetch personalized feed');
@@ -986,6 +1009,8 @@ export function usePersonalizedFeed(params: {
     initialPageParam: 1,
     enabled,
     staleTime: 1000 * 60 * 2, // 2 minutes
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -1200,6 +1225,8 @@ export function useFollowCreator() {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.followCounts(creatorId) });
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+      // Refresh all feeds — follow graph affects personalized + following tabs
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
     },
   });
 }
@@ -1226,12 +1253,16 @@ export function useUnfollowCreator() {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.followStatus(creatorId) });
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.followCounts(creatorId) });
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.following() });
+      // Refresh all feeds — unfollow affects personalized + following tabs
+      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
     },
   });
 }
 
-/** Check follow status for a creator */
+/** Check follow status for a creator — adaptive polling when SSE is down */
 export function useFollowStatus(creatorId: string | undefined) {
+  const refetchInterval = useAdaptiveInterval(FOLLOW_STATUS_POLL_INTERVAL_MS);
+
   return useQuery({
     queryKey: videoQueryKeys.followStatus(creatorId || ''),
     queryFn: async () => {
@@ -1242,11 +1273,15 @@ export function useFollowStatus(creatorId: string | undefined) {
     },
     enabled: !!creatorId,
     staleTime: 1000 * 60, // 1 minute
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 
-/** Get follower/following counts for a user */
+/** Get follower/following counts for a user — adaptive polling when SSE is down */
 export function useFollowCounts(userId: string | undefined) {
+  const refetchInterval = useAdaptiveInterval(FOLLOW_STATUS_POLL_INTERVAL_MS);
+
   return useQuery({
     queryKey: videoQueryKeys.followCounts(userId || ''),
     queryFn: async () => {
@@ -1257,6 +1292,8 @@ export function useFollowCounts(userId: string | undefined) {
     },
     enabled: !!userId,
     staleTime: 1000 * 60 * 2, // 2 minutes
+    refetchInterval,
+    refetchIntervalInBackground: false,
   });
 }
 

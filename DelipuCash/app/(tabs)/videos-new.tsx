@@ -560,6 +560,8 @@ export default function VideosScreen(): React.ReactElement {
   useEffect(() => { likedVideoIdsRef.current = likedVideoIds; }, [likedVideoIds]);
   const bookmarkedVideoIdsRef = useRef(bookmarkedVideoIds);
   useEffect(() => { bookmarkedVideoIdsRef.current = bookmarkedVideoIds; }, [bookmarkedVideoIds]);
+  const seenVideoIdsRef = useRef(seenVideoIds);
+  useEffect(() => { seenVideoIdsRef.current = seenVideoIds; }, [seenVideoIds]);
 
   // Round-robin index for interstitial ad selection — cycles through available ads
   const interstitialAdIndexRef = useRef(0);
@@ -706,7 +708,7 @@ export default function VideosScreen(): React.ReactElement {
           forYouVideos,
           exploreVideos || [],
           trendingVideos,
-          seenVideoIds,
+          seenVideoIdsRef.current,
           videosWatchedCount,
           undefined, // use default config
           getColdStartTier(videosWatchedCount),
@@ -764,7 +766,7 @@ export default function VideosScreen(): React.ReactElement {
         ctaText: ctaLabel,
       } as Video;
     });
-  }, [forYouVideos, followingVideos, trendingVideos, exploreVideos, activeTab, showSearchResults, searchQuery, searchResultVideos, videoAds, seenVideoIds, videosWatchedCount, hiddenVideoIds, hiddenCreatorIds]);
+  }, [forYouVideos, followingVideos, trendingVideos, exploreVideos, activeTab, showSearchResults, searchQuery, searchResultVideos, videoAds, videosWatchedCount, hiddenVideoIds, hiddenCreatorIds]);
 
   const videos = videosWithAds;
 

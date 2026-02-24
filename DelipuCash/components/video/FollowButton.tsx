@@ -82,7 +82,7 @@ function FollowButtonComponent({
 
   const handlePress = useCallback(() => {
     if (!isAuthenticated) {
-      router.push('/login');
+      router.push('/(auth)/login');
       return;
     }
 

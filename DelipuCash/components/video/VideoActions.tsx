@@ -38,6 +38,7 @@ import {
   COMPONENT_SIZE,
 } from '@/utils/theme';
 import { Video } from '@/types';
+import { useVideoFeedStore } from '@/store/VideoFeedStore';
 
 /**
  * Format number to human readable string
@@ -153,8 +154,9 @@ function VideoActionsComponent({
     onBookmark(video);
   }, [video, onBookmark]);
 
-  const isLiked = video.isLiked ?? false;
-  const isBookmarked = video.isBookmarked;
+  // Use Zustand store as single source of truth — matches VideoFeedItem's state source
+  const isLiked = useVideoFeedStore(state => state.likedVideoIds.has(video.id));
+  const isBookmarked = useVideoFeedStore(state => state.bookmarkedVideoIds.has(video.id));
 
   return (
     <View

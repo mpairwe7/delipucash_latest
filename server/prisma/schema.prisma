@@ -132,6 +132,7 @@ model VideoLike {
 
   @@unique([userId, videoId])
   @@index([videoId])
+  @@index([userId])
 }
 
 model VideoBookmark {
@@ -144,6 +145,7 @@ model VideoBookmark {
 
   @@unique([userId, videoId])
   @@index([videoId])
+  @@index([userId])
 }
 
 model VideoShare {
@@ -686,6 +688,7 @@ model Notification {
   user        AppUser              @relation(fields: [userId], references: [id])
 
   @@index([userId, read, createdAt])
+  @@index([userId, archived, createdAt])
   @@index([userId, type])
   @@index([userId, priority])
   @@index([expiresAt])

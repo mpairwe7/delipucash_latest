@@ -1,0 +1,1 @@
+-- Baseline drift: these indexes were applied directly to the DB.\n-- Notification(userId, archived, createdAt) and RewardQuestion(isActive, isInstantReward, isCompleted, createdAt)\n-- This migration is intentionally empty — marked as applied to resolve drift.

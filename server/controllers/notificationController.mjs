@@ -166,9 +166,9 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
       return res.status(400).json({ success: false, error: 'User ID required' });
     }
 
-    // Build where clause
-    const where = { userId };
-    
+    // Build where clause — exclude archived notifications from main list
+    const where = { userId, archived: false };
+
     if (type) where.type = type;
     if (category) where.category = category;
     if (unreadOnly === 'true') {
@@ -177,12 +177,9 @@ export const getUserNotifications = asyncHandler(async (req, res) => {
       where.read = read === 'true';
     }
     if (priority) where.priority = priority;
-    
-    // Don't show expired notifications
-    where.OR = [
-      { expiresAt: null },
-      { expiresAt: { gt: new Date() } }
-    ];
+
+    // Don't show expired notifications (AND with existing filters to avoid OR conflicts)
+    where.AND = [{ OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }];
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -417,13 +414,16 @@ export const markMultipleNotificationsAsRead = asyncHandler(async (req, res) => 
 
     const result = await prisma.notification.updateMany({
       where,
-      data: { 
+      data: {
         read: true,
         readAt: new Date()
       }
     });
-    
-    res.json({ 
+
+    // SSE: Notify client that multiple notifications were read
+    publishEvent(userId, 'notification.readAll', { updated: result.count }).catch(() => {});
+
+    res.json({
       success: true,
       message: `${result.count} notifications marked as read`,
       data: { count: result.count }
@@ -471,6 +471,9 @@ export const archiveNotification = asyncHandler(async (req, res) => {
       data: { archived: true, archivedAt: new Date() }
     });
 
+    // SSE: Notify client that notification was archived
+    publishEvent(userId, 'notification.archive', { notificationId }).catch(() => {});
+
     res.json({
       success: true,
       message: 'Notification archived',
@@ -500,6 +503,10 @@ export const deleteNotification = asyncHandler(async (req, res) => {
     }
 
     await prisma.notification.delete({ where: { id: notificationId } });
+
+    // SSE: Notify client that notification was deleted
+    publishEvent(userId, 'notification.delete', { notificationId }).catch(() => {});
+
     res.json({ success: true, data: { deleted: true, id: notificationId } });
   } catch (error) {
     console.error('deleteNotification: Error:', error);

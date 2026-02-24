@@ -7,6 +7,8 @@ export type SSEEventType =
   | 'notification.new'
   | 'notification.read'
   | 'notification.readAll'
+  | 'notification.archive'
+  | 'notification.delete'
   | 'question.new'
   | 'question.response'
   | 'question.vote'
@@ -22,6 +24,10 @@ export type SSEEventType =
   | 'livestream.ended'
   | 'livestream.viewerCount'
   | 'livestream.chat'
+  | 'creator.new_follower'
+  | 'creator.follow'
+  | 'creator.unfollow'
+  | 'video.bookmark'
   | 'transaction.new'
   | 'transaction.statusUpdate'
   | 'reconnect';
@@ -123,6 +129,17 @@ export interface LivestreamChatPayload {
   userName: string;
   text: string;
   timestamp: string;
+}
+
+export interface CreatorFollowPayload {
+  creatorId: string;
+  followerId: string;
+  followersCount: number;
+}
+
+export interface VideoBookmarkPayload {
+  videoId: string;
+  isBookmarked: boolean;
 }
 
 export interface TransactionNewPayload {

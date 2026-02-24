@@ -102,6 +102,7 @@ import {
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
 import { useUnreadCount } from "@/services/hooks";
+import { useRewardConfig } from "@/services/configHooks";
 import {
   useInfiniteQuestionsFeed,
   useQuestionsLeaderboard,
@@ -236,6 +237,8 @@ interface FeedHeaderProps {
   onAdImpression: (ad: Ad) => void;
   onClearSearch: () => void;
   onOpenCreateWizard: () => void;
+  pointsPerQuestion: number;
+  instantRewardAmount: number;
 }
 
 const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
@@ -260,6 +263,8 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
   onAdImpression,
   onClearSearch,
   onOpenCreateWizard,
+  pointsPerQuestion,
+  instantRewardAmount,
 }) {
   return (
     <View>
@@ -329,7 +334,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       {/* Answer & Earn CTA — navigates to answer screen */}
       <AnswerEarnCTA
         colors={colors}
-        pointsPerQuestion={10}
+        pointsPerQuestion={pointsPerQuestion}
         streakActive={(userStats?.currentStreak ?? 0) > 0}
         onPress={onAnswerEarnPress}
       />
@@ -347,6 +352,7 @@ const FeedHeader = memo<FeedHeaderProps>(function FeedHeader({
       {/* Answer Instant Reward Questions Card */}
       <InstantRewardCTA
         colors={colors}
+        instantRewardAmount={instantRewardAmount}
         onPress={onInstantRewardPress}
       />
 
@@ -518,6 +524,9 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Notification count
   const { data: unreadCount } = useUnreadCount(isAuthenticated);
+
+  // Reward config — drives CTA badge values
+  const { data: rewardConfig } = useRewardConfig();
 
   // Consolidated ads — gated by premium status + deferred until feed loads
   const { shouldShowAds } = useShouldShowAds();
@@ -851,6 +860,8 @@ export default function QuestionsScreen(): React.ReactElement {
         onAdImpression={handleAdImpression}
         onClearSearch={handleClearSearch}
         onOpenCreateWizard={handleOpenCreateWizard}
+        pointsPerQuestion={rewardConfig?.surveyCompletionPoints ?? 10}
+        instantRewardAmount={rewardConfig?.defaultInstantRewardAmount ?? 500}
       />
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps — ad arrays tracked via stable ID keys
@@ -883,6 +894,8 @@ export default function QuestionsScreen(): React.ReactElement {
       colors.background,
       colors.text,
       colors.primary,
+      rewardConfig?.surveyCompletionPoints,
+      rewardConfig?.defaultInstantRewardAmount,
     ]
   );
 
