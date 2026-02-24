@@ -794,11 +794,16 @@ export default function QuestionsScreen(): React.ReactElement {
   }, [authReady, isAuthenticated]);
 
   // FAB animation styles — includes auto-hide translateY
-  const fabAnimatedStyle = useAnimatedStyle(() => ({
+  // Scroll hide/show — on the outer wrapper only
+  const fabScrollStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: fabTranslateY.value }],
+  }));
+
+  // Press bounce/rotate — on the inner button only
+  const fabButtonStyle = useAnimatedStyle(() => ({
     transform: [
       { scale: fabScale.value },
       { rotate: `${fabRotation.value}deg` },
-      { translateY: fabTranslateY.value },
     ],
   }));
 
@@ -1079,48 +1084,63 @@ export default function QuestionsScreen(): React.ReactElement {
         style={[
           styles.fabWrapper,
           { bottom: insets.bottom + SPACING.lg },
-          fabAnimatedStyle,
+          fabScrollStyle,
         ]}
       >
-        {!showCreateWizard && (
-          <View
-            accessible={false}
-            pointerEvents="none"
-            style={[
-              styles.fabHint,
-              {
-                backgroundColor: colors.card,
-                borderColor: withAlpha(colors.text, 0.12),
-              },
-              SHADOWS.sm,
-            ]}
-          >
-            <Sparkles size={14} color={colors.primary} />
-            <Text style={[styles.fabHintText, { color: colors.textMuted }]}>
-              Tap to create
-            </Text>
-          </View>
-        )}
-        <Pressable
-          onPress={handleFABPress}
-          style={[styles.fabCircle, { backgroundColor: colors.primary }]}
-          hitSlop={8}
-          accessibilityLabel="Create new question"
-          accessibilityRole="button"
-          accessibilityHint="Double tap to open question creation wizard"
-        >
-          <Plus size={28} color={colors.primaryText} strokeWidth={2.5} />
-        </Pressable>
-        {/* Pulse ring — matches survey FAB */}
-        {!showCreateWizard && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.fabPulseRing,
-              { borderColor: withAlpha(colors.primary, 0.3) },
-            ]}
-          />
-        )}
+        <View style={styles.fabContainer}>
+          {/* Quick hint — visible only when collapsed */}
+          {!showCreateWizard && (
+            <View
+              accessible={false}
+              pointerEvents="none"
+              style={[
+                styles.fabHint,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: withAlpha(colors.text, 0.12),
+                },
+                SHADOWS.sm,
+              ]}
+            >
+              <Sparkles size={14} color={colors.primary} />
+              <Text style={[styles.fabHintText, { color: colors.textMuted }]}>
+                Tap to create, hold for options
+              </Text>
+            </View>
+          )}
+
+          {/* Main FAB button — press animation isolated from scroll */}
+          <Animated.View style={fabButtonStyle}>
+            <Pressable
+              onPress={handleFABPress}
+              hitSlop={8}
+              accessibilityLabel="Create new question"
+              accessibilityRole="button"
+              accessibilityHint="Double tap to open question creation wizard"
+              style={({ pressed }) => [
+                styles.fabCircle,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: pressed ? 0.75 : 1,
+                },
+                SHADOWS.lg,
+              ]}
+            >
+              <Plus size={28} color={colors.primaryText} strokeWidth={2.5} />
+            </Pressable>
+          </Animated.View>
+
+          {/* Pulse ring — visible only when collapsed */}
+          {!showCreateWizard && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.fabPulseRing,
+                { borderColor: withAlpha(colors.primary, 0.3) },
+              ]}
+            />
+          )}
+        </View>
       </Animated.View>
 
       {/* Search Overlay */}
@@ -1292,11 +1312,14 @@ const styles = StyleSheet.create({
 
   // Instant Reward / Ask CTA styles moved to CTACards.tsx
 
-  // FAB
+  // FAB — matches FloatingActionButton.tsx container structure
   fabWrapper: {
     position: "absolute",
     right: SPACING.lg,
     zIndex: 1000,
+  },
+  fabContainer: {
+    alignItems: "flex-end",
   },
   fabCircle: {
     width: FAB_SIZE,
@@ -1304,16 +1327,8 @@ const styles = StyleSheet.create({
     borderRadius: FAB_SIZE / 2,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
   fabHint: {
-    position: "absolute",
-    bottom: FAB_SIZE + SPACING.sm,
-    right: 0,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     paddingHorizontal: SPACING.sm,
@@ -1321,6 +1336,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   fabHintText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -1333,7 +1349,7 @@ const styles = StyleSheet.create({
     borderRadius: (FAB_SIZE + 16) / 2,
     borderWidth: 2,
     bottom: -8,
-    left: -8,
+    right: -8,
   },
 
   // Footer loader for infinite scroll

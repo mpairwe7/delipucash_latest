@@ -444,6 +444,9 @@ export default function VideosScreen(): React.ReactElement {
 
   // Scroll progress for collapsible header (0 = expanded, 1 = collapsed)
   const scrollProgress = useSharedValue<number>(0);
+  // FAB auto-hide on scroll (matches question + survey screens)
+  const fabTranslateY = useSharedValue(0);
+  const lastScrollY = useRef(0);
 
   // Calculate collapsible threshold: when user scrolls >100px, start collapsing
   const COLLAPSE_THRESHOLD = 100;
@@ -452,7 +455,16 @@ export default function VideosScreen(): React.ReactElement {
     // Map offsetY to progress: 0-COLLAPSE_THRESHOLD = 0-1 progress
     const progress = Math.min(offsetY / COLLAPSE_THRESHOLD, 1);
     scrollProgress.value = progress;
-  }, [scrollProgress]);
+
+    // FAB auto-hide: hide on scroll down (after 100px), show on scroll up
+    const dy = offsetY - lastScrollY.current;
+    if (dy > 10 && offsetY > 100) {
+      fabTranslateY.value = withTiming(120, { duration: 200 });
+    } else if (dy < -10) {
+      fabTranslateY.value = withTiming(0, { duration: 200 });
+    }
+    lastScrollY.current = offsetY;
+  }, [scrollProgress, fabTranslateY]);
 
   // Reduced motion is handled per-component via useReducedMotion() hook
 
@@ -1432,6 +1444,7 @@ export default function VideosScreen(): React.ReactElement {
         bottomOffset={insets.bottom + SPACING.lg}
         onExpandedChange={setFabExpanded}
         defaultExpanded={fabExpanded}
+        translateY={fabTranslateY}
       />
 
       {/* Upload Modal */}

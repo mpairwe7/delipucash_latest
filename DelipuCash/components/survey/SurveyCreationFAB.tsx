@@ -676,6 +676,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: SPACING.lg,
     zIndex: 1000,
+    alignItems: 'flex-end',
   },
   fab: {
     width: FAB_SIZE,
@@ -690,9 +691,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
   },
   quickHint: {
-    position: 'absolute',
-    bottom: FAB_SIZE + SPACING.sm,
-    right: 0,
     borderRadius: RADIUS.full,
     borderWidth: 1,
     paddingHorizontal: SPACING.sm,
@@ -700,6 +698,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
+    marginBottom: SPACING.sm,
   },
   quickHintText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
@@ -711,8 +710,8 @@ const styles = StyleSheet.create({
     height: FAB_SIZE + 16,
     borderRadius: (FAB_SIZE + 16) / 2,
     borderWidth: 2,
-    top: -8,
-    left: -8,
+    bottom: -8,
+    right: -8,
   },
 
   // Backdrop

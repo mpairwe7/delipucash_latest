@@ -9,7 +9,7 @@
  * On failure: clears auth (forces re-login).
  */
 
-import { useAuthStore, type AuthData } from '@/utils/auth/store';
+import type { AuthData } from '@/utils/auth/store';
 
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://delipucash-latest.vercel.app';
 const apiBase = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
@@ -34,6 +34,7 @@ export async function silentRefresh(): Promise<AuthData | null> {
 }
 
 async function doRefresh(): Promise<AuthData | null> {
+  const { useAuthStore } = await import('@/utils/auth/store');
   const auth = useAuthStore.getState().auth;
   if (!auth?.refreshToken) {
     useAuthStore.getState().setAuth(null);

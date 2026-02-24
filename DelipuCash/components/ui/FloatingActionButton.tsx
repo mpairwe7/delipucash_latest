@@ -24,6 +24,7 @@ import {
   Animated,
   type ViewStyle,
 } from 'react-native';
+import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { Plus, Sparkles } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import {
@@ -82,6 +83,8 @@ export interface FloatingActionButtonProps {
   haptic?: boolean;
   /** Accessibility label for main button */
   accessibilityLabel?: string;
+  /** Parent-driven auto-hide translateY shared value (from scroll handler) */
+  translateY?: SharedValue<number>;
   /** Test ID for testing */
   testID?: string;
 }
@@ -98,6 +101,7 @@ function FloatingActionButtonComponent({
   style,
   haptic = true,
   accessibilityLabel = 'Actions menu',
+  translateY,
   testID,
 }: FloatingActionButtonProps): React.ReactElement {
   const { colors } = useTheme();
@@ -164,6 +168,11 @@ function FloatingActionButtonComponent({
     }
   };
 
+  // Scroll hide/show — only translateY, isolated from expand animation
+  const scrollStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY ? (expanded ? 0 : translateY.value) : 0 }],
+  }));
+
   const renderMainIcon = () => {
     if (expanded && expandedIcon) {
       return expandedIcon;
@@ -179,8 +188,8 @@ function FloatingActionButtonComponent({
   };
 
   return (
-    <View
-      style={[styles.wrapper, getPositionStyle(), style]}
+    <Reanimated.View
+      style={[styles.wrapper, getPositionStyle(), style, scrollStyle]}
       testID={testID}
     >
       <View style={styles.container}>
@@ -289,7 +298,7 @@ function FloatingActionButtonComponent({
           />
         )}
       </View>
-    </View>
+    </Reanimated.View>
   );
 }
 
