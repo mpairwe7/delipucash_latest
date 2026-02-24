@@ -661,6 +661,10 @@ export default function SurveysScreen(): React.ReactElement {
     }
   }, [isAuthenticated, isAdmin, hasActiveSubscription, openAuth, setShowTemplates, setShowImportWizard]);
 
+  const handleQuickCreate = useCallback(() => {
+    handleCreationMode('blank');
+  }, [handleCreationMode]);
+
   // Template selection handler
   const handleTemplateSelect = useCallback((template: { id: string; name: string }) => {
     setShowTemplates(false);
@@ -838,7 +842,7 @@ export default function SurveysScreen(): React.ReactElement {
             {activeTab === 'my-surveys' && (
               <TouchableOpacity
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-                onPress={() => handleCreationMode('blank')}
+                onPress={handleQuickCreate}
                 accessibilityRole="button"
                 accessibilityLabel="Create your first survey"
               >
@@ -860,7 +864,7 @@ export default function SurveysScreen(): React.ReactElement {
     activeTab,
     handleAdClick,
     handleAdImpression,
-    handleCreationMode,
+    handleQuickCreate,
     getSurveyPressHandler,
     getViewResponsesHandler,
     handleDismissAd,
@@ -1162,6 +1166,7 @@ export default function SurveysScreen(): React.ReactElement {
       {/* FAB */}
       <SurveyCreationFAB
         onSelect={handleCreationMode}
+        onPrimaryPress={handleQuickCreate}
         disabled={loadingSubscription}
       />
 

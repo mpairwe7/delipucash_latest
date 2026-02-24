@@ -19,6 +19,7 @@ import {
   TouchableOpacity,
   Animated,
   AccessibilityInfo,
+  AccessibilityActionEvent,
 } from 'react-native';
 import {
   Plus,
@@ -46,6 +47,7 @@ export type CreationMode = 'blank' | 'template' | 'import' | 'conversational';
 
 interface SurveyCreationFABProps {
   onSelect: (mode: CreationMode) => void;
+  onPrimaryPress?: () => void;
   disabled?: boolean;
 }
 
@@ -70,6 +72,7 @@ const OPTION_SIZE = 50;
 
 export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
   onSelect,
+  onPrimaryPress,
   disabled,
 }) => {
   const { colors, isDark } = useTheme();
@@ -86,6 +89,7 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     new Animated.Value(0),
   ]).current;
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const longPressTriggeredRef = useRef(false);
 
   // Check reduced motion preference
   useEffect(() => {
@@ -213,6 +217,69 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
     });
   };
 
+  const triggerPrimaryAction = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Animated.sequence([
+      Animated.timing(scaleAnim, {
+        toValue: 0.92,
+        duration: reduceMotion ? 0 : 85,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: reduceMotion ? 0 : 85,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    onPrimaryPress?.();
+  };
+
+  const handlePrimaryTap = () => {
+    if (disabled) return;
+    if (isExpanded) {
+      toggleExpanded();
+      return;
+    }
+    if (onPrimaryPress) {
+      triggerPrimaryAction();
+      return;
+    }
+    toggleExpanded();
+  };
+
+  const handlePrimaryLongPress = () => {
+    if (disabled) return;
+    longPressTriggeredRef.current = true;
+    // Guard against platforms where long-press may not emit onPress afterward.
+    setTimeout(() => {
+      longPressTriggeredRef.current = false;
+    }, 350);
+    if (!isExpanded) {
+      toggleExpanded();
+    }
+  };
+
+  const handleMainFabPress = () => {
+    if (longPressTriggeredRef.current) {
+      longPressTriggeredRef.current = false;
+      return;
+    }
+    handlePrimaryTap();
+  };
+
+  const handleMainFabAccessibilityAction = (event: AccessibilityActionEvent) => {
+    switch (event.nativeEvent.actionName) {
+      case 'activate':
+        handlePrimaryTap();
+        break;
+      case 'longpress':
+        handlePrimaryLongPress();
+        break;
+      default:
+        break;
+    }
+  };
+
   const fabRotationInterpolate = fabRotation.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '45deg'],
@@ -299,6 +366,24 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
 
       {/* Main FAB */}
       <Animated.View style={[styles.fabWrapper, { transform: [{ scale: scaleAnim }] }]}>
+        {!isExpanded && !disabled && !!onPrimaryPress && (
+          <View
+            accessible={false}
+            style={[
+              styles.quickHint,
+              {
+                backgroundColor: colors.card,
+                borderColor: withAlpha(colors.text, 0.12),
+              },
+              SHADOWS.sm,
+            ]}
+          >
+            <Sparkles size={14} color={colors.primary} />
+            <Text style={[styles.quickHintText, { color: colors.textMuted }]}>
+              Tap to create, hold for options
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           style={[
             styles.fab,
@@ -308,12 +393,32 @@ export const SurveyCreationFAB: React.FC<SurveyCreationFABProps> = ({
             },
             SHADOWS.lg,
           ]}
-          onPress={toggleExpanded}
+          onPress={handleMainFabPress}
+          onLongPress={handlePrimaryLongPress}
+          delayLongPress={260}
           disabled={disabled}
           activeOpacity={0.8}
           accessibilityRole="button"
-          accessibilityLabel={isExpanded ? 'Close creation menu' : 'Create new survey'}
-          accessibilityState={{ expanded: isExpanded }}
+          accessibilityLabel={
+            isExpanded
+              ? 'Close creation menu'
+              : onPrimaryPress
+                ? 'Create survey'
+                : 'Open creation menu'
+          }
+          accessibilityHint={
+            isExpanded
+              ? 'Double tap to close creation options'
+              : onPrimaryPress
+                ? 'Double tap to create a blank survey. Long press to view more creation options'
+                : 'Double tap to view survey creation options'
+          }
+          accessibilityState={{ expanded: isExpanded, disabled: !!disabled }}
+          accessibilityActions={[
+            { name: 'activate', label: onPrimaryPress ? 'Create survey' : 'Toggle creation menu' },
+            { name: 'longpress', label: 'Open creation options' },
+          ]}
+          onAccessibilityAction={handleMainFabAccessibilityAction}
         >
           <Animated.View style={{ transform: [{ rotate: fabRotationInterpolate }] }}>
             <Plus size={28} color="#FFFFFF" strokeWidth={2.5} />
@@ -552,6 +657,22 @@ const styles = StyleSheet.create({
     borderRadius: FAB_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  quickHint: {
+    position: 'absolute',
+    bottom: FAB_SIZE + SPACING.sm,
+    right: 0,
+    borderRadius: RADIUS.full,
+    borderWidth: 1,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+  },
+  quickHintText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   pulseRing: {
     position: 'absolute',
