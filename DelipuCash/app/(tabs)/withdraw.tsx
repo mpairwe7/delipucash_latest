@@ -13,7 +13,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CreditCard,
   ChevronRight,
-  DollarSign,
   Phone,
   AlertCircle,
   CheckCircle,
@@ -254,7 +253,9 @@ export default function WithdrawScreen(): React.ReactElement {
               },
             ]}
           >
-            <DollarSign size={20} color={colors.textMuted} strokeWidth={1.5} />
+            <Text style={[styles.currencyPrefix, { color: colors.textMuted }]}>
+              UGX
+            </Text>
             <TextInput
               style={[styles.input, { color: colors.text }]}
               placeholder="Enter amount"
@@ -645,6 +646,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingVertical: 12,
     marginLeft: 8,
+  },
+  currencyPrefix: {
+    fontFamily: "Roboto_500Medium",
+    fontSize: 14,
   },
   errorRow: {
     flexDirection: "row",
