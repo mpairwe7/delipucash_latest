@@ -8,7 +8,15 @@ import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem 
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult, RewardQuestionType, TextInputOptions } from "@/types";
-import { TextAnswerInput } from "@/components/reward";
+import {
+  TextAnswerInput,
+  CountdownTimer,
+  countdownStyles,
+  WinnerRow,
+  WinnersSection,
+  TrustCard,
+  formatTime,
+} from "@/components/reward";
 import {
     BORDER_WIDTH,
     COMPONENT_SIZE,
@@ -26,6 +34,7 @@ import {
 } from "@/utils/quiz-utils";
 import { lockPortrait } from "@/hooks/useScreenOrientation";
 import { RewardSessionSummary, RedemptionModal, AnswerResultOverlay, QuestionTimer, SessionClosedModal } from "@/components/quiz";
+import { useSSEEvent } from "@/services/sse";
 import { PostQuestionAdSlot } from "@/components/ads/PostQuestionAdSlot";
 import { SessionSummaryAd } from "@/components/ads/SessionSummaryAd";
 import { useQuizAdPlacement } from "@/hooks/useQuizAdPlacement";
@@ -37,9 +46,7 @@ import {
     ArrowLeft,
     CheckCircle2,
   ChevronRight,
-    Clock3,
   Lock,
-    PartyPopper,
     RefreshCcw,
     ShieldCheck,
     Sparkles,
@@ -63,68 +70,6 @@ import Animated, {
   runOnJS,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-// ─── Pure utility (stable — outside component) ──────────────────────────────
-
-const formatTime = (seconds: number): string => {
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${minutes}:${secs < 10 ? "0" : ""}${secs}`;
-};
-
-// ─── Countdown Timer (isolates per-second re-renders from parent) ────────────
-
-interface CountdownTimerProps {
-  expiryTime: string;
-  colors: { warning: string };
-  onExpired?: () => void;
-}
-
-const CountdownTimer = memo(function CountdownTimer({ expiryTime, colors, onExpired }: CountdownTimerProps) {
-  const [timeLeft, setTimeLeft] = useState<number>(() => {
-    const diff = Math.max(0, Math.floor((new Date(expiryTime).getTime() - Date.now()) / 1000));
-    return diff;
-  });
-
-  useEffect(() => {
-    const expiry = new Date(expiryTime).getTime();
-    const update = (): void => {
-      const diff = Math.max(0, Math.floor((expiry - Date.now()) / 1000));
-      setTimeLeft(diff);
-      if (diff === 0) onExpired?.();
-    };
-
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, [expiryTime, onExpired]);
-
-  const isExpired = timeLeft <= 0;
-
-  return (
-    <View style={[countdownStyles.timerPill, { backgroundColor: withAlpha(colors.warning, 0.12) }]}>
-      <Clock3 size={ICON_SIZE.sm} color={colors.warning} strokeWidth={1.5} />
-      <Text style={[countdownStyles.timerText, { color: colors.warning }]}>
-        {isExpired ? "Expired" : formatTime(timeLeft)}
-      </Text>
-    </View>
-  );
-});
-
-const countdownStyles = StyleSheet.create({
-  timerPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.xs,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: SPACING.xs,
-    borderRadius: RADIUS.full,
-  },
-  timerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-  },
-});
 
 // ─── Memoized sub-components ─────────────────────────────────────────────────
 
@@ -198,89 +143,6 @@ const OptionItem = memo(function OptionItem({
   );
 });
 
-interface WinnerRowProps {
-  winner: { id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number };
-  colors: ThemeColors;
-}
-
-const WinnerRow = memo(function WinnerRow({ winner, colors }: WinnerRowProps) {
-  return (
-    <View style={[styles.winnerRow, { borderColor: colors.border }]}>
-      <View style={styles.winnerLeft}>
-        <Text style={[styles.winnerPosition, { color: colors.primary }]}>{winner.position}.</Text>
-        <View style={styles.winnerInfo}>
-          <Text style={[styles.winnerEmail, { color: colors.text }]} numberOfLines={1}>
-            {winner.userEmail}
-          </Text>
-          <Text style={[styles.winnerStatus, { color: colors.textMuted }]}>{winner.paymentStatus}</Text>
-        </View>
-      </View>
-      <Text style={[styles.winnerAmount, { color: colors.success }]}>{formatCurrency(winner.amountAwarded)}</Text>
-    </View>
-  );
-});
-
-// ─── Static Trust Card (never re-renders — zero props that change) ───────────
-
-interface TrustCardProps {
-  colors: ThemeColors;
-}
-
-const TrustCard = memo(function TrustCard({ colors }: TrustCardProps) {
-  return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.badge, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
-          <ShieldCheck size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
-          <Text style={[styles.badgeText, { color: colors.primary }]}>Fair play</Text>
-        </View>
-      </View>
-      <View style={styles.trustRules}>
-        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-          {'\u2022'} One attempt per question — answers are final
-        </Text>
-        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-          {'\u2022'} Winners are selected in order of correct submissions
-        </Text>
-        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-          {'\u2022'} Payouts are processed automatically via mobile money
-        </Text>
-        <Text style={[styles.trustRule, { color: colors.textMuted }]}>
-          {'\u2022'} All answers are verified server-side for fairness
-        </Text>
-      </View>
-    </View>
-  );
-});
-
-// ─── Winners Section (memoized — only re-renders when winners change) ────────
-
-interface WinnersSectionProps {
-  winners: { id: string; position: number; userEmail: string; paymentStatus: string; amountAwarded: number }[];
-  colors: ThemeColors;
-}
-
-// Winners are bounded to maxWinners (1-10), so .map() is used instead of FlatList
-// to eliminate the nested VirtualizedList-inside-ScrollView warning.
-const WinnersSection = memo(function WinnersSection({ winners, colors }: WinnersSectionProps) {
-  if (!winners || winners.length === 0) return null;
-
-  return (
-    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={styles.cardHeader}>
-        <View style={[styles.badge, { backgroundColor: withAlpha(colors.info, 0.12) }]}>
-          <PartyPopper size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
-          <Text style={[styles.badgeText, { color: colors.info }]}>Winners</Text>
-        </View>
-        <Text style={[styles.cardMeta, { color: colors.textMuted }]}>Latest payouts</Text>
-      </View>
-      {winners.map((winner) => (
-        <WinnerRow key={winner.id} winner={winner} colors={colors} />
-      ))}
-    </View>
-  );
-});
-
 // ─── Main Screen Component ───────────────────────────────────────────────────
 
 export default function InstantRewardAnswerScreen(): React.ReactElement {
@@ -296,21 +158,37 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const [revealedCorrectAnswer, setRevealedCorrectAnswer] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
   const [showSessionSummary, setShowSessionSummary] = useState(false);
-  const [showSessionClosed, setShowSessionClosed] = useState(false);
-  const [sessionClosedReason, setSessionClosedReason] = useState<'EXPIRED' | 'SLOTS_FULL' | 'COMPLETED'>('EXPIRED');
   const [showRedemptionModal, setShowRedemptionModal] = useState(false);
-  const [quickRedeemProvider, setQuickRedeemProvider] = useState<'MTN' | 'AIRTEL' | undefined>(undefined);
-  const [quickRedeemPhone, setQuickRedeemPhone] = useState<string | undefined>(undefined);
-  const [quickRedeemType, setQuickRedeemType] = useState<'CASH' | 'AIRTIME' | undefined>(undefined);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [showResultOverlay, setShowResultOverlay] = useState(false);
-  const [overlayIsCorrect, setOverlayIsCorrect] = useState(false);
-  const [overlayEarned, setOverlayEarned] = useState(0);
-  const [overlayEarnedPoints, setOverlayEarnedPoints] = useState(0);
   const [textAnswer, setTextAnswer] = useState('');
   const [timerExpired, setTimerExpired] = useState(false);
   const [isOptimisticLocked, setIsOptimisticLocked] = useState(false);
+
+  // M10: Grouped state to reduce cascading re-renders
+  const [sessionClosed, setSessionClosed] = useState<{ show: boolean; reason: 'EXPIRED' | 'SLOTS_FULL' | 'COMPLETED' }>({ show: false, reason: 'EXPIRED' });
+  const showSessionClosed = sessionClosed.show;
+  const sessionClosedReason = sessionClosed.reason;
+  const setShowSessionClosed = useCallback((show: boolean) => setSessionClosed(prev => ({ ...prev, show })), []);
+  const setSessionClosedReason = useCallback((reason: 'EXPIRED' | 'SLOTS_FULL' | 'COMPLETED') => setSessionClosed(prev => ({ ...prev, reason })), []);
+
+  const [quickRedeem, setQuickRedeem] = useState<{ provider?: 'MTN' | 'AIRTEL'; phone?: string; type?: 'CASH' | 'AIRTIME' }>({});
+  const quickRedeemProvider = quickRedeem.provider;
+  const quickRedeemPhone = quickRedeem.phone;
+  const quickRedeemType = quickRedeem.type;
+  const setQuickRedeemProvider = useCallback((v?: 'MTN' | 'AIRTEL') => setQuickRedeem(prev => ({ ...prev, provider: v })), []);
+  const setQuickRedeemPhone = useCallback((v?: string) => setQuickRedeem(prev => ({ ...prev, phone: v })), []);
+  const setQuickRedeemType = useCallback((v?: 'CASH' | 'AIRTIME') => setQuickRedeem(prev => ({ ...prev, type: v })), []);
+
+  const [overlay, setOverlay] = useState<{ show: boolean; isCorrect: boolean; earned: number; earnedPoints: number }>({ show: false, isCorrect: false, earned: 0, earnedPoints: 0 });
+  const showResultOverlay = overlay.show;
+  const overlayIsCorrect = overlay.isCorrect;
+  const overlayEarned = overlay.earned;
+  const overlayEarnedPoints = overlay.earnedPoints;
+  const setShowResultOverlay = useCallback((show: boolean) => setOverlay(prev => ({ ...prev, show })), []);
+  const setOverlayIsCorrect = useCallback((v: boolean) => setOverlay(prev => ({ ...prev, isCorrect: v })), []);
+  const setOverlayEarned = useCallback((v: number) => setOverlay(prev => ({ ...prev, earned: v })), []);
+  const setOverlayEarnedPoints = useCallback((v: number) => setOverlay(prev => ({ ...prev, earnedPoints: v })), []);
   const submitGuardRef = useRef(false);
   const { showToast } = useToast();
 
@@ -546,14 +424,32 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   useEffect(() => {
     if (timerExpired && !result && !hasAlreadyAttempted) {
       triggerHaptic('error');
-      setSessionClosedReason('EXPIRED');
-      setShowSessionClosed(true);
+      setSessionClosed({ show: true, reason: 'EXPIRED' });
       showToast({
         message: 'Time\'s up! This question session has ended.',
         type: 'warning',
       });
     }
   }, [timerExpired, result, hasAlreadyAttempted, showToast]);
+
+  // M8: Real-time disbursement status tracking via SSE
+  useSSEEvent<{ type: string; status: string; amount?: number; reference?: string }>(
+    'transaction.statusUpdate',
+    useCallback((data) => {
+      if (data.type !== 'instant_reward') return;
+      if (data.status === 'SUCCESSFUL') {
+        showToast({
+          message: `Your reward of ${formatCurrency(data.amount ?? 0)} has been sent!`,
+          type: 'success',
+        });
+      } else if (data.status === 'FAILED') {
+        showToast({
+          message: 'Reward disbursement failed. Please contact support.',
+          type: 'error',
+        });
+      }
+    }, [showToast])
+  );
 
   // Auto-show SessionClosedModal when landing on a question with no spots left.
   // This catches the race condition where spots fill between navigation and render.
@@ -572,8 +468,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       refetchAllQuestions();
       const timer = setTimeout(() => {
         triggerHaptic('warning');
-        setSessionClosedReason('SLOTS_FULL');
-        setShowSessionClosed(true);
+        setSessionClosed({ show: true, reason: 'SLOTS_FULL' });
       }, 400);
       return () => clearTimeout(timer);
     }
@@ -795,11 +690,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           // Track question answered for ad frequency capping
           recordAdQuestionAnswered();
 
-          // Show animated result overlay
-          setOverlayIsCorrect(payload.isCorrect);
-          setOverlayEarned(earnedAmount);
-          setOverlayEarnedPoints(earnedPts);
-          setShowResultOverlay(true);
+          // Show animated result overlay (batched — single re-render)
+          setOverlay({ show: true, isCorrect: payload.isCorrect, earned: earnedAmount, earnedPoints: earnedPts });
 
           if (payload.isCorrect) {
             triggerHaptic('success');
@@ -849,13 +741,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             });
           }
         },
-        onError: (error) => {
+        onError: (error: Error & { code?: string }) => {
           triggerHaptic('error');
           submitGuardRef.current = false;
           setIsOptimisticLocked(false);
+          const errorCode = error.code;
           const errorMessage = error?.message || "Unable to submit your answer. Please try again.";
 
-          if (errorMessage.includes("already attempted")) {
+          if (errorCode === 'ALREADY_ATTEMPTED') {
             // Sync local store so the question moves to "Attempted/Completed" tab
             markQuestionAttempted({
               questionId: question.id,
@@ -873,14 +766,14 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               action: 'Go Back',
               onAction: () => router.back(),
             });
-          } else if (errorMessage.includes("expired")) {
+          } else if (errorCode === 'QUESTION_EXPIRED') {
             showToast({
               message: 'This question has expired and is no longer available.',
               type: 'info',
               action: 'Next',
               onAction: () => handleTransitionToNext(),
             });
-          } else if (errorMessage.includes("completed")) {
+          } else if (errorCode === 'QUESTION_COMPLETED') {
             showToast({
               message: 'All winners have been found for this question.',
               type: 'info',
@@ -896,6 +789,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   }, [question, selectedOption, textAnswer, isTextInput, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, rewardPoints, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user, recordAdQuestionAnswered]);
 
   // Handle redemption via real API
+  // Persist idempotency key across ERROR → retry so the backend deduplicates
+  const redemptionKeyRef = useRef<string | null>(null);
+
   const handleRedeem = useCallback(async (
     amount: number,
     type: 'CASH' | 'AIRTIME',
@@ -910,11 +806,17 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       phoneNumber,
     });
 
-    const idempotencyKey = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    // Reuse key on retry; generate fresh only on first attempt
+    if (!redemptionKeyRef.current) {
+      redemptionKeyRef.current = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+    const idempotencyKey = redemptionKeyRef.current;
+
     try {
-      const response = await rewardsApi.redeem(amount, provider, phoneNumber, type, idempotencyKey);
+      const response = await rewardsApi.redeem({ pointsToRedeem: cashToPoints(amount), cashValue: amount, provider, phoneNumber, type, idempotencyKey });
 
       if (response.data?.success) {
+        redemptionKeyRef.current = null; // Clear on success for next redemption
         completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
         // Re-sync wallet from server after successful payout (Robinhood pattern)
         refetchProfile();
@@ -927,8 +829,8 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         completeRedemption('', false, errorMsg);
         return { success: false, message: `${errorMsg} Points refunded.` };
       }
-    } catch (err: any) {
-      const errorMsg = err?.message ?? 'Something went wrong. Please try again.';
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
       completeRedemption('', false, errorMsg);
       return { success: false, message: errorMsg };
     }
@@ -1006,6 +908,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
+    redemptionKeyRef.current = null; // Reset key when modal dismissed
     cancelRedemption();
   }, [cancelRedemption]);
 
@@ -1391,10 +1294,10 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
         )}
 
         {/* Winners — memoized, uses .map() (bounded to maxWinners) */}
-        <WinnersSection winners={question.winners || []} colors={colors} />
+        <WinnersSection winners={question.winners || []} colors={colors} cardStyle={styles.card} />
 
         {/* Trust & Fairness — static memo, never re-renders */}
-        <TrustCard colors={colors} />
+        <TrustCard colors={colors} cardStyle={styles.card} />
       </ScrollView>
       </Animated.View>
 

@@ -299,6 +299,9 @@ export const getUserPoints = asyncHandler(async (req, res) => {
  * Update user's points after quiz session
  * PUT /api/user/points
  */
+// Max points a single quiz session can award (server-side safety cap)
+const MAX_POINTS_PER_SESSION = 500;
+
 export const updateUserPoints = asyncHandler(async (req, res) => {
   // Use authenticated user ID from JWT — never trust client-supplied userId
   const userId = req.user.id;
@@ -306,6 +309,15 @@ export const updateUserPoints = asyncHandler(async (req, res) => {
 
   if (points === undefined) {
     return res.status(400).json({ message: 'points is required' });
+  }
+
+  // Server-side validation: reject negative or unreasonably large point awards
+  const numPoints = Number(points);
+  if (!Number.isFinite(numPoints) || numPoints < 0) {
+    return res.status(400).json({ message: 'points must be a non-negative number' });
+  }
+  if (numPoints > MAX_POINTS_PER_SESSION) {
+    return res.status(400).json({ message: `Maximum ${MAX_POINTS_PER_SESSION} points per session` });
   }
 
   try {
@@ -384,12 +396,13 @@ export const saveQuizSession = asyncHandler(async (req, res) => {
       completedAt,
     };
 
-    // Update user points
-    if (totalPoints > 0) {
+    // Update user points (server-side capped to prevent inflation)
+    const clampedPoints = Math.min(Math.max(Number(totalPoints) || 0, 0), MAX_POINTS_PER_SESSION);
+    if (clampedPoints > 0) {
       await prisma.appUser.update({
         where: { id: userId },
         data: {
-          points: { increment: totalPoints },
+          points: { increment: clampedPoints },
         },
       });
     }

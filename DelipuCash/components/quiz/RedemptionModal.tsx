@@ -80,6 +80,7 @@ import {
 } from '@/store/InstantRewardStore';
 import { useRewardConfig } from '@/services/configHooks';
 import { triggerHaptic } from '@/utils/quiz-utils';
+import { usePaymentFlowStore, selectLastUsedPhone, selectLastUsedProvider } from '@/store/PaymentFlowStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -323,6 +324,11 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   const { colors, isDark } = useTheme();
   const { height: screenHeight } = useWindowDimensions();
 
+  // Cross-flow phone pre-fill from PaymentFlowStore (M7)
+  const lastUsedPhone = usePaymentFlowStore(selectLastUsedPhone);
+  const lastUsedProvider = usePaymentFlowStore(selectLastUsedProvider);
+  const setLastUsedDetails = usePaymentFlowStore((s) => s.setLastUsedDetails);
+
   // State
   const [step, setStep] = useState<RedemptionStep>('SELECT_TYPE');
   const [selectedType, setSelectedType] = useState<RewardRedemptionType | null>(null);
@@ -354,15 +360,17 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         setSelectedType(null);
         setSelectedAmount(0);
 
-        // Pre-fill phone from user profile if available
-        const prefillPhone = userPhone || '';
+        // Pre-fill phone: profile > PaymentFlowStore > empty
+        const prefillPhone = userPhone || lastUsedPhone || '';
         setPhoneNumber(prefillPhone);
         setIsPhonePrefilled(!!prefillPhone);
 
-        // Auto-detect provider from pre-filled phone
+        // Auto-detect provider from pre-filled phone, or use last-used provider
         if (prefillPhone) {
           const detected = detectProviderFromPhone(prefillPhone);
           if (detected) setSelectedProvider(detected);
+        } else if (lastUsedProvider) {
+          setSelectedProvider(lastUsedProvider);
         }
       }
     }
@@ -429,6 +437,8 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
       const result = await onRedeem(cashValue, selectedType, selectedProvider, cleanPhone);
       if (result.success) {
         triggerHaptic('success');
+        // Persist phone/provider for cross-flow pre-fill on next redemption
+        setLastUsedDetails(cleanPhone, selectedProvider);
         setSuccessMessage(
           result.message || `${formatCurrency(cashValue)} sent to your ${selectedProvider} number!`,
         );
@@ -905,7 +915,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         style={styles.overlay}
       >
         <KeyboardAvoidingView
-          behavior="padding"
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
           <Animated.View

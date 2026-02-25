@@ -6,6 +6,9 @@ import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { getRewardConfig, ugxToPoints } from '../lib/rewardConfig.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
+
+const log = createPaymentLogger('instant-reward');
 
 /**
  * Constant-time string comparison to prevent timing attacks.
@@ -281,14 +284,14 @@ export const createRewardQuestion = asyncHandler(async (req, res) => {
       }
     });
 
-    console.log("Reward question created successfully:", rewardQuestion.id);
+    log.info('Reward question created', { id: rewardQuestion.id });
     res.status(201).json({
       message: "Reward question created successfully",
       rewardQuestion: formatRewardQuestionPublic(rewardQuestion)
     });
 
   } catch (error) {
-    console.error("Error creating reward question:", error.message);
+    log.error('Error creating reward question', { error: error.message });
     res.status(500).json({ message: "Failed to create reward question. Please try again." });
   }
 });
@@ -349,7 +352,7 @@ export const getAllRewardQuestions = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("RewardQuestionController: getAllRewardQuestions - Error occurred:", error);
+    log.error('getAllRewardQuestions error', { error: error.message });
     res.status(500).json({ message: "Failed to fetch reward questions" });
   }
 });
@@ -456,7 +459,7 @@ export const getRegularRewardQuestions = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("RewardQuestionController: getRegularRewardQuestions - Error occurred:", error);
+    log.error('getRegularRewardQuestions error', { error: error.message });
     res.status(500).json({ message: "Failed to fetch regular reward questions" });
   }
 });
@@ -566,7 +569,7 @@ export const getInstantRewardQuestions = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("RewardQuestionController: getInstantRewardQuestions - Error occurred:", error);
+    log.error('getInstantRewardQuestions error', { error: error.message });
     res.status(500).json({ message: "Failed to fetch instant reward questions" });
   }
 });
@@ -614,7 +617,7 @@ export const getRewardQuestionById = asyncHandler(async (req, res) => {
       rewardQuestion: formattedQuestion
     });
   } catch (error) {
-    console.error("RewardQuestionController: getRewardQuestionById - Error occurred:", error);
+    log.error('getRewardQuestionById error', { error: error.message });
     res.status(500).json({ message: "Failed to fetch reward question" });
   }
 });
@@ -652,7 +655,7 @@ export const getRewardQuestionsByUser = asyncHandler(async (req, res) => {
       rewardQuestions: formattedQuestions,
     });
   } catch (error) {
-    console.error("Error fetching user reward questions:", error);
+    log.error('Error fetching user reward questions', { error: error.message });
     res.status(500).json({ message: "Something went wrong" });
   }
 });
@@ -718,7 +721,7 @@ export const updateRewardQuestion = asyncHandler(async (req, res) => {
       rewardQuestion: formatRewardQuestionPublic(updatedRewardQuestion),
     });
   } catch (error) {
-    console.error("Error updating reward question:", error);
+    log.error('Error updating reward question', { error: error.message });
     res.status(500).json({ message: "Something went wrong" });
   }
 });
@@ -746,35 +749,45 @@ export const deleteRewardQuestion = asyncHandler(async (req, res) => {
 
     res.json({ message: 'Reward question deleted successfully' });
   } catch (error) {
-    console.error("Error deleting reward question:", error);
+    log.error('Error deleting reward question', { error: error.message });
     res.status(500).json({ message: "Something went wrong" });
   }
 });
 
+/**
+ * Declarative validation for answer submission request body.
+ * Returns { valid: true, data } on success or { valid: false, error } on failure.
+ */
+function validateAnswerSubmission(body, params) {
+  const rewardQuestionId = body.rewardQuestionId || params.id;
+  if (!rewardQuestionId || typeof rewardQuestionId !== 'string') {
+    return { valid: false, error: 'Reward question ID is required', code: 'MISSING_QUESTION_ID' };
+  }
+
+  const { selectedAnswer } = body;
+  if (!selectedAnswer || typeof selectedAnswer !== 'string') {
+    return { valid: false, error: 'Selected answer is required and must be a string', code: 'MISSING_ANSWER' };
+  }
+  if (selectedAnswer.length > 1000) {
+    return { valid: false, error: 'Answer must be at most 1,000 characters', code: 'ANSWER_TOO_LONG' };
+  }
+
+  return { valid: true, data: { rewardQuestionId, selectedAnswer: selectedAnswer.trim() } };
+}
+
 // Submit an answer to a reward question
 export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
   try {
-    // Support both body-based and URL param-based questionId
-    const rewardQuestionId = req.body.rewardQuestionId || req.params.id;
-    const { selectedAnswer, phoneNumber } = req.body;
-
-    // Validate required fields
-    if (!rewardQuestionId || !selectedAnswer) {
-      return res.status(400).json({
-        message: "Reward question ID and selected answer are required"
-      });
+    // Declarative validation
+    const validation = validateAnswerSubmission(req.body, req.params);
+    if (!validation.valid) {
+      return res.status(400).json({ message: validation.error, code: validation.code });
     }
-
-    // Guard against oversized payloads (prevents Buffer.from memory exhaustion in safeCompare)
-    if (typeof selectedAnswer !== 'string' || selectedAnswer.length > 1000) {
-      return res.status(400).json({
-        message: "Answer must be a string of at most 1,000 characters"
-      });
-    }
+    const { rewardQuestionId, selectedAnswer } = validation.data;
 
     // Token-bound identity: resolve user from verified JWT (set by verifyToken middleware)
     if (!req.user?.id) {
-      return res.status(401).json({ message: "Authentication required" });
+      return res.status(401).json({ message: 'Authentication required', code: 'AUTH_REQUIRED' });
     }
 
     const authenticatedUser = await prisma.appUser.findUnique({
@@ -787,8 +800,9 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     }
 
     const userEmail = authenticatedUser.email;
-    // Resolve phone: prefer client-supplied (may be fresher), then DB profile
-    const resolvedPhone = phoneNumber || authenticatedUser.phone || null;
+    // SECURITY: Only use verified phone from DB for automatic disbursements.
+    // Never trust client-supplied phoneNumber for payouts — prevents redirect attacks.
+    const resolvedPhone = authenticatedUser.phone || null;
 
     // Fetch the reward question first (needed for correctAnswer in all responses)
     const rewardQuestion = await prisma.rewardQuestion.findUnique({
@@ -796,7 +810,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     });
 
     if (!rewardQuestion) {
-      return res.status(404).json({ message: "Reward question not found" });
+      return res.status(404).json({ message: "Reward question not found", code: 'QUESTION_NOT_FOUND' });
     }
 
     // SINGLE ATTEMPT ENFORCEMENT: Check if user has already attempted this reward question
@@ -810,6 +824,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     if (existingAttempt) {
       return res.status(400).json({
         message: "You have already attempted this question. Each question can only be answered once.",
+        code: 'ALREADY_ATTEMPTED',
         isCorrect: existingAttempt.isCorrect,
         alreadyAttempted: true
       });
@@ -817,12 +832,13 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
     // Check if question is active and not expired
     if (!rewardQuestion.isActive) {
-      return res.status(400).json({ message: "This reward question is not active" });
+      return res.status(400).json({ message: "This reward question is not active", code: 'QUESTION_INACTIVE' });
     }
 
     if (rewardQuestion.expiryTime && new Date() > rewardQuestion.expiryTime) {
       return res.status(400).json({
         message: "This reward question has expired",
+        code: 'QUESTION_EXPIRED',
         isExpired: true
       });
     }
@@ -831,6 +847,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     if (rewardQuestion.isCompleted) {
       return res.status(400).json({
         message: "This question has already been completed. All winners have been found.",
+        code: 'QUESTION_COMPLETED',
         isCompleted: true
       });
     }
@@ -891,7 +908,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
       try {
         rewardConfig = await getRewardConfig();
       } catch (configError) {
-        console.error('[submitAnswer] Failed to fetch reward config, using hardcoded fallback:', configError.message);
+        log.warn('Failed to fetch reward config, using hardcoded fallback', { error: configError.message });
         rewardConfig = null;
       }
 
@@ -936,6 +953,10 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
           const position = freshQuestion.winnersCount + 1;
 
+          // Determine winner's phone — NEVER fall back to question creator's phone
+          const winnerPhone = resolvedPhone || null;
+          const initialPaymentStatus = winnerPhone ? 'PENDING' : 'FAILED';
+
           // Create winner record
           const winner = await tx.instantRewardWinner.create({
             data: {
@@ -943,9 +964,9 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
               userEmail,
               position,
               amountAwarded: rewardAmountUGX,
-              paymentStatus: 'PENDING',
-              paymentProvider: rewardQuestion.paymentProvider,
-              phoneNumber: resolvedPhone || rewardQuestion.phoneNumber,
+              paymentStatus: initialPaymentStatus,
+              paymentProvider: rewardQuestion.paymentProvider || null,
+              phoneNumber: winnerPhone,
               createdAt: new Date(),
               updatedAt: new Date(),
             },
@@ -981,12 +1002,24 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
         });
 
         if (winnerResult.isWinner) {
-          // Process payment OUTSIDE transaction (async, non-blocking)
-          let paymentResult = null;
-          try {
-            paymentResult = await processInstantRewardPayment(winnerResult.winner);
-          } catch (paymentError) {
-            console.error("Payment processing error:", paymentError);
+          const winnerRecord = winnerResult.winner;
+
+          // Fire-and-forget: process payment asynchronously so the HTTP response
+          // returns immediately. The user sees paymentStatus: 'PENDING' and the
+          // frontend/SSE updates when the disbursement resolves.
+          if (winnerRecord.phoneNumber && winnerRecord.paymentProvider) {
+            processInstantRewardPayment(winnerRecord).catch((paymentError) => {
+              log.error('Instant reward payment processing failed', {
+                winnerId: winnerRecord.id,
+                message: paymentError.message,
+              });
+            });
+          } else {
+            log.warn('Winner missing phone or provider — payment deferred', {
+              winnerId: winnerRecord.id,
+              hasPhone: !!winnerRecord.phoneNumber,
+              hasProvider: !!winnerRecord.paymentProvider,
+            });
           }
 
           const { position, maxWinners } = winnerResult;
@@ -1009,8 +1042,8 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
             rewardEarned: rewardAmountUGX,
             isWinner: true,
             position,
-            paymentStatus: paymentResult?.status || 'PENDING',
-            paymentReference: paymentResult?.reference,
+            paymentStatus: 'PENDING', // Payment is processed asynchronously — SSE updates on resolution
+            paymentReference: null,
             remainingSpots: Math.max(maxWinners - position, 0),
           };
         } else {
@@ -1091,7 +1124,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     res.json(response);
 
   } catch (error) {
-    console.error("Error submitting reward question answer:", error);
+    log.error('Error submitting reward question answer', { error: error.message, stack: error.stack });
     res.status(500).json({ message: "Something went wrong" });
   }
 });
@@ -1101,95 +1134,329 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 const PAYMENT_MAX_RETRIES = 3;
 const PAYMENT_BASE_DELAY_MS = 1000;
 
-async function processInstantRewardPayment(winner, attempt = 1) {
-  try {
-    console.log(`Processing payment for winner: ${winner.userEmail}, Amount: ${winner.amountAwarded}, Provider: ${winner.paymentProvider} (attempt ${attempt}/${PAYMENT_MAX_RETRIES})`);
+/**
+ * Auto-detect provider from Uganda phone prefix.
+ * MTN: 077, 078, 076, 039 | Airtel: 070, 075
+ */
+function detectProviderFromPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  let local = digits;
+  if (local.startsWith('256') && local.length >= 12) local = '0' + local.slice(3);
+  if (/^07[678]/.test(local) || /^039/.test(local)) return 'MTN';
+  if (/^07[05]/.test(local)) return 'AIRTEL';
+  return null;
+}
 
-    // Import payment controller functions
-    const { processMtnPayment, processAirtelPayment } = await import('./paymentController.mjs');
+async function processInstantRewardPayment(winner, attempt = 1) {
+  // Import once (Node caches ES modules) — avoid top-level circular dep
+  const {
+    processMtnPayment, processAirtelPayment,
+    checkMtnCollectionStatus, checkAirtelCollectionStatus,
+  } = await import('./paymentController.mjs');
+  const { v4: uuidv4 } = await import('uuid');
+
+  // Resolve userId once for SSE events
+  const winnerUser = attempt === 1
+    ? await prisma.appUser.findUnique({ where: { email: winner.userEmail }, select: { id: true } })
+    : winner._resolvedUserId ? { id: winner._resolvedUserId } : null;
+  if (winnerUser) winner._resolvedUserId = winnerUser.id;
+
+  const emitSettlement = (status, reference) => {
+    if (!winnerUser) return;
+    publishEvent(winnerUser.id, 'transaction.statusUpdate', {
+      type: 'instant_reward',
+      status,
+      amount: winner.amountAwarded,
+      reference: reference || null,
+      winnerId: winner.id,
+    });
+  };
+
+  try {
+    // Validate phone
+    if (!winner.phoneNumber) {
+      log.error('Cannot process payment: missing phone number', { winnerId: winner.id });
+      await prisma.instantRewardWinner.update({
+        where: { id: winner.id },
+        data: { paymentStatus: 'FAILED', updatedAt: new Date() },
+      });
+      emitSettlement('FAILED', null);
+      return { status: 'FAILED', reference: null, reason: 'MISSING_PHONE' };
+    }
+
+    // Determine provider — explicit field or auto-detect from phone prefix
+    let provider = winner.paymentProvider;
+    if (!provider) {
+      provider = detectProviderFromPhone(winner.phoneNumber);
+    }
+    if (!provider) {
+      log.error('Cannot determine payment provider', {
+        winnerId: winner.id,
+        phone: maskPhone(winner.phoneNumber),
+      });
+      await prisma.instantRewardWinner.update({
+        where: { id: winner.id },
+        data: { paymentStatus: 'FAILED', updatedAt: new Date() },
+      });
+      emitSettlement('FAILED', null);
+      return { status: 'FAILED', reference: null, reason: 'UNKNOWN_PROVIDER' };
+    }
+
+    // IDEMPOTENCY: Generate reference once on first attempt, reuse on retries.
+    // Store on winner record so retries (including after server restart) use the same ref.
+    let referenceId = winner.paymentReference;
+    if (!referenceId) {
+      referenceId = uuidv4();
+      await prisma.instantRewardWinner.update({
+        where: { id: winner.id },
+        data: { paymentReference: referenceId, updatedAt: new Date() },
+      });
+      winner.paymentReference = referenceId;
+    }
+
+    // On retry, check if previous attempt actually succeeded at provider level
+    // before initiating a new disbursement (prevents double-payout)
+    if (attempt > 1 && referenceId) {
+      try {
+        let providerStatus;
+        if (provider === 'MTN') {
+          providerStatus = await checkMtnCollectionStatus(referenceId);
+        } else {
+          providerStatus = await checkAirtelCollectionStatus(referenceId);
+        }
+        if (providerStatus === 'SUCCESSFUL') {
+          log.info('Previous disbursement actually succeeded at provider', { winnerId: winner.id, referenceId });
+          await prisma.instantRewardWinner.update({
+            where: { id: winner.id },
+            data: { paymentStatus: 'SUCCESSFUL', paidAt: new Date(), updatedAt: new Date() },
+          });
+          emitSettlement('SUCCESSFUL', referenceId);
+          return { status: 'SUCCESSFUL', reference: referenceId };
+        }
+      } catch (statusErr) {
+        log.warn('Provider status check failed before retry, proceeding with new attempt', {
+          winnerId: winner.id, error: statusErr.message,
+        });
+      }
+    }
+
+    log.info('Processing instant reward payment', {
+      email: winner.userEmail,
+      amount: winner.amountAwarded,
+      provider,
+      attempt,
+      referenceId,
+    });
 
     let paymentResult = null;
-
-    if (winner.paymentProvider === 'MTN') {
+    if (provider === 'MTN') {
       paymentResult = await processMtnPayment({
         amount: winner.amountAwarded,
         phoneNumber: winner.phoneNumber,
         userId: winner.userEmail,
-        reason: `Instant reward payment - Question winner #${winner.position}`
+        reason: `Instant reward payment - Question winner #${winner.position}`,
+        referenceId,
       });
-    } else if (winner.paymentProvider === 'AIRTEL') {
+    } else if (provider === 'AIRTEL') {
       paymentResult = await processAirtelPayment({
         amount: winner.amountAwarded,
         phoneNumber: winner.phoneNumber,
         userId: winner.userEmail,
-        reason: `Instant reward payment - Question winner #${winner.position}`
+        reason: `Instant reward payment - Question winner #${winner.position}`,
+        referenceId,
       });
     }
 
     if (paymentResult && paymentResult.success) {
-      // Update winner record with payment details
       await prisma.instantRewardWinner.update({
         where: { id: winner.id },
         data: {
           paymentStatus: 'SUCCESSFUL',
           paymentReference: paymentResult.reference,
           paidAt: new Date(),
-          updatedAt: new Date()
-        }
+          updatedAt: new Date(),
+        },
       });
 
-      console.log(`Payment successful for winner ${winner.userEmail}: ${paymentResult.reference}`);
-      return {
-        status: 'SUCCESSFUL',
-        reference: paymentResult.reference
-      };
+      log.info('Instant reward payment successful', {
+        email: winner.userEmail,
+        reference: paymentResult.reference,
+      });
+      emitSettlement('SUCCESSFUL', paymentResult.reference);
+      return { status: 'SUCCESSFUL', reference: paymentResult.reference };
     } else {
-      // Retry with exponential backoff if attempts remain
-      if (attempt < PAYMENT_MAX_RETRIES) {
+      // M3: Only retry if the failure is transient (5xx / network / timeout).
+      // Non-transient errors (4xx, terminal provider status) fail immediately.
+      const canRetry = paymentResult?.retryable !== false && attempt < PAYMENT_MAX_RETRIES;
+
+      if (canRetry) {
         const delay = PAYMENT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-        console.log(`Payment attempt ${attempt} failed for ${winner.userEmail}, retrying in ${delay}ms...`);
+        log.warn('Instant reward payment attempt failed, retrying', { attempt, delayMs: delay });
         await new Promise(resolve => setTimeout(resolve, delay));
         return processInstantRewardPayment(winner, attempt + 1);
       }
 
-      // All retries exhausted — mark as failed
+      // M4: If the provider is still processing (pending: true), keep PENDING
+      // so the reconciliation job can resolve it later.
+      const finalStatus = paymentResult?.pending ? 'PENDING' : 'FAILED';
+
       await prisma.instantRewardWinner.update({
         where: { id: winner.id },
-        data: {
-          paymentStatus: 'FAILED',
-          updatedAt: new Date()
-        }
+        data: { paymentStatus: finalStatus, updatedAt: new Date() },
       });
 
-      console.log(`Payment failed for winner ${winner.userEmail} after ${PAYMENT_MAX_RETRIES} attempts`);
-      return {
-        status: 'FAILED',
-        reference: null
-      };
+      if (finalStatus === 'FAILED') {
+        log.error('Instant reward payment failed after all retries', {
+          email: winner.userEmail,
+          attempts: attempt,
+        });
+        emitSettlement('FAILED', null);
+      } else {
+        log.warn('Instant reward payment still pending at provider, leaving for reconciliation', {
+          email: winner.userEmail,
+          reference: paymentResult?.reference,
+        });
+      }
+      return { status: finalStatus, reference: paymentResult?.reference || null };
     }
   } catch (error) {
-    console.error(`Error processing payment for winner ${winner.userEmail} (attempt ${attempt}):`, error);
-    
-    // Retry on transient errors (network, timeout) with exponential backoff
-    if (attempt < PAYMENT_MAX_RETRIES) {
+    log.error('Instant reward payment error', {
+      email: winner.userEmail,
+      attempt,
+      message: error.message,
+    });
+
+    // M3: Only retry on transient errors. 4xx / circuit-open = fail immediately.
+    const status = error.response?.status;
+    const isNonTransient = (status && status >= 400 && status < 500) || error.circuitOpen;
+
+    if (!isNonTransient && attempt < PAYMENT_MAX_RETRIES) {
       const delay = PAYMENT_BASE_DELAY_MS * Math.pow(2, attempt - 1);
-      console.log(`Payment error on attempt ${attempt}, retrying in ${delay}ms...`);
+      log.warn('Retrying after payment error', { attempt, delayMs: delay });
       await new Promise(resolve => setTimeout(resolve, delay));
       return processInstantRewardPayment(winner, attempt + 1);
     }
 
-    // All retries exhausted — mark as failed
     await prisma.instantRewardWinner.update({
       where: { id: winner.id },
-      data: {
-        paymentStatus: 'FAILED',
-        updatedAt: new Date()
-      }
+      data: { paymentStatus: 'FAILED', updatedAt: new Date() },
     });
 
-    return {
-      status: 'FAILED',
-      reference: null
-    };
+    emitSettlement('FAILED', null);
+    return { status: 'FAILED', reference: null };
   }
-} 
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// C1: Admin retry & reconciliation for stale/failed disbursements
+// ────────────────────────────────────────────────────────────────────────────
+
+/** How long a PENDING winner should sit before reconciliation considers it stale */
+const STALE_PENDING_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * POST /admin/retry-failed-disbursements
+ * Admin-only. Retries all FAILED InstantRewardWinner records that still have a
+ * phone number (i.e. are eligible for retry). Returns per-record outcomes.
+ */
+export const retryFailedDisbursements = asyncHandler(async (req, res) => {
+  const failedWinners = await prisma.instantRewardWinner.findMany({
+    where: {
+      paymentStatus: 'FAILED',
+      phoneNumber: { not: null },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 50, // cap per batch to avoid overwhelming providers
+  });
+
+  if (failedWinners.length === 0) {
+    return res.json({ retried: 0, results: [], message: 'No failed disbursements to retry.' });
+  }
+
+  log.info('Admin retrying failed disbursements', { count: failedWinners.length });
+
+  // Reset status to PENDING before retrying so processInstantRewardPayment
+  // treats them as fresh (with existing idempotent referenceId)
+  const ids = failedWinners.map(w => w.id);
+  await prisma.instantRewardWinner.updateMany({
+    where: { id: { in: ids } },
+    data: { paymentStatus: 'PENDING', updatedAt: new Date() },
+  });
+
+  // Fire-and-forget — results trickle in via SSE
+  const results = [];
+  for (const winner of failedWinners) {
+    try {
+      const result = await processInstantRewardPayment(winner);
+      results.push({ winnerId: winner.id, email: winner.userEmail, ...result });
+    } catch (err) {
+      results.push({ winnerId: winner.id, email: winner.userEmail, status: 'ERROR', reason: err.message });
+    }
+  }
+
+  res.json({ retried: failedWinners.length, results });
+});
+
+/**
+ * POST /admin/reconcile-disbursements
+ * Admin-only. Finds PENDING InstantRewardWinner records older than 5 minutes,
+ * checks their status at the provider level, and either marks them SUCCESSFUL
+ * or retries them.
+ */
+export const reconcileStaleDisbursements = asyncHandler(async (req, res) => {
+  const {
+    checkMtnCollectionStatus, checkAirtelCollectionStatus,
+  } = await import('./paymentController.mjs');
+
+  const cutoff = new Date(Date.now() - STALE_PENDING_THRESHOLD_MS);
+
+  const staleWinners = await prisma.instantRewardWinner.findMany({
+    where: {
+      paymentStatus: 'PENDING',
+      updatedAt: { lt: cutoff },
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 50,
+  });
+
+  if (staleWinners.length === 0) {
+    return res.json({ reconciled: 0, results: [], message: 'No stale PENDING disbursements found.' });
+  }
+
+  log.info('Reconciling stale PENDING disbursements', { count: staleWinners.length });
+
+  const results = [];
+  for (const winner of staleWinners) {
+    try {
+      // If there's a reference, check provider status first
+      if (winner.paymentReference) {
+        const provider = winner.paymentProvider || detectProviderFromPhone(winner.phoneNumber);
+        let providerStatus;
+        try {
+          if (provider === 'MTN') {
+            providerStatus = await checkMtnCollectionStatus(winner.paymentReference);
+          } else if (provider === 'AIRTEL') {
+            providerStatus = await checkAirtelCollectionStatus(winner.paymentReference);
+          }
+        } catch { /* provider check failed, will retry */ }
+
+        if (providerStatus === 'SUCCESSFUL') {
+          await prisma.instantRewardWinner.update({
+            where: { id: winner.id },
+            data: { paymentStatus: 'SUCCESSFUL', paidAt: new Date(), updatedAt: new Date() },
+          });
+          results.push({ winnerId: winner.id, action: 'CONFIRMED_SUCCESSFUL', reference: winner.paymentReference });
+          continue;
+        }
+      }
+
+      // Provider doesn't show success — retry the disbursement
+      const result = await processInstantRewardPayment(winner);
+      results.push({ winnerId: winner.id, action: 'RETRIED', ...result });
+    } catch (err) {
+      results.push({ winnerId: winner.id, action: 'ERROR', reason: err.message });
+    }
+  }
+
+  res.json({ reconciled: staleWinners.length, results });
+});

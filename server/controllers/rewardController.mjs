@@ -4,6 +4,9 @@ import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { getRewardConfig as fetchRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
+import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
+
+const log = createPaymentLogger('reward-redeem');
 
 // Add Reward Points
 export const addReward = asyncHandler(async (req, res) => {
@@ -388,7 +391,9 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       });
     }
   } catch (paymentError) {
-    console.error('Payment provider error during redemption:', paymentError);
+    log.error('Payment provider error during redemption', {
+      redemptionId: redemption.id, provider, phone: maskPhone(phoneNumber), error: paymentError.message,
+    });
     paymentResult = { success: false, reference: null };
   }
 
@@ -416,8 +421,10 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       }
     });
   } catch (phase3Error) {
-    console.error('[RedeemRewards] CRITICAL: Phase 3 DB update failed:', phase3Error);
-    console.error('[RedeemRewards] Payment result was:', paymentResult);
+    log.error('CRITICAL: Phase 3 DB update failed', {
+      redemptionId: redemption.id, phase3Error: phase3Error.message,
+      paymentSuccess: paymentResult.success, paymentRef: paymentResult.reference,
+    });
 
     // If payment succeeded but DB update failed, still tell user it worked
     // The record stays PENDING — admin reconciliation needed
@@ -437,7 +444,9 @@ export const redeemRewards = asyncHandler(async (req, res) => {
         data: { points: { increment: pointsRequired } },
       });
     } catch (refundError) {
-      console.error('[RedeemRewards] CRITICAL: Standalone refund also failed:', refundError);
+      log.error('CRITICAL: Standalone refund also failed — manual reconciliation required', {
+        redemptionId: redemption.id, userId, pointsToRefund: pointsRequired, error: refundError.message,
+      });
     }
 
     return res.status(502).json({

@@ -1236,18 +1236,29 @@ export function useDeleteNotification() {
 /**
  * Hook to request withdrawal
  */
-export function useWithdraw(): UseMutationResult<Payment, Error, { amount: number; phoneNumber: string; provider: string }> {
+export function useWithdraw(): UseMutationResult<
+  { success: boolean; transactionRef?: string; message?: string },
+  Error,
+  { amount: number; phoneNumber: string; provider: string; pointsToRedeem?: number }
+> {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
-    mutationKey: ['payments', 'withdraw'],
+    mutationKey: ['rewards', 'withdraw'],
     mutationFn: async (data) => {
-      const response = await api.payments.withdraw(data);
-      if (!response.success) throw new Error(response.error);
+      const response = await api.rewards.redeem({
+        cashValue: data.amount,
+        pointsToRedeem: data.pointsToRedeem,
+        provider: data.provider.toUpperCase(),
+        phoneNumber: data.phoneNumber,
+        type: 'CASH',
+      });
+      if (!response.success) throw new Error(response.error || 'Withdrawal failed');
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
+      queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
     },
   });
@@ -1402,7 +1413,12 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
     mutationKey: ['rewards', 'submitAnswer'],
     mutationFn: async ({ questionId, answer, phoneNumber, userEmail }) => {
       const response = await api.rewards.submitAnswer(questionId, answer, phoneNumber, userEmail);
-      if (!response.success) throw new Error(response.error);
+      if (!response.success) {
+        // Propagate structured error code from backend for reliable frontend matching
+        const err = new Error(response.error) as Error & { code?: string };
+        err.code = (response.data as any)?.code;
+        throw err;
+      }
       return response.data;
     },
     onSuccess: (_, variables) => {

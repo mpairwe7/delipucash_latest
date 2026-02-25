@@ -42,6 +42,9 @@ export const REWARD_CONSTANTS = {
   MIN_REDEMPTION_POINTS: 50,
 } as const;
 
+/** Max persisted attempt records. Oldest entries pruned beyond this cap. */
+const MAX_ATTEMPT_HISTORY = 500;
+
 /** Redemption type for rewards */
 export type RewardRedemptionType = 'CASH' | 'AIRTIME';
 
@@ -306,7 +309,10 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
 
       hasAttemptedQuestion: (questionId) => {
         const { attemptHistory } = get();
-        return attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
+        if (!attemptHistory?.attemptedQuestionIds.length) return false;
+        // O(1) lookup via Set
+        const idSet = new Set(attemptHistory.attemptedQuestionIds);
+        return idSet.has(questionId);
       },
 
       getAttemptedQuestion: (questionId) => {
@@ -329,11 +335,21 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
           return;
         }
 
+        let ids = [...attemptHistory.attemptedQuestionIds, attempt.questionId];
+        let questions = [...attemptHistory.attemptedQuestions, newAttempt];
+
+        // Prune oldest entries beyond cap to prevent unbounded growth
+        if (ids.length > MAX_ATTEMPT_HISTORY) {
+          const excess = ids.length - MAX_ATTEMPT_HISTORY;
+          ids = ids.slice(excess);
+          questions = questions.slice(excess);
+        }
+
         set({
           attemptHistory: {
             ...attemptHistory,
-            attemptedQuestionIds: [...attemptHistory.attemptedQuestionIds, attempt.questionId],
-            attemptedQuestions: [...attemptHistory.attemptedQuestions, newAttempt],
+            attemptedQuestionIds: ids,
+            attemptedQuestions: questions,
             totalRewardsEarned: attemptHistory.totalRewardsEarned + attempt.rewardEarned,
             totalQuestionsAttempted: attemptHistory.totalQuestionsAttempted + 1,
             lastAttemptAt: now,
@@ -360,9 +376,10 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
 
       getUnattemptedQuestions: (questions) => {
         const { attemptHistory } = get();
-        if (!attemptHistory) return questions;
-        
-        return questions.filter(q => !attemptHistory.attemptedQuestionIds.includes(q.id));
+        if (!attemptHistory?.attemptedQuestionIds.length) return questions;
+        // O(1) lookup via Set instead of O(n) includes per question
+        const idSet = new Set(attemptHistory.attemptedQuestionIds);
+        return questions.filter(q => !idSet.has(q.id));
       },
 
       // ========================================
@@ -805,8 +822,11 @@ export const selectIsRedeeming = (state: InstantRewardUIState) => state.isRedeem
 export const selectInstantSessionSummary = (state: InstantRewardUIState) => state.sessionSummary;
 export const selectIsOnline = (state: InstantRewardUIState) => state.isOnline;
 
-export const selectHasAttempted = (questionId: string) => (state: InstantRewardUIState) =>
-  state.attemptHistory?.attemptedQuestionIds.includes(questionId) ?? false;
+export const selectHasAttempted = (questionId: string) => (state: InstantRewardUIState) => {
+  const ids = state.attemptHistory?.attemptedQuestionIds;
+  if (!ids?.length) return false;
+  return ids.indexOf(questionId) !== -1; // faster than includes() for large arrays
+};
 
 export const selectAttemptedCount = (state: InstantRewardUIState) =>
   state.attemptHistory?.totalQuestionsAttempted ?? 0;

@@ -1171,15 +1171,22 @@ export const rewardsApi = {
    * @param idempotencyKey Unique key to prevent duplicate redemptions on retry
    */
   async redeem(
-    cashValue: number,
-    provider: string,
-    phoneNumber: string,
-    type: string,
-    idempotencyKey?: string,
+    params: {
+      cashValue?: number;
+      pointsToRedeem?: number;
+      provider: string;
+      phoneNumber: string;
+      type: string;
+      idempotencyKey?: string;
+    },
   ): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string }>> {
+    const { cashValue, pointsToRedeem, provider, phoneNumber, type, idempotencyKey } = params;
     return fetchJson(API_ROUTES.rewards.redeem, {
       method: 'POST',
-      body: JSON.stringify({ cashValue, provider, phoneNumber, type, idempotencyKey }),
+      body: JSON.stringify({
+        ...(pointsToRedeem ? { pointsToRedeem } : { cashValue }),
+        provider, phoneNumber, type, idempotencyKey,
+      }),
     });
   },
 
@@ -1350,7 +1357,6 @@ export const formatDuration = (seconds: number | null): string => {
 export const paymentMethods = [
   { id: "mtn", name: "MTN Mobile Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
   { id: "airtel", name: "Airtel Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
-  { id: "bank", name: "Bank Transfer", icon: "business", minWithdrawal: 50000, maxWithdrawal: 50000000, processingTime: "1-3 business days" },
 ];
 
 // ===========================================

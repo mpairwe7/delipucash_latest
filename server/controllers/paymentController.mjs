@@ -27,6 +27,7 @@ import {
   classifyAirtelStatus,
   pollAirtelStatus,
 } from '../lib/airtelConfig.mjs';
+import { getBreaker } from '../lib/circuitBreaker.mjs';
 
 const log = createPaymentLogger('payment');
 
@@ -153,24 +154,26 @@ const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceI
       throw new Error('AIRTEL_PIN environment variable is required for disbursements');
     }
 
-    const response = await axios.post(
-      `${AIRTEL_BASE_URL}/standard/v1/disbursements/`,
-      {
-        payee: {
-          msisdn: formattedPhone,
-          country: 'UG',
-          currency: 'UGX',
+    const response = await getBreaker('airtel').exec(() =>
+      axios.post(
+        `${AIRTEL_BASE_URL}/standard/v1/disbursements/`,
+        {
+          payee: {
+            msisdn: formattedPhone,
+            country: 'UG',
+            currency: 'UGX',
+          },
+          reference: referenceId,
+          pin: process.env.AIRTEL_PIN,
+          transaction: {
+            amount: String(amount),
+            country: 'UG',
+            currency: 'UGX',
+            id: referenceId,
+          },
         },
-        reference: referenceId,
-        pin: process.env.AIRTEL_PIN,
-        transaction: {
-          amount: String(amount),
-          country: 'UG',
-          currency: 'UGX',
-          id: referenceId,
-        },
-      },
-      { headers: getAirtelHeaders(token), timeout: PROVIDER_TIMEOUT_MS }
+        { headers: getAirtelHeaders(token), timeout: PROVIDER_TIMEOUT_MS }
+      )
     );
 
     log.debug('Airtel disbursement response', { data: response.data });
@@ -196,30 +199,32 @@ const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceI
  * @param {string} params.reason - Payment reason/description
  * @returns {Promise<{success: boolean, reference: string|null}>}
  */
-export const processMtnPayment = async ({ amount, phoneNumber, userId, reason }) => {
+export const processMtnPayment = async ({ amount, phoneNumber, userId, reason, referenceId: externalRef }) => {
   try {
     validateDisbursementAmount(amount, 'MTN');
     log.info('Processing MTN disbursement', { amount, phone: maskPhone(phoneNumber), userId });
 
     const token = await getMtnToken('disbursement');
-    const referenceId = uuidv4();
+    const referenceId = externalRef || uuidv4();
     const formattedPhone = formatMtnPhone(phoneNumber);
     const apiAmount = convertAmount(amount);
 
-    await axios.post(
-      `${MTN_BASE_URL}/disbursement/v1_0/transfer`,
-      {
-        amount: apiAmount.toString(),
-        currency: MTN_CURRENCY,
-        externalId: referenceId,
-        payee: {
-          partyIdType: 'MSISDN',
-          partyId: formattedPhone,
+    await getBreaker('mtn').exec(() =>
+      axios.post(
+        `${MTN_BASE_URL}/disbursement/v1_0/transfer`,
+        {
+          amount: apiAmount.toString(),
+          currency: MTN_CURRENCY,
+          externalId: referenceId,
+          payee: {
+            partyIdType: 'MSISDN',
+            partyId: formattedPhone,
+          },
+          payerMessage: reason || 'DelipuCash reward payment',
+          payeeNote: 'Your reward from DelipuCash',
         },
-        payerMessage: reason || 'DelipuCash reward payment',
-        payeeNote: 'Your reward from DelipuCash',
-      },
-      { headers: getMtnHeaders(token, referenceId, 'disbursement'), timeout: PROVIDER_TIMEOUT_MS }
+        { headers: getMtnHeaders(token, referenceId, 'disbursement'), timeout: PROVIDER_TIMEOUT_MS }
+      )
     );
 
     log.info('MTN disbursement transfer initiated', { referenceId });
@@ -241,7 +246,7 @@ export const processMtnPayment = async ({ amount, phoneNumber, userId, reason })
           return { success: true, reference: referenceId };
         }
         if (TERMINAL_FAILURE_STATUSES.has(status)) {
-          return { success: false, reference: referenceId };
+          return { success: false, reference: referenceId, retryable: false };
         }
       } catch (err) {
         log.error('MTN disbursement status check failed', { attempt, message: err.message });
@@ -253,8 +258,10 @@ export const processMtnPayment = async ({ amount, phoneNumber, userId, reason })
     // Exhausted retries — still pending
     return { success: false, reference: referenceId, pending: true };
   } catch (error) {
-    log.error('MTN disbursement error', { status: error.response?.status, message: error.message });
-    return { success: false, reference: null };
+    const status = error.response?.status;
+    const isClientError = status && status >= 400 && status < 500;
+    log.error('MTN disbursement error', { status, message: error.message });
+    return { success: false, reference: null, retryable: !isClientError && !error.circuitOpen };
   }
 };
 
@@ -268,13 +275,13 @@ export const processMtnPayment = async ({ amount, phoneNumber, userId, reason })
  * @param {string} params.reason - Payment reason/description
  * @returns {Promise<{success: boolean, reference: string|null}>}
  */
-export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason }) => {
+export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason, referenceId: externalRef }) => {
   try {
     validateDisbursementAmount(amount, 'AIRTEL');
     log.info('Processing Airtel disbursement', { amount, phone: maskPhone(phoneNumber), userId });
 
     const token = await getAirtelToken();
-    const referenceId = uuidv4();
+    const referenceId = externalRef || uuidv4();
 
     // initiateAirtelDisbursement calls formatAirtelPhone internally — skip double format
     await initiateAirtelDisbursement(token, amount, phoneNumber, referenceId);
@@ -289,11 +296,13 @@ export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason
     });
 
     if (result.state === 'SUCCESSFUL') return { success: true, reference: referenceId };
-    if (result.state === 'FAILED') return { success: false, reference: referenceId };
+    if (result.state === 'FAILED') return { success: false, reference: referenceId, retryable: false };
     return { success: false, reference: referenceId, pending: true };
   } catch (error) {
-    log.error('Airtel disbursement error', { status: error.response?.status, message: error.message });
-    return { success: false, reference: null };
+    const status = error.response?.status;
+    const isClientError = status && status >= 400 && status < 500;
+    log.error('Airtel disbursement error', { status, message: error.message });
+    return { success: false, reference: null, retryable: !isClientError && !error.circuitOpen };
   }
 };
 

@@ -307,6 +307,9 @@ export interface RewardAnswerResult {
   isExpired: boolean;
   isCompleted?: boolean;
   message?: string;
+  /** Structured error code from backend (e.g. 'ALREADY_ATTEMPTED', 'QUESTION_EXPIRED') */
+  code?: string;
+  alreadyAttempted?: boolean;
   // Instant reward specific fields
   isWinner?: boolean;
   position?: number | null;
