@@ -74,8 +74,8 @@ import { AccessibleText } from './AccessibleText';
 
 export type OTPModalVariant = 'enable2FA' | 'disable2FA' | 'verification' | 'passwordReset';
 
-/** Resend cooldown duration in seconds (industry standard: 30s) */
-const RESEND_COOLDOWN_SECONDS = 30;
+/** Resend cooldown in seconds — must match backend rate limit (60s) */
+const RESEND_COOLDOWN_SECONDS = 60;
 
 export interface OTPVerificationModalProps {
   /** Whether modal is visible */
@@ -345,7 +345,7 @@ export function OTPVerificationModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCode('');
     autoSubmittedRef.current = false;
-    // Start cooldown to prevent spam (industry standard: 30s)
+    // Start cooldown to prevent spam (matches backend 60s rate limit)
     setResendCooldown(RESEND_COOLDOWN_SECONDS);
     if (resendCooldownRef.current) {
       clearInterval(resendCooldownRef.current);

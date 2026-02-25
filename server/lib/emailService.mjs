@@ -245,10 +245,12 @@ export const send2FACode = async (to, code, userName = '', expiryMinutes = 10) =
   }
 
   try {
+    // Code-first subject line enables iOS/Android auto-fill from email
+    // notifications (OWASP MASVS 2.0 / Apple Developer docs for oneTimeCode)
     const info = await transporter.sendMail({
       from: `"${APP_NAME}" <${process.env.SMTP_FROM || process.env.SMTP_USER}>`,
       to,
-      subject: `Your ${APP_NAME} verification code`,
+      subject: `${code} is your ${APP_NAME} verification code`,
       text: `Your ${APP_NAME} verification code is: ${code}\n\nThis code expires in ${expiryMinutes} minutes.\n\nIf you didn't request this code, please ignore this email.`,
       html: generate2FAEmailTemplate(code, userName, expiryMinutes),
     });
