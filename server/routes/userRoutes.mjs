@@ -8,6 +8,7 @@ import {
     getUserProfile,
     updateUserProfile,
     getUserStats,
+    getReferralStats,
     revokeSession
 } from '../controllers/userController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
@@ -20,6 +21,9 @@ router.put("/profile", verifyToken, updateUserProfile);
 
 // User stats endpoint (protected route)
 router.get("/stats", verifyToken, getUserStats);
+
+// Referral stats endpoint (protected route)
+router.get("/referral-stats", verifyToken, getReferralStats);
 
 // Privacy settings endpoints (protected routes)
 router.get("/privacy", verifyToken, getPrivacySettings);

@@ -132,8 +132,22 @@ export function useUserStats(): UseQueryResult<UserStats, Error> {
 }
 
 /**
+ * Hook to fetch referral statistics
+ */
+export function useReferralStats() {
+  return useQuery({
+    queryKey: ['user', 'referralStats'],
+    queryFn: async () => {
+      const response = await api.user.getReferralStats();
+      return response.data as { referralCount: number; totalBonusEarned: number };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+}
+
+/**
  * Hook to update user profile
- * 
+ *
  * After a successful update:
  * 1. Updates TanStack query cache for immediate UI reflection
  * 2. Syncs updated user data to auth store → SecureStore for persistence

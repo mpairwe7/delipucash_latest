@@ -250,6 +250,7 @@ export function useSignupMutation(): UseMutationResult<
           firstName: credentials.firstName || '',
           lastName: credentials.lastName || '',
           phone: credentials.phoneNumber || credentials.phone || '',
+          ...(credentials.referralCode ? { referralCode: credentials.referralCode } : {}),
         }),
       }),
     onSuccess: () => {

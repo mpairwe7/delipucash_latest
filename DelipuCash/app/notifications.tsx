@@ -106,6 +106,7 @@ const FILTERS: FilterOption[] = [
   { id: "security", label: "Security" },
   { id: "subscription", label: "Subscription" },
   { id: "achievements", label: "Achievements" },
+  { id: "referrals", label: "Referrals" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -210,6 +211,12 @@ function getEmptyState(filter: NotificationFilterType) {
         Icon: Trophy,
         title: "No achievements yet",
         subtitle: "Keep going to unlock achievements",
+      };
+    case "referrals":
+      return {
+        Icon: Users,
+        title: "No referral updates",
+        subtitle: "Invite friends to earn bonus points",
       };
     default:
       return {

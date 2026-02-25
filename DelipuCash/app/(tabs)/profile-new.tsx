@@ -39,6 +39,7 @@ import {
   RefreshControl,
   TextInput,
   AccessibilityInfo,
+  Share,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -71,6 +72,8 @@ import {
   Settings,
   Settings2,
   Users,
+  Copy,
+  Share2,
 } from 'lucide-react-native';
 
 // Components
@@ -96,6 +99,7 @@ import type { RecentTransaction } from '@/components/profile/TransactionsCard';
 // Services & Hooks
 import {
   useChangePassword,
+  useReferralStats,
   useResend2FACode,
   useRevokeSession,
   useTransactions,
@@ -115,11 +119,17 @@ import { UserRole } from '@/types';
 import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
 import { useRewardConfig, pointsToUgx, ugxToPoints } from '@/services/configHooks';
 import { useToast } from '@/components/ui/Toast';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from '@/utils/haptics';
 
 // Theme
 import {
   SPACING,
   ICON_SIZE,
+  TYPOGRAPHY,
+  RADIUS,
+  BORDER_WIDTH,
+  SHADOWS,
   useTheme,
   useThemeStore,
   withAlpha,
@@ -132,6 +142,7 @@ type SectionType =
   | 'transactions'
   | 'quickActions'
   | 'rewards'
+  | 'referral'
   | 'achievements'
   | 'recentActivity'
   | 'settings'
@@ -333,6 +344,197 @@ const RewardsSectionBlock = memo(function RewardsSectionBlock({
   );
 });
 
+interface ReferralSectionProps {
+  referralCode: string | null | undefined;
+  referralCount: number;
+  totalBonusEarned: number;
+  bonusPerReferral: number;
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const ReferralSection = memo(function ReferralSection({
+  referralCode,
+  referralCount,
+  totalBonusEarned,
+  bonusPerReferral,
+  colors,
+}: ReferralSectionProps) {
+  const { showToast } = useToast();
+
+  const handleCopy = useCallback(async () => {
+    if (!referralCode) return;
+    await Clipboard.setStringAsync(referralCode);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    showToast({ message: 'Referral code copied!', type: 'success', duration: 2000 });
+  }, [referralCode, showToast]);
+
+  const handleShare = useCallback(async () => {
+    if (!referralCode) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await Share.share({
+        message: `Join DelipuCash and earn rewards! Use my referral code ${referralCode} when you sign up to get ${bonusPerReferral} bonus points. Download now: https://delipucash.app`,
+      });
+    } catch {
+      // User cancelled share
+    }
+  }, [referralCode, bonusPerReferral]);
+
+  if (!referralCode) return null;
+
+  return (
+    <View style={styles.sectionContainer}>
+      <View style={[referralStyles.card, { backgroundColor: colors.card, ...SHADOWS.sm }]}>
+        {/* Header */}
+        <View style={referralStyles.header}>
+          <View style={[referralStyles.iconBg, { backgroundColor: withAlpha('#9C27B0', 0.1) }]}>
+            <Users size={20} color="#9C27B0" />
+          </View>
+          <View style={referralStyles.headerText}>
+            <AccessibleText style={[referralStyles.title, { color: colors.text }]}>
+              Invite Friends
+            </AccessibleText>
+            <AccessibleText style={[referralStyles.subtitle, { color: colors.textMuted }]}>
+              You both earn {bonusPerReferral} points
+            </AccessibleText>
+          </View>
+        </View>
+
+        {/* Code display + copy */}
+        <Pressable
+          onPress={handleCopy}
+          style={[referralStyles.codeRow, { backgroundColor: withAlpha(colors.text, 0.04), borderColor: withAlpha(colors.border, 0.3) }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Your referral code is ${referralCode}. Tap to copy.`}
+          accessibilityHint="Copies your referral code to clipboard"
+        >
+          <AccessibleText style={[referralStyles.codeText, { color: colors.text }]}>
+            {referralCode}
+          </AccessibleText>
+          <Copy size={18} color={colors.textMuted} />
+        </Pressable>
+
+        {/* Stats row */}
+        {referralCount > 0 && (
+          <View style={referralStyles.statsRow}>
+            <View style={referralStyles.stat}>
+              <AccessibleText style={[referralStyles.statValue, { color: colors.text }]}>
+                {referralCount}
+              </AccessibleText>
+              <AccessibleText style={[referralStyles.statLabel, { color: colors.textMuted }]}>
+                {referralCount === 1 ? 'Referral' : 'Referrals'}
+              </AccessibleText>
+            </View>
+            <View style={[referralStyles.statDivider, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+            <View style={referralStyles.stat}>
+              <AccessibleText style={[referralStyles.statValue, { color: colors.success }]}>
+                +{totalBonusEarned}
+              </AccessibleText>
+              <AccessibleText style={[referralStyles.statLabel, { color: colors.textMuted }]}>
+                Points earned
+              </AccessibleText>
+            </View>
+          </View>
+        )}
+
+        {/* Share button */}
+        <Pressable
+          onPress={handleShare}
+          style={[referralStyles.shareBtn, { backgroundColor: '#9C27B0' }]}
+          accessibilityRole="button"
+          accessibilityLabel="Share your referral code"
+        >
+          <Share2 size={18} color="#fff" />
+          <AccessibleText style={referralStyles.shareBtnText}>
+            Share Invite Link
+          </AccessibleText>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
+
+const referralStyles = StyleSheet.create({
+  card: {
+    borderRadius: RADIUS.lg,
+    padding: SPACING.lg,
+    gap: SPACING.md,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  iconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.base,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerText: {
+    flex: 1,
+  },
+  title: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  subtitle: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginTop: 2,
+  },
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm + 4,
+    borderRadius: RADIUS.base,
+    borderWidth: BORDER_WIDTH.thin,
+  },
+  codeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xl,
+    letterSpacing: 2,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.lg,
+  },
+  stat: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.lg,
+  },
+  statLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+    height: 28,
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm + 4,
+    borderRadius: RADIUS.base,
+  },
+  shareBtnText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.base,
+    color: '#fff',
+  },
+});
+
 const SUPPORT_EMAIL = 'mpairwelauben75@gmail.com';
 
 interface SupportSectionProps {
@@ -435,6 +637,7 @@ export default function ProfileScreen(): React.ReactElement {
   const { data: user, loading: userLoading, refetch: refetchUser } = useUser();
   const { data: unreadCount, refetch: refetchUnread } = useUnreadNotificationCount();
   const { data: userStats, isLoading: statsLoading, refetch: refetchStats } = useUserStats();
+  const { data: referralStats } = useReferralStats();
   const { data: sessions = [], refetch: refetchSessions } = useUserSessions();
   const { canCreateSurvey, refetch: refetchSubscription } = useSurveyCreatorAccess();
   const { data: transactions = [] } = useTransactions();
@@ -1065,6 +1268,7 @@ export default function ProfileScreen(): React.ReactElement {
     { type: 'header', id: 'header' },
     { type: 'transactions', id: 'transactions' },
     { type: 'quickActions', id: 'quickActions' },
+    { type: 'referral', id: 'referral' },
     { type: 'rewards', id: 'rewards' },
     { type: 'settings', id: 'settings' },
     { type: 'support', id: 'support' },
@@ -1092,6 +1296,16 @@ export default function ProfileScreen(): React.ReactElement {
             colors={colors}
           />
         );
+      case 'referral':
+        return (
+          <ReferralSection
+            referralCode={user?.referralCode}
+            referralCount={referralStats?.referralCount ?? 0}
+            totalBonusEarned={referralStats?.totalBonusEarned ?? 0}
+            bonusPerReferral={rewardConfig?.referralBonusPoints ?? 60}
+            colors={colors}
+          />
+        );
       case 'rewards':
         return (
           <RewardsSectionBlock
@@ -1116,6 +1330,9 @@ export default function ProfileScreen(): React.ReactElement {
     }
   }, [
     profile,
+    user,
+    referralStats,
+    rewardConfig,
     colors,
     quickAccessItems,
     isAdmin,

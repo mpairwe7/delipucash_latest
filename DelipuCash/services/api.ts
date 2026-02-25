@@ -235,6 +235,7 @@ export const API_ROUTES = {
     profile: "/api/users/profile",
     update: "/api/users/profile",
     stats: "/api/users/stats",
+    referralStats: "/api/users/referral-stats",
     sessions: "/api/users/login-activity",
     privacy: "/api/users/privacy",
     signoutAllDevices: "/api/users/signout-all-devices",
@@ -364,6 +365,13 @@ export const userApi = {
       headers: getAuthHeaders(),
     });
     return { success: response.success, data: response.data?.data ?? (response.data as any), error: response.error };
+  },
+
+  async getReferralStats(): Promise<ApiResponse<{ referralCount: number; totalBonusEarned: number }>> {
+    const response = await fetchJson<{ referralCount: number; totalBonusEarned: number }>(API_ROUTES.user.referralStats, {
+      headers: getAuthHeaders(),
+    });
+    return { success: true, data: response.data as any, error: response.error };
   },
 
   /**

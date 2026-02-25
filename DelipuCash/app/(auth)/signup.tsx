@@ -14,9 +14,9 @@ import {
     useTheme
 } from "@/utils/theme";
 import { FormFieldValue, validateForm, ValidationSchema, validators } from "@/utils/validation";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { ArrowLeft, Lock, Mail, User } from "lucide-react-native";
+import { ArrowLeft, Lock, Mail, User, Users } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     KeyboardAvoidingView,
@@ -38,6 +38,7 @@ interface FormData {
   email: string;
   password: string;
   confirmPassword: string;
+  referralCode: string;
   acceptTerms: boolean;
   [key: string]: string | boolean;
 }
@@ -95,6 +96,9 @@ export default function SignupScreen(): React.ReactElement {
   const { register, isLoading, isReady: authReady, isAuthenticated } = useAuth();
   const { showToast } = useToast();
 
+  // Deep link: auto-fill referral code from ?ref= query param
+  const { ref: deepLinkRef } = useLocalSearchParams<{ ref?: string }>();
+
   // Refs for sequential keyboard navigation
   const lastNameRef = useRef<TextInput>(null);
   const emailRef = useRef<TextInput>(null);
@@ -108,8 +112,16 @@ export default function SignupScreen(): React.ReactElement {
     email: "",
     password: "",
     confirmPassword: "",
+    referralCode: "",
     acceptTerms: false,
   });
+
+  // Auto-fill referral code from deep link on mount
+  useEffect(() => {
+    if (deepLinkRef && typeof deepLinkRef === 'string') {
+      setFormData((prev) => ({ ...prev, referralCode: deepLinkRef.trim().toUpperCase() }));
+    }
+  }, [deepLinkRef]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});
   const [generalError, setGeneralError] = useState<string>("");
@@ -179,6 +191,7 @@ export default function SignupScreen(): React.ReactElement {
       phoneNumber: formData.phone.replace(/\s/g, ""),
       email: formData.email,
       password: formData.password,
+      ...(formData.referralCode ? { referralCode: formData.referralCode.trim().toUpperCase() } : {}),
     });
 
     if (response.success) {
@@ -368,6 +381,20 @@ export default function SignupScreen(): React.ReactElement {
               returnKeyType="done"
               onSubmitEditing={handleSignup}
               leftIcon={<Lock size={20} color={colors.textMuted} />}
+            />
+
+            {/* Referral Code (optional) */}
+            <FormInput
+              label="Referral Code (Optional)"
+              placeholder="Enter a friend's referral code"
+              value={formData.referralCode}
+              onChangeText={(value) => handleChange("referralCode", value.toUpperCase())}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={12}
+              returnKeyType="done"
+              leftIcon={<Users size={20} color={colors.textMuted} />}
+              accessibilityHint="Optional referral code to earn bonus points"
             />
 
             {/* Terms & Conditions */}

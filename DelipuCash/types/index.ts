@@ -494,7 +494,8 @@ export type NotificationFilterType =
   | 'surveys'
   | 'security'
   | 'subscription'
-  | 'achievements';
+  | 'achievements'
+  | 'referrals';
 
 export interface NotificationsResponse {
   notifications: Notification[];

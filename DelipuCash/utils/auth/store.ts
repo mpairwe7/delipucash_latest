@@ -27,6 +27,7 @@ export interface SignupCredentials {
   lastName: string;
   phone?: string;
   phoneNumber?: string; // Alternative field name
+  referralCode?: string;
 }
 
 /**

@@ -34,6 +34,7 @@ export const getUserProfile = asyncHandler(async (req, res) => {
         subscriptionStatus: true,
         surveysubscriptionStatus: true,
         privacySettings: true,
+        referralCode: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -583,4 +584,31 @@ export const createLoginSession = asyncHandler(async (req, res) => {
     console.error("Error creating login session:", error);
     res.status(500).json({ error: "Failed to create login session" });
   }
+});
+
+/**
+ * Get referral stats for current user
+ * GET /api/users/referral-stats
+ */
+export const getReferralStats = asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const userEmail = req.user.email;
+
+  const [referralCount, totalBonus] = await Promise.all([
+    prisma.appUser.count({
+      where: { referredBy: userId },
+    }),
+    prisma.reward.aggregate({
+      where: {
+        userEmail,
+        description: 'referral_bonus',
+      },
+      _sum: { points: true },
+    }),
+  ]);
+
+  res.json({
+    referralCount,
+    totalBonusEarned: totalBonus._sum.points || 0,
+  });
 });
