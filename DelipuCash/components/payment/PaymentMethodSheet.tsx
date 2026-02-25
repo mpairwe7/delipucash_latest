@@ -47,7 +47,7 @@ import { PhoneInput } from '@/components/PhoneInput';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { PaymentMethodCard, type PaymentMethodType } from './PaymentMethodCard';
 import { MoMoProcessingStatus } from './MoMoProcessingStatus';
-import { useMoMoPaymentFlow, useMoMoPlans } from '@/services/subscriptionPaymentHooks';
+import { useMoMoPaymentFlow, useMoMoPlans, type FeatureType } from '@/services/subscriptionPaymentHooks';
 
 // ============================================================================
 // TYPES
@@ -60,6 +60,7 @@ interface PaymentMethodSheetProps {
   selectedPlanType: string;
   planPrice: number;
   planCurrency: string;
+  featureType?: FeatureType;
   onGooglePlayPurchase: () => void;
   onMoMoPurchaseComplete: () => void;
 }
@@ -89,13 +90,14 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   selectedPlanType,
   planPrice,
   planCurrency,
+  featureType = 'SURVEY',
   onGooglePlayPurchase,
   onMoMoPurchaseComplete,
 }) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const momoFlow = useMoMoPaymentFlow();
-  const { data: momoPlans } = useMoMoPlans();
+  const momoFlow = useMoMoPaymentFlow(featureType);
+  const { data: momoPlans } = useMoMoPlans(featureType);
 
   // State
   const [step, setStep] = useState<Step>('SELECT_METHOD');
@@ -116,7 +118,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   const displayPrice = momoPlan?.price ?? planPrice;
   const displayCurrency = momoPlan?.currency ?? planCurrency;
 
-  // Reset state when sheet opens/closes
+  // Reset state when sheet opens — and stop polling when sheet closes
   useEffect(() => {
     if (visible) {
       setStep('SELECT_METHOD');
@@ -124,7 +126,11 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
       setPhoneNumber('');
       setPhoneError(null);
       momoFlow.reset();
+    } else {
+      // Sheet closed — stop any in-flight polling to avoid background network waste
+      momoFlow.reset();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- momoFlow.reset is stable via useCallback
   }, [visible]);
 
   // Watch MoMo flow status for completion — brief dwell so user sees success
@@ -154,27 +160,49 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
     }
   }, [selectedMethod, onClose, onGooglePlayPurchase]);
 
+  const normalizePhoneNumber = useCallback((value: string) => value.replace(/\D/g, ''), []);
+  const toUgMsisdn = useCallback((digits: string) => {
+    if (digits.startsWith('256')) return digits;
+    if (digits.startsWith('0')) return `256${digits.slice(1)}`;
+    if (/^7\d{8}$/.test(digits)) return `256${digits}`;
+    return digits;
+  }, []);
+
   const handleContinueFromPhone = useCallback(() => {
-    const cleanPhone = phoneNumber.replace(/[\s\-+()]/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
     // Uganda numbers: 10 digits local (0700...) or 12 digits with 256 prefix
     if (cleanPhone.length < 10 || cleanPhone.length > 13) {
       setPhoneError('Enter a valid phone number (e.g., 0700123456 or 256700123456)');
       return;
     }
+    const ugMsisdn = toUgMsisdn(cleanPhone);
+    if (selectedMethod === 'MTN_MOMO') {
+      if (!/^256(77|78|76|39)\d{7}$/.test(ugMsisdn)) {
+        setPhoneError('Use a valid MTN Uganda number (077... 078... or 076...)');
+        return;
+      }
+    } else if (selectedMethod === 'AIRTEL_MONEY') {
+      if (!/^256(70|75)\d{7}$/.test(ugMsisdn)) {
+        setPhoneError('Use a valid Airtel Uganda number (070... or 075...)');
+        return;
+      }
+    }
     setPhoneError(null);
     setStep('CONFIRM');
-  }, [phoneNumber]);
+  }, [phoneNumber, normalizePhoneNumber, selectedMethod, toUgMsisdn]);
 
   const handleConfirmPayment = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const provider = selectedMethod === 'MTN_MOMO' ? 'MTN' : 'AIRTEL';
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
+    const msisdn = toUgMsisdn(cleanPhone);
     momoFlow.initiate({
-      phoneNumber,
+      phoneNumber: msisdn,
       provider,
       planType: momoPlanType,
     });
     setStep('PROCESSING');
-  }, [selectedMethod, phoneNumber, momoPlanType, momoFlow]);
+  }, [selectedMethod, phoneNumber, normalizePhoneNumber, toUgMsisdn, momoPlanType, momoFlow]);
 
   const handleRetry = useCallback(() => {
     momoFlow.reset();
@@ -205,6 +233,8 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
       visible={visible}
       animationType="slide"
       transparent
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={step === 'PROCESSING' ? undefined : onClose}
     >
       <Pressable
@@ -407,6 +437,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                     title={`Confirm & Pay ${displayPrice.toLocaleString()} ${displayCurrency}`}
                     onPress={handleConfirmPayment}
                     loading={momoFlow.isInitiating}
+                    disabled={momoFlow.isInitiating}
                     variant="primary"
                     size="large"
                     style={{ marginTop: SPACING.lg }}
@@ -427,6 +458,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                   provider={selectedMethod === 'MTN_MOMO' ? 'MTN' : 'AIRTEL'}
                   phoneNumber={phoneNumber}
                   status={momoFlow.status}
+                  startedAt={momoFlow.startedAt}
                   onCancel={() => {
                     momoFlow.reset();
                     setStep('SELECT_METHOD');

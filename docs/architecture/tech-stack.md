@@ -70,8 +70,8 @@
 | Vercel | Backend serverless deployment |
 | Supabase | Managed PostgreSQL + PgBouncer |
 | Cloudflare R2 | S3-compatible object storage (videos, images) |
-| MTN MoMo API | Mobile money disbursements (Uganda) |
-| Airtel Money API | Mobile money disbursements (Uganda) |
+| MTN MoMo API | Mobile money collections & disbursements (Uganda). Config: `server/lib/mtnConfig.mjs` |
+| Airtel Money API | Mobile money collections & disbursements (Uganda). Config: `server/lib/airtelConfig.mjs` |
 | SMTP (Gmail) | Transactional email (2FA, password reset) |
 
 ## Architecture Patterns

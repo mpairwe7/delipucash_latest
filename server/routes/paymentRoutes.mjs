@@ -1,23 +1,43 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import {
-  initiatePayment,  
+  initiatePayment,
   handleCallback,
   getPaymentHistory,
   updatePaymentStatus,
   initiateDisbursement,
-  // checkRequestToPayStatus
 } from '../controllers/paymentController.mjs';
+import { verifyToken, requireAdmin } from '../utils/verifyUser.mjs';
 
 const router = express.Router();
 
-// Payment routes
-router.post('/initiate', initiatePayment);
-router.post('/disburse', initiateDisbursement);
-//router.get('/status/:transactionId/:provider', checkRequestToPayStatus);
-router.post('/callback', handleCallback);
-// Get Payment History for a User
-router.get("/users/:userId/payments", getPaymentHistory);
-// Update Payment Status
-router.put("/payments/:paymentId/status", updatePaymentStatus);
+// ---------------------------------------------------------------------------
+// Rate limiters
+// ---------------------------------------------------------------------------
+
+/** Payment initiation: 5 requests per minute per IP */
+const initiateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many payment requests. Please try again in a minute.' },
+});
+
+/** Callback endpoint: 30 requests per minute per IP (providers may batch) */
+const callbackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many callback requests.' },
+});
+
+// All payment routes require authentication (except callback)
+router.post('/initiate', initiateLimiter, verifyToken, initiatePayment);
+router.post('/disburse', initiateLimiter, verifyToken, requireAdmin, initiateDisbursement);
+router.post('/callback', callbackLimiter, handleCallback); // Callback uses HMAC signature verification (not JWT)
+router.get("/users/:userId/payments", verifyToken, getPaymentHistory);
+router.put("/payments/:paymentId/status", verifyToken, requireAdmin, updatePaymentStatus);
 
 export default router;

@@ -401,11 +401,17 @@ Query parameters:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/initiate` | - | Initiate subscription payment |
-| POST | `/disburse` | - | Initiate disbursement to user |
-| POST | `/callback` | - | Payment provider webhook |
-| GET | `/users/:userId/payments` | - | User's payment history |
-| PUT | `/payments/:paymentId/status` | - | Update payment status |
+| POST | `/initiate` | JWT | Initiate subscription payment (uses `req.user.id`) |
+| POST | `/disburse` | Admin | Initiate disbursement to user (admin-only) |
+| POST | `/callback` | HMAC | Payment provider webhook (HMAC-SHA256 signature verification, no JWT) |
+| GET | `/users/:userId/payments` | JWT | User's payment history (owner or admin/moderator) |
+| PUT | `/payments/:paymentId/status` | Admin | Manual payment status override (cannot revert SUCCESSFUL) |
+
+> **Security notes:**
+> - `POST /initiate` uses the authenticated user's ID from the JWT token, not a client-supplied `userId` in the body.
+> - `POST /callback` uses HMAC-SHA256 signature verification with replay protection (5-min window) instead of JWT. Set `CALLBACK_SECRET` env var in production.
+> - `PUT /payments/:paymentId/status` enforces a state transition guard: `SUCCESSFUL` payments cannot be changed.
+> - See [Payment Integration](payments.md) for full flow details.
 
 ---
 
@@ -415,9 +421,11 @@ Query parameters:
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/initiate` | JWT | Start survey payment |
-| GET | `/history` | JWT | Payment history |
-| GET | `/:paymentId/status` | JWT | Check payment status |
+| POST | `/initiate` | JWT | Start survey/video payment (includes `featureType` in body) |
+| GET | `/history` | JWT | Payment history for current user |
+| GET | `/unified-status` | JWT | Per-feature subscription status: `{ survey: {...}, video: {...} }` |
+| POST | `/cleanup-stale` | Admin | Mark stale PENDING payments (>15 min) as FAILED |
+| GET | `/:paymentId/status` | JWT | Check specific payment status (re-queries provider if PENDING >30s) |
 
 ### Survey Subscriptions — `/api/survey-subscriptions`
 

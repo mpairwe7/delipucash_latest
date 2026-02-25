@@ -137,8 +137,9 @@ export function useMoMoPaymentInitiate() {
       );
       return response.data;
     },
-    onSettled: () => {
-      // Generate a fresh key for the next attempt (retry or new payment)
+    onSuccess: () => {
+      // Only rotate idempotency key on success — retries after failure
+      // or 409 conflicts should reuse the same key for deduplication
       idempotencyKeyRef.current = generateIdempotencyKey();
     },
   });
@@ -228,6 +229,7 @@ export function useMoMoPaymentFlow(featureType: FeatureType = 'SURVEY') {
   const queryClient = useQueryClient();
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
   const initiateMutation = useMoMoPaymentInitiate();
   const statusQuery = useMoMoPaymentStatus(timedOut ? null : paymentId);
 
@@ -256,6 +258,7 @@ export function useMoMoPaymentFlow(featureType: FeatureType = 'SURVEY') {
     (data: { phoneNumber: string; provider: 'MTN' | 'AIRTEL'; planType: string }) => {
       initiateMutation.mutate({ ...data, featureType }, {
         onSuccess: (result) => {
+          setStartedAt(Date.now());
           setPaymentId(result.payment.id);
         },
       });
@@ -266,6 +269,7 @@ export function useMoMoPaymentFlow(featureType: FeatureType = 'SURVEY') {
   const reset = useCallback(() => {
     setPaymentId(null);
     setTimedOut(false);
+    setStartedAt(null);
   }, []);
 
   // Derive unified status
@@ -283,6 +287,7 @@ export function useMoMoPaymentFlow(featureType: FeatureType = 'SURVEY') {
     reset,
     status,
     paymentId,
+    startedAt,
     isInitiating: initiateMutation.isPending,
     isPolling: Boolean(paymentId) && !timedOut && status === 'PENDING',
     paymentData: statusQuery.data,

@@ -120,6 +120,7 @@ const PACKAGE_TO_PLAN: Record<string, string> = {
   DAILY: 'DAILY',
   WEEKLY: 'WEEKLY',
   MONTHLY: 'MONTHLY',
+  TWO_MONTH: 'MONTHLY',
   THREE_MONTH: 'QUARTERLY',
   SIX_MONTH: 'HALF_YEARLY',
   ANNUAL: 'YEARLY',
@@ -161,7 +162,10 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   const [phoneError, setPhoneError] = useState<string | null>(null);
 
   // ── Hooks ──
-  const premium = featureType === 'SURVEY' ? useSurveyPremium() : useVideoPremium();
+  // Always call both hooks to respect Rules of Hooks (no conditional calls)
+  const surveyPremium = useSurveyPremium();
+  const videoPremium = useVideoPremium();
+  const premium = featureType === 'SURVEY' ? surveyPremium : videoPremium;
   const { data: offerings, isLoading: offeringsLoading } = useOfferings();
   const { mutate: purchase } = usePurchase();
   const { mutate: restore, isPending: isRestoring } = useRestorePurchases();
@@ -173,10 +177,11 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   const lastUsedProvider = usePaymentFlowStore(selectLastUsedProvider);
   const setLastUsedDetails = usePaymentFlowStore((s) => s.setLastUsedDetails);
 
-  // Pre-fill phone from store
+  // Pre-fill phone from store (only when local state is empty)
   useEffect(() => {
     if (lastUsedPhone && !phoneNumber) setPhoneNumber(lastUsedPhone);
     if (lastUsedProvider && !selectedProvider) setSelectedProvider(lastUsedProvider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only run when store values change, not on local state edits
   }, [lastUsedPhone, lastUsedProvider]);
 
   // Refs for accessibility focus
@@ -195,7 +200,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
       setIsExpanded(false);
       resetMoMoState();
     },
-  }), []);
+  }), [resetMoMoState]);
 
   // ── Animations ──
   // FadeIn/FadeOut on the Animated.View handles opacity.
@@ -260,44 +265,66 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
     });
   }, [selectedPackage, isPurchasing, purchase, onPurchaseComplete]);
 
+  const normalizePhoneNumber = useCallback((value: string) => value.replace(/\D/g, ''), []);
+  const toUgMsisdn = useCallback((digits: string) => {
+    if (digits.startsWith('256')) return digits;
+    if (digits.startsWith('0')) return `256${digits.slice(1)}`;
+    if (/^7\d{8}$/.test(digits)) return `256${digits}`;
+    return digits;
+  }, []);
+
   // MoMo phone validation + initiate
   const handleMoMoConfirm = useCallback(() => {
-    const cleanPhone = phoneNumber.replace(/[\s\-+()]/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
     if (cleanPhone.length < 10 || cleanPhone.length > 13) {
       setPhoneError('Enter a valid phone number (10-13 digits)');
       return;
     }
+    const ugMsisdn = toUgMsisdn(cleanPhone);
+    if (selectedProvider === 'MTN') {
+      if (!/^256(77|78|76|39)\d{7}$/.test(ugMsisdn)) {
+        setPhoneError('Use a valid MTN Uganda number (077... 078... or 076...)');
+        return;
+      }
+    } else if (selectedProvider === 'AIRTEL') {
+      if (!/^256(70|75)\d{7}$/.test(ugMsisdn)) {
+        setPhoneError('Use a valid Airtel Uganda number (070... or 075...)');
+        return;
+      }
+    }
     setPhoneError(null);
     setMoMoStep('confirm');
-  }, [phoneNumber]);
+  }, [phoneNumber, normalizePhoneNumber, selectedProvider, toUgMsisdn]);
 
   const handleMoMoInitiate = useCallback(() => {
     if (!selectedMomoPlan || !selectedProvider) return;
-    const cleanPhone = phoneNumber.replace(/[\s\-+()]/g, '');
+    const cleanPhone = normalizePhoneNumber(phoneNumber);
+    const msisdn = toUgMsisdn(cleanPhone);
 
     // Save details for next time
     setLastUsedDetails(cleanPhone, selectedProvider);
 
     setMoMoStep('processing');
     momoFlow.initiate({
-      phoneNumber: cleanPhone,
+      phoneNumber: msisdn,
       provider: selectedProvider,
       planType: selectedMomoPlan,
     });
-  }, [selectedMomoPlan, selectedProvider, phoneNumber, momoFlow, setLastUsedDetails]);
+  }, [selectedMomoPlan, selectedProvider, phoneNumber, normalizePhoneNumber, toUgMsisdn, momoFlow, setLastUsedDetails]);
 
   // MoMo flow success
   useEffect(() => {
     if (momoFlow.status === 'SUCCESSFUL') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       AccessibilityInfo.announceForAccessibility('Payment successful!');
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         setIsExpanded(false);
         resetMoMoState();
         onPurchaseComplete?.();
       }, 1500);
+      return () => clearTimeout(timer);
     }
-  }, [momoFlow.status]);
+  }, [momoFlow.status, resetMoMoState, onPurchaseComplete]);
 
   const selectedPlanData = useMemo(() => {
     return momoPlans?.find((p) => p.type === selectedMomoPlan);
@@ -597,6 +624,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                   status={momoFlow.status}
                   provider={selectedProvider ?? 'MTN'}
                   phoneNumber={phoneNumber}
+                  startedAt={momoFlow.startedAt}
                   onRetry={() => {
                     momoFlow.reset();
                     setMoMoStep('confirm');

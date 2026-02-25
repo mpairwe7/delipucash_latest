@@ -111,7 +111,9 @@ server/
 │   ├── questionRoutes.mjs
 │   └── ...
 ├── lib/
-│   └── prisma.mjs           # Prisma client singleton
+│   ├── prisma.mjs           # Prisma client singleton
+│   ├── mtnConfig.mjs        # MTN MoMo: token, phone format, headers, amount conversion
+│   └── airtelConfig.mjs     # Airtel Money: token, phone format, headers, status classification
 ├── config/
 │   ├── corsOptions.mjs      # CORS configuration
 │   └── db.mjs               # Database configuration
@@ -179,11 +181,13 @@ server/
 | POST | `/api/ads/:id/impression` | Track ad impression |
 
 ### Payments
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/payments/initiate` | Initiate payment |
-| POST | `/api/payments/callback` | Payment callback |
-| GET | `/api/payments/history` | Payment history |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/api/payments/initiate` | JWT | Initiate payment (MTN/Airtel collection) |
+| POST | `/api/payments/disburse` | Admin | Initiate disbursement to user |
+| POST | `/api/payments/callback` | HMAC | Provider webhook (HMAC-SHA256 verification) |
+| GET | `/api/payments/users/:userId/payments` | JWT | User's payment history |
+| PUT | `/api/payments/:paymentId/status` | Admin | Manual status override |
 
 ### Rewards
 | Method | Endpoint | Description |

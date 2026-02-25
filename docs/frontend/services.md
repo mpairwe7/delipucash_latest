@@ -61,7 +61,7 @@ Each feature domain has a dedicated API module:
 | Surveys | `surveyApi.ts` | getAll, getById, submit, getResponses |
 | Ads | `api.ts` (adsApi) | getByPlacement, recordImpression, recordClick |
 | Rewards | `api.ts` (rewardsApi) | getByUser, redeem |
-| Notifications | `notificationApi.ts` | getAll, markRead, getUnreadCount |
+| Notifications | `api.ts` (notificationsApi) + `notificationHooks.ts` | getAll, markRead, getUnreadCount, stats, archive |
 | R2 Upload | `r2UploadService.ts` | uploadVideo, uploadThumbnail, getSignedUrl |
 | Support | `supportApi.ts` | getTickets, createTicket |
 | Survey Webhooks | `surveyWebhookApi.ts` | createWebhook, listWebhooks, updateWebhook, deleteWebhook, testWebhook |
@@ -156,6 +156,47 @@ Centralized TanStack Query mutations for auth. Uses a dedicated `authFetch` help
 | `useSubmitRewardAnswer` | Mutation | Submit answer (invalidates 5 query keys) |
 | `useRegularRewardQuestionAttempts` | Query | Shares cache with listing (no extra fetch) |
 | `useInstantRewardQuestionAttempts` | Query | Shares cache with listing (no extra fetch) |
+
+### Subscription Payment Hooks
+
+**File:** `services/subscriptionPaymentHooks.ts`
+
+Manages the MoMo payment lifecycle for per-feature subscriptions (Survey Premium / Video Premium).
+
+| Hook | Type | Purpose |
+|------|------|---------|
+| `useMoMoPaymentInitiate` | Mutation | Initiate collection (request-to-pay) via MTN or Airtel. Idempotency key only rotates on `onSuccess`. |
+| `useMoMoPaymentStatus` | Query | Poll payment status every 3s while PENDING (5-min timeout). Re-queries provider API if >30s old. |
+| `useUnifiedSubscription` | Query | Fetch per-feature status: `{ survey: {...}, video: {...} }` + legacy flat fields. |
+| `useMoMoPlans` | Query | Fetch available MoMo plans for a feature type (`?featureType=SURVEY` or `VIDEO`). |
+| `useMoMoPaymentFlow` | Hook | Orchestrates full payment flow: initiate → poll → success/fail. Threads `featureType` through. |
+
+**Key types:**
+
+| Type | Description |
+|------|-------------|
+| `FeatureType` | `'SURVEY' \| 'VIDEO'` |
+| `MoMoPaymentInitiation` | Response from POST `/initiate` |
+| `MoMoPaymentStatus` | Response from GET `/:paymentId/status` |
+| `UnifiedSubscriptionStatus` | Per-feature subscription status (`{ survey, video }`) |
+| `MoMoPlan` | Plan details (id, name, price, duration, features) |
+
+**Query keys:** `subscriptionPaymentKeys.all`, `.plans(featureType)`, `.status(paymentId)`, `.unified()`
+
+**Related components:**
+- `InlinePremiumSection` — reusable expand/collapse component with `PaymentTabSwitcher` (Google Play | Mobile Money)
+- `PaymentMethodSheet` — bottom sheet for provider + phone selection
+- `MoMoPlanCard` — styled plan card (UGX pricing, radio semantics)
+- `PaymentTabSwitcher` — animated two-tab switcher with glassmorphic pill
+
+**Premium status hooks** (from `services/purchaseHooks.ts`):
+
+| Hook | Purpose |
+|------|---------|
+| `useSurveyPremium()` | Survey subscription active? (MoMo + Google Play) |
+| `useVideoPremium()` | Video subscription active? (MoMo + Google Play) |
+| `usePremiumStatus()` | Union of both (for ad suppression) |
+| `useShouldShowAds` | Derived — `!isPremium` |
 
 ### Legacy Hooks
 

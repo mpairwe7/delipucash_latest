@@ -32,6 +32,8 @@ interface MoMoProcessingStatusProps {
   provider: 'MTN' | 'AIRTEL';
   phoneNumber: string;
   status: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'TIMEOUT' | null;
+  /** Epoch ms when the payment was initiated (from useMoMoPaymentFlow.startedAt) */
+  startedAt?: number | null;
   onCancel: () => void;
   onRetry: () => void;
   onGooglePlayFallback?: () => void;
@@ -49,6 +51,7 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
   provider,
   phoneNumber,
   status,
+  startedAt,
   onCancel,
   onRetry,
   onGooglePlayFallback,
@@ -83,29 +86,35 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
     }
   }, [status, pulseScale, pulseOpacity]);
 
-  // Countdown timer with haptic + a11y feedback at key milestones
+  // Countdown timer synced with hook's startedAt — derives remaining time
+  // from the same clock the hook uses for its 5-min setTimeout.
   useEffect(() => {
     if (status !== 'PENDING') return;
-    setSecondsLeft(TIMEOUT_SECONDS);
+
+    const computeRemaining = () => {
+      if (!startedAt) return TIMEOUT_SECONDS;
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      return Math.max(0, TIMEOUT_SECONDS - elapsed);
+    };
+
+    setSecondsLeft(computeRemaining());
 
     const interval = setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev === 61) {
-          // Warn at 1 minute remaining
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
-          AccessibilityInfo.announceForAccessibility('1 minute remaining');
-        }
-        if (prev <= 1) {
-          clearInterval(interval);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-          return 0;
-        }
-        return prev - 1;
-      });
+      const remaining = computeRemaining();
+      setSecondsLeft(remaining);
+
+      if (remaining === 60) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        AccessibilityInfo.announceForAccessibility('1 minute remaining');
+      }
+      if (remaining <= 0) {
+        clearInterval(interval);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [status]);
+  }, [status, startedAt]);
 
   const pulseStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],

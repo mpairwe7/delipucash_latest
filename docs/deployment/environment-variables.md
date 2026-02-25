@@ -56,14 +56,51 @@ Used for: password reset emails, 2FA OTP codes, notification emails.
 | `R2_BUCKET_NAME` | Yes | `delipucash-media` | R2 bucket name |
 | `R2_PUBLIC_URL` | Yes | `https://cdn.delipucash.com` | Public URL for R2 bucket (custom domain or `r2.dev` URL) |
 
-### Payment Providers
+### Payment Providers — PayPal (Legacy)
 
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
-| `PAYPAL_CLIENT_ID` | No | `client-id` | PayPal client ID (if using PayPal) |
+| `PAYPAL_CLIENT_ID` | No | `client-id` | PayPal client ID (legacy, not actively used) |
 | `PAYPAL_CLIENT_SECRET` | No | `client-secret` | PayPal client secret |
 
-> MTN Mobile Money and Airtel Money API credentials are configured similarly. Check with the payment team for the exact variable names used in production.
+### MTN Mobile Money
+
+Config module: `server/lib/mtnConfig.mjs`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `MTN_USER_ID` | Yes | `624637e4-7569-...` | MTN API User UUID (created via provisioning) |
+| `MTN_API_KEY` | Yes | `2b01818f9f6c40dc...` | MTN API Key (Basic Auth password) |
+| `MTN_PRIMARY_KEY` | Yes | `0b28ba83f5d5...` | Collection subscription key (`Ocp-Apim-Subscription-Key`) |
+| `MTN_DISBURSEMENT_KEY` | No | `fff5ced1a366...` | Disbursement subscription key (falls back to `MTN_PRIMARY_KEY`) |
+| `X_TARGET_ENVIRONMENT` | No | `sandbox` | Target environment: `sandbox` (default) or `production` |
+| `MTN_BASE_URL` | No | `https://proxy.momoapi.mtn.com` | Override base URL (auto-detected from `X_TARGET_ENVIRONMENT`) |
+| `MTN_CALLBACK_URL` | Prod | `https://yourdomain.com/api/payments/callback` | HTTPS callback URL for async payment notifications (production only — callbacks don't work in sandbox) |
+
+> **Sandbox note:** In sandbox, currency is automatically converted from UGX to EUR. Set `X_TARGET_ENVIRONMENT=sandbox` (default) and use the sandbox base URL.
+
+### Airtel Money
+
+Config module: `server/lib/airtelConfig.mjs`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `AIRTEL_CLIENT_ID` | Yes | `1408e94b-587d-...` | OAuth client ID |
+| `AIRTEL_CLIENT_SECRET` | Yes | `**********` | OAuth client secret |
+| `AIRTEL_PIN` | Yes | `1234` | Airtel merchant PIN |
+| `AIRTEL_CALLBACK_URL` | No | `https://yourdomain.com/api/payments/callback` | Callback URL for async notifications |
+| `AIRTEL_COUNTRY` | No | `UG` | Country code (default: `UG`) |
+| `AIRTEL_CURRENCY` | No | `UGX` | Currency code (default: `UGX`) |
+| `AIRTEL_MSISDN_FORMAT` | No | `E164_NO_PLUS` | Phone format: `E164_NO_PLUS` (default, `2567XXXXXXXX`) or `LOCAL` (`7XXXXXXXX`) |
+| `AIRTEL_BASE_URL` | No | `https://openapi.airtel.africa` | Override base URL (auto-detected: sandbox → `openapiuat.airtel.africa`, prod → `openapi.airtel.africa`) |
+
+### Callback Security
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `CALLBACK_SECRET` | Prod | `a3f8c1...` (64 hex chars) | HMAC-SHA256 key for verifying MTN/Airtel webhook callbacks. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+
+> **Security:** In production, always set `CALLBACK_SECRET`. Without it, callback signature verification is skipped (a warning is logged). The callback endpoint uses HMAC-SHA256 with replay protection (5-minute window) instead of JWT auth.
 
 ## Frontend Variables
 

@@ -101,6 +101,7 @@ delipucash_latest/
 
 ### February 2026
 
+- **Payment Security & Provider Separation** — Split monolithic `mtnConfig.mjs` into provider-specific modules: `mtnConfig.mjs` (MTN-only + shared exports) and new `airtelConfig.mjs` (Airtel-only). Added HMAC-SHA256 callback verification with replay protection, JWT auth on all payment routes, admin-only disbursement and status override, state transition guards (SUCCESSFUL payments cannot revert), phone number validation on both backend and frontend, OAuth token caching with thundering herd guard (10-min buffer), per-feature subscription filtering (`SURVEY`/`VIDEO`), and sanitized logging (no PII in logs). See [Payment Integration](backend/payments.md).
 - **2FA Security Hardening** — OTP generation switched to `crypto.randomInt()` (CSPRNG); hash comparison uses `crypto.timingSafeEqual()` to prevent timing attacks; OTP removed from email subject line; 60-second rate limit added to all OTP send endpoints; session invalidation now preserves the current device session
 - **Instant Reward Enhancements** — Wallet balance syncs from server `user.points` (prevents client drift); submit debounce guard prevents double-tap submissions; optimistic answer locking; Duolingo-style session progress bar; payment retry with exponential backoff (3 attempts); admin upload form fixed to MTN/Airtel only
 - **Auth Fetch Safety** — `authFetch` in `authHooks.ts` now checks `Content-Type` before JSON parsing, preventing crashes when Vercel returns HTML error pages

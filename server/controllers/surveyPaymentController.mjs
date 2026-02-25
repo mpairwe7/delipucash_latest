@@ -18,6 +18,9 @@ import {
   checkAirtelCollectionStatus,
 } from './paymentController.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { createPaymentLogger } from '../lib/paymentLogger.mjs';
+
+const log = createPaymentLogger('survey-payment');
 
 // ============================================================================
 // SUBSCRIPTION PLANS CONFIGURATION
@@ -253,7 +256,7 @@ const getPlanByType = (type, featureType = 'SURVEY') => {
  */
 export const getPlans = asyncHandler(async (req, res) => {
   const featureType = req.query.featureType || 'SURVEY';
-  console.log(`[SurveyPayment] Fetching ${featureType} subscription plans`);
+  log.info('Fetching subscription plans', { featureType });
 
   const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
   const activePlans = plans.filter(p => p.isActive);
@@ -273,7 +276,7 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  console.log(`[SurveyPayment] Checking subscription status for user: ${userId}`);
+  log.info('Checking subscription status', { userId });
 
   try {
     // Get user's current subscription status
@@ -286,13 +289,16 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // Get latest active payment for this user (for survey subscriptions)
+    // Get latest active SURVEY payment for this user
+    const now = new Date();
     const latestPayment = await prisma.payment.findFirst({
-      where: { 
+      where: {
         userId,
         status: 'SUCCESSFUL',
+        featureType: 'SURVEY',
+        endDate: { gt: now },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { endDate: 'desc' },
     });
 
     let hasActiveSubscription = user.surveysubscriptionStatus === 'ACTIVE';
@@ -300,9 +306,8 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
     let subscription = null;
 
     if (latestPayment) {
-      const now = new Date();
       const endDate = new Date(latestPayment.endDate);
-      
+
       if (endDate > now) {
         hasActiveSubscription = true;
         remainingDays = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
@@ -330,7 +335,7 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
       availablePlans: SURVEY_SUBSCRIPTION_PLANS.filter(p => p.isActive),
     });
   } catch (error) {
-    console.error('[SurveyPayment] Error checking subscription status:', error);
+    log.error('Error checking subscription status', { message: error.message });
     res.status(500).json({ error: 'Failed to check subscription status' });
   }
 });
@@ -357,15 +362,22 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     });
   }
 
+  const VALID_PROVIDERS = ['MTN', 'AIRTEL'];
+  if (!VALID_PROVIDERS.includes(provider)) {
+    return res.status(400).json({
+      error: `Invalid payment provider. Allowed: ${VALID_PROVIDERS.join(', ')}`
+    });
+  }
+
   const plan = getPlanByType(planType, featureType);
   if (!plan) {
     return res.status(400).json({ error: 'Invalid subscription plan type' });
   }
 
-  console.log(`[SurveyPayment] Initiating ${featureType} payment for user: ${actualUserId}, plan: ${planType}, provider: ${provider}`);
+  log.info('Initiating payment', { featureType, userId: actualUserId, planType, provider });
 
   // Clean phone number
-  let cleanPhone = phoneNumber.replace(/\s/g, '');
+  let cleanPhone = String(phoneNumber).replace(/\D/g, '');
   if (cleanPhone.length < 10) {
     return res.status(400).json({ error: 'Invalid phone number format' });
   }
@@ -389,7 +401,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       });
 
       if (existingByKey) {
-        console.log(`[SurveyPayment] Idempotency hit for key: ${idempotencyKey}, returning existing payment: ${existingByKey.id}`);
+        log.info('Idempotency hit', { idempotencyKey, paymentId: existingByKey.id });
         const existingPlan = getPlanByType(existingByKey.subscriptionType, existingByKey.featureType);
         return res.status(200).json({
           payment: {
@@ -458,7 +470,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       },
     });
 
-    console.log(`[SurveyPayment] Payment record created: ${payment.id}`);
+    log.info('Payment record created', { paymentId: payment.id, featureType });
 
     // Calculate expiry (payment prompt expires in 5 minutes)
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
@@ -491,10 +503,10 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     // Trigger actual mobile money request asynchronously
     // This would integrate with MTN/Airtel APIs
     triggerMobileMoneyRequest(payment.id, provider, plan.price, cleanPhone, transactionId, featureType)
-      .catch(err => console.error('[SurveyPayment] Mobile money request failed:', err));
+      .catch(err => log.error('Mobile money request failed', { message: err.message }));
 
   } catch (error) {
-    console.error('[SurveyPayment] Error initiating payment:', error);
+    log.error('Error initiating payment', { message: error.message });
     res.status(500).json({ error: 'Failed to initiate payment' });
   }
 });
@@ -507,7 +519,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
  * @param {string} featureType - 'SURVEY' or 'VIDEO' — determines which user status field to update
  */
 const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumber, transactionId, featureType = 'SURVEY') => {
-  console.log(`[SurveyPayment] Triggering ${provider} collection request for ${featureType}...`);
+  log.info('Triggering collection request', { provider, featureType, paymentId });
 
   // Determine which user subscription status field to update
   const statusField = featureType === 'VIDEO' ? 'videoSubscriptionStatus' : 'surveysubscriptionStatus';
@@ -528,7 +540,7 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
         referenceId: transactionId,
       });
     } else {
-      console.error(`[SurveyPayment] Unknown provider: ${provider}`);
+      log.error('Unknown provider in triggerMobileMoneyRequest', { provider });
       return;
     }
 
@@ -548,19 +560,22 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
         return p;
       });
 
-      console.log(`[SurveyPayment] ${featureType} payment ${paymentId} completed successfully`);
+      log.info('Payment completed successfully', { featureType, paymentId });
 
       // Persistent notification for subscription activation
       if (payment.userId) {
         const subscriptionType = featureType === 'VIDEO' ? 'Video Premium' : 'Survey Premium';
         createNotificationFromTemplateHelper(payment.userId, 'SUBSCRIPTION_ACTIVE', { subscriptionType }).catch(() => {});
       }
+    } else if (result.pending) {
+      // Keep record as PENDING; frontend status polling + live re-check will resolve later.
+      log.info('Payment remains pending at provider level', { paymentId });
     } else {
       const payment = await prisma.payment.update({
         where: { id: paymentId },
         data: { status: 'FAILED' },
       });
-      console.log(`[SurveyPayment] Payment ${paymentId} failed`);
+      log.warn('Payment failed', { paymentId });
 
       // Persistent notification for payment failure
       if (payment.userId) {
@@ -568,7 +583,7 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
       }
     }
   } catch (error) {
-    console.error(`[SurveyPayment] Error processing ${provider} collection:`, error);
+    log.error(`Error processing ${provider} collection`, { paymentId, message: error.message });
 
     const payment = await prisma.payment.update({
       where: { id: paymentId },
@@ -590,7 +605,7 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
 export const checkPaymentStatus = asyncHandler(async (req, res) => {
   const { paymentId } = req.params;
 
-  console.log(`[SurveyPayment] Checking payment status: ${paymentId}`);
+  log.info('Checking payment status', { paymentId });
 
   try {
     const payment = await prisma.payment.findUnique({
@@ -661,11 +676,11 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
               });
               payment.status = 'FAILED';
             }
-            console.log(`[SurveyPayment] Live re-check resolved payment ${paymentId} to ${liveStatus}`);
+            log.info('Live re-check resolved payment', { paymentId, liveStatus });
           }
         } catch (err) {
           // Non-fatal — fall through with DB status
-          console.error(`[SurveyPayment] Live status re-check failed for ${paymentId}:`, err.message);
+          log.error('Live status re-check failed', { paymentId, message: err.message });
         }
       }
     }
@@ -720,7 +735,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('[SurveyPayment] Error checking payment status:', error);
+    log.error('Error checking payment status', { paymentId, message: error.message });
     res.status(500).json({ error: 'Failed to check payment status' });
   }
 });
@@ -737,7 +752,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  console.log(`[SurveyPayment] Fetching payment history for user: ${userId}`);
+  log.info('Fetching payment history', { userId });
 
   try {
     const payments = await prisma.payment.findMany({
@@ -772,7 +787,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
 
     res.json(formattedPayments);
   } catch (error) {
-    console.error('[SurveyPayment] Error fetching payment history:', error);
+    log.error('Error fetching payment history', { userId, message: error.message });
     res.status(500).json({ error: 'Failed to fetch payment history' });
   }
 });
@@ -782,18 +797,11 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
  * 
  * @route POST /api/survey-subscriptions/:subscriptionId/cancel
  */
-export const cancelSubscription = asyncHandler(async (req, res) => {
-  const { subscriptionId } = req.params;
-
-  console.log(`[SurveyPayment] Cancelling subscription: ${subscriptionId}`);
-
-  // Since we don't have a separate subscription table, we just return success
-  // In production, this would disable auto-renewal flag
-  
-  res.json({
-    id: subscriptionId,
-    message: 'Subscription auto-renewal disabled successfully',
-    autoRenew: false,
+export const cancelSubscription = asyncHandler(async (_req, res) => {
+  // MoMo subscriptions are one-time purchases — no auto-renewal to cancel.
+  // Google Play cancellations go through RevenueCat / Play Store directly.
+  res.status(501).json({
+    error: 'Auto-renewal cancellation is not yet supported for MoMo subscriptions',
   });
 });
 
@@ -900,7 +908,7 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
       planType: survey.planType || video.planType,
     });
   } catch (error) {
-    console.error('[SurveyPayment] Error checking unified subscription status:', error);
+    log.error('Error checking unified subscription status', { userId, message: error.message });
     res.status(500).json({ error: 'Failed to check subscription status' });
   }
 });
@@ -917,7 +925,7 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
 export const cleanupStalePayments = asyncHandler(async (req, res) => {
   const cutoff = new Date(Date.now() - 15 * 60 * 1000); // 15 minutes ago
 
-  console.log(`[SurveyPayment] Cleaning up stale PENDING payments older than ${cutoff.toISOString()}`);
+  log.info('Cleaning up stale PENDING payments', { cutoff: cutoff.toISOString() });
 
   try {
     const result = await prisma.payment.updateMany({
@@ -930,14 +938,14 @@ export const cleanupStalePayments = asyncHandler(async (req, res) => {
       },
     });
 
-    console.log(`[SurveyPayment] Cleaned up ${result.count} stale payments`);
+    log.info('Cleaned up stale payments', { count: result.count });
 
     res.json({
       cleaned: result.count,
       cutoffTime: cutoff.toISOString(),
     });
   } catch (error) {
-    console.error('[SurveyPayment] Error cleaning up stale payments:', error);
+    log.error('Error cleaning up stale payments', { message: error.message });
     res.status(500).json({ error: 'Failed to clean up stale payments' });
   }
 });

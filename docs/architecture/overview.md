@@ -138,6 +138,54 @@ sequenceDiagram
 
 ## Payment Flow
 
+### Provider Architecture
+
+Each provider has a dedicated config module. The payment controller is a thin orchestrator:
+
+```text
+server/lib/
+├── mtnConfig.mjs        # MTN: token, phone formatter, headers, amount conversion
+│                         # Shared exports: tokenCache, EXPIRY_BUFFER_MS, isSandbox
+└── airtelConfig.mjs     # Airtel: token, phone formatter, headers, status classification
+                          # Imports shared cache from mtnConfig.mjs
+
+server/controllers/
+├── paymentController.mjs          # Imports from BOTH config modules
+└── surveyPaymentController.mjs    # Imports from paymentController only
+```
+
+### Collection Flow (Subscriptions)
+
+```mermaid
+sequenceDiagram
+    participant App as Mobile App
+    participant API as API Server
+    participant Provider as MTN/Airtel API
+    participant DB as PostgreSQL
+
+    App->>API: POST /api/survey-payments/initiate (JWT)
+    API->>API: Validate phone + check concurrent guard
+    API->>DB: Create Payment (PENDING, featureType, idempotencyKey)
+    API->>Provider: Request-to-Pay / Collection
+    Provider-->>API: 202 Accepted
+    API-->>App: { paymentId, status: PENDING }
+
+    loop Client polls every 3s (5min timeout)
+        App->>API: GET /status (JWT)
+        API->>Provider: Re-query if PENDING >30s
+        API->>DB: Update status if changed
+        API-->>App: { status }
+    end
+
+    Note over Provider: Async callback (production)
+    Provider->>API: POST /callback (HMAC-SHA256)
+    API->>API: Verify signature + replay protection
+    API->>Provider: Re-query to confirm
+    API->>DB: Update Payment status
+```
+
+### Disbursement Flow (Reward Payouts)
+
 The 3-phase transaction pattern ensures atomicity for reward redemptions:
 
 ```mermaid
@@ -147,7 +195,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant Pay as MTN/Airtel API
 
-    App->>API: POST /api/rewards/redeem
+    App->>API: POST /api/rewards/redeem (JWT)
     Note over API: Phase 1: Validate & Deduct (Transaction)
 
     API->>DB: BEGIN TRANSACTION
@@ -181,6 +229,15 @@ sequenceDiagram
 1. **Phase 1 (Transaction):** Points deducted atomically — prevents double-spending
 2. **Phase 2 (No Transaction):** Payment API call outside DB transaction — avoids long-held locks during external network calls
 3. **Phase 3 (Transaction):** Final status + refund on failure — guarantees consistency
+
+### Security Measures
+
+- **Route auth:** All payment routes require JWT; disbursement requires admin role
+- **Callback auth:** HMAC-SHA256 with 5-minute replay window (no JWT)
+- **State guard:** SUCCESSFUL payments cannot be reverted
+- **Phone validation:** Both formatters throw on invalid MSISDN before any API call
+- **Token caching:** Per-product OAuth tokens with 10-min expiry buffer + thundering herd guard
+- **Idempotency:** Client-generated UUID stored as `@unique` on Payment model
 
 ## Key Architectural Principles
 
