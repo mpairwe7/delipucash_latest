@@ -734,6 +734,8 @@ export default function QuizSessionScreen({
       maxStreak,
       bonusPoints,
       totalEarned: totalPointsEarned + bonusPoints,
+      previousPoints: 0,
+      newTotalPoints: totalPointsEarned + bonusPoints,
     };
   }, [answers, maxStreak, totalQuestions]);
 

@@ -16,7 +16,7 @@ import Animated, {
   useReducedMotion,
   interpolateColor,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { CreditCard, Smartphone } from 'lucide-react-native';
 
 import {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     zIndex: 1,
   },
   tabText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

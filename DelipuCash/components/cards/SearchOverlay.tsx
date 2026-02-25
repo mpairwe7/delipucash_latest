@@ -31,7 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowLeft, X, Clock, TrendingUp, ArrowUpLeft, Search } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,

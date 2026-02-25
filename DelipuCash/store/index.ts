@@ -564,6 +564,20 @@ export {
 } from './TransactionUIStore';
 
 // ============================================================================
+// App Settings Store — Quick settings preferences (theme, notifications, data saver, haptics)
+// ============================================================================
+export {
+  useAppSettingsStore,
+  selectPushNotificationsEnabled,
+  selectDataSaverEnabled,
+  selectHapticFeedbackEnabled,
+  selectTogglePushNotifications,
+  selectToggleDataSaver,
+  selectToggleHapticFeedback,
+  selectResetSettings,
+} from './AppSettingsStore';
+
+// ============================================================================
 // Notification UI Store — Notification screen filter & detail state
 // ============================================================================
 export {

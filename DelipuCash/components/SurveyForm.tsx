@@ -31,7 +31,7 @@ import {
   Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   Plus,
   Trash2,
@@ -1195,13 +1195,23 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       </Modal>
 
       {/* Conditional Logic Editor Modal */}
-      {conditionalLogicQuestionId && (
-        <ConditionalLogicEditor
-          questionId={conditionalLogicQuestionId}
-          questions={questions}
-          onClose={() => setConditionalLogicQuestionId(null)}
-        />
-      )}
+      {conditionalLogicQuestionId && (() => {
+        const targetQuestion = questions.find(q => q.id === conditionalLogicQuestionId);
+        if (!targetQuestion) return null;
+        return (
+          <ConditionalLogicEditor
+            question={targetQuestion}
+            allQuestions={questions}
+            config={targetQuestion.conditionalLogic ?? null}
+            onSave={(config) => {
+              useSurveyBuilderStore.getState().setConditionalLogic(conditionalLogicQuestionId, config);
+              setConditionalLogicQuestionId(null);
+            }}
+            onClose={() => setConditionalLogicQuestionId(null)}
+            visible
+          />
+        );
+      })()}
     </View>
   );
 };

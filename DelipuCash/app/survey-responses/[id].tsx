@@ -37,7 +37,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Print from 'expo-print';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import * as Sharing from 'expo-sharing';
 import {
   ArrowLeft,

@@ -53,7 +53,7 @@ import {
   COMPONENT_SIZE,
   withAlpha,
 } from "@/utils/theme";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import { LucideIcon } from "lucide-react-native";
 
 /**

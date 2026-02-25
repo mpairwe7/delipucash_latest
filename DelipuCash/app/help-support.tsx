@@ -36,7 +36,7 @@ import {
   Headphones,
   AlertCircle as AlertCircleIcon,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import {

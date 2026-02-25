@@ -28,7 +28,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { useRouter, Href } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -852,7 +852,7 @@ const styles = StyleSheet.create({
     gap: SPACING.xs,
   },
   subscriptionBadgeText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xs,
     letterSpacing: 0.1,
   },

@@ -28,7 +28,7 @@ import {
 import { StatusBar, StatusBarStyle } from 'expo-status-bar';
 import { SafeAreaView, useSafeAreaInsets, Edge } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { ArrowLeft, X } from 'lucide-react-native';
 import {
   useTheme,

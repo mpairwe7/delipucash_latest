@@ -48,7 +48,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { Image as ExpoImage } from 'expo-image';
 import {
   useTheme,

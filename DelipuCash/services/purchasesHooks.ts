@@ -16,6 +16,8 @@ import { PurchasesPackage, CustomerInfo } from 'react-native-purchases';
 import { purchasesService, ENTITLEMENTS } from './purchasesService';
 import { purchasesQueryKeys } from './purchasesQueryKeys';
 import { useUnifiedSubscription, type FeatureSubscriptionStatus } from './subscriptionPaymentHooks';
+import { useAuthStore } from '@/utils/auth/store';
+import { UserRole } from '@/types';
 import {
   MAX_UPLOAD_SIZE_FREE,
   MAX_UPLOAD_SIZE_PREMIUM,
@@ -190,8 +192,21 @@ export function useUnifiedSubscriptionStatus() {
 export function useSurveyPremium() {
   const { data: customerInfo, isLoading: rcLoading } = useCustomerInfo();
   const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+  const userRole = useAuthStore((s) => s.auth?.user?.role);
 
   return useMemo(() => {
+    // Admin/Moderator roles get premium access by default
+    if (userRole === UserRole.ADMIN || userRole === UserRole.MODERATOR) {
+      return {
+        isPremium: true,
+        isLoading: false,
+        source: 'ADMIN' as const,
+        expirationDate: null,
+        remainingDays: Infinity,
+        planType: null,
+      };
+    }
+
     const surveyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.SURVEY_CREATOR];
     const legacyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.PREMIUM];
     const activeEntitlement = surveyEntitlement ?? legacyEntitlement;
@@ -229,7 +244,7 @@ export function useSurveyPremium() {
       remainingDays,
       planType,
     };
-  }, [customerInfo, momoSub, rcLoading, momoLoading]);
+  }, [customerInfo, momoSub, rcLoading, momoLoading, userRole]);
 }
 
 /**
@@ -239,8 +254,21 @@ export function useSurveyPremium() {
 export function useVideoPremium() {
   const { data: customerInfo, isLoading: rcLoading } = useCustomerInfo();
   const { data: momoSub, isLoading: momoLoading } = useUnifiedSubscription();
+  const userRole = useAuthStore((s) => s.auth?.user?.role);
 
   return useMemo(() => {
+    // Admin/Moderator roles get premium access by default
+    if (userRole === UserRole.ADMIN || userRole === UserRole.MODERATOR) {
+      return {
+        isPremium: true,
+        isLoading: false,
+        source: 'ADMIN' as const,
+        expirationDate: null,
+        remainingDays: Infinity,
+        planType: null,
+      };
+    }
+
     const videoEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.VIDEO_PREMIUM];
     const legacyEntitlement = customerInfo?.entitlements?.active?.[ENTITLEMENTS.PREMIUM];
     const activeEntitlement = videoEntitlement ?? legacyEntitlement;
@@ -278,7 +306,7 @@ export function useVideoPremium() {
       remainingDays,
       planType,
     };
-  }, [customerInfo, momoSub, rcLoading, momoLoading]);
+  }, [customerInfo, momoSub, rcLoading, momoLoading, userRole]);
 }
 
 /**

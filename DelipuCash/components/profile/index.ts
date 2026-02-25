@@ -47,3 +47,6 @@ export type { TransactionsCardProps, RecentTransaction } from './TransactionsCar
 
 export { ProfileUserCard } from './ProfileUserCard';
 export type { ProfileUserCardProps } from './ProfileUserCard';
+
+export { QuickSettingsSheet } from './QuickSettingsSheet';
+export type { QuickSettingsSheetProps } from './QuickSettingsSheet';

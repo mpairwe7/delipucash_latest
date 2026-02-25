@@ -55,7 +55,7 @@ import {
   Maximize2,
   Clock,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,
@@ -237,6 +237,9 @@ function InlineVideoPlayerComponent({
         }
       } else if (event.status === 'loading') {
         setIsBuffering(true);
+      } else if (event.status === 'error') {
+        setIsBuffering(false);
+        if (__DEV__) console.warn('[InlineVideoPlayer] Player error via statusChange');
       }
     });
     
@@ -435,13 +438,6 @@ function InlineVideoPlayerComponent({
                 style={styles.video}
                 contentFit="cover"
                 nativeControls={false}
-                onError={(error) => {
-                  if (__DEV__) console.warn('[InlineVideoPlayer] VideoView error:', error);
-                  // Ignore keep-awake related errors in Expo Go
-                  if (error?.message?.includes('keep awake')) {
-                    return;
-                  }
-                }}
               />
             </View>
           )}

@@ -53,7 +53,7 @@ import {
   SHADOWS,
   withAlpha,
 } from "@/utils/theme";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import Svg, { Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import { useReducedMotion } from "@/utils/accessibility";
 

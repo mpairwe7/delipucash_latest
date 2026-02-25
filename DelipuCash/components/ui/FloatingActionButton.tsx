@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import Reanimated, { useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
 import { Plus, Sparkles } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,

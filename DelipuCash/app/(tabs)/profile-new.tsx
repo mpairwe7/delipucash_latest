@@ -28,6 +28,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, memo } from 'react';
 import {
   View,
+  Pressable,
   StyleSheet,
   Alert,
   Linking,
@@ -43,7 +44,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStatusBar } from '@/hooks/useStatusBar';
 import { Href, router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
   Award,
@@ -67,6 +68,7 @@ import {
   Globe,
   LogOut,
   ChevronRight,
+  Settings,
   Settings2,
 } from 'lucide-react-native';
 
@@ -84,6 +86,7 @@ import {
   ChangePasswordModal,
   TransactionsCard,
 } from '@/components/profile';
+import { QuickSettingsSheet } from '@/components/profile/QuickSettingsSheet';
 import type { ProfileQuickAction } from '@/components/profile/QuickActionsGrid';
 import type { SettingItem } from '@/components/profile/SettingsSection';
 import type { EditProfileData } from '@/components/profile/EditProfileModal';
@@ -454,6 +457,7 @@ export default function ProfileScreen(): React.ReactElement {
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRewardSettings, setShowRewardSettings] = useState(false);
+  const [showQuickSettings, setShowQuickSettings] = useState(false);
   const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
   const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
   // Tracks whether the pending disable-2FA mutation is a resend (vs verify)
@@ -851,6 +855,9 @@ export default function ProfileScreen(): React.ReactElement {
     });
   }, [resend2FAMutation]);
 
+  // FlatList ref for programmatic scrolling (e.g. "All Settings" in QuickSettingsSheet)
+  const flatListRef = useRef<FlatList<SectionItem>>(null);
+
   // Tracks whether password change succeeded so the toast fires AFTER
   // the modal's success animation and auto-close (not during the save callback).
   const passwordChangeSucceeded = useRef(false);
@@ -897,6 +904,18 @@ export default function ProfileScreen(): React.ReactElement {
       ]
     );
   }, [sessions, revokeSessionMutation, refetchSessions]);
+
+  // Quick settings handlers
+  const handleOpenQuickSettings = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowQuickSettings(true);
+  }, []);
+
+  const handleScrollToSettings = useCallback(() => {
+    // 'settings' is at index 4 in the sections array — use hardcoded index
+    // since sections order is stable and defined in the useMemo below
+    flatListRef.current?.scrollToIndex({ index: 4, animated: true });
+  }, []);
 
   // ============================================================================
   // REWARD CONFIG (reactive to admin changes)
@@ -1145,7 +1164,7 @@ export default function ProfileScreen(): React.ReactElement {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} animated />
 
-      {/* Notification Bell Header */}
+      {/* Top Header Bar — Settings (left) + Notification Bell (right) */}
       <Animated.View
         entering={FadeIn.reduceMotion(ReduceMotion.System)}
         style={[
@@ -1156,7 +1175,19 @@ export default function ProfileScreen(): React.ReactElement {
           },
         ]}
       >
-        <View />
+        <Pressable
+          onPress={handleOpenQuickSettings}
+          style={({ pressed }) => [
+            styles.settingsButton,
+            { backgroundColor: withAlpha(colors.text, pressed ? 0.12 : 0.06) },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Quick settings"
+          accessibilityHint="Opens quick settings panel"
+          hitSlop={6}
+        >
+          <Settings size={ICON_SIZE.lg} color={colors.text} strokeWidth={1.8} />
+        </Pressable>
         <NotificationBell
           count={unreadCount ?? 0}
           onPress={() => router.push('/notifications' as Href)}
@@ -1165,6 +1196,7 @@ export default function ProfileScreen(): React.ReactElement {
 
       {/* Main Content */}
       <FlatList
+        ref={flatListRef}
         data={sections}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
@@ -1337,6 +1369,13 @@ export default function ProfileScreen(): React.ReactElement {
         visible={showRewardSettings}
         onClose={() => setShowRewardSettings(false)}
       />
+
+      {/* Quick Settings Bottom Sheet */}
+      <QuickSettingsSheet
+        visible={showQuickSettings}
+        onClose={() => setShowQuickSettings(false)}
+        onViewAllSettings={handleScrollToSettings}
+      />
     </View>
   );
 }
@@ -1357,6 +1396,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingBottom: SPACING.sm,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingHeader: {
     marginBottom: SPACING.xl,

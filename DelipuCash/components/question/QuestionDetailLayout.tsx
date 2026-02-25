@@ -100,7 +100,7 @@ export const ResponseCard = memo<ResponseCardProps>(
           layoutStyles.responseCard,
           { backgroundColor: colors.card, borderColor: colors.border },
         ]}
-        accessibilityRole="article"
+        accessibilityRole="summary"
         accessibilityLabel={`Response by ${response.userName}. ${likeCount} likes, ${dislikeCount} dislikes${response.isAccepted ? '. Accepted answer' : ''}`}
       >
         <View style={layoutStyles.responseHeader}>

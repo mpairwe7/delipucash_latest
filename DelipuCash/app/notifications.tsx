@@ -50,7 +50,7 @@ import {
   LucideIcon,
 } from "lucide-react-native";
 import { StatusBar } from "expo-status-bar";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import Animated, {
   FadeIn,
   FadeInDown,

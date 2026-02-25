@@ -10,7 +10,7 @@
 import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { Check, Star, Zap } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import {
   useTheme,
@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xs,
   },
   badgeText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
-    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     marginRight: SPACING.sm,
   },
   name: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
   },
   description: {
@@ -206,11 +206,11 @@ const styles = StyleSheet.create({
   },
   period: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   savings: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
-    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
     marginTop: 2,
   },
 });

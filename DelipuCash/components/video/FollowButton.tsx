@@ -21,7 +21,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { UserPlus, UserCheck } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { useTheme, SPACING, RADIUS, TYPOGRAPHY, withAlpha } from '@/utils/theme';
 import { useFollowCreator, useUnfollowCreator, useFollowStatus } from '@/services/videoHooks';
 import { useAuthStore } from '@/utils/auth/store';
@@ -65,7 +65,7 @@ function FollowButtonComponent({
   testID,
 }: FollowButtonProps): React.ReactElement | null {
   const { colors } = useTheme();
-  const isAuthenticated = useAuthStore((s) => !!s.token);
+  const isAuthenticated = useAuthStore((s) => !!s.auth?.token);
 
   // Only fetch status if no override provided
   const { data: followStatus } = useFollowStatus(

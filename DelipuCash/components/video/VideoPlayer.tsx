@@ -50,7 +50,7 @@ import {
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { BlurView } from 'expo-blur';
 import {
   X,

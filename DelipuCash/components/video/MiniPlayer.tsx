@@ -25,7 +25,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Play, Pause, X } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,

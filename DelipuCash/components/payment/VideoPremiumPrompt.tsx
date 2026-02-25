@@ -13,7 +13,7 @@
 import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { Crown, Upload, Wifi, Video, X } from 'lucide-react-native';
 import {
   useTheme,
@@ -30,7 +30,7 @@ interface VideoPremiumPromptProps {
   action?: string;
   /** Called when the user dismisses the prompt */
   onDismiss?: () => void;
-  /** Called when the user taps upgrade; if omitted, navigates to /(tabs)/videos-new */
+  /** Called when the user taps upgrade; if omitted, navigates to /video-subscription */
   onUpgrade?: () => void;
 }
 
@@ -53,7 +53,7 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
     if (onUpgrade) {
       onUpgrade();
     } else {
-      router.push('/(tabs)/videos-new');
+      router.push('/video-subscription');
     }
   }, [onUpgrade, router]);
 
@@ -101,7 +101,7 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
 
       <View style={styles.features} accessibilityRole="list">
         {features.map(({ icon: Icon, text }) => (
-          <View key={text} style={styles.featureRow} accessibilityRole="listitem">
+          <View key={text} style={styles.featureRow} accessibilityRole="text">
             <Icon size={16} color={colors.success} />
             <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
           </View>

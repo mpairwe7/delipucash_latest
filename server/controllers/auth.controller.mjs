@@ -8,6 +8,7 @@ import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/e
 import crypto from 'crypto';
 
 import { issueTokenPair, hashToken } from '../utils/tokenUtils.mjs';
+import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 
 // Legacy constant — kept only for reference; new tokens use tokenUtils.mjs
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -135,6 +136,9 @@ export const signup = asyncHandler(async (req, res, next) => {
     token: accessToken,
     refreshToken,
   });
+
+  // Fire-and-forget: create welcome notification for the new user
+  createNotificationFromTemplateHelper(newUser.id, 'WELCOME').catch(() => {});
 });
 
 

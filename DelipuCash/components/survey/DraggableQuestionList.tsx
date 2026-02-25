@@ -20,7 +20,7 @@ import {
   StyleSheet,
   AccessibilityInfo,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { GripVertical, ChevronUp, ChevronDown } from 'lucide-react-native';
 import { SPACING, RADIUS, TYPOGRAPHY, useTheme, withAlpha } from '@/utils/theme';
 

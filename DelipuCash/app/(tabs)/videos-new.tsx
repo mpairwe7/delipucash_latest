@@ -68,9 +68,10 @@ import {
   TrendingUp,
   Users,
   Eye,
+  Crown,
 } from 'lucide-react-native';
 import { StatusBar } from 'expo-status-bar';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,
@@ -130,6 +131,11 @@ import {
   type FeedTab,
 } from '@/store/VideoFeedStore';
 import { useHiddenContentStore } from '@/store/HiddenContentStore';
+import {
+  useAppSettingsStore,
+  selectDataSaverEnabled,
+  selectToggleDataSaver,
+} from '@/store/AppSettingsStore';
 import { useSearch } from '@/hooks/useSearch';
 import {
   useAdsForPlacement,
@@ -140,7 +146,7 @@ import { useAdFrequency } from '@/services/adFrequencyManager';
 import { useShouldShowAds } from '@/services/useShouldShowAds';
 import { useAuth } from '@/utils/auth/useAuth';
 import { useVideoPremium } from '@/services/purchasesHooks';
-import { InlinePremiumSection, type InlinePremiumSectionRef } from '@/components/payment';
+// Payment components: InlinePremiumSection lives in /video-subscription screen
 import { generateVideoShareUrl } from '@/utils/share';
 import { blendFeed, getColdStartTier } from '@/utils/feedBlender';
 import { insertAdsIntoFeed, DEFAULT_AD_CONFIG, type FeedItem } from '@/utils/feedAdEngine';
@@ -355,7 +361,6 @@ export default function VideosScreen(): React.ReactElement {
   const { colors, isDark } = useTheme();
   const { isReady: authReady, isAuthenticated } = useAuth();
   const { isPremium: hasVideoPremium, isLoading: videoPremiumLoading } = useVideoPremium();
-  const videoPremiumRef = useRef<InlinePremiumSectionRef>(null);
 
   // ============================================================================
   // SYSTEM BARS - Industry-standard immersive video experience
@@ -417,8 +422,9 @@ export default function VideosScreen(): React.ReactElement {
   const [searchOverlayVisible, setSearchOverlayVisible] = useState(false);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
-  // 2026 Standards: New state
-  const [isDataSaverMode, setIsDataSaverMode] = useState(false);
+  // 2026 Standards: Data saver — global preference from AppSettingsStore (persisted)
+  const isDataSaverMode = useAppSettingsStore(selectDataSaverEnabled);
+  const toggleDataSaverAction = useAppSettingsStore(selectToggleDataSaver);
   // Viewer count from store (updated via SSE in Phase 5)
   const liveViewerCount = useVideoStore(
     (state) => state.currentLivestream?.viewerCount ?? 0
@@ -494,7 +500,7 @@ export default function VideosScreen(): React.ReactElement {
     fetchNextPage: fetchNextFollowing,
     hasNextPage: hasNextFollowing,
     isFetchingNextPage: isFetchingNextFollowing,
-  } = useInfiniteFollowingVideos({ limit: 15, enabled: isAuthenticated });
+  } = useInfiniteFollowingVideos({ limit: 15, enabled: isAuthenticated ?? undefined });
 
   // Trending: infinite scroll with pagination + localization
   const {
@@ -792,6 +798,9 @@ export default function VideosScreen(): React.ReactElement {
     }
   }, [activeTab]);
 
+  // Show premium banner below header when user is not premium
+  const showPremiumBanner = authReady && isAuthenticated && !hasVideoPremium && !videoPremiumLoading;
+
   // Get current video data from store
   const currentVideoData = useMemo(() => {
     if (ui.miniPlayerVideoId) {
@@ -1010,7 +1019,7 @@ export default function VideosScreen(): React.ReactElement {
 
     // Reconstruct minimal Ad object for the feedback modal
     const originalAdId = video.id.replace('ad-', '');
-    const adForFeedback: Ad = {
+    const adForFeedback = {
       id: originalAdId,
       title: video.title,
       description: video.description || '',
@@ -1024,8 +1033,8 @@ export default function VideosScreen(): React.ReactElement {
       views: video.views || 0,
       clicks: 0,
       createdAt: video.createdAt,
-      user: { firstName: video.sponsorName || 'Advertiser' } as any,
-    } as Ad;
+      user: { firstName: video.sponsorName || 'Advertiser' },
+    } as unknown as Ad;
 
     setFeedbackAd(adForFeedback);
     setShowAdFeedback(true);
@@ -1156,11 +1165,11 @@ export default function VideosScreen(): React.ReactElement {
     setShowSearchResults(false);
   }, [setSearchQuery]);
 
-  // 2026: Data saver toggle with warning haptic
+  // 2026: Data saver toggle with warning haptic (persisted via AppSettingsStore)
   const toggleDataSaver = useCallback(() => {
-    setIsDataSaverMode(prev => !prev);
+    toggleDataSaverAction();
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-  }, []);
+  }, [toggleDataSaverAction]);
 
   // ============================================================================
   // FAB ACTIONS
@@ -1255,7 +1264,7 @@ export default function VideosScreen(): React.ReactElement {
           <View style={styles.topRow}>
             {/* Logo — navigates to home */}
             <Pressable
-              onPress={() => router.push('/(tabs)/' as Href)}
+              onPress={() => router.navigate('/(tabs)/home-redesigned' as Href)}
               style={styles.logoButton}
               accessibilityRole="button"
               accessibilityLabel="DelipuCash home"
@@ -1341,30 +1350,29 @@ export default function VideosScreen(): React.ReactElement {
               />
             </View>
 
-            {/* 2026: AI Curated indicator + Live viewer count */}
+            {/* 2026: AI Curated indicator + Live viewer count + Subscribe chip */}
             <View style={styles.tabMeta}>
               <AICuratedChip visible={activeTab === 'for-you'} />
               <LiveViewerCount count={liveViewerCount} />
+              {showPremiumBanner && (
+                <Pressable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push('/video-subscription' as Href);
+                  }}
+                  style={[styles.subscribeChip, { backgroundColor: colors.warning }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Subscribe to Video Premium"
+                  accessibilityHint="Opens Video Premium subscription screen"
+                  hitSlop={6}
+                >
+                  <Crown size={10} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={styles.subscribeChipText}>Subscribe</Text>
+                </Pressable>
+              )}
             </View>
           </View>
 
-          {/* Video Premium Section — shown for non-premium authenticated users */}
-          {authReady && isAuthenticated && !hasVideoPremium && !videoPremiumLoading && (
-            <InlinePremiumSection
-              ref={videoPremiumRef}
-              featureType="VIDEO"
-              title="Video Premium"
-              accentColor={colors.warning}
-              features={[
-                { icon: Upload, text: 'Upload videos up to 500 MB' },
-                { icon: Wifi, text: 'Livestream up to 2 hours' },
-                { icon: Camera, text: 'Record videos up to 30 minutes' },
-              ]}
-              onPurchaseComplete={() => {
-                // Premium status will auto-refresh via cache invalidation
-              }}
-            />
-          )}
         </View>
 
         {/* Search Overlay */}
@@ -1613,6 +1621,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
+  },
+  subscribeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: RADIUS.full,
+  },
+  subscribeChipText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: 9,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
   },
   aiChip: {
     flexDirection: 'row',

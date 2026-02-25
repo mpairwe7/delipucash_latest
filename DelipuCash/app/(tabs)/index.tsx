@@ -68,7 +68,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 
 // Search result type for combined data
 interface SearchableItem {

@@ -16,7 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { NotificationBadge } from '@/components/notifications';

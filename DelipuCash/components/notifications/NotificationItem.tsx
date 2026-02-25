@@ -24,7 +24,7 @@ import {
   ChevronRight,
   LucideIcon,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme, withAlpha } from '@/utils/theme';

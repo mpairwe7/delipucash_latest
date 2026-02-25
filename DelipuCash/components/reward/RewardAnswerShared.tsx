@@ -291,7 +291,7 @@ const sharedStyles = StyleSheet.create({
     flex: 1,
   },
   winnerPosition: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
     minWidth: 24,
   },
@@ -308,7 +308,7 @@ const sharedStyles = StyleSheet.create({
     marginTop: 2,
   },
   winnerAmount: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   cardHeader: {

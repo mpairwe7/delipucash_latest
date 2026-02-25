@@ -160,8 +160,6 @@ const AnimatedLogo = React.memo(function AnimatedLogo({
       stiffness: 180,
       mass: 0.9,
       overshootClamping: true,
-      restDisplacementThreshold: 0.001,
-      restSpeedThreshold: 0.001,
     });
 
     // Subtle pulsing glow

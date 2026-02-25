@@ -199,12 +199,12 @@ const initialState: SurveyBuilderState = {
 // STORE
 // ============================================================================
 
-export const useSurveyBuilderStore = create<
-  SurveyBuilderState & SurveyBuilderActions & UndoState & UndoActions
->()(
+type FullBuilderStore = SurveyBuilderState & SurveyBuilderActions & UndoState & UndoActions;
+
+export const useSurveyBuilderStore = create<FullBuilderStore>()(
   devtools(
     persist(
-      withUndo(
+      withUndo<FullBuilderStore>(
         (set, get) => ({
           ...initialState,
 
@@ -436,8 +436,8 @@ export const useSurveyBuilderStore = create<
               ...initialState,
               questions: [createDefaultQuestion({ id: 'q1' })],
             });
-            // Also clear undo history
-            const state = get();
+            // Also clear undo history — clearHistory is injected by withUndo
+            const state = get() as SurveyBuilderState & SurveyBuilderActions & UndoState & UndoActions;
             if (state.clearHistory) state.clearHistory();
           },
 
@@ -549,7 +549,7 @@ export const selectMultiSelectState = (state: SurveyBuilderState) => ({
  * 2026 Pattern: Dedicated actions selector
  * Returns only action methods (stable references, won't trigger re-renders)
  */
-export const selectBuilderActions = (state: SurveyBuilderState) => ({
+export const selectBuilderActions = (state: SurveyBuilderState & SurveyBuilderActions) => ({
   addQuestion: state.addQuestion,
   removeQuestion: state.removeQuestion,
   updateQuestion: state.updateQuestion,

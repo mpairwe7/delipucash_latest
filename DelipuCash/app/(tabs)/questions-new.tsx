@@ -523,7 +523,7 @@ export default function QuestionsScreen(): React.ReactElement {
   const { data: leaderboard } = useQuestionsLeaderboard(3, !isFeedLoading);
 
   // Notification count
-  const { data: unreadCount } = useUnreadCount(isAuthenticated);
+  const { data: unreadCount } = useUnreadCount(isAuthenticated ?? undefined);
 
   // Reward config — drives CTA badge values
   const { data: rewardConfig } = useRewardConfig();

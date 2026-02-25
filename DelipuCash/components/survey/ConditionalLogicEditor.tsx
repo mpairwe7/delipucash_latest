@@ -23,7 +23,7 @@ import {
   Modal,
   StyleSheet,
 } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   Plus,
   Trash2,
@@ -172,7 +172,7 @@ export const ConditionalLogicEditor: React.FC<ConditionalLogicEditorProps> = ({
       <View
         key={index}
         style={[styles.ruleCard, { backgroundColor: colors.background, borderColor: withAlpha(colors.border, 0.5) }]}
-        accessibilityRole="group"
+        accessibilityRole="none"
         accessibilityLabel={`Rule ${index + 1}`}
       >
         {/* Rule header with delete */}

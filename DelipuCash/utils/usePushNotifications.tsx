@@ -11,6 +11,7 @@ import React, {
     useState,
 } from "react";
 import { Platform } from "react-native";
+import { useAppSettingsStore } from "@/store/AppSettingsStore";
 
 const isExpoGo =
   Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
@@ -32,12 +33,15 @@ async function getNotifications(): Promise<typeof NotificationsType | null> {
 
   if (!notificationHandlerSet) {
     mod.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-        shouldShowBanner: true,
-        shouldShowList: true,
-      }),
+      handleNotification: async () => {
+        const enabled = useAppSettingsStore.getState().pushNotificationsEnabled;
+        return {
+          shouldPlaySound: enabled,
+          shouldSetBadge: enabled,
+          shouldShowBanner: enabled,
+          shouldShowList: enabled,
+        };
+      },
     });
     notificationHandlerSet = true;
   }
@@ -203,6 +207,10 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
   const scheduleLocalNotification = useCallback<
     NotificationContextValue["scheduleLocalNotification"]
   >(async (content, trigger) => {
+    if (!useAppSettingsStore.getState().pushNotificationsEnabled) {
+      return undefined;
+    }
+
     const notifications = await getNotifications();
     if (!notifications) {
       return undefined;

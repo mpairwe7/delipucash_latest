@@ -79,7 +79,7 @@ import {
   ExternalLink,
   Info,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,
@@ -468,6 +468,7 @@ function VideoFeedItemComponent({
 
   // Handle active state changes (auto-play/pause)
   // 2026: Readiness-gated playback — only call play() when player reports readyToPlay
+  // Data saver: defer autoplay — keep thumbnail visible until user taps play
   useEffect(() => {
     if (!player || !isMountedRef.current || !videoSource) return;
 
@@ -487,21 +488,24 @@ function VideoFeedItemComponent({
       t.totalPlayTime = 0;
       t.lastProgressPct = 0;
 
-      // Only play if player is already ready; otherwise the statusChange
-      // listener below will trigger play once readyToPlay fires.
-      if (isPlayerReadyRef.current) {
-        safePlayerCall(() => player.play());
-        setIsPlaying(true);
-        setPlayerStatus('playing');
-      }
-
-      // Fade out thumbnail after short delay
-      setTimeout(() => {
-        if (isMountedRef.current) {
-          thumbnailOpacity.value = withTiming(0, { duration: 300 });
-          setShowThumbnail(false);
+      // Data saver: skip autoplay — user taps play button to start manually
+      if (!isDataSaver) {
+        // Only play if player is already ready; otherwise the statusChange
+        // listener below will trigger play once readyToPlay fires.
+        if (isPlayerReadyRef.current) {
+          safePlayerCall(() => player.play());
+          setIsPlaying(true);
+          setPlayerStatus('playing');
         }
-      }, 200);
+
+        // Fade out thumbnail after short delay
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            thumbnailOpacity.value = withTiming(0, { duration: 300 });
+            setShowThumbnail(false);
+          }
+        }, 200);
+      }
     } else {
       // Telemetry: track skip (if < 3s watched) and dwell time
       const t = telemetryRef.current;
@@ -524,7 +528,7 @@ function VideoFeedItemComponent({
       thumbnailOpacity.value = withTiming(1, { duration: 200 });
       setShowThumbnail(true);
     }
-  }, [isActive, player, videoSource, thumbnailOpacity, setPlayerStatus, safePlayerCall]);
+  }, [isActive, player, videoSource, thumbnailOpacity, setPlayerStatus, safePlayerCall, isDataSaver]);
 
   // Sync mute state
   useEffect(() => {
@@ -559,7 +563,8 @@ function VideoFeedItemComponent({
             // Player may be released
           }
           // 2026: Auto-play when player becomes ready and this item is active
-          if (isActiveRef.current) {
+          // Data saver: skip auto-play — user must tap play manually
+          if (isActiveRef.current && !isDataSaver) {
             safePlayerCall(() => player.play());
             setIsPlaying(true);
             setPlayerStatus('playing');
@@ -1622,6 +1627,7 @@ function arePropsEqual(
     prevProps.isMuted === nextProps.isMuted &&
     prevProps.itemHeight === nextProps.itemHeight &&
     prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&
+    prevProps.isDataSaver === nextProps.isDataSaver &&
     prevProps.index === nextProps.index
   );
 }

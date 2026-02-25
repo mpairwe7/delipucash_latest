@@ -93,7 +93,7 @@ export const PostCaptureDraft = memo<PostCaptureDraftProps>(({
 
           {/* Thumbnail + Duration */}
           <View style={styles.previewRow}>
-            <View style={[styles.thumbnailContainer, { backgroundColor: colors.surfaceVariant }]}>
+            <View style={[styles.thumbnailContainer, { backgroundColor: colors.card }]}>
               {thumbnailUri ? (
                 <Image source={{ uri: thumbnailUri }} style={styles.thumbnail} />
               ) : thumbnailFailed ? (

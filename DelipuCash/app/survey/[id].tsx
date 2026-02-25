@@ -39,7 +39,7 @@ import {
   X,
 } from "lucide-react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/services";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";

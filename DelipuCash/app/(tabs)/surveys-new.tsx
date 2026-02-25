@@ -97,7 +97,7 @@ import {
 import { useSharedValue, withTiming } from "react-native-reanimated";
 import { X } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import { useResponsiveLayout, FONT_SCALE } from "@/hooks/useResponsiveLayout";
 
 // ============================================================================

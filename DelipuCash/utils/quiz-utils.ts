@@ -6,7 +6,7 @@
  * - Accessibility helpers
  */
 
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { AccessibilityInfo } from 'react-native';
 
 // ===========================================

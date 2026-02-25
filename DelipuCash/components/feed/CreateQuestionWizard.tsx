@@ -67,7 +67,7 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { PrimaryButton } from "@/components/PrimaryButton";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 
 // ============================================================================
 // TYPES

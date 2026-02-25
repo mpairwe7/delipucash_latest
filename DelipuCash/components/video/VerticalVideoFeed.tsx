@@ -48,7 +48,7 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,
@@ -252,14 +252,15 @@ function VerticalVideoFeedComponent({
     return () => listener.remove();
   }, []);
 
-  // Preload videos when active video changes
+  // Preload videos when active video changes — skip in data saver mode
   useEffect(() => {
+    if (isDataSaver) return;
     const preloadTargets = getPreloadTargets();
     preloadTargets.forEach((videoId) => {
       // Mark as preloaded (actual preloading handled by VideoFeedItem)
       markPreloaded(videoId);
     });
-  }, [activeVideoIndex, getPreloadTargets, markPreloaded]);
+  }, [activeVideoIndex, getPreloadTargets, markPreloaded, isDataSaver]);
 
   // ============================================================================
   // CALLBACKS

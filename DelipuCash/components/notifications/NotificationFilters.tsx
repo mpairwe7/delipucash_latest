@@ -11,7 +11,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import { SPACING, RADIUS, ANIMATION, useTheme, withAlpha } from '@/utils/theme';

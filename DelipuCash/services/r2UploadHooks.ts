@@ -343,6 +343,7 @@ export function useUploadThumbnailToR2(): UseMutationResult<
     ...mutation,
     progress,
     isUploading,
+    isProcessing: progress >= 100 && mutation.isPending,
   };
 }
 
@@ -421,6 +422,7 @@ export function useUploadToPresignedUrl(): PresignedUrlUploadResult {
     ...mutation,
     progress,
     isUploading,
+    isProcessing: progress >= 100 && mutation.isPending,
   };
 }
 
@@ -623,6 +625,7 @@ export function useUploadAdMediaToR2(): UseMutationResult<
     ...mutation,
     progress,
     isUploading,
+    isProcessing: progress >= 100 && mutation.isPending,
   };
 }
 

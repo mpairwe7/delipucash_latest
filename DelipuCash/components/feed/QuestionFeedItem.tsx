@@ -71,7 +71,7 @@ import {
   withAlpha,
 } from "@/utils/theme";
 import { Question } from "@/types";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 
 // Create AnimatedPressable
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);

@@ -46,7 +46,7 @@ import Animated, {
   withSpring,
   interpolate,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,
@@ -402,7 +402,7 @@ export function QuickActionsGrid({
     <View
       style={[styles.container, style]}
       testID={testID}
-      accessibilityRole="grid"
+      accessibilityRole="menu"
       onLayout={handleLayout}
     >
       {containerWidth > 0 && (

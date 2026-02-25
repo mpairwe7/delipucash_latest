@@ -29,7 +29,7 @@ import Animated, {
   FadeIn,
 } from "react-native-reanimated";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
+import * as Haptics from "@/utils/haptics";
 import {
   useTheme,
   SPACING,

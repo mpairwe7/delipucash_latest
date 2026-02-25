@@ -31,7 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Image } from 'expo-image';
 import { Plus } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { TYPOGRAPHY } from '@/utils/theme';
 import { useAuthStore } from '@/utils/auth/store';
 import { router } from 'expo-router';
@@ -83,7 +83,7 @@ function CreatorAvatarButtonComponent({
   onProfilePress,
   testID,
 }: CreatorAvatarButtonProps): React.ReactElement {
-  const isAuthenticated = useAuthStore((s) => !!s.token);
+  const isAuthenticated = useAuthStore((s) => !!s.auth?.token);
 
   // ---------------------------------------------------------------------------
   // Local badge visibility — decoupled from props to allow exit animation

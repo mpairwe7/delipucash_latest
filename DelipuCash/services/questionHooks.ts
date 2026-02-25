@@ -33,6 +33,7 @@ import {
 } from '@tanstack/react-query';
 import { Question, Response, AppUser, ApiResponse } from '@/types';
 import { FeedQuestion, QuestionAuthor, LeaderboardUser } from '@/components/feed';
+export type { LeaderboardUser };
 import { useAuthStore } from '@/utils/auth/store';
 
 // ===========================================

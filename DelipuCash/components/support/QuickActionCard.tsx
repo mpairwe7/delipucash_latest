@@ -22,7 +22,7 @@ import {
   Shield,
   Wallet,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 import { ThemedText } from '@/components/themed-text';
 import {

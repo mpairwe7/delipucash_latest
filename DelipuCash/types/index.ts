@@ -689,6 +689,8 @@ export interface QuizSessionSummary {
   maxStreak: number;
   bonusPoints: number;
   totalEarned: number; // points + bonus
+  previousPoints: number;
+  newTotalPoints: number;
 }
 
 export type RewardRedemptionType = 'CASH' | 'AIRTIME';

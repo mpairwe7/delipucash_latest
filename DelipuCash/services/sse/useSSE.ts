@@ -17,6 +17,8 @@ import { questionQueryKeys } from '@/services/questionHooks';
 import { videoQueryKeys } from '@/services/videoHooks';
 import { transactionQueryKeys } from '@/services/transactionHooks';
 import { notificationQueryKeys } from '@/services/notificationHooks';
+import { purchasesQueryKeys } from '@/services/purchasesHooks';
+import { subscriptionPaymentKeys } from '@/services/subscriptionPaymentHooks';
 import { useVideoStore } from '@/store/VideoStore';
 import type { SSEEventType, LivestreamViewerCountPayload } from './types';
 
@@ -110,6 +112,10 @@ export function useSSEConnection(): void {
           queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
           queryClient.invalidateQueries({ queryKey: queryKeys.user });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+          // Subscription cache — refreshes premium status when MoMo payment resolves async
+          queryClient.invalidateQueries({ queryKey: subscriptionPaymentKeys.unified() });
+          queryClient.invalidateQueries({ queryKey: purchasesQueryKeys.subscription() });
+          queryClient.invalidateQueries({ queryKey: purchasesQueryKeys.customerInfo() });
         },
       ],
       [

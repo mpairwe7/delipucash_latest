@@ -41,7 +41,7 @@ import {
   Sparkles,
   Lock,
 } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   SPACING,
   RADIUS,

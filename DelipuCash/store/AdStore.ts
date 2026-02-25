@@ -13,7 +13,7 @@ import type { Ad } from '../types';
 // TYPES
 // ============================================================================
 
-export type AdType = 'standard' | 'featured' | 'banner' | 'compact' | 'video' | 'native' | 'interstitial';
+export type AdType = 'regular' | 'standard' | 'featured' | 'banner' | 'compact' | 'video' | 'native' | 'interstitial';
 export type AdPlacement = 'home' | 'feed' | 'survey' | 'video' | 'question' | 'profile' | 'explore';
 export type AdStatus = 'active' | 'paused' | 'expired' | 'pending';
 

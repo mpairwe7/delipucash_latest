@@ -38,7 +38,7 @@ import {
   LucideIcon,
 } from 'lucide-react-native';
 import Animated, { FadeInRight, FadeInDown, ReduceMotion } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import {
   useTheme,
   SPACING,

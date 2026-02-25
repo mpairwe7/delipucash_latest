@@ -29,7 +29,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 
 // Type definitions
 export interface SearchOptions<T> {

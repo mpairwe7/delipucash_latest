@@ -38,7 +38,7 @@ import Animated, {
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import { PurchasesPackage, PURCHASES_ERROR_CODE } from 'react-native-purchases';
 import {
   Crown,
@@ -353,7 +353,9 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
         accessibilityState={{ expanded: isExpanded }}
         accessibilityLabel={
           premium.isPremium
-            ? `${title} active, ${premium.remainingDays} days remaining. Tap to view details.`
+            ? premium.source === 'ADMIN'
+              ? `${title} active, included with admin role.`
+              : `${title} active, ${premium.remainingDays} days remaining. Tap to view details.`
             : `${title} inactive. Tap to subscribe.`
         }
         style={[
@@ -382,7 +384,9 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
           </Text>
           <Text style={[styles.bannerSubtitle, { color: colors.textMuted }]}>
             {premium.isPremium
-              ? `${premium.remainingDays} days remaining${premium.source === 'GOOGLE_PLAY' ? ' \u2022 Auto-renewing' : ''}`
+              ? premium.source === 'ADMIN'
+                ? 'Included with your admin role'
+                : `${premium.remainingDays} days remaining${premium.source === 'GOOGLE_PLAY' ? ' \u2022 Auto-renewing' : ''}`
               : 'Tap to unlock premium features'}
           </Text>
         </View>
@@ -708,7 +712,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bannerTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
   },
   bannerSubtitle: {
@@ -722,7 +726,7 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.full,
   },
   subscribePillText: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.xs,
     color: '#FFFFFF',
   },
@@ -780,7 +784,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.md,
   },
   sectionLabel: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
     marginBottom: SPACING.sm,
   },
@@ -811,7 +815,7 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   receiptTitle: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.base,
     marginBottom: SPACING.sm,
   },
@@ -825,7 +829,7 @@ const styles = StyleSheet.create({
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   receiptValue: {
-    fontFamily: TYPOGRAPHY.fontFamily.semiBold,
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   securityNote: {
@@ -838,6 +842,6 @@ const styles = StyleSheet.create({
   },
   securityText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
-    fontSize: TYPOGRAPHY.fontSize.xxs,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
 });

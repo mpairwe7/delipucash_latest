@@ -519,7 +519,7 @@ export const videoApi = {
     // Backend wraps in { message, video }
     return {
       success: response.success,
-      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      data: normalizeVideo(response.data?.video || (response.data as unknown as Video)),
       error: response.error,
     };
   },
@@ -552,7 +552,7 @@ export const videoApi = {
     }, getAuthToken());
     return {
       success: response.success,
-      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      data: normalizeVideo(response.data?.video || (response.data as unknown as Video)),
       error: response.error,
     };
   },
@@ -566,7 +566,7 @@ export const videoApi = {
     }, getAuthToken());
     return {
       success: response.success,
-      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      data: normalizeVideo(response.data?.video || (response.data as unknown as Video)),
       error: response.error,
     };
   },
@@ -580,7 +580,7 @@ export const videoApi = {
     }, getAuthToken());
     return {
       success: response.success,
-      data: normalizeVideo(response.data?.video || (response.data as Video)),
+      data: normalizeVideo(response.data?.video || (response.data as unknown as Video)),
       error: response.error,
     };
   },

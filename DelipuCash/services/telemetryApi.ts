@@ -200,7 +200,6 @@ class TelemetryBuffer {
         sessionId: this.sessionId,
         sentAt: Date.now(),
       }),
-      // @ts-expect-error -- keepalive is valid in React Native fetch
       keepalive: true,
     });
   }

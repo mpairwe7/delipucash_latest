@@ -9,7 +9,7 @@
 
 import React, { useEffect, useState, memo } from 'react';
 import { View, Text, StyleSheet, AccessibilityInfo } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import * as Haptics from '@/utils/haptics';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
