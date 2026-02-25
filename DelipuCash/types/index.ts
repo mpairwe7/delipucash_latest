@@ -89,6 +89,8 @@ export interface AppUser {
   surveysubscriptionStatus: SubscriptionStatus;
   currentSubscriptionId: string | null;
   privacySettings: Record<string, unknown> | null;
+  referralCode?: string | null;
+  referredBy?: string | null;
   createdAt: string;
   updatedAt: string;
   // Relations (optional, populated when needed)
