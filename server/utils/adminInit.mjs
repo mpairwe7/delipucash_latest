@@ -68,11 +68,16 @@ export async function ensureDefaultAdminExists() {
       const hashedPassword = await bcrypt.hash(adminDef.password, 10);
 
       // Create the admin user
+      // Raw SQL needs explicit id + updatedAt because Prisma's @default(uuid()) and @updatedAt
+      // are client-level features that don't create DB-level defaults
       const createAdminQuery = `
         INSERT INTO "AppUser" (
-          email, password, "firstName", "lastName", phone, role, points,
-          "subscriptionStatus", "surveysubscriptionStatus", avatar, "privacySettings"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          id, email, password, "firstName", "lastName", phone, role, points,
+          "subscriptionStatus", "surveysubscriptionStatus", "videoSubscriptionStatus",
+          avatar, "privacySettings", "createdAt", "updatedAt"
+        ) VALUES (
+          gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW()
+        )
         RETURNING id, email, "firstName", "lastName", role
       `;
       const adminResult = await pool.query(createAdminQuery, [
@@ -85,6 +90,7 @@ export async function ensureDefaultAdminExists() {
         100000, // points
         'ACTIVE', // subscriptionStatus
         'ACTIVE', // surveysubscriptionStatus
+        'ACTIVE', // videoSubscriptionStatus (admin gets all features)
         `https://ui-avatars.com/api/?name=${adminDef.firstName}+${adminDef.lastName}&background=6366f1&color=fff&bold=true`,
         JSON.stringify({ showEmail: false, showPhone: false }) // privacySettings
       ]);
