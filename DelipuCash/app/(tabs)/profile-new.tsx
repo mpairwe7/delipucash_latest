@@ -120,7 +120,6 @@ import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
 import { useRewardConfig, pointsToUgx, ugxToPoints } from '@/services/configHooks';
 import { useToast } from '@/components/ui/Toast';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from '@/utils/haptics';
 
 // Theme
 import {

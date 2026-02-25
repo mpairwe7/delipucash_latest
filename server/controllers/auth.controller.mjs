@@ -156,12 +156,27 @@ export const signup = asyncHandler(async (req, res, next) => {
   // Return full user profile (strip password hash)
   const { password: _pw, ...safeUser } = newUser;
 
+  // Pre-fetch referral bonus amount so we can include it in the response
+  // (instant client feedback — no SSE/polling dependency)
+  let referralBonusPoints = 0;
+  if (referrer) {
+    try {
+      const rewardConfig = await fetchRewardConfig();
+      referralBonusPoints = rewardConfig.referralBonusPoints;
+    } catch {
+      referralBonusPoints = 60; // fallback default
+    }
+  }
+
   res.status(201).send({
     message: "Registered successfully",
     success: true,
     user: safeUser,
     token: accessToken,
     refreshToken,
+    // Referral feedback — lets the client show confirmation instantly
+    referralApplied: !!referrer,
+    ...(referrer ? { referralBonus: referralBonusPoints } : {}),
   });
 
   // Fire-and-forget: create welcome notification for the new user
@@ -171,32 +186,29 @@ export const signup = asyncHandler(async (req, res, next) => {
   if (referrer) {
     (async () => {
       try {
-        const rewardConfig = await fetchRewardConfig();
-        const bonusPoints = rewardConfig.referralBonusPoints;
-
         await prisma.$transaction([
           // Award bonus to referrer
           prisma.appUser.update({
             where: { id: referrer.id },
-            data: { points: { increment: bonusPoints } },
+            data: { points: { increment: referralBonusPoints } },
           }),
           // Award bonus to new user
           prisma.appUser.update({
             where: { id: newUser.id },
-            data: { points: { increment: bonusPoints } },
+            data: { points: { increment: referralBonusPoints } },
           }),
           // Create reward records for audit trail
           prisma.reward.create({
             data: {
               userEmail: referrer.email,
-              points: bonusPoints,
+              points: referralBonusPoints,
               description: 'referral_bonus',
             },
           }),
           prisma.reward.create({
             data: {
               userEmail: newUser.email,
-              points: bonusPoints,
+              points: referralBonusPoints,
               description: 'referral_bonus',
             },
           }),
@@ -204,10 +216,10 @@ export const signup = asyncHandler(async (req, res, next) => {
 
         // Notify both parties about the bonus
         createNotificationFromTemplateHelper(referrer.id, 'REFERRAL_BONUS', {
-          bonus: bonusPoints,
+          bonus: referralBonusPoints,
         }).catch(() => {});
         createNotificationFromTemplateHelper(newUser.id, 'REFERRAL_BONUS', {
-          bonus: bonusPoints,
+          bonus: referralBonusPoints,
         }).catch(() => {});
       } catch (err) {
         console.error('Referral bonus error:', err.message);

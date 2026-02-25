@@ -231,6 +231,9 @@ export const useAuth = (): UseAuthResult => {
         return {
           success: true,
           data: { user: data.user, token: data.token, refreshToken: data.refreshToken },
+          // Pass through referral feedback for instant client-side confirmation
+          referralApplied: data.referralApplied,
+          referralBonus: data.referralBonus,
         };
       } catch (error) {
         return {

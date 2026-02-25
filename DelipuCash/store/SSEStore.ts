@@ -15,6 +15,8 @@ export interface SSEState {
   reconnectAttempt: number;
   lastError: string | null;
   isEnabled: boolean;
+  /** Epoch ms — burst polling active until this time (0 = inactive) */
+  burstUntil: number;
 }
 
 export interface SSEActions {
@@ -23,6 +25,8 @@ export interface SSEActions {
   setReconnectAttempt: (attempt: number) => void;
   setLastError: (error: string | null) => void;
   setEnabled: (enabled: boolean) => void;
+  /** Activate burst polling for `durationMs` (default 120 000 = 2 min) */
+  startBurstPolling: (durationMs?: number) => void;
 }
 
 export const useSSEStore = create<SSEState & SSEActions>()(
@@ -32,12 +36,15 @@ export const useSSEStore = create<SSEState & SSEActions>()(
   reconnectAttempt: 0,
   lastError: null,
   isEnabled: true,
+  burstUntil: 0,
 
   setStatus: (status) => set({ status }),
   setLastEventId: (id) => set({ lastEventId: id }),
   setReconnectAttempt: (attempt) => set({ reconnectAttempt: attempt }),
   setLastError: (error) => set({ lastError: error }),
   setEnabled: (enabled) => set({ isEnabled: enabled }),
+  startBurstPolling: (durationMs = 120_000) =>
+    set({ burstUntil: Date.now() + durationMs }),
 }),
   { name: 'SSEStore', enabled: __DEV__ },
   )
@@ -54,3 +61,7 @@ export const selectSSEEnabled = (state: SSEState) => state.isEnabled;
  */
 export const selectNeedsPolling = (state: SSEState) =>
   state.status !== 'connected' && state.status !== 'connecting';
+
+/** Returns true when burst polling window is active */
+export const selectIsBursting = (state: SSEState) =>
+  state.burstUntil > Date.now();

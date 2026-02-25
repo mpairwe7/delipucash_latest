@@ -19,6 +19,7 @@ import {
   useAuthStore,
   useAuthModal,
 } from '@/utils/auth/store';
+import { useSSEStore } from '@/store/SSEStore';
 // ============================================================================
 // CANONICAL API BASE URL — single source of truth
 // ============================================================================
@@ -145,6 +146,10 @@ interface SignupResponse {
   token: string;
   refreshToken: string;
   user: AuthData['user'];
+  /** true when a valid referral code was applied */
+  referralApplied?: boolean;
+  /** bonus points awarded (present only when referralApplied is true) */
+  referralBonus?: number;
 }
 
 interface ForgotPasswordResponse {
@@ -216,6 +221,11 @@ export function useLoginMutation(): UseMutationResult<
         // Invalidate all cached queries so every screen fetches fresh data
         // for the newly authenticated user (profile, surveys, rewards, etc.)
         queryClient.invalidateQueries();
+
+        // Activate burst polling (10 s intervals for 2 min) so welcome,
+        // referral bonus, and other pending notifications appear quickly
+        // even when SSE is disabled or still connecting.
+        useSSEStore.getState().startBurstPolling();
       }
     },
     retry: false, // Don't auto-retry auth
@@ -360,6 +370,9 @@ export function useVerify2FALoginMutation(): UseMutationResult<
       if (data.token && data.user) {
         setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
         close();
+
+        // Burst polling for pending notifications after 2FA login
+        useSSEStore.getState().startBurstPolling();
       }
     },
     retry: false,

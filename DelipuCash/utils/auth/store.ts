@@ -38,6 +38,10 @@ export interface AuthResponse {
   data?: AuthData;
   message?: string;
   error?: string;
+  /** true when a valid referral code was applied during signup */
+  referralApplied?: boolean;
+  /** bonus points awarded (present only when referralApplied is true) */
+  referralBonus?: number;
 }
 
 /**

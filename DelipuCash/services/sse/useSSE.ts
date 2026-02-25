@@ -60,6 +60,9 @@ export function useSSEConnection(): void {
         'notification.new',
         () => {
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+          // Legacy keys — bell badges in screens still using hooks.ts useUnreadCount
+          queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+          queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [
@@ -73,6 +76,8 @@ export function useSSEConnection(): void {
         'notification.readAll',
         () => {
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
+          queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [

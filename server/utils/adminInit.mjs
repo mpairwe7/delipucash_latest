@@ -12,6 +12,65 @@ import pg from 'pg';
 import bcrypt from 'bcryptjs';
 import 'dotenv/config';
 
+// Notification templates seeded for every admin user
+const ADMIN_NOTIFICATIONS = [
+  {
+    title: 'Welcome to DelipuCash! 🎊',
+    body: 'Start earning rewards by completing surveys and answering questions!',
+    type: 'WELCOME',
+    priority: 'MEDIUM',
+    icon: 'home',
+    category: 'welcome',
+    metadata: {},
+  },
+  {
+    title: 'Subscription Active! ✅',
+    body: 'Your Survey Premium subscription is now active. Enjoy premium features!',
+    type: 'SUBSCRIPTION_ACTIVE',
+    priority: 'HIGH',
+    icon: 'shield-checkmark',
+    category: 'subscription',
+    metadata: { subscriptionType: 'Survey Premium' },
+  },
+  {
+    title: 'Subscription Active! ✅',
+    body: 'Your Video Premium subscription is now active. Enjoy premium features!',
+    type: 'SUBSCRIPTION_ACTIVE',
+    priority: 'HIGH',
+    icon: 'shield-checkmark',
+    category: 'subscription',
+    metadata: { subscriptionType: 'Video Premium' },
+  },
+];
+
+/**
+ * Seeds welcome + subscription notifications for an admin user.
+ * Silently ignores insert failures so admin creation is never blocked.
+ */
+async function seedAdminNotifications(pool, userId) {
+  const sql = `
+    INSERT INTO "Notification" (
+      id, "userId", title, body, type, priority, icon, category, metadata,
+      read, archived, delivered, "createdAt", "updatedAt"
+    ) VALUES (
+      gen_random_uuid(), $1, $2, $3, $4::"NotificationType", $5::"NotificationPriority",
+      $6, $7, $8::jsonb, false, false, true, NOW(), NOW()
+    )
+  `;
+  for (const notif of ADMIN_NOTIFICATIONS) {
+    await pool.query(sql, [
+      userId,
+      notif.title,
+      notif.body,
+      notif.type,
+      notif.priority,
+      notif.icon,
+      notif.category,
+      JSON.stringify(notif.metadata),
+    ]).catch(() => {}); // Don't fail admin creation if notification insert fails
+  }
+}
+
 // Default admin credentials
 const DEFAULT_ADMINS = [
   {
@@ -61,6 +120,18 @@ export async function ensureDefaultAdminExists() {
       if (existingAdminResult.rows.length > 0) {
         const existingAdmin = existingAdminResult.rows[0];
         console.log('✅ Admin user exists:', existingAdmin.email);
+
+        // Ensure admin has at least one subscription notification
+        // (fixes zero-badge and empty Subscription tab for bootstrapped admins)
+        const notifCountResult = await pool.query(
+          'SELECT COUNT(*) FROM "Notification" WHERE "userId" = $1 AND type = \'SUBSCRIPTION_ACTIVE\'',
+          [existingAdmin.id]
+        );
+        if (parseInt(notifCountResult.rows[0].count, 10) === 0) {
+          await seedAdminNotifications(pool, existingAdmin.id);
+          console.log('   🔔 Seeded subscription notifications for', existingAdmin.email);
+        }
+
         continue;
       }
 
@@ -97,10 +168,14 @@ export async function ensureDefaultAdminExists() {
 
       const admin = adminResult.rows[0];
 
+      // Seed welcome + subscription notifications so bell badge is non-zero
+      await seedAdminNotifications(pool, admin.id);
+
       console.log('✅ Admin user created successfully!');
       console.log('   📧 Email:', admin.email);
       console.log('   👤 Name:', `${admin.firstName} ${admin.lastName}`);
       console.log('   🎭 Role:', admin.role);
+      console.log('   🔔 Notifications: 3 (welcome + 2 subscription activations)');
     }
   } catch (error) {
     // Don't crash the server if admin creation fails

@@ -18,7 +18,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { notificationsApi } from './api';
-import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
+import { useSSEStore, selectNeedsPolling, selectIsBursting } from '@/store/SSEStore';
 import { useAuthStore } from '@/utils/auth/store';
 import type {
   Notification,
@@ -46,10 +46,19 @@ export const notificationQueryKeys = {
 
 const POLL_INTERVAL_MS = 60_000; // 60 s when SSE is down
 const UNREAD_POLL_INTERVAL_MS = 30_000; // 30 s — lightweight single-int
+const BURST_POLL_INTERVAL_MS = 10_000; // 10 s — aggressive polling after fresh login
 
+/**
+ * Adaptive polling interval:
+ * - SSE connected → false (no polling)
+ * - SSE disconnected + burst active → 10 s (catch welcome/referral notifications fast)
+ * - SSE disconnected + normal → intervalMs (60 s / 30 s)
+ */
 function useAdaptiveInterval(intervalMs: number): number | false {
   const needsPolling = useSSEStore(selectNeedsPolling);
-  return needsPolling ? intervalMs : false;
+  const isBursting = useSSEStore(selectIsBursting);
+  if (!needsPolling) return false;
+  return isBursting ? BURST_POLL_INTERVAL_MS : intervalMs;
 }
 
 // ---------------------------------------------------------------------------

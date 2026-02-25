@@ -197,10 +197,16 @@ export default function SignupScreen(): React.ReactElement {
     if (response.success) {
       // Haptic celebration + toast on successful signup
       triggerHaptic("success");
+
+      // Show referral-specific or standard success toast
+      const toastMessage = response.referralApplied
+        ? `Account created! You earned ${response.referralBonus ?? 60} bonus points from the referral. Sign in to continue.`
+        : "Account created successfully! Please sign in to continue.";
+
       showToast({
-        message: "Account created successfully! Please sign in to continue.",
+        message: toastMessage,
         type: "success",
-        duration: 3000,
+        duration: response.referralApplied ? 4500 : 3000,
       });
 
       // Redirect to login so user explicitly authenticates
