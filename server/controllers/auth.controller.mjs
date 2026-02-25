@@ -9,6 +9,7 @@ import crypto from 'crypto';
 
 import { issueTokenPair, hashToken } from '../utils/tokenUtils.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { getRewardConfig as fetchRewardConfig } from '../lib/rewardConfig.mjs';
 
 // Legacy constant — kept only for reference; new tokens use tokenUtils.mjs
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
@@ -87,7 +88,7 @@ const record2FAFailure = async (userId) => {
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
-  const {email: rawEmail, password,firstName,lastName,phone } = req.body;
+  const {email: rawEmail, password,firstName,lastName,phone, referralCode: incomingReferralCode } = req.body;
   const email = rawEmail?.toLowerCase().trim();
 
   if (!email) {
@@ -112,6 +113,30 @@ export const signup = asyncHandler(async (req, res, next) => {
   // Hash the password
   const hashedPassword = await bcrypt.hash(password, 10);
 
+  // Look up referrer if a referral code was provided (silently ignore invalid codes)
+  let referrer = null;
+  if (incomingReferralCode && typeof incomingReferralCode === 'string') {
+    referrer = await prisma.appUser.findFirst({
+      where: { referralCode: incomingReferralCode.trim().toUpperCase() },
+      select: { id: true, email: true },
+    });
+  }
+
+  // Generate unique 8-char referral code with collision retry
+  let newReferralCode;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = crypto.randomBytes(4).toString('hex').toUpperCase();
+    const exists = await prisma.appUser.findFirst({
+      where: { referralCode: candidate },
+      select: { id: true },
+    });
+    if (!exists) { newReferralCode = candidate; break; }
+  }
+  // Fallback to 12-char code if all 5 collide (astronomically unlikely)
+  if (!newReferralCode) {
+    newReferralCode = crypto.randomBytes(6).toString('hex').toUpperCase();
+  }
+
   // Create new user
   const newUser = await prisma.appUser.create({
     data: {
@@ -120,6 +145,8 @@ export const signup = asyncHandler(async (req, res, next) => {
       firstName,
       lastName,
       phone,
+      referralCode: newReferralCode,
+      referredBy: referrer?.id || null,
     },
   });
 
@@ -139,6 +166,54 @@ export const signup = asyncHandler(async (req, res, next) => {
 
   // Fire-and-forget: create welcome notification for the new user
   createNotificationFromTemplateHelper(newUser.id, 'WELCOME').catch(() => {});
+
+  // Fire-and-forget: award referral bonus to both parties
+  if (referrer) {
+    (async () => {
+      try {
+        const rewardConfig = await fetchRewardConfig();
+        const bonusPoints = rewardConfig.referralBonusPoints;
+
+        await prisma.$transaction([
+          // Award bonus to referrer
+          prisma.appUser.update({
+            where: { id: referrer.id },
+            data: { points: { increment: bonusPoints } },
+          }),
+          // Award bonus to new user
+          prisma.appUser.update({
+            where: { id: newUser.id },
+            data: { points: { increment: bonusPoints } },
+          }),
+          // Create reward records for audit trail
+          prisma.reward.create({
+            data: {
+              userEmail: referrer.email,
+              points: bonusPoints,
+              description: 'referral_bonus',
+            },
+          }),
+          prisma.reward.create({
+            data: {
+              userEmail: newUser.email,
+              points: bonusPoints,
+              description: 'referral_bonus',
+            },
+          }),
+        ]);
+
+        // Notify both parties about the bonus
+        createNotificationFromTemplateHelper(referrer.id, 'REFERRAL_BONUS', {
+          bonus: bonusPoints,
+        }).catch(() => {});
+        createNotificationFromTemplateHelper(newUser.id, 'REFERRAL_BONUS', {
+          bonus: bonusPoints,
+        }).catch(() => {});
+      } catch (err) {
+        console.error('Referral bonus error:', err.message);
+      }
+    })();
+  }
 });
 
 
@@ -244,6 +319,10 @@ export const changePassword = asyncHandler(async (req, res, next) => {
 
     // Issue a fresh token pair so the current device stays logged in
     const { accessToken, refreshToken } = await issueTokenPair(userId, req);
+
+    createNotificationFromTemplateHelper(userId, 'SECURITY_ALERT', {
+      securityAction: 'Your password was changed successfully. If this wasn\'t you, contact support immediately.',
+    }).catch(() => {});
 
     res.status(200).json({
       success: true,
@@ -648,6 +727,10 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         // Issue a fresh token pair so the current device stays logged in
         const { accessToken, refreshToken } = await issueTokenPair(userId, req);
 
+        createNotificationFromTemplateHelper(userId, 'SECURITY_ALERT', {
+          securityAction: 'Two-factor authentication has been disabled on your account.',
+        }).catch(() => {});
+
         return res.status(200).json({
           success: true,
           data: { enabled: false, token: accessToken, refreshToken },
@@ -854,6 +937,10 @@ export const verify2FACode = asyncHandler(async (req, res, next) => {
 
     // Issue a fresh token pair so the current device stays logged in
     const { accessToken, refreshToken } = await issueTokenPair(userId, req);
+
+    createNotificationFromTemplateHelper(userId, 'SECURITY_ALERT', {
+      securityAction: 'Two-factor authentication has been enabled on your account.',
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,
@@ -1361,6 +1448,10 @@ export const resetPassword = asyncHandler(async (req, res, next) => {
     });
 
     console.log('✅ Password reset successful and all sessions revoked for user:', user.id);
+
+    createNotificationFromTemplateHelper(user.id, 'SECURITY_ALERT', {
+      securityAction: 'Your password was reset and all sessions were logged out. If this wasn\'t you, contact support immediately.',
+    }).catch(() => {});
 
     return res.status(200).json({
       success: true,

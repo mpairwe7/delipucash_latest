@@ -31,7 +31,6 @@ import {
   findNodeHandle,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from 'react-native';
 import Animated, {
   useReducedMotion,
@@ -56,7 +55,6 @@ import {
   TYPOGRAPHY,
   RADIUS,
   BORDER_WIDTH,
-  SHADOWS,
   withAlpha,
 } from '@/utils/theme';
 import { PrimaryButton } from '@/components/PrimaryButton';
@@ -65,7 +63,7 @@ import { SubscriptionPackageCard } from './SubscriptionPackageCard';
 import { MoMoPlanCard } from './MoMoPlanCard';
 import { MoMoProcessingStatus } from './MoMoProcessingStatus';
 import { PaymentTabSwitcher, type PaymentTab } from './PaymentTabSwitcher';
-import { PaymentMethodCard, type PaymentMethodType } from './PaymentMethodCard';
+import { PaymentMethodCard } from './PaymentMethodCard';
 
 import {
   useOfferings,
@@ -124,17 +122,6 @@ const UG_MTN_REGEX = /^256(77|78|76|39)\d{7}$/;
 const UG_AIRTEL_REGEX = /^256(70|75)\d{7}$/;
 const UG_LOCAL_9_DIGIT = /^7\d{8}$/;
 
-const PACKAGE_TO_PLAN: Record<string, string> = {
-  DAILY: 'DAILY',
-  WEEKLY: 'WEEKLY',
-  MONTHLY: 'MONTHLY',
-  TWO_MONTH: 'MONTHLY',
-  THREE_MONTH: 'QUARTERLY',
-  SIX_MONTH: 'HALF_YEARLY',
-  ANNUAL: 'YEARLY',
-  LIFETIME: 'LIFETIME',
-};
-
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -146,7 +133,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   accentColor,
   onPurchaseComplete,
 }, ref) => {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
   const accent = accentColor ?? colors.primary;
 

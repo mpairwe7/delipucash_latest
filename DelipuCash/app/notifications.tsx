@@ -12,7 +12,7 @@
  * - Memoized components, ID-based callbacks, animation cap
  */
 
-import React, { memo, useCallback, useRef, useMemo, useState } from "react";
+import React, { memo, useCallback, useEffect, useRef, useMemo, useState } from "react";
 import {
   View,
   Text,
@@ -967,6 +967,14 @@ export default function NotificationsScreen(): React.ReactElement {
     }, [markNotificationsSeen]),
   );
 
+  // Close detail sheet when filter changes (notification may not exist in new results)
+  useEffect(() => {
+    if (selectedNotifId) {
+      closeDetail();
+      bottomSheetRef.current?.close();
+    }
+  }, [selectedFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Find selected notification for detail sheet
   const selectedNotification: Notification | undefined = useMemo(() => {
     if (!selectedNotifId || !queryData?.pages) return undefined;
@@ -992,6 +1000,7 @@ export default function NotificationsScreen(): React.ReactElement {
         total: activeTotal,
         unread: pageSummary.unreadCount,
         categories: pageSummary.categoryCounts,
+        priorities: {},
       };
     }
     return undefined;

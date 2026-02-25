@@ -276,6 +276,7 @@ export default function SignupScreen(): React.ReactElement {
                   touched={touched.firstName}
                   autoCapitalize="words"
                   autoComplete="given-name"
+                  textContentType="givenName"
                   autoFocus
                   returnKeyType="next"
                   blurOnSubmit={false}
@@ -295,6 +296,7 @@ export default function SignupScreen(): React.ReactElement {
                   touched={touched.lastName}
                   autoCapitalize="words"
                   autoComplete="family-name"
+                  textContentType="familyName"
                   returnKeyType="next"
                   blurOnSubmit={false}
                   onSubmitEditing={() => emailRef.current?.focus()}
@@ -323,6 +325,7 @@ export default function SignupScreen(): React.ReactElement {
               touched={touched.email}
               keyboardType="email-address"
               autoComplete="email"
+              textContentType="emailAddress"
               autoCapitalize="none"
               returnKeyType="next"
               blurOnSubmit={false}
@@ -341,6 +344,7 @@ export default function SignupScreen(): React.ReactElement {
               touched={touched.password}
               secureTextEntry
               autoComplete="new-password"
+              textContentType="newPassword"
               returnKeyType="next"
               blurOnSubmit={false}
               onSubmitEditing={() => confirmPasswordRef.current?.focus()}
@@ -360,6 +364,7 @@ export default function SignupScreen(): React.ReactElement {
               touched={touched.confirmPassword}
               secureTextEntry
               autoComplete="new-password"
+              textContentType="newPassword"
               returnKeyType="done"
               onSubmitEditing={handleSignup}
               leftIcon={<Lock size={20} color={colors.textMuted} />}

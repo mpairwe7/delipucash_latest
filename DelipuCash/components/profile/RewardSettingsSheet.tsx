@@ -40,6 +40,7 @@ import {
   Wallet,
   Sparkles,
   Zap,
+  Users,
 } from 'lucide-react-native';
 import * as Haptics from '@/utils/haptics';
 
@@ -86,6 +87,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
   const [minWithdrawal, setMinWithdrawal] = useState('');
   const [defaultRegularReward, setDefaultRegularReward] = useState('');
   const [defaultInstantReward, setDefaultInstantReward] = useState('');
+  const [referralBonus, setReferralBonus] = useState('');
   const [error, setError] = useState<string | null>(null);
 
   // Sync form from server config when sheet opens
@@ -97,6 +99,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setMinWithdrawal(String(config.minWithdrawalPoints));
       setDefaultRegularReward(String(config.defaultRegularRewardAmount));
       setDefaultInstantReward(String(config.defaultInstantRewardAmount));
+      setReferralBonus(String(config.referralBonusPoints));
       setError(null);
     }
   }, [visible, config]);
@@ -129,6 +132,16 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     return `${ugx.toLocaleString()} UGX = ${pts} points per instant question`;
   }, [defaultInstantReward, cashNumerator, cashDenominator]);
 
+  // Referral bonus preview
+  const referralBonusPreview = useMemo(() => {
+    const pts = Number(referralBonus);
+    const num = Number(cashNumerator);
+    const den = Number(cashDenominator);
+    if (!pts || pts <= 0 || !num || !den || den <= 0) return null;
+    const ugx = Math.floor((pts * num) / den);
+    return `${pts} points = ${ugx.toLocaleString()} UGX per referral (each party)`;
+  }, [referralBonus, cashNumerator, cashDenominator]);
+
   // Withdrawal preview
   const withdrawalPreview = useMemo(() => {
     const min = Number(minWithdrawal);
@@ -146,6 +159,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     const mw = Number(minWithdrawal);
     const drr = Number(defaultRegularReward);
     const dir = Number(defaultInstantReward);
+    const rb = Number(referralBonus);
 
     if (!Number.isInteger(pps) || pps < 1) {
       setError('Points per survey must be a positive whole number.');
@@ -171,9 +185,13 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setError('Default instant reward must be between 1 and 1,000,000 UGX.');
       return false;
     }
+    if (!Number.isInteger(rb) || rb < 1 || rb > 10000) {
+      setError('Referral bonus must be between 1 and 10,000 points.');
+      return false;
+    }
     setError(null);
     return true;
-  }, [pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward]);
+  }, [pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward, referralBonus]);
 
   const handleSave = useCallback(async () => {
     if (!validate()) return;
@@ -188,6 +206,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
         minWithdrawalPoints: Number(minWithdrawal),
         defaultRegularRewardAmount: Number(defaultRegularReward),
         defaultInstantRewardAmount: Number(defaultInstantReward),
+        referralBonusPoints: Number(referralBonus),
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -197,7 +216,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
       setError(err.message || 'Failed to save settings.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [validate, pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward, updateConfig, onClose]);
+  }, [validate, pointsPerSurvey, cashNumerator, cashDenominator, minWithdrawal, defaultRegularReward, defaultInstantReward, referralBonus, updateConfig, onClose]);
 
   const handleClose = useCallback(() => {
     if (!updateConfig.isPending) {
@@ -381,6 +400,31 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
                   {withdrawalPreview}
                 </Text>
               </View>
+            )}
+
+            {/* Referral Bonus */}
+            <View style={styles.sectionDivider}>
+              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+              <Text style={[styles.sectionDividerText, { color: colors.textMuted }]}>
+                Referral Program
+              </Text>
+              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
+            </View>
+
+            <SettingField
+              icon={<Users size={18} color="#9C27B0" />}
+              label="Referral bonus (points)"
+              hint="Points awarded to both referrer and new user on signup"
+              value={referralBonus}
+              onChangeText={setReferralBonus}
+              colors={colors}
+            />
+            {referralBonusPreview && (
+              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                <Text style={[styles.previewText, { color: colors.success }]}>
+                  {referralBonusPreview}
+                </Text>
+              </Animated.View>
             )}
 
             {/* Error */}

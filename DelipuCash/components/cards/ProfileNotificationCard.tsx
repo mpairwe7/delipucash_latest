@@ -21,7 +21,7 @@ import * as Haptics from '@/utils/haptics';
 import { ThemedText } from '@/components/themed-text';
 import { NotificationBadge } from '@/components/notifications';
 import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme, withAlpha } from '@/utils/theme';
-import { useUnreadCount } from '@/services/hooks';
+import { useUnreadNotificationCount } from '@/services/notificationHooks';
 
 interface ProfileNotificationCardProps {
   index?: number;
@@ -35,7 +35,7 @@ export const ProfileNotificationCard: React.FC<ProfileNotificationCardProps> = (
   const { colors } = useTheme();
   const router = useRouter();
   const scale = useSharedValue(1);
-  const { data: unreadCount = 0 } = useUnreadCount();
+  const { data: unreadCount = 0 } = useUnreadNotificationCount();
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

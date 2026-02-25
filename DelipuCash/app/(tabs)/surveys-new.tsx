@@ -31,7 +31,8 @@ import {
   SurveyCardSkeleton,
   type CreationMode,
 } from "@/components/survey";
-import { useRunningSurveys, useUnreadCount, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
+import { useRunningSurveys, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useSurveyCreatorAccess } from "@/services/purchasesHooks";
 import { InlinePremiumSection, type InlinePremiumSectionRef } from "@/components/payment";
 import {
@@ -285,7 +286,7 @@ export default function SurveysScreen(): React.ReactElement {
   const { data: runningSurveys = [], isLoading: loadingRunning, refetch: refetchRunning } = useRunningSurveys();
   const { data: upcomingSurveys = [], isLoading: loadingUpcoming, refetch: refetchUpcoming } = useUpcomingSurveys();
   const { data: completedSurveys = [], isLoading: loadingCompleted, refetch: refetchCompleted } = useCompletedSurveys();
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
   
   // Filter for user's created surveys across all statuses
   const mySurveys = useMemo(() => {

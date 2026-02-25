@@ -70,7 +70,6 @@ import {
   Volume2,
   VolumeX,
   RotateCcw,
-  MoreHorizontal,
   BadgeCheck,
   Captions,
   Shield,
@@ -145,6 +144,8 @@ export interface VideoFeedItemProps {
   onAdFeedback?: (video: Video) => void;
   /** 2026: Data saver — skip neighbor preloading when true */
   isDataSaver?: boolean;
+  /** Bottom inset (tab bar height) — offsets interactive content above the tab bar */
+  bottomInset?: number;
   /** Test ID */
   testID?: string;
 }
@@ -257,43 +258,280 @@ const SeekIndicator = memo(({
 
 SeekIndicator.displayName = 'SeekIndicator';
 
-/** Progress bar at bottom of video */
+/** Interactive progress bar with scrub gesture, duration display, and time tooltip.
+ *  2026 Industry Standard — TikTok / YouTube Shorts / Instagram Reels pattern:
+ *  - Thin 3px bar during normal playback, expands to 10px on touch
+ *  - Tap-to-seek: tap anywhere on the bar to instantly jump to that position
+ *  - Pan gesture for frame-accurate scrubbing (4px activation threshold)
+ *  - Fine scrub: pull finger away from bar to reduce sensitivity (0.5x / 0.25x)
+ *  - Rebase on sensitivity change prevents position jumps
+ *  - Scrub thumb (14px circle) with overshoot spring on appearance
+ *  - Time tooltip above thumb during scrub (with speed indicator)
+ *  - Progress glow effect during interaction
+ *  - Elapsed / total duration text always visible
+ *  - Haptic feedback on scrub start, sensitivity changes, and release
+ */
 const VideoProgressBar = memo(({
   progress,
   bufferProgress,
   duration,
+  currentTime,
   isVisible,
+  bottomInset = 0,
+  onSeek,
+  onScrubStart,
+  onScrubEnd,
 }: {
   progress: number;
   bufferProgress: number;
   duration: number;
+  currentTime: number;
   isVisible: boolean;
+  bottomInset?: number;
+  onSeek?: (time: number) => void;
+  onScrubStart?: () => void;
+  onScrubEnd?: () => void;
 }) => {
   const { colors } = useTheme();
-  const widthAnim = useSharedValue(0);
-  const bufferWidthAnim = useSharedValue(0);
+
+  // Shared values for smooth UI-thread animations
+  const scrubProgress = useSharedValue(0);
+  const bufferAnim = useSharedValue(0);
+  const isScrubbing = useSharedValue(false);
+  const barHeight = useSharedValue(3);
+  const thumbScale = useSharedValue(0);
+  const tooltipOpacity = useSharedValue(0);
+
+  // 2026: Fine scrub mode — pull finger away from bar to reduce sensitivity
+  const fineScrubLevel = useSharedValue(0); // 0=normal, 1=half, 2=quarter
+  const glowOpacity = useSharedValue(0);
+  const wasActivated = useSharedValue(false);
+  const beginPct = useSharedValue(0);
+  const beginTranslationX = useSharedValue(0);
+  const initialTouchY = useSharedValue(0);
+
+  // Display time during scrub (updated via runOnJS from UI thread)
+  const [displayTime, setDisplayTime] = useState(0);
+  const [scrubbing, setScrubbing] = useState(false);
+  const [scrubSpeed, setScrubSpeed] = useState<string | null>(null);
+
+  // Sync progress from parent when NOT scrubbing
+  useEffect(() => {
+    if (!isScrubbing.value) {
+      scrubProgress.value = withTiming(progress * 100, { duration: 200 });
+    }
+  }, [progress, isScrubbing, scrubProgress]);
 
   useEffect(() => {
-    widthAnim.value = withTiming(progress * 100, { duration: 100 });
-    bufferWidthAnim.value = withTiming(bufferProgress * 100, { duration: 100 });
-  }, [progress, bufferProgress, widthAnim, bufferWidthAnim]);
+    bufferAnim.value = withTiming(bufferProgress * 100, { duration: 200 });
+  }, [bufferProgress, bufferAnim]);
 
-  const progressStyle = useAnimatedStyle(() => ({
-    width: `${widthAnim.value}%`,
+  // Callbacks bridged to JS thread from gesture worklets
+  const updateDisplayTime = useCallback((pct: number) => {
+    setDisplayTime(Math.max(0, Math.min(duration, (pct / 100) * duration)));
+  }, [duration]);
+
+  const updateScrubSpeed = useCallback((level: number) => {
+    setScrubSpeed(level === 2 ? '0.25x' : level === 1 ? '0.5x' : null);
+  }, []);
+
+  const beginScrub = useCallback(() => {
+    setScrubbing(true);
+    onScrubStart?.();
+  }, [onScrubStart]);
+
+  const completeScrub = useCallback((seekTime: number) => {
+    onSeek?.(seekTime);
+    Haptics.selectionAsync();
+  }, [onSeek]);
+
+  const cleanupScrub = useCallback(() => {
+    setScrubbing(false);
+    setScrubSpeed(null);
+    onScrubEnd?.();
+  }, [onScrubEnd]);
+
+  // Pan gesture — handles both tap-to-seek and drag-to-scrub with fine scrub mode.
+  // 2026 pattern: Tap seeks instantly. Horizontal drag scrubs. Vertical pull reduces
+  // sensitivity (0.5x at 30px, 0.25x at 60px). Rebases on sensitivity change to
+  // prevent position jumps. Vertical scroll passes through via failOffsetY.
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(duration > 0)
+        .minDistance(0)
+        // 2026: Gesture disambiguation — 4px horizontal activates scrub,
+        // 15px vertical passes through to FlatList scroll
+        .activeOffsetX([-4, 4])
+        .failOffsetY([-15, 15])
+        .onBegin((e) => {
+          isScrubbing.value = true;
+          wasActivated.value = false;
+          initialTouchY.value = e.absoluteY;
+          fineScrubLevel.value = 0;
+          beginTranslationX.value = 0;
+
+          const pct = Math.max(0, Math.min(100, (e.x / SCREEN_WIDTH) * 100));
+          beginPct.value = pct;
+          scrubProgress.value = pct;
+
+          // Expand bar + overshoot thumb + glow
+          barHeight.value = withSpring(10, { damping: 15, stiffness: 200 });
+          thumbScale.value = withSpring(1.15, { damping: 10, stiffness: 250 });
+          tooltipOpacity.value = withTiming(1, { duration: 100 });
+          glowOpacity.value = withTiming(0.4, { duration: 150 });
+
+          runOnJS(beginScrub)();
+          runOnJS(updateDisplayTime)(pct);
+          runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+        })
+        .onUpdate((e) => {
+          wasActivated.value = true;
+
+          // 2026: Fine scrub — pulling finger away vertically reduces sensitivity
+          // Inspired by YouTube, Instagram Reels, Spotify
+          const vertPull = Math.abs(e.translationY);
+          let sensitivity = 1;
+          let level = 0;
+          if (vertPull > 60) {
+            sensitivity = 0.25;
+            level = 2;
+          } else if (vertPull > 30) {
+            sensitivity = 0.5;
+            level = 1;
+          }
+
+          // Rebase on sensitivity change to prevent position jumps
+          if (fineScrubLevel.value !== level) {
+            beginPct.value = scrubProgress.value;
+            beginTranslationX.value = e.translationX;
+            fineScrubLevel.value = level;
+            runOnJS(updateScrubSpeed)(level);
+            if (level > 0) {
+              runOnJS(Haptics.selectionAsync)();
+            }
+          }
+
+          // Apply sensitivity-scaled delta from last rebase point
+          const delta = e.translationX - beginTranslationX.value;
+          const scaledDelta = (delta / SCREEN_WIDTH) * 100 * sensitivity;
+          const pct = Math.max(0, Math.min(100, beginPct.value + scaledDelta));
+          scrubProgress.value = pct;
+          runOnJS(updateDisplayTime)(pct);
+        })
+        .onEnd(() => {
+          // Fires when gesture was activated (horizontal drag completed)
+          const seekTime = (scrubProgress.value / 100) * duration;
+          runOnJS(completeScrub)(seekTime);
+        })
+        .onFinalize((e, success) => {
+          // Tap-to-seek: gesture wasn't activated (no horizontal drag) and
+          // finger didn't move vertically (not a scroll attempt)
+          if (!success && !wasActivated.value) {
+            const verticalDelta = Math.abs(e.absoluteY - initialTouchY.value);
+            if (verticalDelta < 10) {
+              const seekTime = (scrubProgress.value / 100) * duration;
+              runOnJS(completeScrub)(seekTime);
+            }
+          }
+
+          // Always collapse regardless of success/failure
+          isScrubbing.value = false;
+          wasActivated.value = false;
+          fineScrubLevel.value = 0;
+          barHeight.value = withTiming(3, { duration: 200 });
+          thumbScale.value = withTiming(0, { duration: 150 });
+          tooltipOpacity.value = withTiming(0, { duration: 150 });
+          glowOpacity.value = withTiming(0, { duration: 200 });
+          runOnJS(cleanupScrub)();
+        }),
+    [duration, beginScrub, completeScrub, cleanupScrub, updateDisplayTime, updateScrubSpeed,
+     isScrubbing, scrubProgress, barHeight, thumbScale, tooltipOpacity, glowOpacity,
+     wasActivated, beginPct, beginTranslationX, initialTouchY, fineScrubLevel]
+  );
+
+  // Animated styles
+  const barTrackStyle = useAnimatedStyle(() => ({
+    height: barHeight.value,
   }));
 
-  const bufferStyle = useAnimatedStyle(() => ({
-    width: `${bufferWidthAnim.value}%`,
+  const progressFillStyle = useAnimatedStyle(() => ({
+    width: `${scrubProgress.value}%`,
+  }));
+
+  const bufferFillStyle = useAnimatedStyle(() => ({
+    width: `${bufferAnim.value}%`,
+  }));
+
+  const thumbAnimStyle = useAnimatedStyle(() => ({
+    left: `${scrubProgress.value}%`,
+    transform: [{ scale: thumbScale.value }],
+  }));
+
+  const tooltipAnimStyle = useAnimatedStyle(() => ({
+    opacity: tooltipOpacity.value,
+    left: `${Math.max(8, Math.min(92, scrubProgress.value))}%`,
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
   }));
 
   if (!isVisible) return null;
 
   return (
-    <View style={styles.progressContainer}>
-      <View style={[styles.progressTrack, { backgroundColor: withAlpha('#FFFFFF', 0.3) }]}>
-        <Animated.View style={[styles.bufferFill, bufferStyle, { backgroundColor: withAlpha('#FFFFFF', 0.5) }]} />
-        <Animated.View style={[styles.progressFill, progressStyle, { backgroundColor: colors.primary }]} />
+    <View style={[styles.progressWrapper, { bottom: bottomInset }]}>
+      {/* Duration + speed text — always visible */}
+      <View style={styles.durationRow}>
+        <Text style={styles.durationText}>
+          {formatDuration(scrubbing ? displayTime : currentTime)}
+          {' / '}
+          {formatDuration(duration)}
+        </Text>
+        {scrubSpeed && (
+          <Text style={[styles.durationText, styles.scrubSpeedBadge]}>
+            {scrubSpeed}
+          </Text>
+        )}
       </View>
+
+      {/* Scrub time tooltip — appears above thumb during interaction */}
+      <Animated.View
+        style={[styles.scrubTooltip, tooltipAnimStyle]}
+        pointerEvents="none"
+      >
+        <View style={styles.scrubTooltipBg}>
+          <Text style={styles.scrubTooltipText}>
+            {formatDuration(displayTime)}
+          </Text>
+          {scrubSpeed && (
+            <Text style={styles.scrubSpeedTooltip}>{scrubSpeed}</Text>
+          )}
+        </View>
+      </Animated.View>
+
+      {/* Interactive progress bar with gesture */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={styles.progressHitArea}>
+          <Animated.View style={[styles.progressBarTrack, barTrackStyle]}>
+            <View style={[styles.progressTrackBg, { backgroundColor: withAlpha('#FFFFFF', 0.3) }]}>
+              <Animated.View style={[styles.bufferFill, bufferFillStyle, { backgroundColor: withAlpha('#FFFFFF', 0.5) }]} />
+              <Animated.View style={[styles.progressFill, progressFillStyle, { backgroundColor: colors.primary }]} />
+              {/* 2026: Glow overlay on progress fill during interaction */}
+              <Animated.View
+                style={[styles.progressFill, progressFillStyle, styles.progressGlow, glowStyle]}
+                pointerEvents="none"
+              />
+            </View>
+          </Animated.View>
+
+          {/* Scrub thumb — 14px circle with overshoot spring */}
+          <Animated.View
+            style={[styles.scrubThumb, thumbAnimStyle, { backgroundColor: colors.primary }]}
+            pointerEvents="none"
+          />
+        </Animated.View>
+      </GestureDetector>
     </View>
   );
 });
@@ -321,6 +559,7 @@ function VideoFeedItemComponent({
   onAdCtaPress,
   onAdFeedback,
   isDataSaver = false,
+  bottomInset = 0,
   testID,
 }: VideoFeedItemProps): React.ReactElement {
   const { colors } = useTheme();
@@ -380,6 +619,9 @@ function VideoFeedItemComponent({
   // Playback error → URL refresh retry (max 1 auto-retry per mount)
   const urlRetryCountRef = useRef(0);
   const MAX_URL_RETRIES = 1;
+
+  // Scrub state — gates progress interval so it doesn't overwrite scrub position
+  const isScrubbingRef = useRef(false);
 
   // Telemetry refs — all tracking state in refs to avoid re-renders at 250ms
   const telemetryRef = useRef({
@@ -637,6 +879,8 @@ function VideoFeedItemComponent({
         const duration = player.duration;
 
         if (currentTime !== undefined && duration) {
+          // Skip state updates while user is scrubbing the progress bar
+          if (isScrubbingRef.current) return;
           setCurrentTime(currentTime);
           const prog = currentTime / duration;
           setProgress(prog, duration);
@@ -700,6 +944,22 @@ function VideoFeedItemComponent({
   // ============================================================================
   // HANDLERS
   // ============================================================================
+
+  // Progress bar scrub handlers — seek player and gate interval updates
+  const handleSeek = useCallback((time: number) => {
+    if (!player || !isMountedRef.current || duration <= 0) return;
+    const clampedTime = Math.max(0, Math.min(time, duration));
+    safePlayerCall(() => { player.currentTime = clampedTime; });
+    setCurrentTime(clampedTime);
+  }, [player, duration, safePlayerCall]);
+
+  const handleScrubStart = useCallback(() => {
+    isScrubbingRef.current = true;
+  }, []);
+
+  const handleScrubEnd = useCallback(() => {
+    isScrubbingRef.current = false;
+  }, []);
 
   // 2026: Ad CTA press handler — opens ad URL or delegates to parent
   const handleAdCtaPress = useCallback(() => {
@@ -1037,9 +1297,12 @@ function VideoFeedItemComponent({
             </View>
           )}
 
-          {/* Side Action Bar - 2026: Standard vertical action column (TikTok/Reels pattern) */}
-          <View style={styles.sideActions}>
-            {/* Creator Avatar + Follow Badge (TikTok pattern) */}
+          {/* Side Action Bar — TikTok-style vertical action column
+              Order: Avatar → Volume → Like → Comment → Bookmark → Share
+              Bottom offset keeps the column above the tab bar while ensuring
+              the avatar never overflows behind the header tabs. */}
+          <View style={[styles.sideActions, { bottom: bottomInset + SPACING.xl }]}>
+            {/* Creator Avatar + Follow Badge (TikTok pattern — always top of column) */}
             {video.userId && (
               <CreatorAvatarButton
                 creatorId={video.userId}
@@ -1053,7 +1316,7 @@ function VideoFeedItemComponent({
               />
             )}
 
-            {/* Mute/Unmute — top of action bar for quick access */}
+            {/* Volume — Right after avatar for quick access */}
             <Pressable
               onPress={handleToggleMute}
               style={styles.actionButton}
@@ -1062,13 +1325,13 @@ function VideoFeedItemComponent({
               accessibilityState={{ selected: isMuted }}
             >
               {isMuted ? (
-                <VolumeX size={26} color="#FFFFFF" strokeWidth={2} />
+                <VolumeX size={24} color="#FFFFFF" strokeWidth={2} />
               ) : (
-                <Volume2 size={26} color="#FFFFFF" strokeWidth={2} />
+                <Volume2 size={24} color="#FFFFFF" strokeWidth={2} />
               )}
             </Pressable>
 
-            {/* Like - 2026: Enhanced animation feedback */}
+            {/* Like — Primary action with spring animation */}
             <Pressable
               onPress={() => {
                 Haptics.notificationAsync(
@@ -1110,21 +1373,7 @@ function VideoFeedItemComponent({
               <Text style={styles.actionCount}>{formatViews(video.commentsCount || 0)}</Text>
             </Pressable>
 
-            {/* Share */}
-            <Pressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                onShare(video);
-              }}
-              style={styles.actionButton}
-              accessibilityRole="button"
-              accessibilityLabel="Share video"
-            >
-              <Share2 size={26} color="#FFFFFF" strokeWidth={2} />
-              <Text style={styles.actionCount}>Share</Text>
-            </Pressable>
-
-            {/* Bookmark — 2026: Spring scale animation matching like button pattern */}
+            {/* Bookmark — Spring scale animation */}
             <Pressable
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
@@ -1149,19 +1398,23 @@ function VideoFeedItemComponent({
               </Animated.View>
             </Pressable>
 
-            {/* More Options */}
+            {/* Share */}
             <Pressable
-              onPress={() => onExpand(video)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onShare(video);
+              }}
               style={styles.actionButton}
               accessibilityRole="button"
-              accessibilityLabel="More options"
+              accessibilityLabel="Share video"
             >
-              <MoreHorizontal size={24} color="#FFFFFF" strokeWidth={2} />
+              <Share2 size={26} color="#FFFFFF" strokeWidth={2} />
+              <Text style={styles.actionCount}>Share</Text>
             </Pressable>
           </View>
 
           {/* Bottom Info Overlay - 2026: Creator economy + content safety */}
-          <View style={styles.bottomInfo}>
+          <View style={[styles.bottomInfo, { bottom: SPACING.xl + bottomInset }]}>
             {/* Creator Info - 2026: Username + verified badge (avatar moved to action column) */}
             <View style={styles.creatorRow}>
               <View style={styles.creatorInfo}>
@@ -1239,12 +1492,17 @@ function VideoFeedItemComponent({
             </View>
           </View>
 
-          {/* Progress Bar */}
+          {/* Interactive Progress Bar + Duration */}
           <VideoProgressBar
             progress={progress}
             bufferProgress={bufferProgress}
             duration={duration}
+            currentTime={currentTime}
             isVisible={isActive}
+            bottomInset={bottomInset}
+            onSeek={handleSeek}
+            onScrubStart={handleScrubStart}
+            onScrubEnd={handleScrubEnd}
           />
 
           {/* Heart Burst Animation */}
@@ -1370,7 +1628,7 @@ const styles = StyleSheet.create({
   sideActions: {
     position: 'absolute',
     right: SPACING.sm,
-    bottom: 160,
+    // bottom is set dynamically via inline style: bottomInset + SPACING.xl
     alignItems: 'center',
     gap: SPACING.md,
     zIndex: 10,
@@ -1394,7 +1652,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: SPACING.md,
     right: 72,
-    bottom: SPACING.xl,
+    // bottom is set dynamically via inline style: SPACING.xl + bottomInset
     zIndex: 10,
   },
   creatorRow: {
@@ -1542,28 +1800,108 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  progressContainer: {
+  // Interactive progress bar + duration display
+  progressWrapper: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
-    height: 3,
+    // bottom is set dynamically via inline style: bottomInset
     zIndex: 20,
   },
-  progressTrack: {
+  durationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.xs,
+  },
+  durationText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: 11,
+    color: withAlpha('#FFFFFF', 0.85),
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  scrubTooltip: {
+    position: 'absolute',
+    bottom: 44,
+    marginLeft: -22,
+    zIndex: 25,
+  },
+  scrubTooltipBg: {
+    backgroundColor: withAlpha('#000000', 0.85),
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xxs,
+    borderRadius: RADIUS.sm,
+  },
+  scrubTooltipText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: '#FFFFFF',
+  },
+  progressHitArea: {
+    height: 36,
+    justifyContent: 'flex-end',
+  },
+  progressBarTrack: {
+    height: 3, // animated to 10 during scrub
+    overflow: 'hidden',
+    borderRadius: 1.5,
+  },
+  progressTrackBg: {
     flex: 1,
+    borderRadius: 1.5,
   },
   bufferFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
+    borderRadius: 1.5,
   },
   progressFill: {
     position: 'absolute',
     left: 0,
     top: 0,
     bottom: 0,
+    borderRadius: 1.5,
+  },
+  scrubThumb: {
+    position: 'absolute',
+    bottom: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    marginLeft: -7,
+    marginBottom: -2,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    ...SHADOWS.sm,
+  },
+  // 2026: Glow overlay on progress fill during scrub interaction
+  progressGlow: {
+    backgroundColor: '#FFFFFF',
+    opacity: 0, // Controlled by glowStyle animated value
+  },
+  // 2026: Speed badge in duration row during fine scrub
+  scrubSpeedBadge: {
+    fontSize: 10,
+    color: withAlpha('#FFFFFF', 0.6),
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    backgroundColor: withAlpha('#FFFFFF', 0.15),
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 1,
+    borderRadius: RADIUS.xs,
+    overflow: 'hidden',
+  },
+  // 2026: Speed indicator in tooltip during fine scrub
+  scrubSpeedTooltip: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: 9,
+    color: withAlpha('#FFFFFF', 0.6),
+    textAlign: 'center',
+    marginTop: 1,
   },
   heartBurst: {
     position: 'absolute',
@@ -1628,6 +1966,7 @@ function arePropsEqual(
     prevProps.itemHeight === nextProps.itemHeight &&
     prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&
     prevProps.isDataSaver === nextProps.isDataSaver &&
+    prevProps.bottomInset === nextProps.bottomInset &&
     prevProps.index === nextProps.index
   );
 }

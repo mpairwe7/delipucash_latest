@@ -69,8 +69,8 @@ const NOTIFICATION_TEMPLATES = {
     category: "subscription"
   },
   SECURITY_ALERT: {
-    title: "Security Alert! 🔒",
-    body: "We detected unusual activity on your account. Please verify your identity.",
+    title: "Security Alert 🔒",
+    body: "{securityAction}",
     icon: "lock-closed",
     priority: "URGENT",
     category: "security"
@@ -521,6 +521,13 @@ export const getNotificationStats = asyncHandler(async (req, res) => {
   try {
     console.log(`getNotificationStats: Getting stats for user ${userId}`);
 
+    // Exclude archived + expired to match what the list endpoint shows
+    const activeWhere = {
+      userId,
+      archived: false,
+      AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] }],
+    };
+
     const [
       totalNotifications,
       unreadCount,
@@ -530,23 +537,23 @@ export const getNotificationStats = asyncHandler(async (req, res) => {
       typeStats,
       priorityStats
     ] = await Promise.all([
-      prisma.notification.count({ where: { userId } }),
-      prisma.notification.count({ where: { userId, read: false } }),
-      prisma.notification.count({ where: { userId, read: true } }),
+      prisma.notification.count({ where: activeWhere }),
+      prisma.notification.count({ where: { ...activeWhere, read: false } }),
+      prisma.notification.count({ where: { ...activeWhere, read: true } }),
       prisma.notification.count({ where: { userId, archived: true } }),
       prisma.notification.groupBy({
         by: ['category'],
-        where: { userId },
+        where: activeWhere,
         _count: { category: true }
       }),
       prisma.notification.groupBy({
         by: ['type'],
-        where: { userId },
+        where: activeWhere,
         _count: { type: true }
       }),
       prisma.notification.groupBy({
         by: ['priority'],
-        where: { userId },
+        where: activeWhere,
         _count: { priority: true }
       })
     ]);

@@ -85,7 +85,7 @@ import {
 import { useReducedMotion } from '@/utils/accessibility';
 import { useStatusBar } from '@/hooks/useStatusBar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useUnreadCount } from '@/services/hooks';
+import { useUnreadNotificationCount } from '@/services/notificationHooks';
 import {
   useInfiniteVideos,
   useTrendingVideos,
@@ -524,7 +524,7 @@ export default function VideosScreen(): React.ReactElement {
   const { mutate: recordCompletion } = useRecordVideoCompletion();
   const { mutate: blockUser } = useBlockUser();
 
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
   const { mutate: likeVideoMutate } = useLikeVideo();
   const { mutate: bookmarkVideoMutate } = useBookmarkVideo();
   const { mutate: shareVideoMutate } = useShareVideo();

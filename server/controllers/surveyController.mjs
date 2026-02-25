@@ -4,6 +4,47 @@ import { publishEvent } from '../lib/eventBus.mjs';
 import { dispatchWebhooks } from '../lib/webhookDispatcher.mjs';
 import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
 import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
+import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
+
+// ---------------------------------------------------------------------------
+// Reactive survey-expiring notification (fire-and-forget, deduplicated)
+// ---------------------------------------------------------------------------
+
+async function checkSurveyExpiringNotifications(userId) {
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+  // Surveys expiring within 24 hours that the user hasn't completed
+  const expiringSurveys = await prisma.survey.findMany({
+    where: {
+      endDate: { gt: now, lte: in24h },
+      startDate: { lte: now },
+      SurveyResponse: { none: { userId } },
+    },
+    select: { id: true, title: true },
+    take: 5, // Cap to avoid burst
+  });
+
+  for (const survey of expiringSurveys) {
+    // Deduplicate: skip if already notified for this survey
+    const existing = await prisma.notification.findFirst({
+      where: {
+        userId,
+        type: 'SURVEY_EXPIRING',
+        metadata: { path: ['surveyId'], equals: survey.id },
+      },
+      select: { id: true },
+    });
+    if (existing) continue;
+
+    await createNotificationFromTemplateHelper(userId, 'SURVEY_EXPIRING', {
+      surveyTitle: survey.title,
+      timeLeft: '24 hours',
+      surveyId: survey.id,
+    }).catch(() => {});
+  }
+}
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -604,6 +645,13 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
         pointsAwarded,
         cashEquivalent,
       }).catch(() => {});
+
+      createNotificationFromTemplateHelper(userId, 'SURVEY_COMPLETED', {
+        surveyTitle: survey.title,
+        points: pointsAwarded,
+      }).catch(() => {});
+
+      checkAndUnlockAchievements(userId).catch(() => {});
     }
 
     // Webhook: Fire response.submitted event
@@ -767,6 +815,10 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
         totalPages: Math.ceil(total / Number(limit)),
       },
     });
+    // Fire-and-forget: check for expiring surveys when authenticated user fetches running surveys
+    if (status === 'running' && req.user?.id) {
+      checkSurveyExpiringNotifications(req.user.id).catch(() => {});
+    }
   } catch (error) {
     console.error('Error retrieving surveys:', error);
     res.status(500).json({ message: 'Error retrieving surveys' });

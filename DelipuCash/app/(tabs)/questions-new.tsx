@@ -101,7 +101,7 @@ import {
 } from "@/components/ads";
 
 // Hooks & Services — consolidated: removed duplicate hooks.ts prefetch calls
-import { useUnreadCount } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useRewardConfig } from "@/services/configHooks";
 import {
   useInfiniteQuestionsFeed,
@@ -523,7 +523,7 @@ export default function QuestionsScreen(): React.ReactElement {
   const { data: leaderboard } = useQuestionsLeaderboard(3, !isFeedLoading);
 
   // Notification count
-  const { data: unreadCount } = useUnreadCount(isAuthenticated ?? undefined);
+  const { data: unreadCount } = useUnreadNotificationCount(isAuthenticated ?? undefined);
 
   // Reward config — drives CTA badge values
   const { data: rewardConfig } = useRewardConfig();

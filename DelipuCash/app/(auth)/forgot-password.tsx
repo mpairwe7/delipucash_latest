@@ -241,6 +241,7 @@ export default function ForgotPasswordScreen(): React.ReactElement {
               touched={touched.email}
               keyboardType="email-address"
               autoComplete="email"
+              textContentType="emailAddress"
               autoCapitalize="none"
               autoFocus
               returnKeyType="done"

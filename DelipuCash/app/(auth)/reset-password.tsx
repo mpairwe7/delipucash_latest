@@ -398,6 +398,8 @@ export default function ResetPasswordScreen(): React.ReactElement {
               error={errors.password}
               touched={touched.password}
               secureTextEntry
+              autoComplete="new-password"
+              textContentType="newPassword"
               autoFocus
               returnKeyType="next"
               blurOnSubmit={false}
@@ -419,6 +421,8 @@ export default function ResetPasswordScreen(): React.ReactElement {
               error={errors.confirmPassword}
               touched={touched.confirmPassword}
               secureTextEntry
+              autoComplete="new-password"
+              textContentType="newPassword"
               returnKeyType="done"
               onSubmitEditing={handleSubmit}
               leftIcon={<Lock size={20} color={colors.textMuted} />}

@@ -26,6 +26,7 @@ export const getRewardConfig = asyncHandler(async (_req, res) => {
     minWithdrawalPoints: config.minWithdrawalPoints,
     defaultRegularRewardAmount: config.defaultRegularRewardAmount,
     defaultInstantRewardAmount: config.defaultInstantRewardAmount,
+    referralBonusPoints: config.referralBonusPoints,
   });
 });
 
@@ -41,6 +42,7 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
     minWithdrawalPoints,
     defaultRegularRewardAmount,
     defaultInstantRewardAmount,
+    referralBonusPoints,
   } = req.body;
 
   // Validate — all fields must be positive integers when provided
@@ -94,6 +96,14 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
     updates.defaultInstantRewardAmount = v;
   }
 
+  if (referralBonusPoints !== undefined) {
+    const v = Number(referralBonusPoints);
+    if (!Number.isInteger(v) || v < 1 || v > 10000) {
+      return res.status(400).json({ error: 'referralBonusPoints must be a positive integer between 1 and 10,000.' });
+    }
+    updates.referralBonusPoints = v;
+  }
+
   if (Object.keys(updates).length === 0) {
     return res.status(400).json({ error: 'No valid fields provided to update.' });
   }
@@ -121,6 +131,7 @@ export const updateRewardConfig = asyncHandler(async (req, res) => {
       minWithdrawalPoints: config.minWithdrawalPoints,
       defaultRegularRewardAmount: config.defaultRegularRewardAmount,
       defaultInstantRewardAmount: config.defaultInstantRewardAmount,
+      referralBonusPoints: config.referralBonusPoints,
     },
   });
 });

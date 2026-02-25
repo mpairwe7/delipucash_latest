@@ -17,9 +17,9 @@ import {
   useRecentQuestions,
   useRunningSurveys,
   useTrendingVideos,
-  useUnreadCount,
   useUpcomingSurveys,
 } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import {
   useBannerAds,
   useFeaturedAds,
@@ -116,7 +116,7 @@ export default function HomePage(): React.ReactElement {
   const { data: upcomingSurveys, refetch: refetchUpcomingSurveys } = useUpcomingSurveys();
   const { data: dailyReward, refetch: refetchDailyReward } = useDailyReward();
   const { data: dashboardStats, refetch: refetchStats } = useDashboardStats();
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
   const claimDailyReward = useClaimDailyReward();
 
   // Combine all searchable content for unified search

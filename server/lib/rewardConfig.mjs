@@ -24,6 +24,7 @@ const DEFAULTS = {
   minWithdrawalPoints: 50,
   defaultRegularRewardAmount: 200,
   defaultInstantRewardAmount: 500,
+  referralBonusPoints: 60,
 };
 
 // ---------------------------------------------------------------------------

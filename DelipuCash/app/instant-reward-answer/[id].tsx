@@ -55,6 +55,8 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -1071,6 +1073,11 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       )}
 
       {/* ── Content (animated for transitions) ── */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 60 : 0}
+      >
       <Animated.View style={[{ flex: 1 }, transitionStyle]}>
         <ScrollView
           style={styles.scroll}
@@ -1339,6 +1346,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
           variant={isClosedOnArrival ? "secondary" : hasAlreadyAttempted && !previousAttempt?.isCorrect ? "secondary" : "primary"}
         />
       </View>
+      </KeyboardAvoidingView>
 
       {/* Answer Result Overlay */}
       <AnswerResultOverlay

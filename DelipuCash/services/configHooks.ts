@@ -21,6 +21,7 @@ export interface RewardConfig {
   minWithdrawalPoints: number;
   defaultRegularRewardAmount: number;
   defaultInstantRewardAmount: number;
+  referralBonusPoints: number;
 }
 
 // ============================================================================
@@ -72,6 +73,7 @@ const DEFAULT_CONFIG: RewardConfig = {
   minWithdrawalPoints: 50,
   defaultRegularRewardAmount: 200,
   defaultInstantRewardAmount: 500,
+  referralBonusPoints: 60,
 };
 
 // ============================================================================

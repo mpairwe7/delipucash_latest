@@ -21,10 +21,8 @@
 import * as ExpoHaptics from 'expo-haptics';
 import { useAppSettingsStore } from '@/store/AppSettingsStore';
 
-// Re-export enums as both value and type so `Haptics.ImpactFeedbackStyle`
-// works in both value and type positions (e.g., `hapticStyle?: Haptics.ImpactFeedbackStyle`)
-export import ImpactFeedbackStyle = ExpoHaptics.ImpactFeedbackStyle;
-export import NotificationFeedbackType = ExpoHaptics.NotificationFeedbackType;
+// Re-export enums so `Haptics.ImpactFeedbackStyle` works as a drop-in replacement
+export { ImpactFeedbackStyle, NotificationFeedbackType } from 'expo-haptics';
 
 /** Gated `impactAsync` — respects hapticFeedbackEnabled setting. */
 export async function impactAsync(

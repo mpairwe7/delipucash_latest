@@ -70,6 +70,7 @@ import {
   ChevronRight,
   Settings,
   Settings2,
+  Users,
 } from 'lucide-react-native';
 
 // Components
@@ -98,13 +99,13 @@ import {
   useResend2FACode,
   useRevokeSession,
   useTransactions,
-  useUnreadCount,
   useUpdateProfile,
   useUpdateTwoFactor,
   useUserSessions,
   useUserStats,
   useVerify2FACode,
 } from '@/services/hooks';
+import { useUnreadNotificationCount } from '@/services/notificationHooks';
 import { uploadAvatarToR2 } from '@/services/r2UploadService';
 import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
 import { useAuth } from '@/utils/auth/useAuth';
@@ -432,7 +433,7 @@ export default function ProfileScreen(): React.ReactElement {
   
   // Data fetching
   const { data: user, loading: userLoading, refetch: refetchUser } = useUser();
-  const { data: unreadCount, refetch: refetchUnread } = useUnreadCount();
+  const { data: unreadCount, refetch: refetchUnread } = useUnreadNotificationCount();
   const { data: userStats, isLoading: statsLoading, refetch: refetchStats } = useUserStats();
   const { data: sessions = [], refetch: refetchSessions } = useUserSessions();
   const { canCreateSurvey, refetch: refetchSubscription } = useSurveyCreatorAccess();
@@ -930,6 +931,7 @@ export default function ProfileScreen(): React.ReactElement {
     const regularPoints = ugxToPoints(rewardConfig.defaultRegularRewardAmount, rewardConfig);
     const instantPoints = ugxToPoints(rewardConfig.defaultInstantRewardAmount, rewardConfig);
     const minUgx = pointsToUgx(rewardConfig.minWithdrawalPoints, rewardConfig);
+    const referralUgx = pointsToUgx(rewardConfig.referralBonusPoints, rewardConfig);
 
     const items: SettingItem[] = [
       {
@@ -961,6 +963,13 @@ export default function ProfileScreen(): React.ReactElement {
         label: 'Min Withdrawal',
         subtitle: `${rewardConfig.minWithdrawalPoints} points (${minUgx.toLocaleString()} UGX)`,
         icon: <Gift size={ICON_SIZE.base} color={colors.info} />,
+      },
+      {
+        type: 'info',
+        id: 'referral-bonus',
+        label: 'Referral Bonus',
+        subtitle: `${rewardConfig.referralBonusPoints} points each (${referralUgx.toLocaleString()} UGX)`,
+        icon: <Users size={ICON_SIZE.base} color="#9C27B0" />,
       },
     ];
 

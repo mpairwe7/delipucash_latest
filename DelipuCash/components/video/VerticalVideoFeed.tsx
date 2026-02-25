@@ -75,6 +75,9 @@ const VIEWABILITY_CONFIG = {
   waitForInteraction: false,
 };
 
+/** Base height of the bottom tab bar (excludes safe-area inset) */
+const TAB_BAR_BASE_HEIGHT = 60;
+
 /** FlatList optimization settings - tuned for TikTok-style vertical video feeds */
 const LIST_OPTIMIZATION = {
   windowSize: 5, // Render 5 screens worth of content for smoother scrolling
@@ -207,6 +210,9 @@ function VerticalVideoFeedComponent({
   const itemHeight = useMemo(() => {
     return SCREEN_HEIGHT - effectiveTopOffset;
   }, [effectiveTopOffset]);
+
+  // Bottom tab bar height — used to offset interactive content above the tab bar
+  const bottomInset = TAB_BAR_BASE_HEIGHT + (insets.bottom || 8);
 
   // ============================================================================
   // EFFECTS
@@ -431,6 +437,7 @@ function VerticalVideoFeedComponent({
         onAdFeedback={onAdFeedback}
         screenReaderEnabled={screenReaderEnabled}
         isDataSaver={isDataSaver}
+        bottomInset={bottomInset}
         testID={`video-feed-item-${index}`}
       />
     ),
@@ -450,6 +457,7 @@ function VerticalVideoFeedComponent({
       onAdFeedback,
       screenReaderEnabled,
       isDataSaver,
+      bottomInset,
     ]
   );
 
@@ -522,10 +530,15 @@ function VerticalVideoFeedComponent({
         keyExtractor={keyExtractor}
         getItemLayout={getItemLayout}
         // Snapping configuration — 2026: Adaptive scroll physics
-        pagingEnabled
+        // Note: pagingEnabled is NOT used because it overrides snapToInterval
+        // and snaps to the full viewport height, which misaligns with item offsets
+        // when contentContainerStyle has paddingTop.
         snapToInterval={itemHeight}
         snapToAlignment="start"
         decelerationRate={reducedMotionEnabled ? 'normal' : 'fast'}
+        // 2026: One-at-a-time snapping — prevents fast swipes from skipping
+        // multiple videos (TikTok/Reels/YouTube Shorts standard)
+        disableIntervalMomentum={true}
         // Viewability configuration
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs.current}
         // Performance optimization
@@ -538,6 +551,10 @@ function VerticalVideoFeedComponent({
         showsVerticalScrollIndicator={false}
         bounces={true}
         overScrollMode="never"
+        // 2026: Prevent iOS status bar tap from scrolling feed to top
+        scrollsToTop={false}
+        // 2026: Edge-to-edge — prevent iOS auto content inset adjustment
+        contentInsetAdjustmentBehavior="never"
         // Initial scroll
         initialScrollIndex={initialIndex}
         // Pull to refresh

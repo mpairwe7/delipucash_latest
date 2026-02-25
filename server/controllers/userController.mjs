@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { errorHandler } from '../utils/error.mjs';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
+import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
 
 // ===========================================
 // User Profile Endpoints
@@ -232,6 +233,9 @@ export const getUserStats = asyncHandler(async (req, res) => {
       success: true,
       data: stats
     });
+
+    // Fire-and-forget: check achievements (pass pre-computed streak to avoid re-query)
+    checkAndUnlockAchievements(userId, { currentStreak }).catch(() => {});
   } catch (error) {
     console.error("❌ Error fetching user stats:", error);
     res.status(500).json({ success: false, error: "Failed to fetch user statistics" });

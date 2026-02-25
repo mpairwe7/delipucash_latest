@@ -60,9 +60,6 @@ export function useSSEConnection(): void {
         'notification.new',
         () => {
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
-          // Legacy keys — bell badges in other screens still use hooks.ts
-          queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-          queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [
@@ -70,15 +67,12 @@ export function useSSEConnection(): void {
         () => {
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.unreadCount() });
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.stats() });
-          queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [
         'notification.readAll',
         () => {
           queryClient.invalidateQueries({ queryKey: notificationQueryKeys.all });
-          queryClient.invalidateQueries({ queryKey: queryKeys.notifications });
-          queryClient.invalidateQueries({ queryKey: queryKeys.unreadCount });
         },
       ],
       [
@@ -125,6 +119,10 @@ export function useSSEConnection(): void {
           queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
           queryClient.invalidateQueries({ queryKey: transactionQueryKeys.summary() });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+          // Reward questions — spots/status may have changed after earning reward
+          queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
+          queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
+          queryClient.invalidateQueries({ queryKey: queryKeys.user });
         },
       ],
       [
@@ -148,6 +146,8 @@ export function useSSEConnection(): void {
         () => {
           queryClient.invalidateQueries({ queryKey: queryKeys.surveys });
           queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+          queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
+          queryClient.invalidateQueries({ queryKey: queryKeys.user });
         },
       ],
       [

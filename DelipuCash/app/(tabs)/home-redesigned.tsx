@@ -107,9 +107,9 @@ import {
   useDailyReward,
   useDashboardStats,
   useClaimDailyReward,
-  useUnreadCount,
   queryKeys,
 } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import {
   useScreenAds,
   useRecordAdClick,
@@ -309,7 +309,7 @@ export default function HomePage(): React.ReactElement {
   } = useUpcomingSurveys();
   const { data: dailyReward, refetch: refetchDailyReward } = useDailyReward();
   const { data: dashboardStats, refetch: refetchStats, isError: statsError } = useDashboardStats();
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
   const claimDailyReward = useClaimDailyReward();
 
   // Ad hooks - gated by premium status (premium users see no ads)

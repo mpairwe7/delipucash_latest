@@ -44,7 +44,7 @@ import Animated, {
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import { useStatusBar } from "@/hooks/useStatusBar";
 import { ThemeColors } from "@/utils/theme";
-import { useUnreadCount } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { NotificationBell } from "@/components";
 import { formatCurrency, formatDate } from "@/services/api";
 import {
@@ -626,7 +626,7 @@ TransactionDetailContent.displayName = "TransactionDetailContent";
 export default function TransactionsScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { colors, style: statusBarStyle } = useStatusBar();
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
 
   // Zustand persisted filter (stable exported selectors — no inline closures)
   const selectedFilter = useTransactionUIStore(selectSelectedFilter);

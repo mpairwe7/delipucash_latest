@@ -7,6 +7,8 @@ import {
   TextInput,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,7 +36,8 @@ import {
   paymentMethods,
   formatCurrency,
 } from "@/services/api";
-import { useWithdraw, useUnreadCount } from "@/services/hooks";
+import { useWithdraw } from "@/services/hooks";
+import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import useUser from "@/utils/useUser";
 import { useFormValidation, validators } from "@/utils/validation";
@@ -107,7 +110,7 @@ export default function WithdrawScreen(): React.ReactElement {
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   
   const { data: user } = useUser();
-  const { data: unreadCount } = useUnreadCount();
+  const { data: unreadCount } = useUnreadNotificationCount();
   const withdrawMutation = useWithdraw();
   
   const { data: rewardConfig } = useRewardConfig();
@@ -116,17 +119,18 @@ export default function WithdrawScreen(): React.ReactElement {
   const pointsCashValue = rewardConfig ? pointsToUgx(userPoints, rewardConfig) : 0;
   const phoneNumber = user?.phone || user?.telephone || "";
 
+  // Validation schema updates reactively when selectedMethod changes (step 2+)
+  const minAmount = selectedMethod?.minWithdrawal ?? 0;
+  const maxAmount = selectedMethod
+    ? Math.min(selectedMethod.maxWithdrawal, walletBalance)
+    : walletBalance;
+
   const validationSchema = {
     amount: [
       validators.required,
       validators.numeric,
-      validators.min(selectedMethod?.minWithdrawal || 5),
-      validators.max(
-        Math.min(
-          selectedMethod?.maxWithdrawal || 1000,
-          walletBalance
-        )
-      ),
+      validators.min(minAmount || 1),
+      validators.max(maxAmount || 1),
     ],
     phoneNumber: [validators.required, validators.phoneNumber],
   };
@@ -307,6 +311,8 @@ export default function WithdrawScreen(): React.ReactElement {
               placeholder="+256 XXX XXX XXX"
               placeholderTextColor={colors.textMuted}
               keyboardType="phone-pad"
+              autoComplete="tel"
+              textContentType="telephoneNumber"
               value={form.values.phoneNumber}
               onChangeText={(value) => form.handleChange("phoneNumber", value)}
               onBlur={() => form.handleBlur("phoneNumber")}
@@ -488,51 +494,58 @@ export default function WithdrawScreen(): React.ReactElement {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={statusBarStyle} animated />
 
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + 20,
-            paddingBottom: insets.bottom + 20,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 50 : 0}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <Text style={[styles.headerTitle, { color: colors.text }]}>
-              Withdraw
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[
+            styles.scrollContent,
+            {
+              paddingTop: insets.top + 20,
+              paddingBottom: insets.bottom + 20,
+            },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <View style={styles.header}>
+            <View style={styles.headerRow}>
+              <Text style={[styles.headerTitle, { color: colors.text }]}>
+                Withdraw
+              </Text>
+              <NotificationBell
+                count={unreadCount ?? 0}
+                onPress={() => router.push("/notifications" as Href)}
+              />
+            </View>
+            <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+              Available balance: {formatCurrency(walletBalance)}
             </Text>
-            <NotificationBell
-              count={unreadCount ?? 0}
-              onPress={() => router.push("/notifications" as Href)}
-            />
+            {userPoints > 0 && (
+              <Text
+                style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}
+                accessibilityLabel={`Points balance: ${userPoints} points${pointsCashValue > 0 ? `, approximately ${formatCurrency(pointsCashValue)}` : ''}`}
+                accessibilityLiveRegion="polite"
+              >
+                Points: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
+              </Text>
+            )}
           </View>
-          <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-            Available balance: {formatCurrency(walletBalance)}
-          </Text>
-          {userPoints > 0 && (
-            <Text
-              style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}
-              accessibilityLabel={`Points balance: ${userPoints} points${pointsCashValue > 0 ? `, approximately ${formatCurrency(pointsCashValue)}` : ''}`}
-              accessibilityLiveRegion="polite"
-            >
-              Points: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
-            </Text>
-          )}
-        </View>
 
-        {/* Step Indicator */}
-        {renderStepIndicator()}
+          {/* Step Indicator */}
+          {renderStepIndicator()}
 
-        {/* Step Content */}
-        {step === 1 && renderStep1()}
-        {step === 2 && renderStep2()}
-        {step === 3 && renderStep3()}
-        {step === 4 && renderStep4()}
-      </ScrollView>
+          {/* Step Content */}
+          {step === 1 && renderStep1()}
+          {step === 2 && renderStep2()}
+          {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }

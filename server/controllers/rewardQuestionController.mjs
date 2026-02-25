@@ -6,6 +6,7 @@ import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { getRewardConfig, ugxToPoints } from '../lib/rewardConfig.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
 import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
 
 const log = createPaymentLogger('instant-reward');
@@ -1033,6 +1034,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
           // Persistent notification for reward earned
           createNotificationFromTemplateHelper(authenticatedUser.id, 'REWARD_EARNED', { points: rewardPoints }).catch(() => {});
+          checkAndUnlockAchievements(authenticatedUser.id).catch(() => {});
 
           response = {
             ...response,
@@ -1103,6 +1105,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
         // Persistent notification for reward earned
         createNotificationFromTemplateHelper(authenticatedUser.id, 'REWARD_EARNED', { points: rewardPoints }).catch(() => {});
+        checkAndUnlockAchievements(authenticatedUser.id).catch(() => {});
 
         response.pointsAwarded = rewardPoints;
         response.rewardEarned = rewardAmountUGX;
@@ -1124,6 +1127,25 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
     res.json(response);
 
   } catch (error) {
+    // Concurrent winner conflict — answer was correct but another user claimed the spot first
+    if (error.message === 'CONCURRENT_WINNER_CONFLICT') {
+      log.warn('Concurrent winner race lost', { rewardQuestionId, userEmail: authenticatedUser.email });
+      return res.status(409).json({
+        message: 'Correct answer! However, another user claimed the last winner spot just before you. You still earned points for answering correctly.',
+        isCorrect: true,
+        pointsAwarded: 0,
+        rewardEarned: 0,
+        isWinner: false,
+        position: null,
+        remainingSpots: 0,
+      });
+    }
+
+    // Duplicate attempt — already answered this question
+    if (error.code === 'P2002') {
+      return res.status(409).json({ message: 'You have already answered this question.' });
+    }
+
     log.error('Error submitting reward question answer', { error: error.message, stack: error.stack });
     res.status(500).json({ message: "Something went wrong" });
   }

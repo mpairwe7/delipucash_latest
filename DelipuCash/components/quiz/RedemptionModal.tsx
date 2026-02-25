@@ -14,7 +14,7 @@
  * - Keyboard-aware layout with smooth transitions
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -340,6 +340,9 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
 
   // Track whether the phone was pre-filled from profile (for UI hint)
   const [isPhonePrefilled, setIsPhonePrefilled] = useState(false);
+
+  // Scroll ref — used to scroll phone input into view when keyboard opens
+  const scrollRef = useRef<ScrollView>(null);
 
   // Reset on open — if quick-redeem props provided, skip to SELECT_AMOUNT with pre-fills
   useEffect(() => {
@@ -710,6 +713,13 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
             const detected = detectProviderFromPhone(text);
             if (detected) setSelectedProvider(detected);
           }}
+          onFocus={() => {
+            // Delay scroll until keyboard animation begins so the
+            // KAV has resized and the ScrollView knows its new bounds
+            setTimeout(() => {
+              scrollRef.current?.scrollToEnd({ animated: true });
+            }, 300);
+          }}
           keyboardType="phone-pad"
           maxLength={12}
           autoComplete="tel"
@@ -915,8 +925,9 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         style={styles.overlay}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior="height"
           style={styles.keyboardView}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
         >
           <Animated.View
             entering={SlideInDown.springify().damping(18).stiffness(120)}
@@ -960,10 +971,12 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
 
             {/* Content */}
             <ScrollView
+              ref={scrollRef}
               style={styles.content}
               contentContainerStyle={styles.contentContainer}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
             >
               {renderStepContent()}
             </ScrollView>
@@ -984,6 +997,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: RADIUS['2xl'],
     ...SHADOWS.lg,
     overflow: 'hidden',
+    flexShrink: 1,
   },
   dragIndicator: {
     width: 36,
@@ -1016,8 +1030,9 @@ const styles = StyleSheet.create({
   },
   headerBtnPlaceholder: { width: COMPONENT_SIZE.touchTarget },
 
-  // Content — no flex:1 on ScrollView; sheet is content-sized (maxHeight constrains)
-  content: {},
+  // Content — flex:1 allows ScrollView to fill remaining sheet space and scroll when
+  // keyboard or maxHeight constrains visible area
+  content: { flex: 1 },
   contentContainer: {
     padding: SPACING.lg,
     paddingBottom: SPACING['3xl'],

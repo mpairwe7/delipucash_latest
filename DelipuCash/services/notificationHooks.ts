@@ -19,6 +19,7 @@ import {
 } from '@tanstack/react-query';
 import { notificationsApi } from './api';
 import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
+import { useAuthStore } from '@/utils/auth/store';
 import type {
   Notification,
   NotificationsResponse,
@@ -134,6 +135,7 @@ export function useNotificationStats() {
  * Lightweight unread count (kept for bell badges across app).
  */
 export function useUnreadNotificationCount(enabled: boolean = true) {
+  const isAuthReady = useAuthStore((s) => s.isReady && !!s.auth?.token);
   const refetchInterval = useAdaptiveInterval(UNREAD_POLL_INTERVAL_MS);
 
   return useQuery<number>({
@@ -148,7 +150,7 @@ export function useUnreadNotificationCount(enabled: boolean = true) {
     staleTime: 30_000,
     refetchInterval,
     refetchIntervalInBackground: false,
-    enabled,
+    enabled: enabled && isAuthReady,
     placeholderData: keepPreviousData,
   });
 }

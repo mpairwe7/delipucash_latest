@@ -240,6 +240,8 @@ export const PhoneInput = memo<PhoneInputProps>(({
           placeholder={placeholder}
           placeholderTextColor={colors.textMuted}
           keyboardType="phone-pad"
+          autoComplete="tel"
+          textContentType="telephoneNumber"
           style={[styles.phoneInput, { color: colors.text }]}
           accessibilityLabel={label || 'Phone number'}
         />

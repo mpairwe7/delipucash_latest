@@ -307,6 +307,7 @@ export default function LoginScreen(): React.ReactElement {
               touched={touched.email}
               keyboardType="email-address"
               autoComplete="email"
+              textContentType="emailAddress"
               autoCapitalize="none"
               editable={!isLoading}
               autoFocus
@@ -327,6 +328,7 @@ export default function LoginScreen(): React.ReactElement {
               touched={touched.password}
               secureTextEntry
               autoComplete="password"
+              textContentType="password"
               editable={!isLoading}
               returnKeyType="done"
               onSubmitEditing={handleLogin}

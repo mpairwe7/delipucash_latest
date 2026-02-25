@@ -5,6 +5,8 @@ import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { getRewardConfig as fetchRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
+import { createNotificationFromTemplateHelper } from './notificationController.mjs';
+import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
 
 const log = createPaymentLogger('reward-redeem');
 
@@ -463,6 +465,12 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   });
 
   if (paymentResult.success) {
+    createNotificationFromTemplateHelper(userId, 'REWARD_REDEEMED', {
+      amount: cashValue.toLocaleString(),
+      phoneNumber: maskPhone(phoneNumber),
+    }).catch(() => {});
+    checkAndUnlockAchievements(userId).catch(() => {});
+
     return res.json({
       success: true,
       transactionRef: paymentResult.reference,

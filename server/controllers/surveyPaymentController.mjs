@@ -913,6 +913,56 @@ const getStatusMessage = (status) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Reactive subscription-expiry notification (fire-and-forget, deduplicated)
+// ---------------------------------------------------------------------------
+
+async function checkSubscriptionExpiryNotifications(userId, now) {
+  const FEATURE_TYPES = ['SURVEY', 'VIDEO'];
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  for (const featureType of FEATURE_TYPES) {
+    // Find latest successful payment that has already expired
+    const expiredPayment = await prisma.payment.findFirst({
+      where: { userId, status: 'SUCCESSFUL', featureType, endDate: { lt: now } },
+      orderBy: { endDate: 'desc' },
+    });
+    if (!expiredPayment) continue;
+
+    // Check there's no ACTIVE payment (already handled in unified status)
+    const activePayment = await prisma.payment.findFirst({
+      where: { userId, status: 'SUCCESSFUL', featureType, endDate: { gt: now } },
+      select: { id: true },
+    });
+    if (activePayment) continue;
+
+    // Deduplicate: skip if already notified within 7 days for this feature
+    const recentNotif = await prisma.notification.findFirst({
+      where: {
+        userId,
+        type: 'SUBSCRIPTION_EXPIRED',
+        createdAt: { gte: sevenDaysAgo },
+        metadata: { path: ['featureType'], equals: featureType },
+      },
+      select: { id: true },
+    });
+    if (recentNotif) continue;
+
+    const featureLabel = featureType === 'VIDEO' ? 'Video Premium' : 'Survey Premium';
+    await createNotificationFromTemplateHelper(userId, 'SUBSCRIPTION_EXPIRED', {
+      subscriptionType: featureLabel,
+      featureType,
+    }).catch(() => {});
+
+    // Also ensure the user's status field is INACTIVE
+    const statusField = featureType === 'VIDEO' ? 'videoSubscriptionStatus' : 'surveysubscriptionStatus';
+    await prisma.appUser.update({
+      where: { id: userId },
+      data: { [statusField]: 'INACTIVE' },
+    }).catch(() => {});
+  }
+}
+
 /**
  * Get unified subscription status
  * Checks both MoMo payments (Payment table) and RevenueCat status
@@ -999,6 +1049,9 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
       remainingDays: Math.max(survey.remainingDays, video.remainingDays),
       planType: survey.planType || video.planType,
     });
+
+    // Fire-and-forget: check for expired subscriptions and notify
+    checkSubscriptionExpiryNotifications(userId, now).catch(() => {});
   } catch (error) {
     log.error('Error checking unified subscription status', { userId, message: error.message });
     res.status(500).json({ error: 'Failed to check subscription status', code: 'INTERNAL_ERROR' });
