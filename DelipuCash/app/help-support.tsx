@@ -15,6 +15,7 @@ import {
   Pressable,
   Linking,
   InteractionManager,
+  AccessibilityInfo,
 } from 'react-native';
 import Animated, {
   FadeIn,
@@ -451,6 +452,8 @@ export default function HelpSupportScreen() {
 
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
+    const tabLabel = TABS.find((t) => t.id === tabId)?.label ?? tabId;
+    AccessibilityInfo.announceForAccessibility(`${tabLabel} tab selected`);
   }, []);
 
   const handleCategoryChange = useCallback(
@@ -606,6 +609,8 @@ export default function HelpSupportScreen() {
         {searchQuery.trim().length > 2 && !isSearching && (
           <ThemedText
             style={[styles.resultCount, { color: colors.textSecondary }]}
+            accessibilityLiveRegion="polite"
+            accessibilityRole="summary"
           >
             {displayedFAQs.length} result
             {displayedFAQs.length !== 1 ? 's' : ''} found
@@ -877,6 +882,7 @@ export default function HelpSupportScreen() {
             displayedFAQs.length === 0 && styles.scrollContentGrow,
           ]}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews
           maxToRenderPerBatch={10}
           windowSize={5}
           refreshControl={
