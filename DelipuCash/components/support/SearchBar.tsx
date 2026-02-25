@@ -3,15 +3,15 @@
  * Reusable search input with animations and design system compliance
  */
 
-import React, { useCallback, useState } from 'react';
-import { 
-  StyleSheet, 
-  View, 
-  TextInput, 
+import React, { memo, useCallback, useState, useMemo } from 'react';
+import {
+  StyleSheet,
+  View,
+  TextInput,
   Pressable,
   TextInputProps,
 } from 'react-native';
-import Animated, { 
+import Animated, {
   FadeIn,
   useSharedValue,
   useAnimatedStyle,
@@ -21,7 +21,15 @@ import Animated, {
 import { Search, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
-import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme } from '@/utils/theme';
+import {
+  SPACING,
+  RADIUS,
+  ICON_SIZE,
+  ANIMATION,
+  TYPOGRAPHY,
+  useTheme,
+  type ThemeColors,
+} from '@/utils/theme';
 
 interface SearchBarProps extends Omit<TextInputProps, 'style'> {
   value: string;
@@ -31,57 +39,8 @@ interface SearchBarProps extends Omit<TextInputProps, 'style'> {
   autoFocus?: boolean;
 }
 
-export const SearchBar: React.FC<SearchBarProps> = ({
-  value,
-  onChangeText,
-  onClear,
-  placeholder = 'Search...',
-  autoFocus = false,
-  ...textInputProps
-}) => {
-  const { colors } = useTheme();
-  const [isFocused, setIsFocused] = useState(false);
-  
-  const borderColorValue = useSharedValue(0);
-  const clearButtonOpacity = useSharedValue(value.length > 0 ? 1 : 0);
-
-  const containerStyle = useAnimatedStyle(() => ({
-    borderColor: borderColorValue.value === 1 
-      ? colors.primary 
-      : colors.border,
-  }));
-
-  const clearButtonStyle = useAnimatedStyle(() => ({
-    opacity: clearButtonOpacity.value,
-    transform: [{ scale: clearButtonOpacity.value }],
-  }));
-
-  const handleFocus = useCallback(() => {
-    setIsFocused(true);
-    borderColorValue.value = withTiming(1, { duration: ANIMATION.duration.fast });
-  }, [borderColorValue]);
-
-  const handleBlur = useCallback(() => {
-    setIsFocused(false);
-    borderColorValue.value = withTiming(0, { duration: ANIMATION.duration.fast });
-  }, [borderColorValue]);
-
-  const handleChangeText = useCallback((text: string) => {
-    onChangeText(text);
-    clearButtonOpacity.value = withSpring(text.length > 0 ? 1 : 0, {
-      stiffness: 400,
-      damping: 20,
-    });
-  }, [onChangeText, clearButtonOpacity]);
-
-  const handleClear = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onChangeText('');
-    clearButtonOpacity.value = withSpring(0, { stiffness: 400, damping: 20 });
-    onClear?.();
-  }, [onChangeText, clearButtonOpacity, onClear]);
-
-  const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
     container: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -99,7 +58,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
       fontSize: 15,
       color: colors.text,
       paddingVertical: SPACING.xxs,
-      fontFamily: 'Roboto_400Regular',
+      fontFamily: TYPOGRAPHY.fontFamily.regular,
     },
     clearButton: {
       marginLeft: SPACING.sm,
@@ -112,46 +71,112 @@ export const SearchBar: React.FC<SearchBarProps> = ({
     },
   });
 
-  return (
-    <Animated.View 
-      entering={FadeIn.duration(ANIMATION.duration.normal)}
-      style={[styles.container, containerStyle]}
-    >
-      <View style={styles.searchIcon}>
-        <Search 
-          size={ICON_SIZE.sm} 
-          color={isFocused ? colors.primary : colors.textMuted} 
-        />
-      </View>
-      
-      <TextInput
-        style={styles.input}
-        value={value}
-        onChangeText={handleChangeText}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        placeholder={placeholder}
-        placeholderTextColor={colors.textMuted}
-        autoFocus={autoFocus}
-        autoCapitalize="none"
-        autoCorrect={false}
-        returnKeyType="search"
-        {...textInputProps}
-      />
-      
-      {value.length > 0 && (
-        <Animated.View style={clearButtonStyle}>
-          <Pressable
-            style={styles.clearButton}
-            onPress={handleClear}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <X size={14} color={colors.textSecondary} />
-          </Pressable>
-        </Animated.View>
-      )}
-    </Animated.View>
-  );
-};
+export const SearchBar = memo<SearchBarProps>(
+  ({
+    value,
+    onChangeText,
+    onClear,
+    placeholder = 'Search...',
+    autoFocus = false,
+    ...textInputProps
+  }) => {
+    const { colors } = useTheme();
+    const [isFocused, setIsFocused] = useState(false);
+    const styles = useMemo(() => createStyles(colors), [colors]);
 
-export default SearchBar;
+    const borderColorValue = useSharedValue(0);
+    const clearButtonOpacity = useSharedValue(value.length > 0 ? 1 : 0);
+
+    const containerStyle = useAnimatedStyle(() => ({
+      borderColor:
+        borderColorValue.value === 1 ? colors.primary : colors.border,
+    }));
+
+    const clearButtonStyle = useAnimatedStyle(() => ({
+      opacity: clearButtonOpacity.value,
+      transform: [{ scale: clearButtonOpacity.value }],
+    }));
+
+    const handleFocus = useCallback(() => {
+      setIsFocused(true);
+      borderColorValue.value = withTiming(1, {
+        duration: ANIMATION.duration.fast,
+      });
+    }, [borderColorValue]);
+
+    const handleBlur = useCallback(() => {
+      setIsFocused(false);
+      borderColorValue.value = withTiming(0, {
+        duration: ANIMATION.duration.fast,
+      });
+    }, [borderColorValue]);
+
+    const handleChangeText = useCallback(
+      (text: string) => {
+        onChangeText(text);
+        clearButtonOpacity.value = withSpring(text.length > 0 ? 1 : 0, {
+          stiffness: 400,
+          damping: 20,
+        });
+      },
+      [onChangeText, clearButtonOpacity],
+    );
+
+    const handleClear = useCallback(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onChangeText('');
+      clearButtonOpacity.value = withSpring(0, {
+        stiffness: 400,
+        damping: 20,
+      });
+      onClear?.();
+    }, [onChangeText, clearButtonOpacity, onClear]);
+
+    return (
+      <Animated.View
+        entering={FadeIn.duration(ANIMATION.duration.normal)}
+        style={[styles.container, containerStyle]}
+        accessibilityRole="search"
+      >
+        <View style={styles.searchIcon}>
+          <Search
+            size={ICON_SIZE.sm}
+            color={isFocused ? colors.primary : colors.textMuted}
+          />
+        </View>
+
+        <TextInput
+          style={styles.input}
+          value={value}
+          onChangeText={handleChangeText}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
+          autoFocus={autoFocus}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          accessibilityLabel="Search help articles"
+          accessibilityHint="Type to search FAQs"
+          {...textInputProps}
+        />
+
+        {value.length > 0 && (
+          <Animated.View style={clearButtonStyle}>
+            <Pressable
+              style={styles.clearButton}
+              onPress={handleClear}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
+              <X size={14} color={colors.textSecondary} />
+            </Pressable>
+          </Animated.View>
+        )}
+      </Animated.View>
+    );
+  },
+);
+SearchBar.displayName = 'SearchBar';

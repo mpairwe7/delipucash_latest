@@ -10,9 +10,10 @@
  * - Single action CTA routing to the subscription screen
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { Crown, Upload, Wifi, Video, X } from 'lucide-react-native';
 import {
   useTheme,
@@ -47,18 +48,38 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
     { icon: Video, text: 'Record videos up to 30 minutes' },
   ];
 
+  const handleUpgrade = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onUpgrade) {
+      onUpgrade();
+    } else {
+      router.push('/(tabs)/videos-new');
+    }
+  }, [onUpgrade, router]);
+
+  const handleDismiss = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onDismiss?.();
+  }, [onDismiss]);
+
   return (
-    <View style={[styles.container, {
-      backgroundColor: colors.card,
-      borderColor: withAlpha(colors.warning, 0.3),
-    }]}>
+    <View
+      style={[styles.container, {
+        backgroundColor: colors.card,
+        borderColor: withAlpha(colors.warning, 0.3),
+      }]}
+      accessible
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={`Upgrade to Video Premium.${action ? ` To ${action}, you need a premium subscription.` : ''} Upload 500 MB, livestream 2 hours, record 30 minutes.`}
+    >
       {onDismiss && (
         <Pressable
-          onPress={onDismiss}
+          onPress={handleDismiss}
           style={styles.dismissButton}
           hitSlop={12}
           accessibilityRole="button"
-          accessibilityLabel="Dismiss"
+          accessibilityLabel="Dismiss upgrade prompt"
         >
           <X size={20} color={colors.textMuted} />
         </Pressable>
@@ -78,9 +99,9 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
         </Text>
       )}
 
-      <View style={styles.features}>
+      <View style={styles.features} accessibilityRole="list">
         {features.map(({ icon: Icon, text }) => (
-          <View key={text} style={styles.featureRow}>
+          <View key={text} style={styles.featureRow} accessibilityRole="listitem">
             <Icon size={16} color={colors.success} />
             <Text style={[styles.featureText, { color: colors.text }]}>{text}</Text>
           </View>
@@ -88,19 +109,14 @@ export const VideoPremiumPrompt: React.FC<VideoPremiumPromptProps> = ({
       </View>
 
       <Pressable
-        onPress={() => {
-          if (onUpgrade) {
-            onUpgrade();
-          } else {
-            router.push('/(tabs)/videos-new');
-          }
-        }}
+        onPress={handleUpgrade}
         style={({ pressed }) => [
           styles.cta,
           { backgroundColor: colors.warning, opacity: pressed ? 0.85 : 1 },
         ]}
         accessibilityRole="button"
         accessibilityLabel="Upgrade to Video Premium"
+        accessibilityHint="Opens the subscription purchase screen"
       >
         <Text style={styles.ctaText}>Upgrade Now</Text>
       </Pressable>

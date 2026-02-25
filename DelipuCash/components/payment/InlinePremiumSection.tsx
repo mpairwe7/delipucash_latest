@@ -112,9 +112,17 @@ export interface InlinePremiumSectionRef {
 
 type MoMoStep = 'select_plan' | 'enter_phone' | 'confirm' | 'processing';
 
+const maskPhone = (phone: string): string =>
+  phone.length > 6 ? `${phone.slice(0, 4)}****${phone.slice(-3)}` : phone;
+
 // ============================================================================
 // CONSTANTS
 // ============================================================================
+
+// Uganda phone number validation patterns (MSISDN format: 256 prefix)
+const UG_MTN_REGEX = /^256(77|78|76|39)\d{7}$/;
+const UG_AIRTEL_REGEX = /^256(70|75)\d{7}$/;
+const UG_LOCAL_9_DIGIT = /^7\d{8}$/;
 
 const PACKAGE_TO_PLAN: Record<string, string> = {
   DAILY: 'DAILY',
@@ -187,6 +195,15 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   // Refs for accessibility focus
   const expandedRef = useRef<View>(null);
 
+  // ── Handlers (defined before hooks that depend on them) ──
+  const resetMoMoState = useCallback(() => {
+    setMoMoStep('select_plan');
+    setSelectedMomoPlan(null);
+    setSelectedProvider(null);
+    setPhoneError(null);
+    momoFlow.reset();
+  }, [momoFlow]);
+
   // ── Imperative handle ──
   useImperativeHandle(ref, () => ({
     expand: () => {
@@ -201,10 +218,6 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
       resetMoMoState();
     },
   }), [resetMoMoState]);
-
-  // ── Animations ──
-  // FadeIn/FadeOut on the Animated.View handles opacity.
-  // No manual opacity spring needed — avoids Reanimated layout animation conflict.
 
   // ── Derived state ──
   const featureOffering = useMemo(() => {
@@ -224,15 +237,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
       if (prev) resetMoMoState();
       return !prev;
     });
-  }, []);
-
-  const resetMoMoState = useCallback(() => {
-    setMoMoStep('select_plan');
-    setSelectedMomoPlan(null);
-    setSelectedProvider(null);
-    setPhoneError(null);
-    momoFlow.reset();
-  }, [momoFlow]);
+  }, [resetMoMoState]);
 
   // Google Play purchase
   const handleGooglePlayPurchase = useCallback(() => {
@@ -269,7 +274,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
   const toUgMsisdn = useCallback((digits: string) => {
     if (digits.startsWith('256')) return digits;
     if (digits.startsWith('0')) return `256${digits.slice(1)}`;
-    if (/^7\d{8}$/.test(digits)) return `256${digits}`;
+    if (UG_LOCAL_9_DIGIT.test(digits)) return `256${digits}`;
     return digits;
   }, []);
 
@@ -282,12 +287,12 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
     }
     const ugMsisdn = toUgMsisdn(cleanPhone);
     if (selectedProvider === 'MTN') {
-      if (!/^256(77|78|76|39)\d{7}$/.test(ugMsisdn)) {
+      if (!UG_MTN_REGEX.test(ugMsisdn)) {
         setPhoneError('Use a valid MTN Uganda number (077... 078... or 076...)');
         return;
       }
     } else if (selectedProvider === 'AIRTEL') {
-      if (!/^256(70|75)\d{7}$/.test(ugMsisdn)) {
+      if (!UG_AIRTEL_REGEX.test(ugMsisdn)) {
         setPhoneError('Use a valid Airtel Uganda number (070... or 075...)');
         return;
       }
@@ -304,13 +309,21 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
     // Save details for next time
     setLastUsedDetails(cleanPhone, selectedProvider);
 
-    setMoMoStep('processing');
+    // Don't advance step here — useEffect above will advance to 'processing'
+    // when paymentId is set (initiation succeeded)
     momoFlow.initiate({
       phoneNumber: msisdn,
       provider: selectedProvider,
       planType: selectedMomoPlan,
     });
   }, [selectedMomoPlan, selectedProvider, phoneNumber, normalizePhoneNumber, toUgMsisdn, momoFlow, setLastUsedDetails]);
+
+  // Advance to processing step when paymentId is set (initiation succeeded)
+  useEffect(() => {
+    if (momoFlow.paymentId && momoStep === 'confirm') {
+      setMoMoStep('processing');
+    }
+  }, [momoFlow.paymentId, momoStep]);
 
   // MoMo flow success
   useEffect(() => {
@@ -558,7 +571,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
               )}
 
               {momoStep === 'enter_phone' && (
-                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+                <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
                   <Text style={[styles.sectionLabel, { color: colors.text }]}>
                     Enter your {selectedProvider} number
                   </Text>
@@ -592,7 +605,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                     <ReceiptRow label="Plan" value={selectedPlanData.name} colors={colors} />
                     <ReceiptRow label="Amount" value={`UGX ${selectedPlanData.price.toLocaleString()}`} colors={colors} />
                     <ReceiptRow label="Provider" value={selectedProvider ?? ''} colors={colors} />
-                    <ReceiptRow label="Phone" value={phoneNumber} colors={colors} />
+                    <ReceiptRow label="Phone" value={maskPhone(phoneNumber)} colors={colors} />
                     <ReceiptRow label="Duration" value={`${selectedPlanData.durationDays} days`} colors={colors} />
                   </View>
 
@@ -625,6 +638,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                   provider={selectedProvider ?? 'MTN'}
                   phoneNumber={phoneNumber}
                   startedAt={momoFlow.startedAt}
+                  error={momoFlow.initiationError ?? momoFlow.networkError}
                   onRetry={() => {
                     momoFlow.reset();
                     setMoMoStep('confirm');

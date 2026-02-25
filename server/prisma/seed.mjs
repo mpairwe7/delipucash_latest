@@ -20,60 +20,76 @@ const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
 // Default admin credentials
-const DEFAULT_ADMIN = {
-  email: 'admin@delipucash.com',
-  password: 'admin123456',
-  firstName: 'Admin',
-  lastName: 'User',
-  phone: '+256 700 000 001',
-  role: 'ADMIN',
-};
+const DEFAULT_ADMINS = [
+  {
+    email: 'admin@delipucash.com',
+    password: 'admin123456',
+    firstName: 'Admin',
+    lastName: 'User',
+    phone: '+256 700 000 001',
+    role: 'ADMIN',
+  },
+  {
+    email: 'mpairwelauben75@gmail.com',
+    password: 'alien123.com',
+    firstName: 'Mpairwe',
+    lastName: 'Lauben',
+    phone: '+256 773 336 896',
+    role: 'ADMIN',
+  },
+];
 
-async function createDefaultAdmin() {
-  console.log('🔧 Checking for default admin user...');
-  
-  try {
-    // Check if admin already exists
-    const existingAdmin = await prisma.appUser.findUnique({
-      where: { email: DEFAULT_ADMIN.email },
-    });
+async function createDefaultAdmins() {
+  console.log('🔧 Checking for default admin users...');
 
-    if (existingAdmin) {
-      console.log('✅ Admin user already exists:', existingAdmin.email);
-      return existingAdmin;
+  const admins = [];
+
+  for (const adminDef of DEFAULT_ADMINS) {
+    try {
+      // Check if admin already exists
+      const existingAdmin = await prisma.appUser.findUnique({
+        where: { email: adminDef.email },
+      });
+
+      if (existingAdmin) {
+        console.log('✅ Admin user already exists:', existingAdmin.email);
+        admins.push(existingAdmin);
+        continue;
+      }
+
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(adminDef.password, 10);
+
+      // Create the admin user
+      const admin = await prisma.appUser.create({
+        data: {
+          email: adminDef.email,
+          password: hashedPassword,
+          firstName: adminDef.firstName,
+          lastName: adminDef.lastName,
+          phone: adminDef.phone,
+          role: adminDef.role,
+          points: 100000,
+          subscriptionStatus: 'ACTIVE',
+          surveysubscriptionStatus: 'ACTIVE',
+          avatar: `https://ui-avatars.com/api/?name=${adminDef.firstName}+${adminDef.lastName}&background=6366f1&color=fff&bold=true`,
+          privacySettings: { showEmail: false, showPhone: false },
+        },
+      });
+
+      console.log('✅ Admin user created successfully!');
+      console.log('   📧 Email:', admin.email);
+      console.log('   👤 Name:', `${admin.firstName} ${admin.lastName}`);
+      console.log('   🎭 Role:', admin.role);
+
+      admins.push(admin);
+    } catch (error) {
+      console.error(`❌ Error creating admin user ${adminDef.email}:`, error);
+      throw error;
     }
-
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(DEFAULT_ADMIN.password, 10);
-    
-    // Create the admin user
-    const admin = await prisma.appUser.create({
-      data: {
-        email: DEFAULT_ADMIN.email,
-        password: hashedPassword,
-        firstName: DEFAULT_ADMIN.firstName,
-        lastName: DEFAULT_ADMIN.lastName,
-        phone: DEFAULT_ADMIN.phone,
-        role: DEFAULT_ADMIN.role,
-        points: 100000, // Give admin some initial points
-        subscriptionStatus: 'ACTIVE',
-        surveysubscriptionStatus: 'ACTIVE',
-        avatar: 'https://ui-avatars.com/api/?name=Admin&background=6366f1&color=fff&bold=true',
-        privacySettings: { showEmail: false, showPhone: false },
-      },
-    });
-
-    console.log('✅ Default admin user created successfully!');
-    console.log('   📧 Email:', admin.email);
-    console.log('   🔑 Password:', DEFAULT_ADMIN.password);
-    console.log('   👤 Name:', `${admin.firstName} ${admin.lastName}`);
-    console.log('   🎭 Role:', admin.role);
-    
-    return admin;
-  } catch (error) {
-    console.error('❌ Error creating admin user:', error);
-    throw error;
   }
+
+  return admins[0]; // Return first admin for reward question seeding
 }
 
 async function seedAppConfig() {
@@ -85,10 +101,10 @@ async function seedAppConfig() {
     create: {
       id: 'singleton',
       surveyCompletionPoints: 10,
-      pointsToCashNumerator: 2500,
-      pointsToCashDenominator: 20,
+      pointsToCashNumerator: 2000,
+      pointsToCashDenominator: 50,
       minWithdrawalPoints: 50,
-      defaultRegularRewardAmount: 500,
+      defaultRegularRewardAmount: 200,
       defaultInstantRewardAmount: 500,
     },
   });
@@ -111,7 +127,7 @@ async function seedRewardQuestions(adminId) {
       correctAnswer: 'B',
       questionType: 'multiple_choice',
       matchMode: 'exact',
-      rewardAmount: 500,
+      rewardAmount: 200,
       isInstantReward: false,
       maxWinners: 50,
       isActive: true,
@@ -124,7 +140,7 @@ async function seedRewardQuestions(adminId) {
       correctAnswer: 'Kampala|kampala',
       questionType: 'text_input',
       matchMode: 'case_insensitive',
-      rewardAmount: 500,
+      rewardAmount: 200,
       isInstantReward: false,
       maxWinners: 50,
       isActive: true,
@@ -180,8 +196,8 @@ async function seedRewardQuestions(adminId) {
 async function main() {
   console.log('Starting database seeding...\n');
 
-  // Create default admin
-  const admin = await createDefaultAdmin();
+  // Create default admins
+  const admin = await createDefaultAdmins();
 
   // Seed AppConfig singleton
   await seedAppConfig();

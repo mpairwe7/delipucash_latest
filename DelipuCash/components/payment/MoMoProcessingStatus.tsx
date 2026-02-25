@@ -34,6 +34,8 @@ interface MoMoProcessingStatusProps {
   status: 'PENDING' | 'SUCCESSFUL' | 'FAILED' | 'TIMEOUT' | null;
   /** Epoch ms when the payment was initiated (from useMoMoPaymentFlow.startedAt) */
   startedAt?: number | null;
+  /** Initiation or polling error to surface to the user */
+  error?: Error | null;
   onCancel: () => void;
   onRetry: () => void;
   onGooglePlayFallback?: () => void;
@@ -52,6 +54,7 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
   phoneNumber,
   status,
   startedAt,
+  error,
   onCancel,
   onRetry,
   onGooglePlayFallback,
@@ -170,6 +173,14 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
             Expires in {formatTime(secondsLeft)}
           </Text>
         </View>
+
+        {error && (
+          <View style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.08) }]}>
+            <Text style={[styles.errorText, { color: colors.error }]}>
+              {error.message || 'A network error occurred. Retrying...'}
+            </Text>
+          </View>
+        )}
 
         <PrimaryButton
           title="Cancel"
@@ -315,6 +326,18 @@ const styles = StyleSheet.create({
   timerText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  errorBanner: {
+    borderRadius: RADIUS.base,
+    paddingHorizontal: SPACING.base,
+    paddingVertical: SPACING.sm,
+    marginBottom: SPACING.md,
+    alignSelf: 'stretch',
+  },
+  errorText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    textAlign: 'center',
   },
   cancelButton: {
     alignSelf: 'stretch',

@@ -583,9 +583,9 @@ interface RedemptionProgressBarProps {
 const RedemptionProgressBar: React.FC<RedemptionProgressBarProps> = ({ currentBalance, delay, rewardConfig }) => {
   const { colors } = useTheme();
   const minPoints = rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
-  const minCash = rewardConfig ? pointsToUgx(minPoints, rewardConfig) : minPoints * 100;
+  const minCash = rewardConfig ? pointsToUgx(minPoints, rewardConfig) : minPoints * 40;
   const progress = Math.min(currentBalance / minCash, 1);
-  const currentPts = rewardConfig ? ugxToPoints(currentBalance, rewardConfig) : Math.floor(currentBalance / 100);
+  const currentPts = rewardConfig ? ugxToPoints(currentBalance, rewardConfig) : Math.ceil(currentBalance / 40);
 
   const barWidth = useSharedValue(0);
   useEffect(() => {

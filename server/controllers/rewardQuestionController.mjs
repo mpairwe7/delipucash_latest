@@ -920,7 +920,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
 
       const rewardPoints = rewardConfig
         ? ugxToPoints(rewardAmountUGX, rewardConfig)
-        : (Math.round(rewardAmountUGX / 100) || 5);
+        : (Math.round(rewardAmountUGX / 40) || 5);
 
       if (rewardQuestion.isInstantReward) {
         // Transactional winner allocation with optimistic locking to prevent race conditions

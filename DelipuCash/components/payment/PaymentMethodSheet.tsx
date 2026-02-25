@@ -23,6 +23,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  AccessibilityInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -67,6 +68,11 @@ interface PaymentMethodSheetProps {
 
 type Step = 'SELECT_METHOD' | 'ENTER_PHONE' | 'CONFIRM' | 'PROCESSING';
 
+// Uganda phone number validation patterns (MSISDN format: 256 prefix)
+const UG_MTN_REGEX = /^256(77|78|76|39)\d{7}$/;
+const UG_AIRTEL_REGEX = /^256(70|75)\d{7}$/;
+const UG_LOCAL_9_DIGIT = /^7\d{8}$/;
+
 // RevenueCat package type → backend plan type mapping
 const PACKAGE_TO_PLAN: Record<string, string> = {
   DAILY: 'DAILY',
@@ -82,6 +88,9 @@ const PACKAGE_TO_PLAN: Record<string, string> = {
 // ============================================================================
 // COMPONENT
 // ============================================================================
+
+const maskPhone = (phone: string): string =>
+  phone.length > 6 ? `${phone.slice(0, 4)}****${phone.slice(-3)}` : phone;
 
 export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   visible,
@@ -137,6 +146,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   useEffect(() => {
     if (momoFlow.status === 'SUCCESSFUL') {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      AccessibilityInfo.announceForAccessibility('Payment successful!');
       const timer = setTimeout(() => {
         onMoMoPurchaseComplete();
       }, 1500);
@@ -164,7 +174,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
   const toUgMsisdn = useCallback((digits: string) => {
     if (digits.startsWith('256')) return digits;
     if (digits.startsWith('0')) return `256${digits.slice(1)}`;
-    if (/^7\d{8}$/.test(digits)) return `256${digits}`;
+    if (UG_LOCAL_9_DIGIT.test(digits)) return `256${digits}`;
     return digits;
   }, []);
 
@@ -177,12 +187,12 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
     }
     const ugMsisdn = toUgMsisdn(cleanPhone);
     if (selectedMethod === 'MTN_MOMO') {
-      if (!/^256(77|78|76|39)\d{7}$/.test(ugMsisdn)) {
+      if (!UG_MTN_REGEX.test(ugMsisdn)) {
         setPhoneError('Use a valid MTN Uganda number (077... 078... or 076...)');
         return;
       }
     } else if (selectedMethod === 'AIRTEL_MONEY') {
-      if (!/^256(70|75)\d{7}$/.test(ugMsisdn)) {
+      if (!UG_AIRTEL_REGEX.test(ugMsisdn)) {
         setPhoneError('Use a valid Airtel Uganda number (070... or 075...)');
         return;
       }
@@ -196,13 +206,20 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
     const provider = selectedMethod === 'MTN_MOMO' ? 'MTN' : 'AIRTEL';
     const cleanPhone = normalizePhoneNumber(phoneNumber);
     const msisdn = toUgMsisdn(cleanPhone);
+    // Only advance to PROCESSING after initiation succeeds (via onSuccess in the flow hook)
     momoFlow.initiate({
       phoneNumber: msisdn,
       provider,
       planType: momoPlanType,
     });
-    setStep('PROCESSING');
   }, [selectedMethod, phoneNumber, normalizePhoneNumber, toUgMsisdn, momoPlanType, momoFlow]);
+
+  // Advance to PROCESSING step only when paymentId is set (initiation succeeded)
+  useEffect(() => {
+    if (momoFlow.paymentId && step === 'CONFIRM') {
+      setStep('PROCESSING');
+    }
+  }, [momoFlow.paymentId, step]);
 
   const handleRetry = useCallback(() => {
     momoFlow.reset();
@@ -222,8 +239,17 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
 
   const providerName = selectedMethod === 'MTN_MOMO' ? 'MTN Mobile Money' : 'Airtel Money';
 
-  // ── Step indicator ──
+  // ── Accessibility announcement on step changes ──
+  const STEP_LABELS = ['Select payment method', 'Enter phone number', 'Confirm payment', 'Processing'];
   const stepIndex = ['SELECT_METHOD', 'ENTER_PHONE', 'CONFIRM', 'PROCESSING'].indexOf(step);
+
+  useEffect(() => {
+    if (visible && stepIndex >= 0) {
+      AccessibilityInfo.announceForAccessibility(`Step ${stepIndex + 1} of 4: ${STEP_LABELS[stepIndex]}`);
+    }
+  }, [step, visible]);
+
+  // ── Step indicator ──
   const totalSteps = 4;
 
   // ── Render ──
@@ -244,7 +270,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
         accessibilityLabel={step === 'PROCESSING' ? 'Processing payment, please wait' : 'Close payment sheet'}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardAvoid}
         >
           <Pressable
@@ -429,7 +455,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                     <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
                     <View style={styles.receiptRow}>
                       <Text style={[styles.receiptLabel, { color: colors.textSecondary }]}>Phone</Text>
-                      <Text style={[styles.receiptValue, { color: colors.text }]}>{phoneNumber}</Text>
+                      <Text style={[styles.receiptValue, { color: colors.text }]}>{maskPhone(phoneNumber)}</Text>
                     </View>
                   </View>
 
@@ -459,6 +485,7 @@ export const PaymentMethodSheet: React.FC<PaymentMethodSheetProps> = ({
                   phoneNumber={phoneNumber}
                   status={momoFlow.status}
                   startedAt={momoFlow.startedAt}
+                  error={momoFlow.initiationError ?? momoFlow.networkError}
                   onCancel={() => {
                     momoFlow.reset();
                     setStep('SELECT_METHOD');

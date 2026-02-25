@@ -329,12 +329,14 @@ export const processMtnCollection = async ({ amount, phoneNumber, referenceId })
     const refId = referenceId || uuidv4();
     const token = await getMtnToken('collection');
 
-    await initiateMtnCollection(token, amount, formattedPhone, refId);
+    await getBreaker('mtn').exec(() =>
+      initiateMtnCollection(token, amount, formattedPhone, refId)
+    );
 
     // Wait for initial processing
     await wait(3000);
 
-    // Check status with retries (max 10 attempts, 3s apart)
+    // Check status with retries (max 10 attempts, exponential backoff)
     for (let attempt = 1; attempt <= 10; attempt++) {
       try {
         const statusResponse = await axios.get(
@@ -347,17 +349,19 @@ export const processMtnCollection = async ({ amount, phoneNumber, referenceId })
 
         if (status === 'SUCCESSFUL') {
           return { success: true, referenceId: refId };
-        } else if (status === 'FAILED' || status === 'REJECTED' || status === 'TIMEOUT') {
-          return { success: false, referenceId: refId };
+        } else if (TERMINAL_FAILURE_STATUSES.has(status)) {
+          return { success: false, referenceId: refId, retryable: false };
         }
-        // Still PENDING — wait and retry
+        // Still PENDING — wait with exponential backoff (3s → 4s → 5s → 7s → 10s, capped at 15s)
         if (attempt < 10) {
-          await wait(3000);
+          const delay = Math.min(3000 * Math.pow(1.3, attempt - 1), 15000);
+          await wait(delay);
         }
       } catch (err) {
         log.error('MTN collection status check failed', { attempt, message: err.message });
         if (attempt < 10) {
-          await wait(3000);
+          const delay = Math.min(3000 * Math.pow(1.3, attempt - 1), 15000);
+          await wait(delay);
         }
       }
     }
@@ -365,8 +369,9 @@ export const processMtnCollection = async ({ amount, phoneNumber, referenceId })
     // Timed out — keep as pending so frontend polling can continue.
     return { success: false, pending: true, referenceId: refId };
   } catch (error) {
+    const isClientError = error.response?.status >= 400 && error.response?.status < 500;
     log.error('MTN collection error', { message: error.message });
-    return { success: false, referenceId: referenceId || null };
+    return { success: false, referenceId: referenceId || null, retryable: !isClientError && !error.circuitOpen };
   }
 };
 
@@ -388,7 +393,9 @@ export const processAirtelCollection = async ({ amount, phoneNumber, referenceId
     const refId = referenceId || uuidv4();
     const token = await getAirtelToken();
 
-    await initiateAirtelCollection(token, amount, formattedPhone, refId);
+    await getBreaker('airtel').exec(() =>
+      initiateAirtelCollection(token, amount, formattedPhone, refId)
+    );
     await wait(3000);
 
     const result = await pollAirtelStatus({
@@ -400,11 +407,12 @@ export const processAirtelCollection = async ({ amount, phoneNumber, referenceId
     });
 
     if (result.state === 'SUCCESSFUL') return { success: true, referenceId: refId };
-    if (result.state === 'FAILED') return { success: false, referenceId: refId };
+    if (result.state === 'FAILED') return { success: false, referenceId: refId, retryable: false };
     return { success: false, pending: true, referenceId: refId };
   } catch (error) {
+    const isClientError = error.response?.status >= 400 && error.response?.status < 500;
     log.error('Airtel collection error', { message: error.message });
-    return { success: false, referenceId: referenceId || null };
+    return { success: false, referenceId: referenceId || null, retryable: !isClientError && !error.circuitOpen };
   }
 };
 
@@ -828,10 +836,30 @@ export const handleCallback = asyncHandler(async (req, res) => {
     // Fall through with callback-reported status if re-query fails
   }
 
-  const payment = await prisma.payment.update({
-    where: { id: existing.id },
-    data: { status: verifiedStatus },
-  });
+  // Atomic update: payment status + user subscription status (if SUCCESSFUL)
+  let payment;
+  if (verifiedStatus === 'SUCCESSFUL' && existing.featureType) {
+    const statusField = existing.featureType === 'VIDEO'
+      ? 'videoSubscriptionStatus'
+      : 'surveysubscriptionStatus';
+
+    payment = await prisma.$transaction(async (tx) => {
+      const p = await tx.payment.update({
+        where: { id: existing.id },
+        data: { status: verifiedStatus },
+      });
+      await tx.appUser.update({
+        where: { id: p.userId },
+        data: { [statusField]: 'ACTIVE' },
+      });
+      return p;
+    });
+  } else {
+    payment = await prisma.payment.update({
+      where: { id: existing.id },
+      data: { status: verifiedStatus },
+    });
+  }
 
   if (payment.userId) {
     publishEvent(payment.userId, 'payment.status', {
@@ -841,8 +869,14 @@ export const handleCallback = asyncHandler(async (req, res) => {
       provider: payment.provider,
     }).catch(() => {});
 
-    const tpl = verifiedStatus === 'SUCCESSFUL' ? 'PAYMENT_SUCCESS' : verifiedStatus === 'FAILED' ? 'PAYMENT_FAILED' : 'PAYMENT_PENDING';
-    createNotificationFromTemplateHelper(payment.userId, tpl, { amount: payment.amount }).catch(() => {});
+    // Use feature-specific notification template for subscription payments
+    if (verifiedStatus === 'SUCCESSFUL' && existing.featureType) {
+      const subscriptionType = existing.featureType === 'VIDEO' ? 'Video Premium' : 'Survey Premium';
+      createNotificationFromTemplateHelper(payment.userId, 'SUBSCRIPTION_ACTIVE', { subscriptionType }).catch(() => {});
+    } else {
+      const tpl = verifiedStatus === 'SUCCESSFUL' ? 'PAYMENT_SUCCESS' : verifiedStatus === 'FAILED' ? 'PAYMENT_FAILED' : 'PAYMENT_PENDING';
+      createNotificationFromTemplateHelper(payment.userId, tpl, { amount: payment.amount }).catch(() => {});
+    }
   }
 
   res.status(200).json({ message: 'Callback handled', payment });

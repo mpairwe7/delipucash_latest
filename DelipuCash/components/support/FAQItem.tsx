@@ -3,25 +3,27 @@
  * Expandable FAQ item with animation and design system compliance
  */
 
-import React, { useState, useCallback } from 'react';
-import { StyleSheet, View, Pressable, LayoutAnimation, Platform, UIManager } from 'react-native';
-import Animated, { 
-  FadeIn, 
-  useSharedValue, 
-  useAnimatedStyle, 
+import React, { memo, useState, useCallback, useMemo } from 'react';
+import { StyleSheet, View, Pressable } from 'react-native';
+import Animated, {
+  FadeIn,
+  useSharedValue,
+  useAnimatedStyle,
   withTiming,
 } from 'react-native-reanimated';
 import { ChevronDown, ThumbsUp, ThumbsDown } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
-import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme } from '@/utils/theme';
+import {
+  SPACING,
+  RADIUS,
+  ICON_SIZE,
+  ANIMATION,
+  useTheme,
+  type ThemeColors,
+} from '@/utils/theme';
 import type { FAQItem as FAQItemType } from '@/services/supportApi';
-
-// Enable LayoutAnimation on Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 interface FAQItemProps {
   item: FAQItemType;
@@ -31,41 +33,8 @@ interface FAQItemProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export const FAQItemComponent: React.FC<FAQItemProps> = ({
-  item,
-  onRate,
-  initialExpanded = false,
-}) => {
-  const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(initialExpanded);
-  const [hasRated, setHasRated] = useState(false);
-  
-  const rotation = useSharedValue(initialExpanded ? 180 : 0);
-
-  const chevronStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    
-    rotation.value = withTiming(expanded ? 0 : 180, {
-      duration: ANIMATION.duration.normal,
-    });
-    
-    setExpanded(!expanded);
-  }, [expanded, rotation]);
-
-  const handleRate = useCallback((helpful: boolean) => {
-    if (hasRated) return;
-    
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setHasRated(true);
-    onRate?.(item.id, helpful);
-  }, [hasRated, item.id, onRate]);
-
-  const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
     container: {
       backgroundColor: colors.card,
       borderRadius: RADIUS.md,
@@ -142,15 +111,9 @@ export const FAQItemComponent: React.FC<FAQItemProps> = ({
       backgroundColor: colors.background,
       gap: SPACING.xs,
     },
-    ratingButtonActive: {
-      backgroundColor: colors.primary,
-    },
     ratingButtonText: {
       fontSize: 12,
       color: colors.textSecondary,
-    },
-    ratingButtonTextActive: {
-      color: '#FFFFFF',
     },
     ratedText: {
       fontSize: 13,
@@ -162,79 +125,141 @@ export const FAQItemComponent: React.FC<FAQItemProps> = ({
       alignItems: 'center',
       marginTop: SPACING.sm,
     },
+    statItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: SPACING.xxs,
+      marginRight: SPACING.md,
+    },
     stat: {
       fontSize: 11,
       color: colors.textMuted,
-      marginRight: SPACING.md,
     },
   });
 
-  return (
-    <Animated.View 
-      entering={FadeIn.duration(ANIMATION.duration.fast)}
-      style={styles.container}
-    >
-      <AnimatedPressable
-        onPress={handlePress}
-        style={styles.header}
-        android_ripple={{ color: colors.border }}
+export const FAQItemComponent = memo<FAQItemProps>(
+  ({ item, onRate, initialExpanded = false }) => {
+    const { colors } = useTheme();
+    const [expanded, setExpanded] = useState(initialExpanded);
+    const [hasRated, setHasRated] = useState(false);
+    const styles = useMemo(() => createStyles(colors), [colors]);
+
+    const rotation = useSharedValue(initialExpanded ? 180 : 0);
+
+    const chevronStyle = useAnimatedStyle(() => ({
+      transform: [{ rotate: `${rotation.value}deg` }],
+    }));
+
+    const handlePress = useCallback(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      rotation.value = withTiming(expanded ? 0 : 180, {
+        duration: ANIMATION.duration.normal,
+      });
+      setExpanded(!expanded);
+    }, [expanded, rotation]);
+
+    const handleRate = useCallback(
+      (helpful: boolean) => {
+        if (hasRated) return;
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setHasRated(true);
+        onRate?.(item.id, helpful);
+      },
+      [hasRated, item.id, onRate],
+    );
+
+    return (
+      <Animated.View
+        entering={FadeIn.duration(ANIMATION.duration.fast)}
+        style={styles.container}
       >
-        <View style={styles.questionContainer}>
-          <ThemedText style={styles.question}>{item.question}</ThemedText>
-          <ThemedText style={styles.category}>{item.category}</ThemedText>
-        </View>
-        <Animated.View style={[styles.chevronContainer, chevronStyle]}>
-          <ChevronDown size={ICON_SIZE.sm} color={colors.textSecondary} />
-        </Animated.View>
-      </AnimatedPressable>
-
-      {expanded && (
-        <Animated.View 
-          entering={FadeIn.duration(ANIMATION.duration.fast)}
-          style={styles.content}
+        <AnimatedPressable
+          onPress={handlePress}
+          style={styles.header}
+          android_ripple={{ color: colors.border }}
+          accessibilityRole="button"
+          accessibilityState={{ expanded }}
+          accessibilityLabel={`${item.question}, ${item.category}`}
+          accessibilityHint={
+            expanded ? 'Double tap to collapse' : 'Double tap to expand'
+          }
         >
-          <ThemedText style={styles.answer}>{item.answer}</ThemedText>
-          
-          <View style={styles.statsContainer}>
-            <ThemedText style={styles.stat}>
-              👍 {item.helpful} found this helpful
-            </ThemedText>
-            <ThemedText style={styles.stat}>
-              👎 {item.notHelpful} not helpful
-            </ThemedText>
+          <View style={styles.questionContainer}>
+            <ThemedText style={styles.question}>{item.question}</ThemedText>
+            <ThemedText style={styles.category}>{item.category}</ThemedText>
           </View>
+          <Animated.View style={[styles.chevronContainer, chevronStyle]}>
+            <ChevronDown
+              size={ICON_SIZE.sm}
+              color={colors.textSecondary}
+            />
+          </Animated.View>
+        </AnimatedPressable>
 
-          <View style={styles.ratingContainer}>
-            {hasRated ? (
-              <ThemedText style={styles.ratedText}>
-                Thanks for your feedback! ✓
-              </ThemedText>
-            ) : (
-              <>
-                <ThemedText style={styles.ratingText}>Was this helpful?</ThemedText>
-                <View style={styles.ratingButtons}>
-                  <Pressable
-                    onPress={() => handleRate(true)}
-                    style={styles.ratingButton}
-                  >
-                    <ThumbsUp size={14} color={colors.textSecondary} />
-                    <ThemedText style={styles.ratingButtonText}>Yes</ThemedText>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => handleRate(false)}
-                    style={styles.ratingButton}
-                  >
-                    <ThumbsDown size={14} color={colors.textSecondary} />
-                    <ThemedText style={styles.ratingButtonText}>No</ThemedText>
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </Animated.View>
-      )}
-    </Animated.View>
-  );
-};
+        {expanded && (
+          <Animated.View
+            entering={FadeIn.duration(ANIMATION.duration.fast)}
+            style={styles.content}
+          >
+            <ThemedText style={styles.answer}>{item.answer}</ThemedText>
 
-export default FAQItemComponent;
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <ThumbsUp size={12} color={colors.textMuted} />
+                <ThemedText style={styles.stat}>
+                  {item.helpful} found this helpful
+                </ThemedText>
+              </View>
+              <View style={styles.statItem}>
+                <ThumbsDown size={12} color={colors.textMuted} />
+                <ThemedText style={styles.stat}>
+                  {item.notHelpful} not helpful
+                </ThemedText>
+              </View>
+            </View>
+
+            <View style={styles.ratingContainer}>
+              {hasRated ? (
+                <ThemedText style={styles.ratedText}>
+                  Thanks for your feedback!
+                </ThemedText>
+              ) : (
+                <>
+                  <ThemedText style={styles.ratingText}>
+                    Was this helpful?
+                  </ThemedText>
+                  <View style={styles.ratingButtons}>
+                    <Pressable
+                      onPress={() => handleRate(true)}
+                      style={styles.ratingButton}
+                      accessibilityRole="button"
+                      accessibilityLabel="Yes, this was helpful"
+                    >
+                      <ThumbsUp size={14} color={colors.textSecondary} />
+                      <ThemedText style={styles.ratingButtonText}>
+                        Yes
+                      </ThemedText>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleRate(false)}
+                      style={styles.ratingButton}
+                      accessibilityRole="button"
+                      accessibilityLabel="No, this was not helpful"
+                    >
+                      <ThumbsDown size={14} color={colors.textSecondary} />
+                      <ThemedText style={styles.ratingButtonText}>
+                        No
+                      </ThemedText>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
+          </Animated.View>
+        )}
+      </Animated.View>
+    );
+  },
+);
+FAQItemComponent.displayName = 'FAQItemComponent';

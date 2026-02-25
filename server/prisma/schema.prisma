@@ -723,10 +723,10 @@ model LoginSession {
 model AppConfig {
   id                         String   @id @default("singleton")
   surveyCompletionPoints     Int      @default(10)
-  pointsToCashNumerator      Int      @default(2500)
-  pointsToCashDenominator    Int      @default(20)
+  pointsToCashNumerator      Int      @default(2000)
+  pointsToCashDenominator    Int      @default(50)
   minWithdrawalPoints        Int      @default(50)
-  defaultRegularRewardAmount Int      @default(500)
+  defaultRegularRewardAmount Int      @default(200)
   defaultInstantRewardAmount Int      @default(500)
   updatedAt                  DateTime @updatedAt
   updatedBy                  String?  @db.Uuid

@@ -270,6 +270,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {'collection'|'disbursement'} [opts.operationType='collection']
  * @param {number} [opts.maxAttempts=12]
  * @param {number} [opts.delayMs=3000]
+ * @param {boolean} [opts.backoff=true] - Use exponential backoff (3s * 1.3^n, capped at 15s)
  * @returns {Promise<{ state: string, meta: object }>}
  */
 export const pollAirtelStatus = async ({
@@ -278,6 +279,7 @@ export const pollAirtelStatus = async ({
   operationType = 'collection',
   maxAttempts = 12,
   delayMs = 3000,
+  backoff = true,
 }) => {
   const endpoint = operationType === 'disbursement'
     ? `${AIRTEL_BASE_URL}/standard/v1/disbursements/${referenceId}`
@@ -302,7 +304,11 @@ export const pollAirtelStatus = async ({
     }
 
     if (attempt < maxAttempts) {
-      await wait(delayMs);
+      // Exponential backoff: 3s → 4s → 5s → 7s → 10s, capped at 15s
+      const delay = backoff
+        ? Math.min(delayMs * Math.pow(1.3, attempt - 1), 15000)
+        : delayMs;
+      await wait(delay);
     }
   }
 

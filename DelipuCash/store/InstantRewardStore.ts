@@ -36,8 +36,8 @@ export type { RewardConfig } from '@/services/configHooks';
 export const REWARD_CONSTANTS = {
   /** Amount in UGX for each correct answer */
   INSTANT_REWARD_AMOUNT: 500,
-  /** Points equivalent (for instant quiz rewards) */
-  INSTANT_REWARD_POINTS: 5,
+  /** Points equivalent at 40 UGX/pt: ceil(500 * 50 / 2000) = 13 */
+  INSTANT_REWARD_POINTS: 13,
   /** UI fallback for minimum redemption — overridden by config.minWithdrawalPoints */
   MIN_REDEMPTION_POINTS: 50,
 } as const;
@@ -926,8 +926,8 @@ export const pointsToCash = (points: number, config?: RewardConfig): number => {
   if (config) {
     return Math.floor((points * config.pointsToCashNumerator) / config.pointsToCashDenominator);
   }
-  // Legacy fallback (instant quiz rewards: 1 point = 100 UGX)
-  return points * 100;
+  // Legacy fallback: 1 point = 40 UGX (matches current config rate)
+  return points * 40;
 };
 
 /**
@@ -938,7 +938,7 @@ export const cashToPoints = (cash: number, config?: RewardConfig): number => {
   if (config) {
     return Math.ceil((cash * config.pointsToCashDenominator) / config.pointsToCashNumerator);
   }
-  return Math.floor(cash / 100);
+  return Math.ceil(cash / 40);
 };
 
 /** Check if user can redeem rewards using config-driven minimum */

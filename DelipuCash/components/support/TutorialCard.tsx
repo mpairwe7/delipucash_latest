@@ -3,9 +3,9 @@
  * Card for displaying tutorial items with progress indicator
  */
 
-import React, { useCallback } from 'react';
+import React, { memo, useState, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Pressable, Image } from 'react-native';
-import Animated, { 
+import Animated, {
   FadeInUp,
   useSharedValue,
   useAnimatedStyle,
@@ -15,7 +15,15 @@ import { Play, Clock } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
 import { ThemedText } from '@/components/themed-text';
-import { SPACING, RADIUS, ICON_SIZE, ANIMATION, useTheme, withAlpha } from '@/utils/theme';
+import {
+  SPACING,
+  RADIUS,
+  ICON_SIZE,
+  ANIMATION,
+  useTheme,
+  withAlpha,
+  type ThemeColors,
+} from '@/utils/theme';
 import type { Tutorial } from '@/services/supportApi';
 
 interface TutorialCardProps {
@@ -27,33 +35,8 @@ interface TutorialCardProps {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export const TutorialCard: React.FC<TutorialCardProps> = ({
-  tutorial,
-  index = 0,
-  onPress,
-  compact = false,
-}) => {
-  const { colors } = useTheme();
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = useCallback(() => {
-    scale.value = withSpring(0.97, { stiffness: 400, damping: 15 });
-  }, [scale]);
-
-  const handlePressOut = useCallback(() => {
-    scale.value = withSpring(1, { stiffness: 400, damping: 15 });
-  }, [scale]);
-
-  const handlePress = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onPress?.(tutorial);
-  }, [tutorial, onPress]);
-
-  const styles = StyleSheet.create({
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
     container: {
       backgroundColor: colors.card,
       borderRadius: RADIUS.lg,
@@ -61,17 +44,29 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
       marginBottom: SPACING.sm,
       borderWidth: 1,
       borderColor: colors.border,
-      width: compact ? 200 : '100%',
-      marginRight: compact ? SPACING.sm : 0,
+    },
+    containerCompact: {
+      width: 200,
+      marginRight: SPACING.sm,
     },
     thumbnailContainer: {
       position: 'relative',
-      height: compact ? 100 : 140,
       backgroundColor: colors.background,
+    },
+    thumbnailNormal: {
+      height: 140,
+    },
+    thumbnailCompact: {
+      height: 100,
     },
     thumbnail: {
       width: '100%',
       height: '100%',
+    },
+    thumbnailPlaceholder: {
+      justifyContent: 'center',
+      alignItems: 'center',
+      backgroundColor: colors.background,
     },
     playButtonOverlay: {
       position: 'absolute',
@@ -107,23 +102,6 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
       color: '#FFFFFF',
       marginLeft: 2,
     },
-    completedBadge: {
-      position: 'absolute',
-      top: SPACING.xs,
-      right: SPACING.xs,
-      backgroundColor: colors.success,
-      paddingHorizontal: SPACING.xs,
-      paddingVertical: 2,
-      borderRadius: RADIUS.xs,
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    completedText: {
-      fontSize: 10,
-      color: '#FFFFFF',
-      marginLeft: 2,
-      fontWeight: '600',
-    },
     contentContainer: {
       padding: SPACING.md,
     },
@@ -142,93 +120,129 @@ export const TutorialCard: React.FC<TutorialCardProps> = ({
       textTransform: 'uppercase',
     },
     title: {
-      fontSize: compact ? 13 : 15,
+      fontSize: 15,
       fontWeight: '600',
       color: colors.text,
       marginBottom: SPACING.xxs,
+    },
+    titleCompact: {
+      fontSize: 13,
     },
     description: {
       fontSize: 12,
       color: colors.textSecondary,
       lineHeight: 17,
     },
-    metaContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: SPACING.xs,
-    },
-    metaText: {
-      fontSize: 11,
-      color: colors.textMuted,
-    },
-    metaSeparator: {
-      width: 3,
-      height: 3,
-      borderRadius: RADIUS.full,
-      backgroundColor: colors.textMuted,
-      marginHorizontal: SPACING.xs,
-    },
   });
 
-  return (
-    <Animated.View
-      entering={FadeInUp.delay(index * 70).duration(ANIMATION.duration.normal)}
-    >
-      <AnimatedPressable
-        style={[styles.container, animatedStyle]}
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-      >
-        <View style={styles.thumbnailContainer}>
-        <Image
-          source={{ uri: tutorial.thumbnail }}
-          style={styles.thumbnail}
-          resizeMode="cover"
-        />
-        <View style={styles.playButtonOverlay}>
-          <View style={styles.playButton}>
-            <Play 
-              size={ICON_SIZE.sm + 2} 
-              color="#FFFFFF" 
-              fill="#FFFFFF"
-            />
-          </View>
-        </View>
-        
-        {tutorial.duration && (
-          <View style={styles.durationBadge}>
-            <Clock size={10} color="#FFFFFF" />
-            <ThemedText style={styles.durationText}>{tutorial.duration}</ThemedText>
-          </View>
-        )}
-      </View>
-      
-      <View style={styles.contentContainer}>
-        <View style={styles.categoryBadge}>
-          <ThemedText style={styles.categoryText}>{tutorial.category}</ThemedText>
-        </View>
-        
-        <ThemedText style={styles.title} numberOfLines={compact ? 1 : 2}>
-          {tutorial.title}
-        </ThemedText>
-        
-        {!compact && (
-          <ThemedText style={styles.description} numberOfLines={2}>
-            {tutorial.description}
-          </ThemedText>
-        )}
-        
-        {!compact && tutorial.duration && (
-          <View style={styles.metaContainer}>
-            <ThemedText style={styles.metaText}>
-              Duration: {tutorial.duration}
-            </ThemedText>
-          </View>
-          )}n      </View>
-    </AnimatedPressable>
-    </Animated.View>
-  );
-};
+export const TutorialCard = memo<TutorialCardProps>(
+  ({ tutorial, index = 0, onPress, compact = false }) => {
+    const { colors } = useTheme();
+    const scale = useSharedValue(1);
+    const [imageError, setImageError] = useState(false);
+    const styles = useMemo(() => createStyles(colors), [colors]);
 
-export default TutorialCard;
+    const animatedStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+    }));
+
+    const handlePressIn = useCallback(() => {
+      scale.value = withSpring(0.97, { stiffness: 400, damping: 15 });
+    }, [scale]);
+
+    const handlePressOut = useCallback(() => {
+      scale.value = withSpring(1, { stiffness: 400, damping: 15 });
+    }, [scale]);
+
+    const handlePress = useCallback(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress?.(tutorial);
+    }, [tutorial, onPress]);
+
+    const handleImageError = useCallback(() => {
+      setImageError(true);
+    }, []);
+
+    return (
+      <Animated.View
+        entering={FadeInUp.delay(index * 70).duration(
+          ANIMATION.duration.normal,
+        )}
+      >
+        <AnimatedPressable
+          style={[
+            styles.container,
+            animatedStyle,
+            compact && styles.containerCompact,
+          ]}
+          onPress={handlePress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          accessibilityRole="button"
+          accessibilityLabel={`${tutorial.title}, ${tutorial.duration} tutorial`}
+          accessibilityHint="Opens video tutorial"
+        >
+          <View
+            style={[
+              styles.thumbnailContainer,
+              compact ? styles.thumbnailCompact : styles.thumbnailNormal,
+            ]}
+          >
+            {tutorial.thumbnail && !imageError ? (
+              <Image
+                source={{ uri: tutorial.thumbnail }}
+                style={styles.thumbnail}
+                resizeMode="cover"
+                onError={handleImageError}
+              />
+            ) : (
+              <View style={[styles.thumbnail, styles.thumbnailPlaceholder]}>
+                <Play size={ICON_SIZE.lg} color={colors.textMuted} />
+              </View>
+            )}
+            <View style={styles.playButtonOverlay}>
+              <View style={styles.playButton}>
+                <Play
+                  size={ICON_SIZE.sm + 2}
+                  color="#FFFFFF"
+                  fill="#FFFFFF"
+                />
+              </View>
+            </View>
+
+            {tutorial.duration && (
+              <View style={styles.durationBadge}>
+                <Clock size={10} color="#FFFFFF" />
+                <ThemedText style={styles.durationText}>
+                  {tutorial.duration}
+                </ThemedText>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.contentContainer}>
+            <View style={styles.categoryBadge}>
+              <ThemedText style={styles.categoryText}>
+                {tutorial.category}
+              </ThemedText>
+            </View>
+
+            <ThemedText
+              style={[styles.title, compact && styles.titleCompact]}
+              numberOfLines={compact ? 1 : 2}
+            >
+              {tutorial.title}
+            </ThemedText>
+
+            {!compact && (
+              <ThemedText style={styles.description} numberOfLines={2}>
+                {tutorial.description}
+              </ThemedText>
+            )}
+          </View>
+        </AnimatedPressable>
+      </Animated.View>
+    );
+  },
+);
+TutorialCard.displayName = 'TutorialCard';

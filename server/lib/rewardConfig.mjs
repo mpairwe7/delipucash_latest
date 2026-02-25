@@ -19,10 +19,10 @@ const CACHE_TTL_MS = 60_000;
 /** Fallback defaults matching the Prisma schema defaults */
 const DEFAULTS = {
   surveyCompletionPoints: 10,
-  pointsToCashNumerator: 2500,
-  pointsToCashDenominator: 20,
+  pointsToCashNumerator: 2000,
+  pointsToCashDenominator: 50,
   minWithdrawalPoints: 50,
-  defaultRegularRewardAmount: 500,
+  defaultRegularRewardAmount: 200,
   defaultInstantRewardAmount: 500,
 };
 

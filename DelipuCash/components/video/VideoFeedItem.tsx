@@ -91,7 +91,9 @@ import {
 } from '@/utils/theme';
 import { Video } from '@/types';
 import { useVideoFeedStore } from '@/store/VideoFeedStore';
-import { FollowButton } from './FollowButton';
+import { CreatorAvatarButton } from './CreatorAvatarButton';
+import { useFollowStatus, useFollowCreator, useUnfollowCreator } from '@/services/videoHooks';
+import { useToast } from '@/components/ui/Toast';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 import { telemetry } from '@/services/telemetryApi';
 import { videoApi } from '@/services/videoApi';
@@ -333,6 +335,14 @@ function VideoFeedItemComponent({
   // this specific item when its liked/bookmarked state actually changes
   const isLiked = useVideoFeedStore(state => state.likedVideoIds.has(video.id));
   const isBookmarked = useVideoFeedStore(state => state.bookmarkedVideoIds.has(video.id));
+
+  // Follow state — single instance per rendered item (not per child component)
+  const { data: followStatus } = useFollowStatus(video.userId);
+  const creatorIsFollowing = followStatus?.isFollowing ?? false;
+  const followMutation = useFollowCreator();
+  const unfollowMutation = useUnfollowCreator();
+  const isFollowLoading = followMutation.isPending || unfollowMutation.isPending;
+  const { showToast } = useToast();
 
   // ============================================================================
   // STATE
@@ -778,6 +788,33 @@ function VideoFeedItemComponent({
     toggleMute();
   }, [toggleMute]);
 
+  const handleCreatorProfile = useCallback((_creatorId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Profile route placeholder — wire when creator profile screen exists
+  }, []);
+
+  const creatorDisplayName = video.user?.firstName
+    ? `@${video.user.firstName.toLowerCase()}`
+    : 'creator';
+
+  const handleCreatorFollow = useCallback((cid: string) => {
+    followMutation.mutate(cid);
+  }, [followMutation]);
+
+  const handleCreatorUnfollow = useCallback((cid: string) => {
+    unfollowMutation.mutate(cid, {
+      onSuccess: () => {
+        showToast({
+          message: `Unfollowed ${creatorDisplayName}`,
+          type: 'info',
+          duration: 5000,
+          action: 'Undo',
+          onAction: () => followMutation.mutate(cid),
+        });
+      },
+    });
+  }, [unfollowMutation, followMutation, showToast, creatorDisplayName]);
+
   // ============================================================================
   // GESTURES
   // ============================================================================
@@ -997,6 +1034,20 @@ function VideoFeedItemComponent({
 
           {/* Side Action Bar - 2026: Standard vertical action column (TikTok/Reels pattern) */}
           <View style={styles.sideActions}>
+            {/* Creator Avatar + Follow Badge (TikTok pattern) */}
+            {video.userId && (
+              <CreatorAvatarButton
+                creatorId={video.userId}
+                creatorName={video.user?.firstName || undefined}
+                avatarUrl={video.user?.avatar || undefined}
+                isFollowing={creatorIsFollowing}
+                isFollowLoading={isFollowLoading}
+                onFollow={handleCreatorFollow}
+                onUnfollow={handleCreatorUnfollow}
+                onProfilePress={handleCreatorProfile}
+              />
+            )}
+
             {/* Mute/Unmute — top of action bar for quick access */}
             <Pressable
               onPress={handleToggleMute}
@@ -1106,22 +1157,15 @@ function VideoFeedItemComponent({
 
           {/* Bottom Info Overlay - 2026: Creator economy + content safety */}
           <View style={styles.bottomInfo}>
-            {/* Creator Info - 2026: Verified badge + follow CTA */}
+            {/* Creator Info - 2026: Username + verified badge (avatar moved to action column) */}
             <View style={styles.creatorRow}>
-              <View style={styles.creatorAvatar}>
-                <Text style={styles.avatarText}>
-                  {(video.user?.firstName || video.title || 'U').charAt(0).toUpperCase()}
-                </Text>
-              </View>
               <View style={styles.creatorInfo}>
                 <View style={styles.creatorNameRow}>
                   <Text style={styles.creatorName} numberOfLines={1}>
                     @{video.user?.firstName?.toLowerCase() || video.user?.lastName?.toLowerCase() || 'creator'}
                   </Text>
-                  {/* 2026: Verified badge */}
                   <BadgeCheck size={14} color="#1DA1F2" fill="#1DA1F2" />
                 </View>
-                {/* 2026: Watch time / engagement indicator */}
                 <View style={styles.engagementRow}>
                   <Clock size={10} color={withAlpha('#FFFFFF', 0.5)} strokeWidth={2} />
                   <Text style={styles.engagementText}>
@@ -1129,14 +1173,6 @@ function VideoFeedItemComponent({
                   </Text>
                 </View>
               </View>
-              {video.userId && (
-                <FollowButton
-                  creatorId={video.userId}
-                  creatorName={video.user?.firstName || undefined}
-                  size="sm"
-                  variant="filled"
-                />
-              )}
             </View>
 
             {/* Video Title/Description */}
@@ -1360,25 +1396,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: SPACING.sm,
-    gap: SPACING.sm,
-  },
-  creatorAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#666666',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  avatarText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.base,
-    color: '#FFFFFF',
   },
   creatorInfo: {
-    flex: 1,
     gap: 2,
   },
   creatorNameRow: {
@@ -1598,6 +1617,7 @@ function arePropsEqual(
     prevProps.video.id === nextProps.video.id &&
     prevProps.video.likes === nextProps.video.likes &&
     prevProps.video.commentsCount === nextProps.video.commentsCount &&
+    prevProps.video.user?.avatar === nextProps.video.user?.avatar &&
     prevProps.isActive === nextProps.isActive &&
     prevProps.isMuted === nextProps.isMuted &&
     prevProps.itemHeight === nextProps.itemHeight &&

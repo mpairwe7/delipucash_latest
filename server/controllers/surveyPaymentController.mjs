@@ -18,7 +18,8 @@ import {
   checkAirtelCollectionStatus,
 } from './paymentController.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
-import { createPaymentLogger } from '../lib/paymentLogger.mjs';
+import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 const log = createPaymentLogger('survey-payment');
 
@@ -218,13 +219,19 @@ const VIDEO_SUBSCRIPTION_PLANS = [
 ];
 
 /**
- * Generate unique transaction ID
+ * Generate unique transaction ID with feature-specific prefix
+ * @param {string} featureType - 'SURVEY' or 'VIDEO'
  */
-const generateTransactionId = () => {
+const generateTransactionId = (featureType = 'SURVEY') => {
   const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
   const random = crypto.randomBytes(6).toString('hex');
-  return `TXN-SURV-${date}-${random}`;
+  const prefix = featureType === 'VIDEO' ? 'TXN-VID' : 'TXN-SURV';
+  return `${prefix}-${date}-${random}`;
 };
+
+// Throttle live provider re-checks: max 1 query per 30s per payment
+const PROVIDER_RECHECK_INTERVAL_MS = 30_000;
+const lastProviderCheck = new Map();
 
 /**
  * Calculate subscription end date based on plan
@@ -244,6 +251,9 @@ const getPlanByType = (type, featureType = 'SURVEY') => {
   const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
   return plans.find(p => p.type === type);
 };
+
+const VALID_FEATURE_TYPES = ['SURVEY', 'VIDEO'];
+const VALID_PROVIDERS = ['MTN', 'AIRTEL'];
 
 // ============================================================================
 // ROUTE HANDLERS
@@ -271,37 +281,40 @@ export const getPlans = asyncHandler(async (req, res) => {
  */
 export const getSubscriptionStatus = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
+  const featureType = req.query.featureType || 'SURVEY';
 
   if (!userId) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
   }
 
-  log.info('Checking subscription status', { userId });
+  log.info('Checking subscription status', { userId, featureType });
 
   try {
-    // Get user's current subscription status
+    // Determine which user subscription field to check based on featureType
+    const statusField = featureType === 'VIDEO' ? 'videoSubscriptionStatus' : 'surveysubscriptionStatus';
+
     const user = await prisma.appUser.findUnique({
       where: { id: userId },
-      select: { surveysubscriptionStatus: true },
+      select: { [statusField]: true },
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
     }
 
-    // Get latest active SURVEY payment for this user
+    // Get latest active payment for the requested feature type
     const now = new Date();
     const latestPayment = await prisma.payment.findFirst({
       where: {
         userId,
         status: 'SUCCESSFUL',
-        featureType: 'SURVEY',
+        featureType,
         endDate: { gt: now },
       },
       orderBy: { endDate: 'desc' },
     });
 
-    let hasActiveSubscription = user.surveysubscriptionStatus === 'ACTIVE';
+    let hasActiveSubscription = user[statusField] === 'ACTIVE';
     let remainingDays = 0;
     let subscription = null;
 
@@ -311,7 +324,7 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
       if (endDate > now) {
         hasActiveSubscription = true;
         remainingDays = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-        
+
         subscription = {
           id: latestPayment.id,
           userId: latestPayment.userId,
@@ -327,16 +340,18 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
       }
     }
 
+    const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+
     res.json({
       hasActiveSubscription,
       subscription,
       remainingDays,
       canRenew: remainingDays <= 7,
-      availablePlans: SURVEY_SUBSCRIPTION_PLANS.filter(p => p.isActive),
+      availablePlans: plans.filter(p => p.isActive),
     });
   } catch (error) {
-    log.error('Error checking subscription status', { message: error.message });
-    res.status(500).json({ error: 'Failed to check subscription status' });
+    log.error('Error checking subscription status', { featureType, message: error.message });
+    res.status(500).json({ error: 'Failed to check subscription status', code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -347,31 +362,38 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
  */
 export const initiatePayment = asyncHandler(async (req, res) => {
   const { phoneNumber, provider, planType, featureType: rawFeatureType } = req.body;
-  const featureType = rawFeatureType === 'VIDEO' ? 'VIDEO' : 'SURVEY';
+  const featureType = VALID_FEATURE_TYPES.includes(rawFeatureType) ? rawFeatureType : 'SURVEY';
+  if (rawFeatureType && !VALID_FEATURE_TYPES.includes(rawFeatureType)) {
+    return res.status(400).json({
+      error: `Invalid featureType. Allowed: ${VALID_FEATURE_TYPES.join(', ')}`,
+      code: 'INVALID_FEATURE_TYPE',
+    });
+  }
   const idempotencyKey = req.headers['x-idempotency-key'] || req.body.idempotencyKey;
   const actualUserId = req.user?.id;
 
   // Validation
   if (!actualUserId) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
   }
 
   if (!phoneNumber || !provider || !planType) {
     return res.status(400).json({
-      error: 'Missing required fields: phoneNumber, provider, planType'
+      error: 'Missing required fields: phoneNumber, provider, planType',
+      code: 'MISSING_FIELDS',
     });
   }
 
-  const VALID_PROVIDERS = ['MTN', 'AIRTEL'];
   if (!VALID_PROVIDERS.includes(provider)) {
     return res.status(400).json({
-      error: `Invalid payment provider. Allowed: ${VALID_PROVIDERS.join(', ')}`
+      error: `Invalid payment provider. Allowed: ${VALID_PROVIDERS.join(', ')}`,
+      code: 'INVALID_PROVIDER',
     });
   }
 
   const plan = getPlanByType(planType, featureType);
   if (!plan) {
-    return res.status(400).json({ error: 'Invalid subscription plan type' });
+    return res.status(400).json({ error: 'Invalid subscription plan type', code: 'INVALID_PLAN' });
   }
 
   log.info('Initiating payment', { featureType, userId: actualUserId, planType, provider });
@@ -379,7 +401,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
   // Clean phone number
   let cleanPhone = String(phoneNumber).replace(/\D/g, '');
   if (cleanPhone.length < 10) {
-    return res.status(400).json({ error: 'Invalid phone number format' });
+    return res.status(400).json({ error: 'Invalid phone number format', code: 'INVALID_PHONE' });
   }
 
   try {
@@ -389,7 +411,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
     }
 
     // ── Idempotency check ──
@@ -401,6 +423,23 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       });
 
       if (existingByKey) {
+        // Validate mutation parameters match — reject if key reused with different plan/feature/provider
+        if (
+          existingByKey.subscriptionType !== planType ||
+          existingByKey.featureType !== featureType ||
+          existingByKey.provider !== provider
+        ) {
+          log.warn('Idempotency key mismatch', {
+            idempotencyKey,
+            existing: { plan: existingByKey.subscriptionType, feature: existingByKey.featureType, provider: existingByKey.provider },
+            requested: { plan: planType, feature: featureType, provider },
+          });
+          return res.status(409).json({
+            error: 'Idempotency key already used with different payment parameters. Use a new key for different purchases.',
+            code: 'IDEMPOTENCY_MISMATCH',
+          });
+        }
+
         log.info('Idempotency hit', { idempotencyKey, paymentId: existingByKey.id });
         const existingPlan = getPlanByType(existingByKey.subscriptionType, existingByKey.featureType);
         return res.status(200).json({
@@ -431,6 +470,18 @@ export const initiatePayment = asyncHandler(async (req, res) => {
       }
     }
 
+    // Auto-expire stale PENDING payments (>15 min) for this user+featureType before checking
+    const staleCutoff = new Date(Date.now() - 15 * 60 * 1000);
+    await prisma.payment.updateMany({
+      where: {
+        userId: actualUserId,
+        featureType,
+        status: 'PENDING',
+        createdAt: { lt: staleCutoff },
+      },
+      data: { status: 'FAILED' },
+    });
+
     // Prevent concurrent payments — reject if a recent PENDING payment for same feature exists
     // Users can have 1 PENDING survey + 1 PENDING video payment simultaneously
     const existingPending = await prisma.payment.findFirst({
@@ -445,12 +496,13 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     if (existingPending) {
       return res.status(409).json({
         error: 'A payment is already in progress. Please wait for it to complete or try again in a few minutes.',
+        code: 'CONCURRENT_PAYMENT',
         existingPaymentId: existingPending.id,
       });
     }
 
     const now = new Date();
-    const transactionId = generateTransactionId();
+    const transactionId = generateTransactionId(featureType);
     const endDate = calculateEndDate(now, plan.durationDays);
 
     // Create payment record with PENDING status
@@ -475,13 +527,15 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     // Calculate expiry (payment prompt expires in 5 minutes)
     const expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
 
+    const maskedPhone = maskPhone(cleanPhone);
+
     res.status(201).json({
       payment: {
         id: payment.id,
         userId: payment.userId,
         amount: payment.amount,
         currency: plan.currency,
-        phoneNumber: payment.phoneNumber,
+        phoneNumber: maskedPhone,
         provider: payment.provider,
         planType: payment.subscriptionType,
         transactionId: payment.TransactionId,
@@ -495,19 +549,32 @@ export const initiatePayment = asyncHandler(async (req, res) => {
         createdAt: payment.createdAt.toISOString(),
         updatedAt: payment.updatedAt.toISOString(),
       },
-      message: `A payment request of ${plan.price.toLocaleString()} ${plan.currency} has been sent to your ${provider} number (${cleanPhone}). Please check your phone to complete the payment.`,
+      message: `A payment request of ${plan.price.toLocaleString()} ${plan.currency} has been sent to your ${provider} number (${maskedPhone}). Please check your phone to complete the payment.`,
       requiresConfirmation: true,
       expiresAt: expiresAt.toISOString(),
     });
 
-    // Trigger actual mobile money request asynchronously
-    // This would integrate with MTN/Airtel APIs
-    triggerMobileMoneyRequest(payment.id, provider, plan.price, cleanPhone, transactionId, featureType)
-      .catch(err => log.error('Mobile money request failed', { message: err.message }));
+    // Trigger actual mobile money request asynchronously with 2-minute hard timeout
+    const TRIGGER_TIMEOUT_MS = 2 * 60 * 1000;
+    Promise.race([
+      triggerMobileMoneyRequest(payment.id, provider, plan.price, cleanPhone, transactionId, featureType),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Collection request timed out after 2 minutes')), TRIGGER_TIMEOUT_MS)),
+    ]).catch(async (err) => {
+      log.error('Mobile money request failed or timed out', { paymentId: payment.id, message: err.message });
+      // Mark as FAILED if still PENDING (timeout case)
+      try {
+        await prisma.payment.updateMany({
+          where: { id: payment.id, status: 'PENDING' },
+          data: { status: 'FAILED' },
+        });
+      } catch (dbErr) {
+        log.error('Failed to mark timed-out payment as FAILED', { paymentId: payment.id, message: dbErr.message });
+      }
+    });
 
   } catch (error) {
     log.error('Error initiating payment', { message: error.message });
-    res.status(500).json({ error: 'Failed to initiate payment' });
+    res.status(500).json({ error: 'Failed to initiate payment', code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -562,8 +629,11 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
 
       log.info('Payment completed successfully', { featureType, paymentId });
 
-      // Persistent notification for subscription activation
+      // SSE event for real-time frontend updates + persistent notification
       if (payment.userId) {
+        publishEvent(payment.userId, 'payment.status', {
+          paymentId: payment.id, status: 'SUCCESSFUL', amount: payment.amount, provider,
+        }).catch(() => {});
         const subscriptionType = featureType === 'VIDEO' ? 'Video Premium' : 'Survey Premium';
         createNotificationFromTemplateHelper(payment.userId, 'SUBSCRIPTION_ACTIVE', { subscriptionType }).catch(() => {});
       }
@@ -577,8 +647,11 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
       });
       log.warn('Payment failed', { paymentId });
 
-      // Persistent notification for payment failure
+      // SSE event + persistent notification for failure
       if (payment.userId) {
+        publishEvent(payment.userId, 'payment.status', {
+          paymentId: payment.id, status: 'FAILED', amount: payment.amount, provider,
+        }).catch(() => {});
         createNotificationFromTemplateHelper(payment.userId, 'PAYMENT_FAILED', { amount: payment.amount }).catch(() => {});
       }
     }
@@ -590,8 +663,11 @@ const triggerMobileMoneyRequest = async (paymentId, provider, amount, phoneNumbe
       data: { status: 'FAILED' },
     });
 
-    // Persistent notification for payment failure
+    // SSE event + persistent notification for failure
     if (payment.userId) {
+      publishEvent(payment.userId, 'payment.status', {
+        paymentId: payment.id, status: 'FAILED', amount: payment.amount, provider,
+      }).catch(() => {});
       createNotificationFromTemplateHelper(payment.userId, 'PAYMENT_FAILED', { amount: payment.amount }).catch(() => {});
     }
   }
@@ -625,7 +701,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
     });
 
     if (!payment) {
-      return res.status(404).json({ error: 'Payment not found' });
+      return res.status(404).json({ error: 'Payment not found', code: 'PAYMENT_NOT_FOUND' });
     }
 
     // Authorization: only the payment owner or admin can view payment details
@@ -635,17 +711,19 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
         select: { role: true },
       });
       if (!requestingUser || !['ADMIN', 'MODERATOR'].includes(requestingUser.role)) {
-        return res.status(403).json({ error: 'Access denied' });
+        return res.status(403).json({ error: 'Access denied', code: 'ACCESS_DENIED' });
       }
     }
 
     // ── Live provider re-check for stale PENDING payments ──
-    // If the payment is still PENDING and was created > 30s ago, query the
-    // MoMo provider API directly. This catches cases where the async
-    // triggerMobileMoneyRequest crashed or the server restarted.
+    // Throttled: max 1 provider query per 30s per payment to prevent API abuse.
     if (payment.status === 'PENDING') {
       const ageMs = Date.now() - new Date(payment.createdAt).getTime();
-      if (ageMs > 30_000 && payment.TransactionId) {
+      const lastCheck = lastProviderCheck.get(paymentId) || 0;
+      const sinceLastCheck = Date.now() - lastCheck;
+
+      if (ageMs > 30_000 && sinceLastCheck > PROVIDER_RECHECK_INTERVAL_MS && payment.TransactionId) {
+        lastProviderCheck.set(paymentId, Date.now());
         try {
           let liveStatus = 'PENDING';
           if (payment.provider === 'MTN') {
@@ -677,6 +755,12 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
               payment.status = 'FAILED';
             }
             log.info('Live re-check resolved payment', { paymentId, liveStatus });
+
+            // SSE event so frontend cache invalidation triggers immediately
+            publishEvent(payment.userId, 'payment.status', {
+              paymentId: payment.id, status: liveStatus, amount: payment.amount, provider: payment.provider,
+            }).catch(() => {});
+            lastProviderCheck.delete(paymentId); // cleanup throttle entry
           }
         } catch (err) {
           // Non-fatal — fall through with DB status
@@ -710,7 +794,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
         userId: payment.userId,
         amount: payment.amount,
         currency: plan?.currency || 'UGX',
-        phoneNumber: payment.phoneNumber,
+        phoneNumber: maskPhone(payment.phoneNumber),
         provider: payment.provider,
         planType: payment.subscriptionType,
         transactionId: payment.TransactionId,
@@ -736,42 +820,49 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     log.error('Error checking payment status', { paymentId, message: error.message });
-    res.status(500).json({ error: 'Failed to check payment status' });
+    res.status(500).json({ error: 'Failed to check payment status', code: 'INTERNAL_ERROR' });
   }
 });
 
 /**
  * Get payment history for user
- * 
+ *
  * @route GET /api/survey-payments/history
  */
 export const getPaymentHistory = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
+  const featureType = req.query.featureType; // optional filter
 
   if (!userId) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
   }
 
-  log.info('Fetching payment history', { userId });
+  log.info('Fetching payment history', { userId, featureType: featureType || 'ALL' });
 
   try {
+    const where = { userId };
+    if (featureType && VALID_FEATURE_TYPES.includes(featureType)) {
+      where.featureType = featureType;
+    }
+
     const payments = await prisma.payment.findMany({
-      where: { userId },
+      where,
       orderBy: { createdAt: 'desc' },
-      take: 50, // Limit to last 50 payments
+      take: 50,
     });
 
     const formattedPayments = payments.map(payment => {
       const plan = getPlanByType(payment.subscriptionType, payment.featureType);
-      
+
       return {
         id: payment.id,
         userId: payment.userId,
         amount: payment.amount,
         currency: plan?.currency || 'UGX',
-        phoneNumber: payment.phoneNumber,
+        phoneNumber: maskPhone(payment.phoneNumber),
         provider: payment.provider,
         planType: payment.subscriptionType,
+        featureType: payment.featureType,
         transactionId: payment.TransactionId,
         externalReference: null,
         status: payment.status,
@@ -788,13 +879,13 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
     res.json(formattedPayments);
   } catch (error) {
     log.error('Error fetching payment history', { userId, message: error.message });
-    res.status(500).json({ error: 'Failed to fetch payment history' });
+    res.status(500).json({ error: 'Failed to fetch payment history', code: 'INTERNAL_ERROR' });
   }
 });
 
 /**
  * Cancel subscription auto-renewal
- * 
+ *
  * @route POST /api/survey-subscriptions/:subscriptionId/cancel
  */
 export const cancelSubscription = asyncHandler(async (_req, res) => {
@@ -802,6 +893,7 @@ export const cancelSubscription = asyncHandler(async (_req, res) => {
   // Google Play cancellations go through RevenueCat / Play Store directly.
   res.status(501).json({
     error: 'Auto-renewal cancellation is not yet supported for MoMo subscriptions',
+    code: 'NOT_IMPLEMENTED',
   });
 });
 
@@ -832,7 +924,7 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
   const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(401).json({ error: 'Authentication required' });
+    return res.status(401).json({ error: 'Authentication required', code: 'AUTH_REQUIRED' });
   }
 
   try {
@@ -846,7 +938,7 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
     });
 
     if (!user) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User not found', code: 'USER_NOT_FOUND' });
     }
 
     const now = new Date();
@@ -909,7 +1001,7 @@ export const getUnifiedSubscriptionStatus = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     log.error('Error checking unified subscription status', { userId, message: error.message });
-    res.status(500).json({ error: 'Failed to check subscription status' });
+    res.status(500).json({ error: 'Failed to check subscription status', code: 'INTERNAL_ERROR' });
   }
 });
 
@@ -946,7 +1038,7 @@ export const cleanupStalePayments = asyncHandler(async (req, res) => {
     });
   } catch (error) {
     log.error('Error cleaning up stale payments', { message: error.message });
-    res.status(500).json({ error: 'Failed to clean up stale payments' });
+    res.status(500).json({ error: 'Failed to clean up stale payments', code: 'INTERNAL_ERROR' });
   }
 });
 

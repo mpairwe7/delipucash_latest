@@ -67,10 +67,10 @@ export function getRedemptionOptions(config: RewardConfig) {
 
 const DEFAULT_CONFIG: RewardConfig = {
   surveyCompletionPoints: 10,
-  pointsToCashNumerator: 2500,
-  pointsToCashDenominator: 20,
+  pointsToCashNumerator: 2000,
+  pointsToCashDenominator: 50,
   minWithdrawalPoints: 50,
-  defaultRegularRewardAmount: 500,
+  defaultRegularRewardAmount: 200,
   defaultInstantRewardAmount: 500,
 };
 

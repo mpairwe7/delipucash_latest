@@ -1,4 +1,8 @@
 /**
+ * @deprecated Use {@link CreatorAvatarButton} for the TikTok-style avatar + badge
+ * pattern in video feeds. Retained for potential reuse in profile pages, search
+ * results, or other non-feed contexts where a text-based follow button is preferred.
+ *
  * FollowButton — Reusable follow/unfollow button for video creators
  *
  * States: idle → following (pulse animation) → followed (checkmark)

@@ -30,6 +30,7 @@ import {
   View,
   StyleSheet,
   Alert,
+  Linking,
   Platform,
   FlatList,
   ListRenderItemInfo,
@@ -46,8 +47,10 @@ import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, ReduceMotion } from 'react-native-reanimated';
 import {
   Award,
+  Coins,
   Gift,
   HelpCircle,
+  Mail,
   MessageSquare,
   History,
   Megaphone,
@@ -106,6 +109,7 @@ import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
 import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
+import { useRewardConfig, pointsToUgx, ugxToPoints } from '@/services/configHooks';
 import { useToast } from '@/components/ui/Toast';
 
 // Theme
@@ -123,9 +127,11 @@ type SectionType =
   | 'header'
   | 'transactions'
   | 'quickActions'
+  | 'rewards'
   | 'achievements'
   | 'recentActivity'
   | 'settings'
+  | 'support'
   | 'signOut';
 
 interface SectionItem {
@@ -142,9 +148,11 @@ const SECTION_HEIGHTS: Record<SectionType, number> = {
   header: 340,
   transactions: 420,
   quickActions: 340,
+  rewards: 320,
   achievements: 0,    // not currently rendered
   recentActivity: 0,  // not currently rendered
   settings: 500,
+  support: 160,
   signOut: 120,
 };
 
@@ -295,6 +303,84 @@ const SettingsSectionBlock = memo(function SettingsSectionBlock({
         items={appearanceSettings}
         animationDelay={100}
       />
+    </View>
+  );
+});
+
+interface RewardsSectionBlockProps {
+  rewardSettings: SettingItem[];
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const RewardsSectionBlock = memo(function RewardsSectionBlock({
+  rewardSettings,
+  colors,
+}: RewardsSectionBlockProps) {
+  return (
+    <View style={styles.sectionContainer}>
+      <SettingsSection
+        title="Rewards"
+        subtitle="Points and withdrawal info"
+        icon={<Coins size={ICON_SIZE.base} color={colors.warning} />}
+        items={rewardSettings}
+        animationDelay={0}
+      />
+    </View>
+  );
+});
+
+const SUPPORT_EMAIL = 'mpairwelauben75@gmail.com';
+
+interface SupportSectionProps {
+  colors: ReturnType<typeof useTheme>['colors'];
+}
+
+const SupportSection = memo(function SupportSection({ colors }: SupportSectionProps) {
+  const handleEmailPress = useCallback(async () => {
+    try {
+      const url = `mailto:${SUPPORT_EMAIL}?subject=DelipuCash%20Support%20Request`;
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      }
+    } catch {
+      // Silently fail — no email client installed
+    }
+  }, []);
+
+  const cardStyle = useMemo(
+    () => ({ borderColor: withAlpha(colors.info, 0.2) }),
+    [colors.info],
+  );
+  const iconBgStyle = useMemo(
+    () => [styles.supportIcon, { backgroundColor: withAlpha(colors.info, 0.1) }],
+    [colors.info],
+  );
+
+  return (
+    <View style={styles.sectionContainer}>
+      <AnimatedCard
+        variant="outlined"
+        onPress={handleEmailPress}
+        hapticType="light"
+        accessibilityLabel={`Contact support at ${SUPPORT_EMAIL}`}
+        accessibilityRole="link"
+        accessibilityHint="Opens your email app to contact support"
+        style={cardStyle}
+      >
+        <View style={styles.supportContent}>
+          <View style={iconBgStyle}>
+            <Mail size={ICON_SIZE.lg} color={colors.info} strokeWidth={2} />
+          </View>
+          <View style={styles.supportText}>
+            <AccessibleText variant="body" medium>Need Help?</AccessibleText>
+            <AccessibleText variant="caption" color="textMuted">
+              {SUPPORT_EMAIL}
+            </AccessibleText>
+          </View>
+          <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} />
+        </View>
+      </AnimatedCard>
     </View>
   );
 });
@@ -813,6 +899,68 @@ export default function ProfileScreen(): React.ReactElement {
   }, [sessions, revokeSessionMutation, refetchSessions]);
 
   // ============================================================================
+  // REWARD CONFIG (reactive to admin changes)
+  // ============================================================================
+
+  const { data: rewardConfig } = useRewardConfig();
+
+  const rewardSettings: SettingItem[] = useMemo(() => {
+    if (!rewardConfig) return [];
+
+    const ratePerPoint = Math.floor(rewardConfig.pointsToCashNumerator / rewardConfig.pointsToCashDenominator);
+    const regularPoints = ugxToPoints(rewardConfig.defaultRegularRewardAmount, rewardConfig);
+    const instantPoints = ugxToPoints(rewardConfig.defaultInstantRewardAmount, rewardConfig);
+    const minUgx = pointsToUgx(rewardConfig.minWithdrawalPoints, rewardConfig);
+
+    const items: SettingItem[] = [
+      {
+        type: 'info',
+        id: 'points-rate',
+        label: 'Points Rate',
+        subtitle: `1 point = ${ratePerPoint.toLocaleString()} UGX`,
+        icon: <Coins size={ICON_SIZE.base} color={colors.warning} />,
+      },
+      {
+        type: 'info',
+        id: 'regular-reward',
+        label: 'Regular Reward',
+        subtitle: `${regularPoints} points per answer`,
+        rightText: `${rewardConfig.defaultRegularRewardAmount.toLocaleString()} UGX`,
+        icon: <Award size={ICON_SIZE.base} color={colors.success} />,
+      },
+      {
+        type: 'info',
+        id: 'instant-reward',
+        label: 'Instant Reward',
+        subtitle: `${instantPoints} points per answer`,
+        rightText: `${rewardConfig.defaultInstantRewardAmount.toLocaleString()} UGX`,
+        icon: <Sparkles size={ICON_SIZE.base} color={colors.primary} />,
+      },
+      {
+        type: 'info',
+        id: 'min-withdrawal',
+        label: 'Min Withdrawal',
+        subtitle: `${rewardConfig.minWithdrawalPoints} points (${minUgx.toLocaleString()} UGX)`,
+        icon: <Gift size={ICON_SIZE.base} color={colors.info} />,
+      },
+    ];
+
+    if (isAdmin) {
+      items.push({
+        type: 'navigation',
+        id: 'configure-rewards',
+        label: 'Configure',
+        subtitle: 'Change reward rates and limits',
+        icon: <Settings2 size={ICON_SIZE.base} color={colors.warning} />,
+        onPress: () => setShowRewardSettings(true),
+        accessibilityHint: 'Open reward configuration settings',
+      });
+    }
+
+    return items;
+  }, [rewardConfig, isAdmin, colors]);
+
+  // ============================================================================
   // SETTINGS ITEMS
   // ============================================================================
 
@@ -889,7 +1037,9 @@ export default function ProfileScreen(): React.ReactElement {
     { type: 'header', id: 'header' },
     { type: 'transactions', id: 'transactions' },
     { type: 'quickActions', id: 'quickActions' },
+    { type: 'rewards', id: 'rewards' },
     { type: 'settings', id: 'settings' },
+    { type: 'support', id: 'support' },
     { type: 'signOut', id: 'signOut' },
   ], []);
 
@@ -914,6 +1064,13 @@ export default function ProfileScreen(): React.ReactElement {
             colors={colors}
           />
         );
+      case 'rewards':
+        return (
+          <RewardsSectionBlock
+            rewardSettings={rewardSettings}
+            colors={colors}
+          />
+        );
       case 'settings':
         return (
           <SettingsSectionBlock
@@ -922,6 +1079,8 @@ export default function ProfileScreen(): React.ReactElement {
             colors={colors}
           />
         );
+      case 'support':
+        return <SupportSection colors={colors} />;
       case 'signOut':
         return <SignOutSection onSignOut={handleSignOut} colors={colors} />;
       default:
@@ -934,6 +1093,7 @@ export default function ProfileScreen(): React.ReactElement {
     isAdmin,
     hasSurveySubscription,
     recentTransactions,
+    rewardSettings,
     securitySettings,
     appearanceSettings,
     handleEditProfile,
@@ -1206,6 +1366,22 @@ const styles = StyleSheet.create({
   },
   sectionContainer: {
     marginBottom: SPACING.lg,
+  },
+  supportContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+  },
+  supportIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  supportText: {
+    flex: 1,
+    gap: 2,
   },
   signOutSection: {
     marginTop: SPACING.lg,

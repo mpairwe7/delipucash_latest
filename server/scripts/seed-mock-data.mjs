@@ -51,7 +51,7 @@ const seedUsers = async () => {
   const adminHashedPassword = await bcrypt.hash('admin123456', 10);
 
   for (const user of mockUsers) {
-    const isAdmin = user.email === 'admin@delipucash.com';
+    const isAdmin = user.role === 'ADMIN';
     try {
       const dbUser = await prisma.appUser.upsert({
         where: { email: user.email },
