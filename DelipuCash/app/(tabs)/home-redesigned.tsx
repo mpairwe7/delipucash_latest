@@ -61,9 +61,6 @@ import Animated, {
   FadeInDown,
   useAnimatedScrollHandler,
   useSharedValue,
-  useAnimatedStyle,
-  interpolate,
-  Extrapolation,
 } from "react-native-reanimated";
 import {
   SPACING,
@@ -287,20 +284,16 @@ export default function HomePage(): React.ReactElement {
   const {
     data: trendingVideos,
     refetch: refetchVideos,
-    isLoading: videosLoading,
     isError: videosError,
   } = useTrendingVideos(6);
   const {
     data: recentQuestions,
     refetch: refetchQuestions,
-    isLoading: questionsLoading,
     isError: questionsError,
   } = useRecentQuestions(5);
   const {
     data: runningSurveys,
     refetch: refetchRunningSurveys,
-    isLoading: runningSurveysLoading,
-    isError: surveysError,
   } = useRunningSurveys();
   const {
     data: upcomingSurveys = [],
@@ -308,7 +301,7 @@ export default function HomePage(): React.ReactElement {
     isLoading: upcomingSurveysLoading
   } = useUpcomingSurveys();
   const { data: dailyReward, refetch: refetchDailyReward } = useDailyReward();
-  const { data: dashboardStats, refetch: refetchStats, isError: statsError } = useDashboardStats();
+  const { data: dashboardStats, refetch: refetchStats } = useDashboardStats();
   const { data: unreadCount } = useUnreadNotificationCount();
   const claimDailyReward = useClaimDailyReward();
 
@@ -434,17 +427,6 @@ export default function HomePage(): React.ReactElement {
     },
   });
 
-  // Header opacity based on scroll
-  const headerAnimatedStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      scrollY.value,
-      [0, 100],
-      [1, 0.95],
-      Extrapolation.CLAMP
-    );
-    return { opacity };
-  });
-
   // Refresh handler
   const onRefresh = useCallback(async (): Promise<void> => {
     setRefreshing(true);
@@ -486,7 +468,7 @@ export default function HomePage(): React.ReactElement {
       triggerHaptic('success');
       await claimDailyReward.mutateAsync();
       AccessibilityInfo.announceForAccessibility("Daily reward claimed successfully!");
-    } catch (error) {
+    } catch {
       triggerHaptic('error');
       showToast({ message: 'Failed to claim reward. Please try again.', type: 'error' });
     }
@@ -552,12 +534,12 @@ export default function HomePage(): React.ReactElement {
   const handleExplorePress = useCallback((itemId: string) => {
     triggerHaptic('medium');
     setActiveModal(itemId);
-  }, []);
+  }, [setActiveModal]);
 
   const handleModalAction = useCallback((route: string) => {
     setActiveModal(null);
     router.push(route as Href);
-  }, []);
+  }, [setActiveModal]);
 
   const handleViewLeaderboard = useCallback(() => {
     triggerHaptic('medium');
@@ -1100,19 +1082,16 @@ export default function HomePage(): React.ReactElement {
       user,
       dailyReward,
       dashboardStats,
-      unreadCount,
       trendingVideos,
       recentQuestions,
       runningSurveys,
       upcomingSurveys,
       earningOpportunities,
-      searchQuery,
       claimDailyReward.isPending,
       handleClaimDailyReward,
       handleAnswerQuestion,
       handleWatchVideo,
       handleTakeSurvey,
-      handleSearch,
       handleAdClick,
       handleAdImpression,
       handleExplorePress,
@@ -1122,6 +1101,9 @@ export default function HomePage(): React.ReactElement {
       leaderboardLoading,
       videosError,
       questionsError,
+      upcomingSurveysLoading,
+      layout.isSmallPhone,
+      layout.isTablet,
       insets.bottom,
     ]
   );
