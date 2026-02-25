@@ -328,6 +328,7 @@ export default function QuizSessionScreen({
     totalPoints,
     currentStreak,
     maxStreak,
+    initialUserPoints,
   } = useQuizStore(
     useShallow((s) => ({
       sessionState: s.sessionState,
@@ -340,6 +341,7 @@ export default function QuizSessionScreen({
       totalPoints: s.totalPoints,
       currentStreak: s.currentStreak,
       maxStreak: s.maxStreak,
+      initialUserPoints: s.initialUserPoints,
     }))
   );
 
@@ -734,10 +736,10 @@ export default function QuizSessionScreen({
       maxStreak,
       bonusPoints,
       totalEarned: totalPointsEarned + bonusPoints,
-      previousPoints: 0,
-      newTotalPoints: totalPointsEarned + bonusPoints,
+      previousPoints: initialUserPoints,
+      newTotalPoints: initialUserPoints + totalPointsEarned + bonusPoints,
     };
-  }, [answers, maxStreak, totalQuestions]);
+  }, [answers, maxStreak, totalQuestions, initialUserPoints]);
 
   // ===========================================
   // Render Loading

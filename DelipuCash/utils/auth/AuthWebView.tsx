@@ -25,6 +25,7 @@ export interface AuthWebViewProps {
 interface AuthMessageData {
   type: "AUTH_SUCCESS" | "AUTH_ERROR";
   jwt?: string;
+  refreshToken?: string;
   user?: AuthData["user"];
   error?: string;
 }
@@ -34,6 +35,7 @@ interface AuthMessageData {
  */
 interface TokenResponse {
   jwt: string;
+  refreshToken?: string;
   user: AuthData["user"];
 }
 
@@ -90,7 +92,7 @@ export const AuthWebView: React.FC<AuthWebViewProps> = ({
       if (event.data.type === "AUTH_SUCCESS" && event.data.jwt && event.data.user) {
         setAuth({
           token: event.data.jwt,
-          refreshToken: '',
+          refreshToken: event.data.refreshToken ?? '',
           user: event.data.user,
         });
       } else if (event.data.type === "AUTH_ERROR") {
@@ -131,7 +133,7 @@ export const AuthWebView: React.FC<AuthWebViewProps> = ({
       fetch(request.url)
         .then(async (response) => {
           const data: TokenResponse = await response.json();
-          setAuth({ token: data.jwt, refreshToken: '', user: data.user });
+          setAuth({ token: data.jwt, refreshToken: data.refreshToken ?? '', user: data.user });
         })
         .catch((error) => {
           console.error("Failed to fetch auth token:", error);
