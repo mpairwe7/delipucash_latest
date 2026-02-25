@@ -753,17 +753,14 @@ export default function HomePage(): React.ReactElement {
         case "ad-banner":
           if (!item.data) return null;
           return (
-            <Animated.View
-              entering={FadeIn.delay(100).duration(300)}
-              style={[styles.sectionContainer, styles.adContainer]}
-            >
+            <View style={[styles.sectionContainer, styles.adContainer]}>
               <BannerAd
                 ad={item.data}
                 onAdClick={handleAdClick}
                 onAdLoad={() => handleAdImpression(item.data)}
                 style={styles.bannerAd}
               />
-            </Animated.View>
+            </View>
           );
 
         case "trending-videos":
@@ -843,26 +840,20 @@ export default function HomePage(): React.ReactElement {
         case "ad-native":
           if (!item.data) return null;
           return (
-            <Animated.View
-              entering={FadeIn.delay(100).duration(300)}
-              style={[styles.sectionContainer, styles.adContainer]}
-            >
+            <View style={[styles.sectionContainer, styles.adContainer]}>
               <NativeAd
                 ad={item.data}
                 onAdClick={handleAdClick}
                 onAdLoad={() => handleAdImpression(item.data)}
                 style={styles.nativeAd}
               />
-            </Animated.View>
+            </View>
           );
 
         case "ad-featured":
           if (!item.data) return null;
           return (
-            <Animated.View
-              entering={FadeIn.delay(100).duration(300)}
-              style={[styles.sectionContainer, styles.adContainer]}
-            >
+            <View style={[styles.sectionContainer, styles.adContainer]}>
               <AdPlacementWrapper
                 ad={item.data}
                 placement="between-content"
@@ -870,16 +861,13 @@ export default function HomePage(): React.ReactElement {
                 onAdLoad={() => handleAdImpression(item.data)}
                 style={styles.featuredAdPlacement}
               />
-            </Animated.View>
+            </View>
           );
 
         case "ad-in-feed":
           if (!item.data) return null;
           return (
-            <Animated.View
-              entering={FadeIn.delay(100).duration(300)}
-              style={[styles.sectionContainer, styles.adContainer]}
-            >
+            <View style={[styles.sectionContainer, styles.adContainer]}>
               <InFeedAd
                 ad={item.data}
                 index={1}
@@ -887,16 +875,13 @@ export default function HomePage(): React.ReactElement {
                 onAdLoad={() => handleAdImpression(item.data)}
                 style={styles.inFeedAd}
               />
-            </Animated.View>
+            </View>
           );
 
         case "ad-between-content":
           if (!item.data) return null;
           return (
-            <Animated.View
-              entering={FadeIn.delay(100).duration(300)}
-              style={[styles.sectionContainer, styles.adContainer]}
-            >
+            <View style={[styles.sectionContainer, styles.adContainer]}>
               <BetweenContentAd
                 ad={item.data}
                 onAdClick={handleAdClick}
@@ -904,7 +889,7 @@ export default function HomePage(): React.ReactElement {
                 variant="native"
                 style={styles.betweenContentAd}
               />
-            </Animated.View>
+            </View>
           );
 
         case "running-surveys":
