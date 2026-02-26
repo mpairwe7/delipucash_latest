@@ -32,7 +32,7 @@ import {
   useUserProfile,
 } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
-import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
 import { RewardAnswerResult, RewardQuestionType, TextInputOptions } from "@/types";
@@ -270,7 +270,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Zustand: reactive selector for redemption eligibility ──
   const { data: rewardConfig } = useRewardConfig();
   const rewardPoints = cashToPoints(rewardAmount, rewardConfig ?? undefined) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
-  const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
+  // Compare user's actual points (server truth) against minWithdrawalPoints (both in points)
+  const minWithdrawalPoints = rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
+  const canRedeemRewards = (user?.points ?? 0) >= minWithdrawalPoints;
 
   // ── Last successful redemption for quick-redeem shortcut ──
   const redemptionHistory = useInstantRewardStore((s) => s.redemptionHistory);
@@ -1498,7 +1500,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       {/* Redemption Modal */}
       <RedemptionModal
         visible={showRedemptionModal}
-        availableAmount={walletBalance}
+        availableAmount={user?.points ?? 0}
         onClose={handleCloseRedemption}
         onRedeem={handleRedeem}
         initialType={quickRedeemType}

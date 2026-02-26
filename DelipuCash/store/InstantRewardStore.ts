@@ -643,8 +643,11 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
         });
       },
 
+      /** @deprecated Use canRedeemRewards(userPoints, config) or compare user.points directly */
       canRedeem: () => {
         const { walletBalance } = get();
+        // walletBalance is in UGX; MIN_REDEMPTION_POINTS is in points.
+        // This is a rough check — for accurate comparison, use user.points vs config.minWithdrawalPoints
         return walletBalance >= REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
       },
 
@@ -839,11 +842,18 @@ export const selectTotalRewardsEarned = (state: InstantRewardUIState) =>
  * Pass `config?.minWithdrawalPoints` from `useRewardConfig()` at the call-site.
  * Falls back to REWARD_CONSTANTS.MIN_REDEMPTION_POINTS (50) if no config loaded yet.
  *
- * Usage: `useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints))`
+ * NOTE: walletBalance in Zustand is stored in UGX. This selector converts
+ * minWithdrawalPoints to UGX via pointsToCash() for proper comparison.
+ * For more accurate checks, compare user.points (from TanStack) directly
+ * against minWithdrawalPoints at the call-site instead of using this selector.
+ *
+ * Usage: `useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints, rewardConfig))`
  */
-export const selectCanRedeem = (minWithdrawalPoints?: number) => (state: InstantRewardUIState): boolean => {
+export const selectCanRedeem = (minWithdrawalPoints?: number, config?: RewardConfig) => (state: InstantRewardUIState): boolean => {
   const min = minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
-  return state.walletBalance >= min;
+  // Convert minWithdrawalPoints to UGX for proper comparison with walletBalance (UGX)
+  const minUgx = config ? pointsToCash(min, config) : min;
+  return state.walletBalance >= minUgx;
 };
 
 export const selectPendingSubmissionForQuestion = (questionId: string) => (state: InstantRewardUIState) =>

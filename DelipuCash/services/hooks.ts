@@ -1323,15 +1323,25 @@ export function useWithdraw(): UseMutationResult<
       }
     },
     onSuccess: (data) => {
-      // Sync Zustand store from server's actual deducted value
-      if (data?.cashValue != null) {
-        // Server returned the actual cash value — let invalidation handle the rest
+      // Sync Zustand store from server's confirmed deduction if available
+      if (data?.pointsDeducted != null) {
+        // Server returned authoritative points deducted — update Zustand immediately
+        // The queryKeys.user invalidation below will also update the TanStack cache
+        const currentStore = useInstantRewardStore.getState();
+        const currentUser = queryClient.getQueryData(queryKeys.user) as any;
+        if (currentUser?.points != null) {
+          const serverPoints = Math.max(0, currentUser.points);
+          // Let TanStack cache be the source of truth — it was already optimistically updated
+          // in onMutate, so just ensure Zustand stays in sync
+          currentStore.syncWalletFromServer(serverPoints);
+        }
       }
 
       // Invalidate to get ground-truth from server
       queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
+      queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
     },
     onSettled: () => {
       // Always refetch user to ensure final consistency regardless of outcome
@@ -1503,6 +1513,9 @@ export function useSubmitRewardAnswer(): UseMutationResult<RewardAnswerResult, E
       queryClient.invalidateQueries({ queryKey: queryKeys.instantQuestions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestion(variables.questionId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+      // CRITICAL: Invalidate user profile so points/wallet balance updates
+      // propagate to profile, withdrawal, and all balance-dependent screens
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
     },
   });
 }

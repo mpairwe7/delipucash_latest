@@ -172,6 +172,8 @@ export default function WithdrawScreen(): React.ReactElement {
   const [transactionRef, setTransactionRef] = useState<string | null>(null);
   // Server-confirmed withdrawal amount (may differ from requested due to rounding)
   const [confirmedCashValue, setConfirmedCashValue] = useState<number | null>(null);
+  // Server-confirmed points deducted
+  const [confirmedPointsDeducted, setConfirmedPointsDeducted] = useState<number | null>(null);
   
   const { data: user, refetch: refetchUser } = useUser();
   const { data: unreadCount } = useUnreadNotificationCount();
@@ -251,9 +253,10 @@ export default function WithdrawScreen(): React.ReactElement {
           withdrawKeyRef.current = null; // Clear on success for next withdrawal
           setTransactionRef(data?.transactionRef ?? null);
           setConfirmedCashValue(data?.cashValue ?? amount);
+          setConfirmedPointsDeducted(data?.pointsDeducted ?? pointsNeeded);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           AccessibilityInfo.announceForAccessibility(
-            `Withdrawal of ${formatCurrency(amount)} initiated successfully.`
+            `Withdrawal of ${formatCurrency(data?.cashValue ?? amount)} initiated successfully. ${data?.pointsDeducted ?? pointsNeeded} points deducted.`
           );
           setStep(4);
         },
@@ -512,11 +515,26 @@ export default function WithdrawScreen(): React.ReactElement {
               </Text>
               <Text style={[styles.confirmTotalValue, { color: colors.text }]}>
                 {formatCurrency(
-                  walletBalance -
-                    parseFloat(form.values.amount || "0")
+                  Math.max(0, walletBalance -
+                    (cashToPoints(parseFloat(form.values.amount || "0"), rewardConfig ?? undefined)))
                 )}
               </Text>
             </View>
+
+            {/* Show approximate UGX value of remaining balance */}
+            {rewardConfig && (
+              <View style={styles.confirmRow}>
+                <Text style={[styles.confirmDetailLabel, { color: colors.textMuted }]}>
+                  Points after withdrawal
+                </Text>
+                <Text
+                  style={[styles.confirmDetailValue, { color: colors.textMuted }]}
+                  accessibilityLiveRegion="polite"
+                >
+                  {Math.max(0, userPoints - (cashToPoints(parseFloat(form.values.amount || "0"), rewardConfig ?? undefined)))} pts
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
@@ -612,13 +630,24 @@ export default function WithdrawScreen(): React.ReactElement {
           </View>
           <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
           <View style={styles.receiptRow}>
-            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>New Balance</Text>
+            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Points Deducted</Text>
+            <Text
+              style={[styles.receiptValue, { color: colors.error }]}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`Points deducted: ${confirmedPointsDeducted ?? cashToPoints(parseFloat(form.values.amount || "0"), rewardConfig ?? undefined)}`}
+            >
+              -{confirmedPointsDeducted ?? cashToPoints(parseFloat(form.values.amount || "0"), rewardConfig ?? undefined)} pts
+            </Text>
+          </View>
+          <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.receiptRow}>
+            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Remaining Balance</Text>
             <Text
               style={[styles.receiptValue, { color: colors.text }]}
               accessibilityLiveRegion="polite"
-              accessibilityLabel={`New balance: ${formatCurrency(displayBalance)}`}
+              accessibilityLabel={`Remaining balance: ${displayBalance} points`}
             >
-              {formatCurrency(displayBalance)}
+              {displayBalance} pts
             </Text>
           </View>
           {transactionRef && (
@@ -714,18 +743,13 @@ export default function WithdrawScreen(): React.ReactElement {
                 onPress={() => router.push("/notifications" as Href)}
               />
             </View>
-            <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
-              Available balance: {formatCurrency(walletBalance)}
+            <Text
+              style={[styles.headerSubtitle, { color: colors.textMuted }]}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`Available balance: ${userPoints} points${pointsCashValue > 0 ? `, worth approximately ${formatCurrency(pointsCashValue)}` : ''}`}
+            >
+              Available: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
             </Text>
-            {userPoints > 0 && (
-              <Text
-                style={[styles.headerSubtitle, { color: colors.textMuted, marginTop: 2 }]}
-                accessibilityLabel={`Points balance: ${userPoints} points${pointsCashValue > 0 ? `, approximately ${formatCurrency(pointsCashValue)}` : ''}`}
-                accessibilityLiveRegion="polite"
-              >
-                Points: {userPoints} pts {pointsCashValue > 0 ? `(\u2248 ${formatCurrency(pointsCashValue)})` : ''}
-              </Text>
-            )}
           </View>
 
           {/* Step Indicator */}

@@ -9,7 +9,7 @@ import { formatCurrency } from "@/services";
 import { rewardsApi } from "@/services/api";
 import { useInstantRewardQuestions, useInstantRewardQuestionAttempts } from "@/services/hooks";
 import type { UserAttemptRecord } from "@/services/hooks";
-import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints, selectCanRedeem } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
 import { useAuth } from "@/utils/auth/useAuth";
@@ -313,7 +313,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     }))
   );
   const { data: rewardConfig } = useRewardConfig();
-  const canRedeemRewards = useInstantRewardStore(selectCanRedeem(rewardConfig?.minWithdrawalPoints));
+  const canRedeemRewards = (user?.points ?? 0) >= (rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS);
   const endSession = useInstantRewardStore((s) => s.endSession);
   const startSession = useInstantRewardStore((s) => s.startSession);
   const resetSession = useInstantRewardStore((s) => s.resetSession);
@@ -986,7 +986,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
       {/* Redemption Modal */}
       <RedemptionModal
         visible={showRedemptionModal}
-        availableAmount={walletBalance}
+        availableAmount={user?.points ?? 0}
         onClose={handleCloseRedemption}
         onRedeem={handleRedeem}
         initialType={quickRedeemType}

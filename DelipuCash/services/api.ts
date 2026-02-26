@@ -1199,7 +1199,7 @@ export const rewardsApi = {
       type: string;
       idempotencyKey?: string;
     },
-  ): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string }>> {
+  ): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string; pointsDeducted?: number; cashValue?: number }>> {
     const { cashValue, pointsToRedeem, provider, phoneNumber, type, idempotencyKey } = params;
     return fetchJson(API_ROUTES.rewards.redeem, {
       method: 'POST',
