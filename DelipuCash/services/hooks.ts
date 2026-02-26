@@ -25,6 +25,7 @@ import {
 import { keepPreviousData, useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
 import { useAuthStore } from '@/utils/auth/store';
+import { useInstantRewardStore } from '@/store/InstantRewardStore';
 import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
 import { questionQueryKeys } from "./questionHooks";
 
@@ -1265,7 +1266,7 @@ function generateWithdrawIdempotencyKey(): string {
 }
 
 export function useWithdraw(): UseMutationResult<
-  { success: boolean; transactionRef?: string; message?: string },
+  { success: boolean; transactionRef?: string; message?: string; pointsDeducted?: number; cashValue?: number },
   Error,
   { amount: number; phoneNumber: string; provider: string; pointsToRedeem?: number; idempotencyKey?: string }
 > {
@@ -1288,9 +1289,52 @@ export function useWithdraw(): UseMutationResult<
       if (!response.success) throw new Error(response.error || 'Withdrawal failed');
       return response.data;
     },
-    onSuccess: () => {
+    // Optimistic update: immediately reflect balance change in the UI
+    onMutate: async (variables) => {
+      // Cancel in-flight refetches so they don't overwrite our optimistic value
+      await queryClient.cancelQueries({ queryKey: queryKeys.user });
+
+      // Snapshot the previous user data for rollback
+      const previousUser = queryClient.getQueryData(queryKeys.user);
+
+      // Optimistically deduct points from user cache
+      queryClient.setQueryData(queryKeys.user, (old: any) => {
+        if (!old) return old;
+        const pointsToDeduct = variables.pointsToRedeem ?? 0;
+        const newPoints = Math.max(0, (old.points ?? 0) - pointsToDeduct);
+        return { ...old, points: newPoints, walletBalance: newPoints };
+      });
+
+      // Also optimistically update Zustand wallet
+      const store = useInstantRewardStore.getState();
+      const previousZustandBalance = store.walletBalance;
+      store.updateWalletBalance(Math.max(0, previousZustandBalance - variables.amount));
+
+      return { previousUser, previousZustandBalance };
+    },
+    onError: (_err, _variables, context) => {
+      // Rollback TanStack cache on failure
+      if (context?.previousUser) {
+        queryClient.setQueryData(queryKeys.user, context.previousUser);
+      }
+      // Rollback Zustand wallet
+      if (context?.previousZustandBalance != null) {
+        useInstantRewardStore.getState().updateWalletBalance(context.previousZustandBalance);
+      }
+    },
+    onSuccess: (data) => {
+      // Sync Zustand store from server's actual deducted value
+      if (data?.cashValue != null) {
+        // Server returned the actual cash value — let invalidation handle the rest
+      }
+
+      // Invalidate to get ground-truth from server
       queryClient.invalidateQueries({ queryKey: queryKeys.transactions });
       queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
+      queryClient.invalidateQueries({ queryKey: queryKeys.user });
+    },
+    onSettled: () => {
+      // Always refetch user to ensure final consistency regardless of outcome
       queryClient.invalidateQueries({ queryKey: queryKeys.user });
     },
   });

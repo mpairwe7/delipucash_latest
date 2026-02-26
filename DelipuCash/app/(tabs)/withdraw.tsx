@@ -1,4 +1,4 @@
-import React, { useState, useRef, memo } from "react";
+import React, { useState, useRef, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
+  AccessibilityInfo,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -24,7 +25,18 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+  withDelay,
+  ReduceMotion,
+} from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
 import { useStatusBar } from "@/hooks/useStatusBar";
 import {
@@ -42,10 +54,11 @@ import {
   paymentMethods,
   formatCurrency,
 } from "@/services/api";
-import { useWithdraw } from "@/services/hooks";
+import { useWithdraw, queryKeys } from "@/services/hooks";
+import { useQueryClient } from "@tanstack/react-query";
 import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
-import { cashToPoints } from "@/store/InstantRewardStore";
+import { cashToPoints, useInstantRewardStore } from "@/store/InstantRewardStore";
 import useUser from "@/utils/useUser";
 import { useFormValidation, validators } from "@/utils/validation";
 import { NotificationBell } from "@/components";
@@ -106,6 +119,47 @@ const PaymentMethodCard = memo<PaymentMethodCardProps>(
 
 PaymentMethodCard.displayName = "PaymentMethodCard";
 
+// ── Animated success ring ───────────────────────────────────────────────────
+const SuccessPulseRing = memo<{ color: string }>(({ color }) => {
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(0.5);
+
+  React.useEffect(() => {
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.6, { duration: 1200, easing: Easing.out(Easing.ease) }),
+        withTiming(1, { duration: 800, easing: Easing.in(Easing.ease) }),
+      ),
+      3, // Repeat 3 times then stop
+      false,
+    );
+    opacity.value = withRepeat(
+      withSequence(
+        withTiming(0, { duration: 1200, easing: Easing.out(Easing.ease) }),
+        withTiming(0.5, { duration: 800, easing: Easing.in(Easing.ease) }),
+      ),
+      3,
+      false,
+    );
+  }, [scale, opacity]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.pulseRing,
+        { borderColor: color },
+        animatedStyle,
+      ]}
+    />
+  );
+});
+SuccessPulseRing.displayName = "SuccessPulseRing";
+
 /**
  * Withdraw screen component
  * Handles the multi-step withdrawal process
@@ -116,10 +170,14 @@ export default function WithdrawScreen(): React.ReactElement {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
   const [transactionRef, setTransactionRef] = useState<string | null>(null);
+  // Server-confirmed withdrawal amount (may differ from requested due to rounding)
+  const [confirmedCashValue, setConfirmedCashValue] = useState<number | null>(null);
   
-  const { data: user } = useUser();
+  const { data: user, refetch: refetchUser } = useUser();
   const { data: unreadCount } = useUnreadNotificationCount();
   const withdrawMutation = useWithdraw();
+  const queryClient = useQueryClient();
+  const syncWalletFromServer = useInstantRewardStore((s) => s.syncWalletFromServer);
   
   const { data: rewardConfig } = useRewardConfig();
   const withdrawKeyRef = useRef<string | null>(null);
@@ -192,7 +250,11 @@ export default function WithdrawScreen(): React.ReactElement {
         onSuccess: (data) => {
           withdrawKeyRef.current = null; // Clear on success for next withdrawal
           setTransactionRef(data?.transactionRef ?? null);
+          setConfirmedCashValue(data?.cashValue ?? amount);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          AccessibilityInfo.announceForAccessibility(
+            `Withdrawal of ${formatCurrency(amount)} initiated successfully.`
+          );
           setStep(4);
         },
         onError: () => {
@@ -203,9 +265,23 @@ export default function WithdrawScreen(): React.ReactElement {
     );
   };
 
-  const handleDone = (): void => {
+  const handleDone = useCallback(async (): Promise<void> => {
+    try {
+      // Force-refetch user profile to get ground-truth balance before navigating
+      const result = await queryClient.fetchQuery({
+        queryKey: queryKeys.user,
+        staleTime: 0, // Force fresh fetch
+      }) as any;
+
+      // Sync Zustand store from server's authoritative balance
+      if (result?.points != null && rewardConfig) {
+        syncWalletFromServer(pointsToUgx(result.points, rewardConfig));
+      }
+    } catch {
+      // If refetch fails, still navigate — the background invalidation will catch up
+    }
     router.back();
-  };
+  }, [queryClient, rewardConfig, syncWalletFromServer]);
 
   const renderStepIndicator = (): React.ReactElement => (
     <View
@@ -478,17 +554,23 @@ export default function WithdrawScreen(): React.ReactElement {
 
   const renderStep4 = (): React.ReactElement | null => {
     if (!selectedMethod) return null;
-    const withdrawnAmount = parseFloat(form.values.amount) || 0;
+    const withdrawnAmount = confirmedCashValue ?? (parseFloat(form.values.amount) || 0);
     const maskedPhone =
       form.values.phoneNumber.length >= 4
         ? `***${form.values.phoneNumber.slice(-4)}`
         : form.values.phoneNumber;
 
+    // Use the optimistically-updated walletBalance (already deducted by onMutate)
+    const displayBalance = walletBalance;
+
     return (
       <Animated.View entering={FadeIn.duration(350)} style={styles.successContainer}>
-        {/* Status icon with pulsing ring */}
-        <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]} importantForAccessibility="no">
-          <CheckCircle size={48} color={colors.success} strokeWidth={1.5} />
+        {/* Success icon with animated pulsing ring */}
+        <View style={styles.successIconWrapper}>
+          <SuccessPulseRing color={colors.success} />
+          <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]} importantForAccessibility="no">
+            <CheckCircle size={48} color={colors.success} strokeWidth={1.5} />
+          </View>
         </View>
 
         <Text
@@ -531,8 +613,12 @@ export default function WithdrawScreen(): React.ReactElement {
           <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
           <View style={styles.receiptRow}>
             <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>New Balance</Text>
-            <Text style={[styles.receiptValue, { color: colors.text }]}>
-              {formatCurrency(walletBalance - withdrawnAmount)}
+            <Text
+              style={[styles.receiptValue, { color: colors.text }]}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`New balance: ${formatCurrency(displayBalance)}`}
+            >
+              {formatCurrency(displayBalance)}
             </Text>
           </View>
           {transactionRef && (
@@ -854,6 +940,20 @@ const styles = StyleSheet.create({
   successContainer: {
     alignItems: "center",
     paddingVertical: 32,
+  },
+  successIconWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    width: 96,
+    height: 96,
+    marginBottom: 16,
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
   },
   successIcon: {
     width: 80,

@@ -76,8 +76,9 @@ import {
   canRedeem,
   getRedemptionOptions,
 } from '@/services/quizApi';
-import { useRewardConfig } from '@/services/configHooks';
+import { useRewardConfig, pointsToUgx } from '@/services/configHooks';
 import useUser from '@/utils/useUser';
+import { useInstantRewardStore } from '@/store/InstantRewardStore';
 import { lockPortrait } from '@/hooks/useScreenOrientation';
 import { formatCurrency } from '@/services';
 import {
@@ -306,9 +307,10 @@ export default function QuizSessionScreen({
   // Lock to portrait — quiz layouts are designed exclusively for portrait orientation
   useEffect(() => { lockPortrait(); }, []);
 
-  const { data: userData } = useUser();
+  const { data: userData, refetch: refetchUser } = useUser();
   const userId = userData?.id || '';
   const { data: rewardConfig } = useRewardConfig();
+  const syncWalletFromServer = useInstantRewardStore((s) => s.syncWalletFromServer);
 
   // Queries
   const { data: questions, isLoading, error, refetch } = useQuizQuestions(questionsLimit, category);
@@ -691,6 +693,16 @@ export default function QuizSessionScreen({
         const pointsUsed = result.pointsDeducted ?? selectedRedemptionAmount;
         useQuizStore.getState().deductPoints(pointsUsed);
         
+        // Sync user profile + Zustand wallet from server ground truth
+        try {
+          const freshUser = await refetchUser();
+          if (freshUser?.data?.points != null && rewardConfig) {
+            syncWalletFromServer(pointsToUgx(freshUser.data.points, rewardConfig));
+          }
+        } catch {
+          // Background invalidation from useRedeemReward will catch up
+        }
+
         const cashAmount = result.cashValue ?? 0;
         showToast(
           cashAmount > 0
