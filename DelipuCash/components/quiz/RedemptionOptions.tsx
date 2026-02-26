@@ -101,8 +101,8 @@ const RedemptionOptionCard: React.FC<RedemptionOptionCardProps> = ({
               ? withAlpha(color, 0.08)
               : withAlpha(colors.textMuted, 0.05),
             borderColor: isEnabled ? color : colors.border,
-            opacity: pressed && isEnabled ? 0.7 : 1,
           },
+          pressed && isEnabled && { opacity: 0.7 },
         ]}
         accessibilityRole="button"
         accessibilityLabel={title}
@@ -341,9 +341,7 @@ export const RedemptionOptions: React.FC<RedemptionOptionsProps> = ({
             onPress={handleQuickRedeem}
             style={({ pressed }) => [
               styles.quickRedeemContent,
-              {
-                opacity: pressed ? 0.7 : 1,
-              },
+              pressed && { opacity: 0.7 },
             ]}
             accessibilityRole="button"
             accessibilityLabel="Quick redeem"

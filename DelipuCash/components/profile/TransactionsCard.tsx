@@ -260,12 +260,12 @@ export const TransactionsCard = memo(function TransactionsCard({
   }, [recentTransactions]);
 
   return (
-    <Animated.View
-      entering={FadeInDown.delay(150).duration(400).springify().reduceMotion(ReduceMotion.System)}
-      testID={testID}
-    >
-      <Animated.View style={[cardAnimatedStyle]}>
-        <AnimatedTouchable
+    <View testID={testID}>
+      <Animated.View
+        entering={FadeInDown.delay(150).duration(400).springify().reduceMotion(ReduceMotion.System)}
+      >
+        <Animated.View style={[cardAnimatedStyle]}>
+          <AnimatedTouchable
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           onPress={handlePress}
@@ -407,9 +407,10 @@ export const TransactionsCard = memo(function TransactionsCard({
             </AccessibleText>
             <ChevronRight size={16} color={colors.primary} />
           </View>
-        </AnimatedTouchable>
+          </AnimatedTouchable>
+        </Animated.View>
       </Animated.View>
-    </Animated.View>
+    </View>
   );
 });
 

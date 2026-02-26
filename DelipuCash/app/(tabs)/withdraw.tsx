@@ -18,7 +18,13 @@ import {
   Phone,
   AlertCircle,
   CheckCircle,
+  Clock,
+  Copy,
+  ArrowUpRight,
 } from "lucide-react-native";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import Animated, { FadeIn, FadeInDown } from "react-native-reanimated";
 import { StatusBar } from "expo-status-bar";
 import { useStatusBar } from "@/hooks/useStatusBar";
 import {
@@ -108,6 +114,7 @@ export default function WithdrawScreen(): React.ReactElement {
   const { colors, style: statusBarStyle } = useStatusBar(); // Focus-aware status bar management
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod | null>(null);
+  const [transactionRef, setTransactionRef] = useState<string | null>(null);
   
   const { data: user } = useUser();
   const { data: unreadCount } = useUnreadNotificationCount();
@@ -170,10 +177,13 @@ export default function WithdrawScreen(): React.ReactElement {
         phoneNumber: form.values.phoneNumber,
       },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
+          setTransactionRef(data?.transactionRef ?? null);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setStep(4);
         },
         onError: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
           Alert.alert("Error", "Withdrawal failed. Please try again.");
         },
       }
@@ -455,9 +465,15 @@ export default function WithdrawScreen(): React.ReactElement {
 
   const renderStep4 = (): React.ReactElement | null => {
     if (!selectedMethod) return null;
+    const withdrawnAmount = parseFloat(form.values.amount) || 0;
+    const maskedPhone =
+      form.values.phoneNumber.length >= 4
+        ? `***${form.values.phoneNumber.slice(-4)}`
+        : form.values.phoneNumber;
 
     return (
-      <View style={styles.successContainer}>
+      <Animated.View entering={FadeIn.duration(350)} style={styles.successContainer}>
+        {/* Status icon with pulsing ring */}
         <View style={[styles.successIcon, { backgroundColor: `${colors.success}20` }]} importantForAccessibility="no">
           <CheckCircle size={48} color={colors.success} strokeWidth={1.5} />
         </View>
@@ -470,23 +486,100 @@ export default function WithdrawScreen(): React.ReactElement {
           Withdrawal Initiated
         </Text>
 
-        <Text style={[styles.successMessage, { color: colors.textMuted }]}>
-          Your withdrawal of {formatCurrency(parseFloat(form.values.amount) || 0)} has been
-          submitted.{"\n"}
-          Funds will arrive within {selectedMethod.processingTime}.
+        {/* Amount hero */}
+        <Text style={[styles.successHeroAmount, { color: colors.text }]}>
+          {formatCurrency(withdrawnAmount)}
         </Text>
 
-        <TouchableOpacity
-          style={[styles.doneButton, { backgroundColor: colors.primary }]}
-          onPress={handleDone}
-          accessibilityRole="button"
-          accessibilityLabel="Done, return to previous screen"
-        >
-          <Text style={[styles.buttonText, { color: colors.primaryText }]}>
-            Done
+        {/* Pending status badge */}
+        <View style={[styles.pendingBadge, { backgroundColor: `${colors.warning}15` }]}>
+          <Clock size={14} color={colors.warning} strokeWidth={2} />
+          <Text style={[styles.pendingText, { color: colors.warning }]}>
+            Processing — arrives within {selectedMethod.processingTime}
           </Text>
-        </TouchableOpacity>
-      </View>
+        </View>
+
+        {/* Mini receipt */}
+        <Animated.View
+          entering={FadeInDown.delay(150).duration(300)}
+          style={[styles.receiptCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          accessibilityRole="summary"
+          accessibilityLabel={`Receipt: ${formatCurrency(withdrawnAmount)} to ${selectedMethod.name} ${maskedPhone}`}
+        >
+          <View style={styles.receiptRow}>
+            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Method</Text>
+            <Text style={[styles.receiptValue, { color: colors.text }]}>{selectedMethod.name}</Text>
+          </View>
+          <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.receiptRow}>
+            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Phone</Text>
+            <Text style={[styles.receiptValue, { color: colors.text }]}>{maskedPhone}</Text>
+          </View>
+          <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.receiptRow}>
+            <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>New Balance</Text>
+            <Text style={[styles.receiptValue, { color: colors.text }]}>
+              {formatCurrency(walletBalance - withdrawnAmount)}
+            </Text>
+          </View>
+          {transactionRef && (
+            <>
+              <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+              <TouchableOpacity
+                style={styles.receiptRow}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(transactionRef);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel={`Copy reference ${transactionRef}`}
+                accessibilityHint="Tap to copy transaction reference"
+              >
+                <Text style={[styles.receiptLabel, { color: colors.textMuted }]}>Reference</Text>
+                <View style={styles.refValueRow}>
+                  <Text
+                    style={[styles.receiptValue, { color: colors.text }]}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
+                    {transactionRef.length > 14
+                      ? `${transactionRef.slice(0, 6)}…${transactionRef.slice(-6)}`
+                      : transactionRef}
+                  </Text>
+                  <Copy size={14} color={colors.textMuted} strokeWidth={1.5} />
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
+        </Animated.View>
+
+        {/* CTA buttons */}
+        <Animated.View entering={FadeInDown.delay(300).duration(300)} style={styles.successActionsColumn}>
+          <TouchableOpacity
+            style={[styles.doneButton, { backgroundColor: colors.primary }]}
+            onPress={handleDone}
+            accessibilityRole="button"
+            accessibilityLabel="Done, return to previous screen"
+          >
+            <Text style={[styles.buttonText, { color: colors.primaryText }]}>Done</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryOutlineButton, { borderColor: colors.border }]}
+            onPress={() => {
+              router.replace("/(tabs)/transactions" as any);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="View your transactions"
+          >
+            <Text style={[styles.secondaryOutlineText, { color: colors.primary }]}>
+              View Transactions
+            </Text>
+            <ArrowUpRight size={16} color={colors.primary} strokeWidth={2} />
+          </TouchableOpacity>
+        </Animated.View>
+      </Animated.View>
     );
   };
 
@@ -747,7 +840,7 @@ const styles = StyleSheet.create({
   },
   successContainer: {
     alignItems: "center",
-    paddingVertical: 40,
+    paddingVertical: 32,
   },
   successIcon: {
     width: 80,
@@ -755,18 +848,78 @@ const styles = StyleSheet.create({
     borderRadius: 40,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   successTitle: {
     fontFamily: "Roboto_700Bold",
-    fontSize: 24,
-    marginBottom: 8,
+    fontSize: 22,
+    marginBottom: 4,
   },
-  successMessage: {
+  successHeroAmount: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 36,
+    marginBottom: 12,
+  },
+  pendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginBottom: 20,
+  },
+  pendingText: {
+    fontFamily: "Roboto_500Medium",
+    fontSize: 13,
+  },
+  receiptCard: {
+    width: "100%",
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    gap: 6,
+    marginBottom: 24,
+  },
+  receiptRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 4,
+  },
+  receiptLabel: {
     fontFamily: "Roboto_400Regular",
     fontSize: 14,
-    textAlign: "center",
-    marginBottom: 32,
+  },
+  receiptValue: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 14,
+  },
+  receiptDivider: {
+    height: StyleSheet.hairlineWidth,
+  },
+  refValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  successActionsColumn: {
+    width: "100%",
+    gap: 12,
+  },
+  secondaryOutlineButton: {
+    width: "100%",
+    borderRadius: 12,
+    paddingVertical: 14,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  secondaryOutlineText: {
+    fontFamily: "Roboto_700Bold",
+    fontSize: 15,
   },
   doneButton: {
     width: "100%",

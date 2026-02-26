@@ -704,16 +704,17 @@ export interface RewardRedemptionRequest {
   redemptionType: RewardRedemptionType;
   phoneNumber: string;
   provider: 'MTN' | 'AIRTEL';
+  idempotencyKey?: string;
 }
 
 export interface RewardRedemptionResult {
   success: boolean;
-  transactionId?: string;
-  amountRedeemed: number;
-  pointsDeducted: number;
-  remainingPoints: number;
-  message: string;
-  paymentStatus: PaymentStatus;
+  transactionRef?: string;
+  message?: string;
+  pointsDeducted?: number;
+  cashValue?: number;
+  provider?: string;
+  status?: 'SUCCESSFUL' | 'PENDING' | 'FAILED';
 }
 
 export interface UserPoints {

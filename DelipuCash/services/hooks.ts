@@ -1260,12 +1260,22 @@ export function useWithdraw(): UseMutationResult<
   return useMutation({
     mutationKey: ['rewards', 'withdraw'],
     mutationFn: async (data) => {
+      // Generate idempotency key to prevent duplicate withdrawals
+      const idempotencyKey =
+        typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+              const r = (Math.random() * 16) | 0;
+              return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+            });
+
       const response = await api.rewards.redeem({
         cashValue: data.amount,
         pointsToRedeem: data.pointsToRedeem,
         provider: data.provider.toUpperCase(),
         phoneNumber: data.phoneNumber,
         type: 'CASH',
+        idempotencyKey,
       });
       if (!response.success) throw new Error(response.error || 'Withdrawal failed');
       return response.data;

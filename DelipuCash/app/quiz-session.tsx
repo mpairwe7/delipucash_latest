@@ -687,11 +687,15 @@ export default function QuizSessionScreen({
       });
 
       if (result.success) {
-        // Update store points to reflect deduction
-        useQuizStore.getState().deductPoints(result.pointsDeducted);
+        // Update store points to reflect deduction (use server value or fall back to request amount)
+        const pointsUsed = result.pointsDeducted ?? selectedRedemptionAmount;
+        useQuizStore.getState().deductPoints(pointsUsed);
         
+        const cashAmount = result.cashValue ?? 0;
         showToast(
-          `Success! ${result.amountRedeemed.toLocaleString()} UGX sent to your ${selectedProvider} number`,
+          cashAmount > 0
+            ? `Success! ${cashAmount.toLocaleString()} UGX sent to your ${selectedProvider} number`
+            : result.message || 'Redemption successful!',
           'success'
         );
         triggerHaptic('success');

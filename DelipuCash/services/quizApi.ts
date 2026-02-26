@@ -142,18 +142,36 @@ async function saveQuizSession(session: Partial<QuizSession>): Promise<QuizSessi
 }
 
 /**
+ * Generate a UUID v4 for idempotency keys.
+ * Uses crypto.randomUUID where available, otherwise falls back to a
+ * Math.random-based implementation.
+ */
+function generateIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  // Fallback for older RN runtimes
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
+/**
  * Redeem points for cash or airtime
  */
 async function redeemReward(request: RewardRedemptionRequest): Promise<RewardRedemptionResult> {
+  const idempotencyKey = request.idempotencyKey || generateIdempotencyKey();
+
   const response = await fetch(`${API_BASE_URL}/api/quiz/redeem`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(request),
+    body: JSON.stringify({ ...request, idempotencyKey }),
   });
   
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.message || 'Failed to redeem reward');
+    throw new Error(error.message || error.error || 'Failed to redeem reward');
   }
   
   return response.json();
@@ -273,8 +291,11 @@ export function useRedeemReward(): UseMutationResult<RewardRedemptionResult, Err
   return useMutation({
     mutationFn: redeemReward,
     onSuccess: (_, variables) => {
+      // Unified cache invalidation — keep in sync with useWithdraw in hooks.ts
       queryClient.invalidateQueries({ queryKey: quizQueryKeys.userPoints(variables.userId) });
       queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+      queryClient.invalidateQueries({ queryKey: ['rewards'] });
     },
   });
 }

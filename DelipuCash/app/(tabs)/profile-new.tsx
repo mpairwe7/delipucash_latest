@@ -162,6 +162,7 @@ const SECTION_HEIGHTS: Record<SectionType, number> = {
   header: 340,
   transactions: 420,
   quickActions: 340,
+  referral: 260,
   rewards: 320,
   achievements: 0,    // not currently rendered
   recentActivity: 0,  // not currently rendered
@@ -442,6 +443,7 @@ const ReferralSection = memo(function ReferralSection({
           style={[referralStyles.shareBtn, { backgroundColor: '#9C27B0' }]}
           accessibilityRole="button"
           accessibilityLabel="Share your referral code"
+          accessibilityHint="Opens the share sheet to send your referral link"
         >
           <Share2 size={18} color="#fff" />
           <AccessibleText style={referralStyles.shareBtnText}>
@@ -1115,10 +1117,11 @@ export default function ProfileScreen(): React.ReactElement {
   }, []);
 
   const handleScrollToSettings = useCallback(() => {
-    // 'settings' is at index 4 in the sections array — use hardcoded index
-    // since sections order is stable and defined in the useMemo below
-    flatListRef.current?.scrollToIndex({ index: 4, animated: true });
-  }, []);
+    const settingsIndex = sections.findIndex(s => s.type === 'settings');
+    if (settingsIndex >= 0) {
+      flatListRef.current?.scrollToIndex({ index: settingsIndex, animated: true });
+    }
+  }, [sections]);
 
   // ============================================================================
   // REWARD CONFIG (reactive to admin changes)
@@ -1263,16 +1266,25 @@ export default function ProfileScreen(): React.ReactElement {
   // FLAT LIST SECTIONS
   // ============================================================================
 
-  const sections: SectionItem[] = useMemo(() => [
-    { type: 'header', id: 'header' },
-    { type: 'transactions', id: 'transactions' },
-    { type: 'quickActions', id: 'quickActions' },
-    { type: 'referral', id: 'referral' },
-    { type: 'rewards', id: 'rewards' },
-    { type: 'settings', id: 'settings' },
-    { type: 'support', id: 'support' },
-    { type: 'signOut', id: 'signOut' },
-  ], []);
+  const hasReferralCode = Boolean(user?.referralCode);
+
+  const sections: SectionItem[] = useMemo(() => {
+    const items: SectionItem[] = [
+      { type: 'header', id: 'header' },
+      { type: 'transactions', id: 'transactions' },
+      { type: 'quickActions', id: 'quickActions' },
+    ];
+    if (hasReferralCode) {
+      items.push({ type: 'referral', id: 'referral' });
+    }
+    items.push(
+      { type: 'rewards', id: 'rewards' },
+      { type: 'settings', id: 'settings' },
+      { type: 'support', id: 'support' },
+      { type: 'signOut', id: 'signOut' },
+    );
+    return items;
+  }, [hasReferralCode]);
 
   // Pre-compute getItemLayout for the stable sections array
   const getItemLayout = useMemo(() => buildGetItemLayout(sections), [sections]);
@@ -1426,6 +1438,8 @@ export default function ProfileScreen(): React.ReactElement {
         renderItem={renderItem}
         keyExtractor={keyExtractor}
         getItemLayout={getItemLayout}
+        accessibilityRole="list"
+        accessibilityLabel="Profile sections"
         contentContainerStyle={[
           styles.listContent,
           {
@@ -1448,10 +1462,10 @@ export default function ProfileScreen(): React.ReactElement {
         }
         // Performance optimizations — addresses VirtualizedList slow-update warning
         removeClippedSubviews={Platform.OS === 'android'}
-        maxToRenderPerBatch={3}
+        maxToRenderPerBatch={4}
         updateCellsBatchingPeriod={100}
-        windowSize={3}
-        initialNumToRender={3}
+        windowSize={5}
+        initialNumToRender={5}
       />
 
       {/* 2FA Verification Modal */}

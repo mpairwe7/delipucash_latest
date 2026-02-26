@@ -799,7 +799,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     type: 'CASH' | 'AIRTIME',
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
-  ): Promise<{ success: boolean; message?: string }> => {
+  ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
     initiateRedemption({
       points: cashToPoints(amount),
       cashValue: amount,
@@ -819,11 +819,13 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
       if (response.data?.success) {
         redemptionKeyRef.current = null; // Clear on success for next redemption
-        completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
+        const ref = response.data.transactionRef ?? idempotencyKey;
+        completeRedemption(ref, true);
         // Re-sync wallet from server after successful payout (Robinhood pattern)
         refetchProfile();
         return {
           success: true,
+          transactionRef: ref,
           message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
         };
       } else {

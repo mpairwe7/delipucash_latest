@@ -56,7 +56,11 @@ import {
   CircleX,
   Shield,
   Sparkles,
+  ArrowUpRight,
+  Copy,
 } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import { router, Href } from 'expo-router';
 import {
   useTheme,
   SPACING,
@@ -93,7 +97,7 @@ export interface RedemptionModalProps {
     type: RewardRedemptionType,
     provider: PaymentProvider,
     phoneNumber: string,
-  ) => Promise<{ success: boolean; message?: string }>;
+  ) => Promise<{ success: boolean; message?: string; transactionRef?: string }>;
   isLoading?: boolean;
   /** Pre-fill type and skip to CONFIRM for quick-redeem flow */
   initialType?: RewardRedemptionType;
@@ -337,6 +341,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   const [phoneNumber, setPhoneNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [transactionRef, setTransactionRef] = useState<string | null>(null);
 
   // Track whether the phone was pre-filled from profile (for UI hint)
   const [isPhonePrefilled, setIsPhonePrefilled] = useState(false);
@@ -349,6 +354,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     if (visible) {
       setError(null);
       setSuccessMessage(null);
+      setTransactionRef(null);
 
       if (initialType && initialProvider && initialPhone) {
         // Quick-redeem flow: pre-fill and start at amount selection
@@ -442,6 +448,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
         triggerHaptic('success');
         // Persist phone/provider for cross-flow pre-fill on next redemption
         setLastUsedDetails(cleanPhone, selectedProvider);
+        setTransactionRef(result.transactionRef ?? null);
         setSuccessMessage(
           result.message || `${formatCurrency(cashValue)} sent to your ${selectedProvider} number!`,
         );
@@ -850,24 +857,108 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     </Animated.View>
   );
 
-  const renderSuccess = () => (
-    <Animated.View
-      entering={FadeIn.duration(300)}
-      style={[styles.stepContent, styles.centerContent]}
-      accessibilityRole="alert"
-      accessibilityLiveRegion="assertive"
-    >
-      <View style={[styles.statusCircle, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
-        <MiniConfetti
-          particleColors={[colors.success, colors.primary, colors.warning, '#A78BFA', '#38BDF8']}
-        />
-        <CircleCheck size={56} color={colors.success} strokeWidth={1.5} />
-      </View>
-      <Text style={[styles.statusTitle, { color: colors.success }]}>Redemption Successful!</Text>
-      <Text style={[styles.statusSubtext, { color: colors.text }]}>{successMessage}</Text>
-      <PrimaryButton title="Done" onPress={handleClose} />
-    </Animated.View>
-  );
+  const renderSuccess = () => {
+    const cashAmount = pointsToCash(selectedAmount, rewardConfig ?? undefined);
+    const maskedPhone = phoneNumber.length >= 4
+      ? `***${phoneNumber.slice(-4)}`
+      : phoneNumber;
+
+    return (
+      <Animated.View
+        entering={FadeIn.duration(300)}
+        style={[styles.stepContent, styles.centerContent]}
+        accessibilityRole="alert"
+        accessibilityLiveRegion="assertive"
+      >
+        {/* Confetti + check icon */}
+        <View style={[styles.statusCircle, { backgroundColor: withAlpha(colors.success, 0.12) }]}>
+          <MiniConfetti
+            particleColors={[colors.success, colors.primary, colors.warning, '#A78BFA', '#38BDF8']}
+          />
+          <CircleCheck size={56} color={colors.success} strokeWidth={1.5} />
+        </View>
+
+        <Text style={[styles.statusTitle, { color: colors.success }]}>Redemption Successful!</Text>
+
+        {/* Amount hero */}
+        <Text style={[styles.successAmount, { color: colors.text }]}>
+          {formatCurrency(cashAmount)}
+        </Text>
+        <Text style={[styles.statusSubtext, { color: colors.textMuted }]}>
+          {selectedType === 'CASH' ? 'Sent to Mobile Money' : 'Airtime top-up sent'}
+        </Text>
+
+        {/* Mini receipt card */}
+        <View
+          style={[styles.successReceipt, { backgroundColor: colors.card, borderColor: colors.border }]}
+          accessibilityRole="summary"
+          accessibilityLabel={`Receipt: ${formatCurrency(cashAmount)} via ${selectedProvider} to ${maskedPhone}`}
+        >
+          <View style={styles.successReceiptRow}>
+            <Text style={[styles.successReceiptLabel, { color: colors.textMuted }]}>Provider</Text>
+            <Text style={[styles.successReceiptValue, { color: colors.text }]}>{selectedProvider}</Text>
+          </View>
+          <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.successReceiptRow}>
+            <Text style={[styles.successReceiptLabel, { color: colors.textMuted }]}>Phone</Text>
+            <Text style={[styles.successReceiptValue, { color: colors.text }]}>{maskedPhone}</Text>
+          </View>
+          <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+          <View style={styles.successReceiptRow}>
+            <Text style={[styles.successReceiptLabel, { color: colors.textMuted }]}>Points Used</Text>
+            <Text style={[styles.successReceiptValue, { color: colors.text }]}>{selectedAmount} pts</Text>
+          </View>
+          {transactionRef && (
+            <>
+              <View style={[styles.receiptDivider, { backgroundColor: colors.border }]} />
+              <TouchableOpacity
+                style={styles.successReceiptRow}
+                onPress={async () => {
+                  await Clipboard.setStringAsync(transactionRef);
+                  triggerHaptic('light');
+                }}
+                activeOpacity={0.6}
+                accessibilityRole="button"
+                accessibilityLabel={`Copy reference ${transactionRef}`}
+                accessibilityHint="Tap to copy transaction reference"
+              >
+                <Text style={[styles.successReceiptLabel, { color: colors.textMuted }]}>Reference</Text>
+                <View style={styles.successRefRow}>
+                  <Text
+                    style={[styles.successReceiptValue, { color: colors.text }]}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
+                    {transactionRef.length > 14
+                      ? `${transactionRef.slice(0, 6)}…${transactionRef.slice(-6)}`
+                      : transactionRef}
+                  </Text>
+                  <Copy size={14} color={colors.textMuted} strokeWidth={1.5} />
+                </View>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+
+        {/* CTA buttons */}
+        <View style={styles.successActions}>
+          <PrimaryButton title="Done" onPress={handleClose} />
+          <PrimaryButton
+            title="View Transactions"
+            onPress={() => {
+              handleClose();
+              // Small delay to let the modal fully dismiss before navigating
+              setTimeout(() => {
+                router.push('/(tabs)/transactions' as Href);
+              }, 300);
+            }}
+            variant="secondary"
+            icon={<ArrowUpRight size={16} color={colors.primary} strokeWidth={2} />}
+          />
+        </View>
+      </Animated.View>
+    );
+  };
 
   const renderError = () => (
     <Animated.View
@@ -1276,6 +1367,44 @@ const styles = StyleSheet.create({
     lineHeight: TYPOGRAPHY.fontSize.base * TYPOGRAPHY.lineHeight.relaxed,
   },
   errorActions: { gap: SPACING.sm, width: '100%' },
+
+  // Success screen — receipt & actions
+  successAmount: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: 36,
+    textAlign: 'center',
+    marginTop: -SPACING.xs,
+  },
+  successReceipt: {
+    width: '100%',
+    padding: SPACING.md,
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    gap: SPACING.xs,
+  },
+  successReceiptRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.xxs,
+  },
+  successReceiptLabel: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  successReceiptValue: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  successRefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xxs,
+  },
+  successActions: {
+    width: '100%',
+    gap: SPACING.sm,
+  },
 });
 
 export default RedemptionModal;

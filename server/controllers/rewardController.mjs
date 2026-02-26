@@ -264,6 +264,10 @@ export const redeemRewards = asyncHandler(async (req, res) => {
           success: true,
           transactionRef: existing.transactionRef,
           message: 'Redemption already processed successfully.',
+          pointsDeducted: 0,
+          cashValue: existing.cashValue,
+          provider: existing.provider,
+          status: 'SUCCESSFUL',
         });
       }
       if (existing.status === 'PENDING') {
@@ -435,6 +439,10 @@ export const redeemRewards = asyncHandler(async (req, res) => {
         success: true,
         transactionRef: paymentResult.reference,
         message: `${cashValue.toLocaleString()} UGX has been sent to your ${provider} number!`,
+        pointsDeducted: pointsRequired,
+        cashValue,
+        provider,
+        status: 'SUCCESSFUL',
       });
     }
 
@@ -475,6 +483,10 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       success: true,
       transactionRef: paymentResult.reference,
       message: `${cashValue.toLocaleString()} UGX has been sent to your ${provider} number!`,
+      pointsDeducted: pointsRequired,
+      cashValue,
+      provider,
+      status: 'SUCCESSFUL',
     });
   } else {
     return res.status(502).json({
