@@ -771,9 +771,10 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       type: "CASH" | "AIRTIME",
       provider: "MTN" | "AIRTEL",
       phoneNumber: string
-    ): Promise<{ success: boolean; message?: string }> => {
+    ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
+      const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
       initiateRedemption({
-        points: cashToPoints(amount),
+        points: pointsNeeded,
         cashValue: amount,
         type,
         provider,
@@ -787,7 +788,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
       const idempotencyKey = redemptionKeyRef.current;
 
       try {
-        const response = await rewardsApi.redeem({ pointsToRedeem: cashToPoints(amount), cashValue: amount, provider, phoneNumber, type, idempotencyKey });
+        const response = await rewardsApi.redeem({ pointsToRedeem: pointsNeeded, cashValue: amount, provider, phoneNumber, type, idempotencyKey });
         if (response.data?.success) {
           redemptionKeyRef.current = null; // Clear on success for next redemption
           completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
@@ -796,6 +797,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
           return {
             success: true,
             message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
+            transactionRef: response.data.transactionRef ?? idempotencyKey,
           };
         } else {
           const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
@@ -808,7 +810,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
         return { success: false, message: errorMsg };
       }
     },
-    [initiateRedemption, completeRedemption, refetchProfile]
+    [initiateRedemption, completeRedemption, refetchProfile, rewardConfig]
   );
 
   // ── Stable modal callbacks ──

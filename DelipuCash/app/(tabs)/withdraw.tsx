@@ -1,4 +1,4 @@
-import React, { useState, memo } from "react";
+import React, { useState, useRef, memo } from "react";
 import {
   View,
   Text,
@@ -45,6 +45,7 @@ import {
 import { useWithdraw } from "@/services/hooks";
 import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
+import { cashToPoints } from "@/store/InstantRewardStore";
 import useUser from "@/utils/useUser";
 import { useFormValidation, validators } from "@/utils/validation";
 import { NotificationBell } from "@/components";
@@ -121,6 +122,7 @@ export default function WithdrawScreen(): React.ReactElement {
   const withdrawMutation = useWithdraw();
   
   const { data: rewardConfig } = useRewardConfig();
+  const withdrawKeyRef = useRef<string | null>(null);
   const walletBalance = user?.walletBalance || 0;
   const userPoints = user?.points ?? 0;
   const pointsCashValue = rewardConfig ? pointsToUgx(userPoints, rewardConfig) : 0;
@@ -170,14 +172,25 @@ export default function WithdrawScreen(): React.ReactElement {
   const handleConfirm = async (): Promise<void> => {
     if (!selectedMethod) return;
 
+    // Reuse key on retry; generate fresh only on first attempt
+    if (!withdrawKeyRef.current) {
+      withdrawKeyRef.current = `wdr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+
+    const amount = parseFloat(form.values.amount);
+    const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
+
     withdrawMutation.mutate(
       {
-        amount: parseFloat(form.values.amount),
+        amount,
         provider: selectedMethod.id,
         phoneNumber: form.values.phoneNumber,
+        pointsToRedeem: pointsNeeded,
+        idempotencyKey: withdrawKeyRef.current,
       },
       {
         onSuccess: (data) => {
+          withdrawKeyRef.current = null; // Clear on success for next withdrawal
           setTransactionRef(data?.transactionRef ?? null);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           setStep(4);

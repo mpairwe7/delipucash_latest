@@ -253,32 +253,8 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   const userId = req.user.id;
   const { pointsToRedeem, cashValue: legacyCashValue, provider, phoneNumber, type, idempotencyKey } = req.body;
 
-  // Idempotency: if a key is provided, check for existing PENDING/SUCCESSFUL redemption
-  if (idempotencyKey) {
-    const existing = await prisma.rewardRedemption.findFirst({
-      where: { userId, transactionRef: idempotencyKey },
-    });
-    if (existing) {
-      if (existing.status === 'SUCCESSFUL') {
-        return res.json({
-          success: true,
-          transactionRef: existing.transactionRef,
-          message: 'Redemption already processed successfully.',
-          pointsDeducted: 0,
-          cashValue: existing.cashValue,
-          provider: existing.provider,
-          status: 'SUCCESSFUL',
-        });
-      }
-      if (existing.status === 'PENDING') {
-        return res.status(409).json({
-          success: false,
-          error: 'A redemption with this key is already being processed.',
-        });
-      }
-      // FAILED — allow retry with same key
-    }
-  }
+  // Idempotency check is performed inside the Phase 1 transaction to prevent
+  // race conditions where concurrent requests with the same key both pass.
 
   // Validate inputs — accept pointsToRedeem (new) or cashValue (legacy fallback)
   if (!pointsToRedeem && !legacyCashValue) {
@@ -336,6 +312,34 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   let redemption;
   try {
     redemption = await prisma.$transaction(async (tx) => {
+      // Idempotency check inside transaction to prevent race conditions
+      if (idempotencyKey) {
+        const existing = await tx.rewardRedemption.findFirst({
+          where: { userId, transactionRef: idempotencyKey },
+        });
+        if (existing) {
+          if (existing.status === 'SUCCESSFUL') {
+            return {
+              _idempotent: true,
+              success: true,
+              transactionRef: existing.transactionRef,
+              message: 'Redemption already processed successfully.',
+              pointsDeducted: 0,
+              cashValue: existing.cashValue,
+              provider: existing.provider,
+              status: 'SUCCESSFUL',
+            };
+          }
+          if (existing.status === 'PENDING') {
+            const err = new Error('A redemption with this key is already being processed.');
+            err.statusCode = 409;
+            throw err;
+          }
+          // FAILED — allow retry with same key: delete the old record so we can create a fresh one
+          await tx.rewardRedemption.delete({ where: { id: existing.id } });
+        }
+      }
+
       const dbUser = await tx.appUser.findUnique({
         where: { id: userId },
         select: { id: true, points: true },
@@ -375,6 +379,12 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   } catch (err) {
     const statusCode = err.statusCode || 500;
     return res.status(statusCode).json({ success: false, error: err.message });
+  }
+
+  // Handle idempotent duplicate — already processed successfully
+  if (redemption._idempotent) {
+    const { _idempotent, ...responseData } = redemption;
+    return res.json(responseData);
   }
 
   // Phase 2: Call payment provider (outside transaction to avoid long-held locks)

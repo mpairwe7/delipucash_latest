@@ -46,6 +46,7 @@ import {
   CheckCircle,
   Shield,
   AlertTriangle,
+  AlertCircle,
   Smartphone,
 } from 'lucide-react-native';
 
@@ -190,6 +191,19 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
     setPhoneError(null);
     momoFlow.reset();
   }, [momoFlow]);
+
+  const handleProviderSelect = useCallback((provider: 'MTN' | 'AIRTEL') => {
+    if (provider !== selectedProvider) {
+      // Clear phone input when switching providers to avoid network mismatch
+      setPhoneNumber('');
+      setPhoneError(null);
+      // Reset to plan selection if user was past the phone step
+      if (momoStep === 'enter_phone' || momoStep === 'confirm') {
+        setMoMoStep('select_plan');
+      }
+    }
+    setSelectedProvider(provider);
+  }, [selectedProvider, momoStep]);
 
   // ── Imperative handle ──
   useImperativeHandle(ref, () => ({
@@ -528,7 +542,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                             </View>
                           }
                           isSelected={selectedProvider === 'MTN'}
-                          onSelect={() => setSelectedProvider('MTN')}
+                          onSelect={() => handleProviderSelect('MTN')}
                           brandColor="#FFCC00"
                           style={{ flex: 1 }}
                         />
@@ -543,7 +557,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                             </View>
                           }
                           isSelected={selectedProvider === 'AIRTEL'}
-                          onSelect={() => setSelectedProvider('AIRTEL')}
+                          onSelect={() => handleProviderSelect('AIRTEL')}
                           brandColor="#FF0000"
                           style={{ flex: 1 }}
                         />
@@ -591,6 +605,15 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
 
               {momoStep === 'confirm' && selectedPlanData && (
                 <>
+                  {momoFlow.initiationError && (
+                    <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}>
+                      <AlertCircle size={16} color={colors.error} />
+                      <Text style={[styles.errorBannerText, { color: colors.error }]}>
+                        {momoFlow.initiationError}
+                      </Text>
+                    </Animated.View>
+                  )}
+
                   <View style={[styles.receipt, { backgroundColor: withAlpha(colors.card, 0.8), borderColor: withAlpha(colors.border, 0.3) }]}>
                     <Text style={[styles.receiptTitle, { color: colors.text }]}>Payment Summary</Text>
                     <ReceiptRow label="Plan" value={selectedPlanData.name} colors={colors} />
@@ -830,5 +853,19 @@ const styles = StyleSheet.create({
   securityText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.xs,
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    borderWidth: BORDER_WIDTH.thin,
+    borderRadius: RADIUS.md,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

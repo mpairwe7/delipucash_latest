@@ -40,6 +40,8 @@ interface MoMoProcessingStatusProps {
   onRetry: () => void;
   onGooglePlayFallback?: () => void;
   onContinue?: () => void;
+  /** Custom success message. Defaults to subscription-active text. */
+  successMessage?: string;
 }
 
 const PROVIDER_COLORS = {
@@ -59,6 +61,7 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
   onRetry,
   onGooglePlayFallback,
   onContinue,
+  successMessage,
 }) => {
   const { colors } = useTheme();
   const providerColor = PROVIDER_COLORS[provider];
@@ -201,7 +204,7 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
         accessible
         accessibilityRole="alert"
         accessibilityLiveRegion="assertive"
-        accessibilityLabel="Payment successful. Your subscription is now active."
+        accessibilityLabel={successMessage || 'Payment successful. Your subscription is now active.'}
       >
         <View style={[styles.iconCircle, { backgroundColor: withAlpha(colors.success, 0.15) }]}>
           <CheckCircle size={40} color={colors.success} />
@@ -211,7 +214,7 @@ export const MoMoProcessingStatus = memo<MoMoProcessingStatusProps>(({
           Payment Successful
         </Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Your subscription is now active. Enjoy full access to all premium features.
+          {successMessage || 'Your subscription is now active. Enjoy full access to all premium features.'}
         </Text>
 
         {onContinue && (

@@ -427,6 +427,9 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   }, [initialPhone, phoneNumber]);
 
   const handleConfirm = useCallback(async () => {
+    // Double-tap guard: prevent re-entry while processing
+    if (isLoading || step === 'PROCESSING') return;
+
     if (!selectedType || !selectedAmount || !phoneNumber) {
       setError('Please fill in all details');
       return;

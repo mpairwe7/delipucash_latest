@@ -1250,24 +1250,32 @@ export function useDeleteNotification() {
 /**
  * Hook to request withdrawal
  */
+/**
+ * Generate a UUID v4 for idempotency keys.
+ * Uses crypto.randomUUID where available, otherwise Math.random fallback.
+ */
+function generateWithdrawIdempotencyKey(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+
 export function useWithdraw(): UseMutationResult<
   { success: boolean; transactionRef?: string; message?: string },
   Error,
-  { amount: number; phoneNumber: string; provider: string; pointsToRedeem?: number }
+  { amount: number; phoneNumber: string; provider: string; pointsToRedeem?: number; idempotencyKey?: string }
 > {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationKey: ['rewards', 'withdraw'],
     mutationFn: async (data) => {
-      // Generate idempotency key to prevent duplicate withdrawals
-      const idempotencyKey =
-        typeof globalThis.crypto?.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-              const r = (Math.random() * 16) | 0;
-              return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
-            });
+      // Reuse caller-supplied key (survives retry) or generate fresh one
+      const idempotencyKey = data.idempotencyKey || generateWithdrawIdempotencyKey();
 
       const response = await api.rewards.redeem({
         cashValue: data.amount,

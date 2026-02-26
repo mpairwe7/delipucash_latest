@@ -800,8 +800,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
   ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
+    const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
     initiateRedemption({
-      points: cashToPoints(amount),
+      points: pointsNeeded,
       cashValue: amount,
       type,
       provider,
@@ -815,7 +816,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     const idempotencyKey = redemptionKeyRef.current;
 
     try {
-      const response = await rewardsApi.redeem({ pointsToRedeem: cashToPoints(amount), cashValue: amount, provider, phoneNumber, type, idempotencyKey });
+      const response = await rewardsApi.redeem({ pointsToRedeem: pointsNeeded, cashValue: amount, provider, phoneNumber, type, idempotencyKey });
 
       if (response.data?.success) {
         redemptionKeyRef.current = null; // Clear on success for next redemption
@@ -838,7 +839,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
       completeRedemption('', false, errorMsg);
       return { success: false, message: errorMsg };
     }
-  }, [initiateRedemption, completeRedemption, refetchProfile]);
+  }, [initiateRedemption, completeRedemption, refetchProfile, rewardConfig]);
 
   // ── Stable modal callbacks (avoid inline arrow fns in JSX) ──
   const handleRefresh = useCallback(async () => {

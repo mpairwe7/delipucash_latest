@@ -421,7 +421,7 @@ export const saveQuizSession = asyncHandler(async (req, res) => {
 export const redeemReward = asyncHandler(async (req, res) => {
   // Use authenticated user ID from JWT — never trust client-supplied userId
   const userId = req.user.id;
-  const { points, redemptionType, phoneNumber, provider } = req.body;
+  const { points, redemptionType, phoneNumber, provider, idempotencyKey } = req.body;
 
   if (!points || !phoneNumber || !provider) {
     return res.status(400).json({ message: 'Missing required fields: points, phoneNumber, provider' });
@@ -451,6 +451,31 @@ export const redeemReward = asyncHandler(async (req, res) => {
   let redemptionRecord;
   try {
     redemptionRecord = await prisma.$transaction(async (tx) => {
+      // Idempotency check inside transaction to prevent race conditions
+      if (idempotencyKey) {
+        const existing = await tx.rewardRedemption.findFirst({
+          where: { userId, transactionRef: idempotencyKey },
+        });
+        if (existing) {
+          if (existing.status === 'SUCCESSFUL') {
+            return {
+              _idempotent: true,
+              transactionRef: existing.transactionRef,
+              cashValue: existing.cashValue,
+              provider: existing.provider,
+              status: 'SUCCESSFUL',
+            };
+          }
+          if (existing.status === 'PENDING') {
+            const err = new Error('A redemption with this key is already being processed.');
+            err.statusCode = 409;
+            throw err;
+          }
+          // FAILED — allow retry: delete old record
+          await tx.rewardRedemption.delete({ where: { id: existing.id } });
+        }
+      }
+
       const user = await tx.appUser.findUnique({
         where: { id: userId },
         select: { id: true, points: true, email: true },
@@ -483,11 +508,45 @@ export const redeemReward = asyncHandler(async (req, res) => {
         },
       });
 
-      return { userId: user.id, email: user.email };
+      // Create PENDING redemption record (for idempotency + tracking)
+      const redemption = await tx.rewardRedemption.create({
+        data: {
+          userId: user.id,
+          cashValue,
+          provider,
+          phoneNumber,
+          type: redemptionType || 'CASH',
+          status: 'PENDING',
+          transactionRef: idempotencyKey || null,
+        },
+      });
+
+      return { userId: user.id, email: user.email, redemptionId: redemption.id };
     }, { timeout: 10000 });
   } catch (err) {
     const statusCode = err.statusCode || 500;
     return res.status(statusCode).json({ success: false, message: err.message, paymentStatus: 'FAILED' });
+  }
+
+  // Handle idempotent duplicate — already processed successfully
+  if (redemptionRecord._idempotent) {
+    const updatedUser = await prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { points: true },
+    });
+    return res.json({
+      success: true,
+      transactionRef: redemptionRecord.transactionRef,
+      transactionId: redemptionRecord.transactionRef,
+      cashValue: redemptionRecord.cashValue,
+      amountRedeemed: redemptionRecord.cashValue,
+      pointsDeducted: 0,
+      remainingPoints: updatedUser?.points ?? 0,
+      message: 'Redemption already processed successfully.',
+      paymentStatus: 'SUCCESSFUL',
+      status: 'SUCCESSFUL',
+      provider: redemptionRecord.provider,
+    });
   }
 
   // Phase 2: Call payment provider (outside transaction — no long-held locks)
@@ -513,10 +572,19 @@ export const redeemReward = asyncHandler(async (req, res) => {
     paymentResult = { success: false, reference: null };
   }
 
-  // Phase 3: On failure, refund points
+  // Phase 3: Update redemption record + refund on failure
   if (!paymentResult || !paymentResult.success) {
     try {
       await prisma.$transaction(async (tx) => {
+        // Mark redemption as FAILED
+        await tx.rewardRedemption.update({
+          where: { id: redemptionRecord.redemptionId },
+          data: {
+            status: 'FAILED',
+            errorMessage: 'Payment provider returned failure.',
+            completedAt: new Date(),
+          },
+        });
         await tx.appUser.update({
           where: { id: userId },
           data: { points: { increment: points } },
@@ -540,6 +608,20 @@ export const redeemReward = asyncHandler(async (req, res) => {
     });
   }
 
+  // Update redemption record to SUCCESSFUL
+  try {
+    await prisma.rewardRedemption.update({
+      where: { id: redemptionRecord.redemptionId },
+      data: {
+        status: 'SUCCESSFUL',
+        transactionRef: paymentResult.reference ?? null,
+        completedAt: new Date(),
+      },
+    });
+  } catch (updateErr) {
+    console.error('[QuizRedeem] Failed to update redemption record to SUCCESSFUL:', updateErr);
+  }
+
   // Fetch updated balance
   const updatedUser = await prisma.appUser.findUnique({
     where: { id: userId },
@@ -548,12 +630,16 @@ export const redeemReward = asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
+    transactionRef: paymentResult.reference,
     transactionId: paymentResult.reference,
+    cashValue: cashValue,
     amountRedeemed: cashValue,
     pointsDeducted: points,
     remainingPoints: updatedUser?.points ?? 0,
     message: `Successfully redeemed ${points} points for UGX ${cashValue.toLocaleString()}`,
     paymentStatus: 'SUCCESSFUL',
+    status: 'SUCCESSFUL',
+    provider,
   });
 });
 

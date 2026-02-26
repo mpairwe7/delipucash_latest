@@ -13,6 +13,7 @@ import {
   RewardRedemptionResult,
   PaymentStatus,
 } from '@/types';
+import { useAuthStore } from '@/utils/auth/store';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || '';
 
@@ -162,10 +163,14 @@ function generateIdempotencyKey(): string {
  */
 async function redeemReward(request: RewardRedemptionRequest): Promise<RewardRedemptionResult> {
   const idempotencyKey = request.idempotencyKey || generateIdempotencyKey();
+  const token = useAuthStore.getState().auth?.token;
 
   const response = await fetch(`${API_BASE_URL}/api/quiz/redeem`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify({ ...request, idempotencyKey }),
   });
   
