@@ -1116,12 +1116,7 @@ export default function ProfileScreen(): React.ReactElement {
     setShowQuickSettings(true);
   }, []);
 
-  const handleScrollToSettings = useCallback(() => {
-    const settingsIndex = sections.findIndex(s => s.type === 'settings');
-    if (settingsIndex >= 0) {
-      flatListRef.current?.scrollToIndex({ index: settingsIndex, animated: true });
-    }
-  }, [sections]);
+  // handleScrollToSettings — moved below `sections` to avoid TDZ reference
 
   // ============================================================================
   // REWARD CONFIG (reactive to admin changes)
@@ -1288,6 +1283,13 @@ export default function ProfileScreen(): React.ReactElement {
 
   // Pre-compute getItemLayout for the stable sections array
   const getItemLayout = useMemo(() => buildGetItemLayout(sections), [sections]);
+
+  const handleScrollToSettings = useCallback(() => {
+    const settingsIndex = sections.findIndex(s => s.type === 'settings');
+    if (settingsIndex >= 0) {
+      flatListRef.current?.scrollToIndex({ index: settingsIndex, animated: true });
+    }
+  }, [sections]);
 
   // renderItem delegates to memoized section components so each section
   // only re-renders when its own props change — fixes the "large list slow to update" warning

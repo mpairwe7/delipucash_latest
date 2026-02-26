@@ -609,7 +609,7 @@ export const InlinePremiumSection = forwardRef<InlinePremiumSectionRef, InlinePr
                     <Animated.View entering={FadeIn.duration(200)} style={[styles.errorBanner, { backgroundColor: withAlpha(colors.error, 0.1), borderColor: withAlpha(colors.error, 0.3) }]}>
                       <AlertCircle size={16} color={colors.error} />
                       <Text style={[styles.errorBannerText, { color: colors.error }]}>
-                        {momoFlow.initiationError}
+                        {momoFlow.initiationError?.message ?? String(momoFlow.initiationError)}
                       </Text>
                     </Animated.View>
                   )}

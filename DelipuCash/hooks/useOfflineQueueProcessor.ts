@@ -16,18 +16,22 @@ import { useEffect, useRef } from 'react';
 import { useInstantRewardStore } from '@/store';
 import { useAuthStore } from '@/utils/auth/store';
 import { useToast } from '@/components/ui/Toast';
-import { onlineManager } from '@tanstack/react-query';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
+import { queryKeys } from '@/services/hooks';
 
 const MAX_RETRIES = 3;
 
 export function useOfflineQueueProcessor() {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const processingRef = useRef<Set<string>>(new Set());
   const isProcessingRef = useRef(false);
-  // Capture showToast in a ref so the subscription callback always sees the latest
+  // Capture refs so the subscription callback always sees the latest
   const showToastRef = useRef(showToast);
   showToastRef.current = showToast;
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
 
   useEffect(() => {
     const processQueue = async () => {
@@ -112,6 +116,10 @@ export function useOfflineQueueProcessor() {
 
             // Remove from queue
             useInstantRewardStore.getState().removePendingSubmission(submission.id);
+
+            // Invalidate user profile so earned points propagate to all screens
+            queryClientRef.current.invalidateQueries({ queryKey: queryKeys.user });
+            queryClientRef.current.invalidateQueries({ queryKey: queryKeys.userStats });
 
             showToastRef.current({
               message: result.isCorrect

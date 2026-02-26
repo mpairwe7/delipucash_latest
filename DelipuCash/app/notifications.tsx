@@ -1025,6 +1025,7 @@ export default function NotificationsScreen(): React.ReactElement {
       security: cats.security ?? 0,
       subscription: cats.subscription ?? 0,
       achievements: cats.achievements ?? 0,
+      referrals: cats.referrals ?? 0,
     };
   }, [summaryStats]);
 

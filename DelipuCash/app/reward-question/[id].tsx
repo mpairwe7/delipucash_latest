@@ -466,7 +466,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   // ── Handlers ──
   const handleBack = useCallback((): void => {
     triggerHaptic("light");
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/reward-questions' as Href);
   }, []);
 
   // Navigate to next question after transition animation completes
@@ -700,7 +700,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
               message: "You have already attempted this question.",
               type: "warning",
               action: "Go Back",
-              onAction: () => router.back(),
+              onAction: () => router.canGoBack() ? router.back() : router.replace('/reward-questions' as Href),
             });
           } else if (errorCode === "QUESTION_EXPIRED") {
             showToast({
@@ -849,12 +849,12 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const handleContinue = useCallback(() => {
     setShowSessionSummary(false);
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/reward-questions' as Href);
   }, []);
 
   const handleCloseSession = useCallback(() => {
     setShowSessionSummary(false);
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/reward-questions' as Href);
   }, []);
 
   const handleOverlayDismiss = useCallback(() => {

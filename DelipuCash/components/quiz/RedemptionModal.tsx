@@ -956,7 +956,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
               }, 300);
             }}
             variant="secondary"
-            icon={<ArrowUpRight size={16} color={colors.primary} strokeWidth={2} />}
+            rightIcon={<ArrowUpRight size={16} color={colors.primary} strokeWidth={2} />}
           />
         </View>
       </Animated.View>

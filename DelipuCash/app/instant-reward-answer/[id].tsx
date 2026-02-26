@@ -534,7 +534,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const handleBack = useCallback((): void => {
     triggerHaptic('light');
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/instant-reward-questions');
   }, []);
 
   // Navigate to next question after transition animation completes
@@ -768,7 +768,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
               message: 'You have already attempted this question.',
               type: 'warning',
               action: 'Go Back',
-              onAction: () => router.back(),
+              onAction: () => router.canGoBack() ? router.back() : router.replace('/instant-reward-questions'),
             });
           } else if (errorCode === 'QUESTION_EXPIRED') {
             showToast({
@@ -906,7 +906,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const handleCloseSession = useCallback(() => {
     setShowSessionSummary(false);
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/instant-reward-questions');
   }, []);
 
   const handleOverlayDismiss = useCallback(() => {
@@ -964,7 +964,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   const handleSessionClosedExit = useCallback(() => {
     triggerHaptic('light');
     setShowSessionClosed(false);
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/instant-reward-questions');
   }, []);
 
   const averageTimeSeconds = useMemo(() => {

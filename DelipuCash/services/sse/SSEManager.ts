@@ -57,6 +57,7 @@ export class SSEManager {
   // Event batching state
   private eventBatch: Array<{ type: SSEEventType; data: unknown }> = [];
   private batchTimer: ReturnType<typeof setTimeout> | null = null;
+  private noBodyLogged = false;
 
   constructor() {
     this.setupAppStateListener();
@@ -169,10 +170,10 @@ export class SSEManager {
       }
 
       if (!response.body) {
-        // Serverless platforms (e.g. Vercel) buffer the response and return
-        // null body. SSE streaming is unsupported there — mark permanently
-        // unavailable so consumers switch to polling fallback.
-        console.debug('[SSE] Response has no body (serverless environment). SSE disabled — consumers will poll.');
+        if (!this.noBodyLogged) {
+          console.debug('[SSE] Response has no body (serverless environment). SSE disabled — consumers will poll.');
+          this.noBodyLogged = true;
+        }
         this.setStatus('unavailable');
         return;
       }

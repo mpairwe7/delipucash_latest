@@ -126,7 +126,7 @@ class PurchasesService {
       : REVENUECAT_API_KEYS.android;
 
     if (apiKey === 'your_android_api_key' || apiKey === 'your_ios_api_key') {
-      console.warn('[Purchases] RevenueCat API key not configured. Using mock mode.');
+      console.debug('[Purchases] RevenueCat API key not configured. Using mock mode.');
       return;
     }
 

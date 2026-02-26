@@ -283,7 +283,7 @@ export default function WithdrawScreen(): React.ReactElement {
     } catch {
       // If refetch fails, still navigate — the background invalidation will catch up
     }
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/(tabs)/profile-new');
   }, [queryClient, rewardConfig, syncWalletFromServer]);
 
   const renderStepIndicator = (): React.ReactElement => (

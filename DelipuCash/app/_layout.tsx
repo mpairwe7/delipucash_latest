@@ -57,7 +57,8 @@ if (Platform.OS !== 'web') {
     const warningMessage = args.join(' ');
     if (warningMessage.includes('setLayoutAnimationEnabledExperimental') ||
         warningMessage.includes('New Architecture') ||
-        warningMessage.includes('setBackgroundColorAsync is not supported')) {
+        warningMessage.includes('setBackgroundColorAsync is not supported') ||
+        warningMessage.includes('may be overwritten by a layout animation')) {
       return; // Suppress these warnings
     }
     originalConsoleWarn.apply(console, args);
@@ -68,6 +69,9 @@ if (Platform.OS !== 'web') {
     const errorMessage = args.join(' ');
     if (errorMessage.includes('keep awake') || errorMessage.includes('activateKeepAwake')) {
       console.warn('[Expo Go] Keep-awake functionality disabled due to New Architecture compatibility');
+      return;
+    }
+    if (errorMessage.includes("'GO_BACK' was not handled by any navigator")) {
       return;
     }
     originalConsoleError.apply(console, args);

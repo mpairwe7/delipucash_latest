@@ -618,6 +618,7 @@ export default function QuizSessionScreen({
   // ===========================================
 
   const handleClose = () => {
+    const safeBack = () => router.canGoBack() ? router.back() : router.replace('/(tabs)/profile-new');
     if (sessionState === 'DISPLAYING_QUESTION' || sessionState === 'ANSWER_SELECTED') {
       Alert.alert(
         'End Session?',
@@ -632,7 +633,7 @@ export default function QuizSessionScreen({
               if (onClose) {
                 onClose();
               } else {
-                router.back();
+                safeBack();
               }
             },
           },
@@ -642,7 +643,7 @@ export default function QuizSessionScreen({
       if (onClose) {
         onClose();
       } else {
-        router.back();
+        safeBack();
       }
     }
   };

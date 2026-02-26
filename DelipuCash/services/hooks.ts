@@ -28,6 +28,7 @@ import { useAuthStore } from '@/utils/auth/store';
 import { useInstantRewardStore } from '@/store/InstantRewardStore';
 import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
 import { questionQueryKeys } from "./questionHooks";
+import { configKeys, pointsToUgx, type RewardConfig } from './configHooks';
 
 // Query Keys
 export const queryKeys = {
@@ -1325,15 +1326,18 @@ export function useWithdraw(): UseMutationResult<
     onSuccess: (data) => {
       // Sync Zustand store from server's confirmed deduction if available
       if (data?.pointsDeducted != null) {
-        // Server returned authoritative points deducted — update Zustand immediately
-        // The queryKeys.user invalidation below will also update the TanStack cache
         const currentStore = useInstantRewardStore.getState();
         const currentUser = queryClient.getQueryData(queryKeys.user) as any;
         if (currentUser?.points != null) {
           const serverPoints = Math.max(0, currentUser.points);
-          // Let TanStack cache be the source of truth — it was already optimistically updated
-          // in onMutate, so just ensure Zustand stays in sync
-          currentStore.syncWalletFromServer(serverPoints);
+          // Read reward config from cache to convert points → UGX
+          // (Zustand walletBalance is stored in UGX)
+          const rewardConfig = queryClient.getQueryData(configKeys.rewards()) as RewardConfig | undefined;
+          if (rewardConfig) {
+            currentStore.syncWalletFromServer(pointsToUgx(serverPoints, rewardConfig));
+          }
+          // If config not cached, skip — the queryKeys.user invalidation below
+          // will trigger useSyncWalletBalance / screen-level useEffects that convert properly
         }
       }
 

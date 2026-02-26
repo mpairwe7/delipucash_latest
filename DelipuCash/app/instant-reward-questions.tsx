@@ -455,7 +455,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
 
   const handleBack = useCallback(() => {
     triggerHaptic('light');
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/(tabs)/profile-new');
   }, []);
 
   const handleUpload = useCallback(() => {
@@ -661,7 +661,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const handleSessionClose = useCallback(() => {
     setShowSessionSummary(false);
     resetSession();
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/(tabs)/profile-new');
   }, [resetSession]);
 
   const handleCloseRedemption = useCallback(() => {
@@ -745,7 +745,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const handleSessionClosedExit = useCallback(() => {
     triggerHaptic('light');
     setShowSessionClosed(false);
-    router.back();
+    router.canGoBack() ? router.back() : router.replace('/(tabs)/profile-new');
   }, []);
 
   const listHeader = useMemo(() => (
@@ -934,11 +934,11 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-        maxToRenderPerBatch={10}
-        updateCellsBatchingPeriod={50}
+        maxToRenderPerBatch={6}
+        updateCellsBatchingPeriod={80}
         windowSize={5}
         removeClippedSubviews
-        initialNumToRender={8}
+        initialNumToRender={6}
         ItemSeparatorComponent={ItemSeparator}
       />
 

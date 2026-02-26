@@ -25,6 +25,7 @@ export interface UserProfile {
   totalRewards?: number;
   twoFactorEnabled?: boolean;
   emailVerified?: boolean;
+  referralCode?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
