@@ -7,7 +7,6 @@
     "icon": "./assets/images/logo.png",
     "scheme": "delipucash",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "androidStatusBar": {
       "barStyle": "light-content"
     },
@@ -52,7 +51,6 @@
         "foregroundImage": "./assets/images/logo.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": true,
       "intentFilters": [
         {
@@ -70,7 +68,10 @@
               "pathPrefix": "/video"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -158,7 +159,11 @@
         }
       ],
       "expo-screen-orientation",
-      "expo-asset"
+      "expo-asset",
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
