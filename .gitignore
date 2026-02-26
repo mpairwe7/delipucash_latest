@@ -7,5 +7,13 @@ node_modules/
 # Build outputs
 dist/
 
-# Environment files
-.env*.local
+# Environment files (real secrets)
+.env*
+# Allow template files (no real credentials)
+!.env.example
+!.env.sample
+
+# Secret scanner results (generated at runtime)
+results.sarif
+trufflehog-results.json
+ggshield-results.json

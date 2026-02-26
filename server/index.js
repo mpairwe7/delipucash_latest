@@ -58,7 +58,8 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Configure CORS for production and development
 const allowedOrigins = [
   'http://localhost:3000',
-  
+  'http://127.0.0.1:3000',
+  'http://192.168.100.141:3000',  
   'http://localhost:8081',
   'exp://192.168.0.117:8081',
   'https://delipucash-latest.vercel.app',

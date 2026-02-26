@@ -1,0 +1,85 @@
+# =============================================================================
+# GGShield Configuration — DelipuCash
+# =============================================================================
+#
+# Complementary scanner alongside TruffleHog OSS for defense-in-depth.
+# Activated when GITGUARDIAN_API_KEY is configured (env var or CI secret).
+#
+# Docs: https://docs.gitguardian.com/ggshield-docs/reference/configuration
+# =============================================================================
+
+version: 2
+
+# ─── Secret Detection ────────────────────────────────────────────────────────
+secret:
+  # Never echo raw secret values in output
+  show_secrets: false
+
+  # ── Ignored Paths ────────────────────────────────────────────────────────
+  # Mirrors .trufflehog-exclude-paths.txt for consistency
+  ignored_paths:
+    # Dependencies & build artifacts
+    - "node_modules/"
+    - "**/node_modules/**"
+    - "dist/"
+    - "build/"
+    - ".next/"
+    - ".expo/"
+    - ".venv/"
+    - "venv/"
+    - "__pycache__/"
+    - ".mypy_cache/"
+    - ".pytest_cache/"
+    - "vendor/"
+    - ".git/"
+
+    # Lock files (high false-positive rate, no real secrets)
+    - "package-lock.json"
+    - "**/package-lock.json"
+    - "yarn.lock"
+    - "**/yarn.lock"
+    - "pnpm-lock.yaml"
+    - "**/pnpm-lock.yaml"
+    - "bun.lockb"
+    - "**/bun.lockb"
+
+    # Android build outputs
+    - "**/android/app/build/**"
+    - "**/android/.gradle/**"
+
+    # Terraform state
+    - "*.tfstate"
+    - "*.tfstate.*"
+
+    # Crypto key files (detected by detect-private-key hook instead)
+    - "*.pem"
+    - "*.key"
+
+    # Test fixtures / mock data
+    - "server/scripts/mockData.js"
+    - "server/scripts/mockAdData.js"
+    - "server/test/**"
+
+    # Documentation (public, no secrets expected)
+    - "docs/**/*.html"
+
+  # ── Ignored Matches ──────────────────────────────────────────────────────
+  # Suppress known false positives
+  ignored_matches:
+    - name: "placeholder-api-keys"
+      match: "your[-_]?api[-_]?key[-_]?here"
+    - name: "example-placeholder-values"
+      match: "example[-_]?key|placeholder|xxxxxxxx|your_.*_here"
+    - name: "default-admin-passwords-in-docs"
+      match: "DEFAULT_USER_PASSWORD|DEFAULT_ADMIN_PASSWORD|SYSTEM_ADMIN_PASSWORD"
+    - name: "firebase-browser-api-keys"
+      match: "AIzaSy[0-9A-Za-z_-]{33}"
+      # Firebase/Google Maps browser API keys are domain-restricted (safe to expose)
+
+  # ── Ignored Detectors ────────────────────────────────────────────────────
+  ignored_detectors:
+    - "firebase_api_key"
+
+# ─── Output Configuration ────────────────────────────────────────────────────
+exit_zero: false
+verbose: false

@@ -1,0 +1,18 @@
+# ============================================================================
+# TruffleHog Ignore File
+# ============================================================================
+#
+# List result IDs (one per line) that are known false positives.
+# Get the ID from TruffleHog JSON output:  jq '.SourceMetadata.Data.Git'
+#
+# Format:
+#   <result-fingerprint>   # reason for ignoring
+#
+# Example:
+#   abc123def456  # test fixture — not a real key
+#
+# Paths to exclude entirely can be passed via CLI:
+#   --exclude-paths=.trufflehog-exclude-paths.txt
+# ============================================================================
+
+# -- Add false-positive result IDs below this line --

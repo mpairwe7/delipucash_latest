@@ -1,0 +1,103 @@
+# ============================================================================
+# TruffleHog OSS Configuration — DelipuCash
+# https://github.com/trufflesecurity/trufflehog
+# ============================================================================
+#
+# This file is consumed by:
+#   trufflehog git file://. --config=.trufflehog-config.yml
+#
+# NOTE: TruffleHog v3 uses CLI flags for most behaviour. This config file
+# supplements the CLI by defining custom regex detectors for domain-specific
+# secrets that the built-in detectors don't cover (e.g. MTN MoMo, Airtel).
+# ============================================================================
+
+detectors:
+  # ─── MTN MoMo API Key (hex, 32 chars) ────────────────────────────────────
+  - name: "MTN MoMo API/Subscription Key"
+    keywords:
+      - "mtn"
+      - "momo"
+      - "ocp-apim"
+      - "disbursement"
+    regex:
+      secret: '(?i)(?:mtn|momo|ocp[_-]?apim|disbursement)[_\-]?(?:api|primary|subscription)?[_\-]?key[\s]*[=:]\s*["\x27]?([0-9a-f]{32})["\x27]?'
+    verify: []
+
+  # ─── MTN MoMo API User ID (UUID v4) ──────────────────────────────────────
+  - name: "MTN MoMo API User ID"
+    keywords:
+      - "mtn_user"
+      - "x-reference-id"
+    regex:
+      secret: '(?i)(?:mtn[_-]?user[_-]?id|x[_-]?reference[_-]?id)[\s]*[=:]\s*["\x27]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["\x27]?'
+    verify: []
+
+  # ─── Airtel Money Client ID (UUID v4) ────────────────────────────────────
+  - name: "Airtel Money Client ID"
+    keywords:
+      - "airtel"
+    regex:
+      secret: '(?i)airtel[_-]?client[_-]?id[\s]*[=:]\s*["\x27]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})["\x27]?'
+    verify: []
+
+  # ─── Airtel Money Client Secret ──────────────────────────────────────────
+  - name: "Airtel Money Client Secret"
+    keywords:
+      - "airtel"
+      - "client_secret"
+    regex:
+      secret: '(?i)airtel[_-]?client[_-]?secret[\s]*[=:]\s*["\x27]?([A-Za-z0-9\-_]{20,})["\x27]?'
+    verify: []
+
+  # ─── Supabase Service-Role / API Key ─────────────────────────────────────
+  - name: "Supabase Key"
+    keywords:
+      - "supabase"
+      - "sb_"
+    regex:
+      secret: '(?i)(sb_(?:secret|publishable)_[A-Za-z0-9\-_]{20,})'
+    verify: []
+
+  # ─── Cloudflare R2 Secret Access Key (64-char hex) ──────────────────────
+  - name: "Cloudflare R2 Secret Access Key"
+    keywords:
+      - "r2_secret"
+      - "cloudflare"
+    regex:
+      secret: '(?i)r2[_-]?secret[_-]?access[_-]?key[\s]*[=:]\s*["\x27]?([0-9a-f]{64})["\x27]?'
+    verify: []
+
+  # ─── Generic Gmail App Password ─────────────────────────────────────────
+  - name: "Gmail App Password"
+    keywords:
+      - "smtp_pass"
+      - "email_pass"
+    regex:
+      secret: '(?i)(?:smtp|email)[_-]?pass(?:word)?[\s]*[=:]\s*["\x27]?([a-z]{4}\s[a-z]{4}\s[a-z]{4}\s[a-z]{4})["\x27]?'
+    verify: []
+
+  # ─── PayPal Client Secret ────────────────────────────────────────────────
+  - name: "PayPal Client Secret"
+    keywords:
+      - "paypal"
+      - "client_secret"
+    regex:
+      secret: '(?i)paypal[_-]?client[_-]?secret[\s]*[=:]\s*["\x27]?([A-Za-z0-9\-_]{40,})["\x27]?'
+    verify: []
+
+  # ─── JWT Secret (high-entropy base64 string) ────────────────────────────
+  - name: "JWT Secret"
+    keywords:
+      - "jwt_secret"
+    regex:
+      secret: '(?i)jwt[_-]?secret[\s]*[=:]\s*["\x27]?([A-Za-z0-9\-_+/=]{20,})["\x27]?'
+    verify: []
+
+  # ─── PostgreSQL Connection String ───────────────────────────────────────
+  - name: "PostgreSQL Connection String"
+    keywords:
+      - "database_url"
+      - "postgresql"
+    regex:
+      secret: '(?i)(?:database[_-]?url|direct[_-]?database[_-]?url)[\s]*[=:]\s*["\x27]?(postgres(?:ql)?://[^\s"\x27]{20,})["\x27]?'
+    verify: []

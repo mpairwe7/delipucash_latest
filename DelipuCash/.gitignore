@@ -30,8 +30,11 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Local env files (secrets)
+.env*
+# Allow template files (no real credentials)
+!.env.example
+!.env.sample
 
 # typescript
 *.tsbuildinfo
@@ -43,7 +46,6 @@ app-example
 /android
 *.apk
 *.aab
-.env/
 .expo/
 node_modules/
 *.log

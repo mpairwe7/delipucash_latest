@@ -1,0 +1,70 @@
+# =============================================================================
+# Pre-commit Hooks — DelipuCash Secret Scanning
+# =============================================================================
+#
+# Two-tool defense-in-depth:
+#   1. TruffleHog OSS (always active) — verified-secret detection, custom regex
+#   2. GGShield (optional)            — 200+ detectors, ML false-positive filtering
+#
+# Setup:
+#   pip install pre-commit
+#   pre-commit install
+#
+# To enable GGShield (optional):
+#   pip install ggshield
+#   ggshield auth login          # or export GITGUARDIAN_API_KEY=...
+#   pre-commit install           # re-install to pick up both hooks
+#
+# Manual full-repo scan:
+#   pre-commit run --all-files
+#
+# See https://pre-commit.com for docs
+# =============================================================================
+
+repos:
+  # ── TruffleHog OSS — Primary (always active) ─────────────────────────────
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.88.26
+    hooks:
+      - id: trufflehog
+        name: "TruffleHog secret scan"
+        description: Detect verified secrets in staged changes
+        entry: >-
+          trufflehog git file://.
+          --since-commit HEAD
+          --only-verified
+          --fail
+          --no-update
+          --config=.trufflehog-config.yml
+          --exclude-paths=.trufflehog-exclude-paths.txt
+        language: golang
+        pass_filenames: false
+        stages: [pre-commit]
+
+  # ── GGShield — Complementary (optional) ───────────────────────────────────
+  # Activates only when ggshield is installed AND authenticated.
+  # Provides: 200+ detectors, ML-based false positive filtering, commit-msg scan
+  #
+  # To enable:
+  #   pip install ggshield
+  #   ggshield auth login
+  - repo: https://github.com/gitguardian/ggshield
+    rev: v1.35.0
+    hooks:
+      - id: ggshield
+        name: "GGShield secret scan (optional)"
+        description: GitGuardian complementary secret scan
+        language: python
+        stages: [pre-commit]
+
+  # ── Utility hooks ────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: detect-private-key
+        name: "Detect private keys"
+        description: Detect PEM private keys in staged files
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+        name: "Block large files (>1 MB)"
+        description: Prevent accidentally committing large binaries

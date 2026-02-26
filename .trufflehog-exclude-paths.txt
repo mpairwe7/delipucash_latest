@@ -1,0 +1,28 @@
+# Paths to exclude from TruffleHog scans (glob patterns, one per line)
+# Used via: trufflehog ... --exclude-paths=.trufflehog-exclude-paths.txt
+
+# Package manager lock files
+**/package-lock.json
+**/yarn.lock
+**/bun.lockb
+**/pnpm-lock.yaml
+
+# Build artifacts
+**/dist/
+**/build/
+**/.next/
+**/.expo/
+
+# Dependencies
+**/node_modules/
+
+# Test fixtures / mock data (review before excluding!)
+server/scripts/mockData.js
+server/scripts/mockAdData.js
+
+# Android build outputs
+**/android/app/build/
+**/android/.gradle/
+
+# Documentation (public, no secrets expected)
+docs/**/*.html

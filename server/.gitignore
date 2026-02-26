@@ -38,9 +38,11 @@ jspm_packages
 .next
 
 
-.env
+# All environment files (secrets must never be committed)
+.env*
+# Allow template files (no real credentials)
+!.env.example
+!.env.sample
+
 /generated/prisma
 .vercel
-.env*.local
-.env.vercel
-.env.local
