@@ -634,6 +634,7 @@ model RewardRedemption {
   type           String
   status         PaymentStatus @default(PENDING)
   transactionRef String?
+  idempotencyKey String?       @unique
   errorMessage   String?
   requestedAt    DateTime      @default(now())
   completedAt    DateTime?

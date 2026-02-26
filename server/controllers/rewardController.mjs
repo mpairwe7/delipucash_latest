@@ -258,16 +258,16 @@ export const redeemRewards = asyncHandler(async (req, res) => {
 
   // Validate inputs — accept pointsToRedeem (new) or cashValue (legacy fallback)
   if (!pointsToRedeem && !legacyCashValue) {
-    return res.status(400).json({ success: false, error: 'Missing required field: pointsToRedeem.' });
+    return res.status(400).json({ success: false, error: 'MISSING_POINTS', message: 'Please enter the amount you want to redeem.' });
   }
   if (!provider || !phoneNumber || !type) {
-    return res.status(400).json({ success: false, error: 'Missing required fields: provider, phoneNumber, type.' });
+    return res.status(400).json({ success: false, error: 'MISSING_FIELDS', message: 'Please provide your phone number and payment provider.' });
   }
   if (!['MTN', 'AIRTEL'].includes(provider)) {
-    return res.status(400).json({ success: false, error: 'Invalid provider. Must be MTN or AIRTEL.' });
+    return res.status(400).json({ success: false, error: 'INVALID_PROVIDER', message: 'Provider must be MTN or Airtel.' });
   }
   if (!['CASH', 'AIRTIME'].includes(type)) {
-    return res.status(400).json({ success: false, error: 'Invalid type. Must be CASH or AIRTIME.' });
+    return res.status(400).json({ success: false, error: 'INVALID_TYPE', message: 'Redemption type must be Cash or Airtime.' });
   }
 
   // Load dynamic config
@@ -280,21 +280,22 @@ export const redeemRewards = asyncHandler(async (req, res) => {
   const cashValue = pointsToUgx(pointsRequired, rewardConfig);
 
   if (pointsRequired <= 0 || cashValue <= 0) {
-    return res.status(400).json({ success: false, error: 'Redemption amount must be positive.' });
+    return res.status(400).json({ success: false, error: 'INVALID_AMOUNT', message: 'Redemption amount must be positive.' });
   }
 
   // Minimum withdrawal check
   if (pointsRequired < rewardConfig.minWithdrawalPoints) {
     return res.status(400).json({
       success: false,
-      error: `Minimum ${rewardConfig.minWithdrawalPoints} points required for withdrawal.`,
+      error: 'BELOW_MINIMUM',
+      message: `Minimum ${rewardConfig.minWithdrawalPoints} points required for withdrawal.`,
     });
   }
 
   // Validate phone number format (Uganda: 9-13 digits, starts with valid prefix)
   const cleanedPhone = phoneNumber.replace(/[^0-9]/g, '');
   if (cleanedPhone.length < 9 || cleanedPhone.length > 13) {
-    return res.status(400).json({ success: false, error: 'Invalid phone number. Must be 9-13 digits.' });
+    return res.status(400).json({ success: false, error: 'INVALID_PHONE', message: 'Invalid phone number. Must be 9-13 digits.' });
   }
   // Normalize to local format for prefix check
   let localPhone = cleanedPhone;
@@ -302,9 +303,9 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     localPhone = '0' + localPhone.slice(3);
   }
   if (localPhone.startsWith('0')) {
-    const validPrefixes = /^07[05678]/; // MTN: 076/077/078, Airtel: 070/075
+    const validPrefixes = /^(07[05678]|039)/; // MTN: 076/077/078/039, Airtel: 070/075
     if (!validPrefixes.test(localPhone)) {
-      return res.status(400).json({ success: false, error: 'Phone number prefix does not match a supported provider.' });
+      return res.status(400).json({ success: false, error: 'UNSUPPORTED_PREFIX', message: 'Phone number prefix does not match a supported provider (MTN or Airtel).' });
     }
   }
 
@@ -315,14 +316,14 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       // Idempotency check inside transaction to prevent race conditions
       if (idempotencyKey) {
         const existing = await tx.rewardRedemption.findFirst({
-          where: { userId, transactionRef: idempotencyKey },
+          where: { userId, idempotencyKey },
         });
         if (existing) {
           if (existing.status === 'SUCCESSFUL') {
             return {
               _idempotent: true,
               success: true,
-              transactionRef: existing.transactionRef,
+              transactionRef: existing.transactionRef || existing.idempotencyKey,
               message: 'Redemption already processed successfully.',
               pointsDeducted: 0,
               cashValue: existing.cashValue,
@@ -363,22 +364,23 @@ export const redeemRewards = asyncHandler(async (req, res) => {
         data: { points: { decrement: pointsRequired } },
       });
 
-      // Create pending redemption record
+      // Create pending redemption record (store cleaned phone for consistency)
       return tx.rewardRedemption.create({
         data: {
           userId,
           cashValue,
           provider,
-          phoneNumber,
+          phoneNumber: cleanedPhone,
           type,
           status: 'PENDING',
-          transactionRef: idempotencyKey || null,
+          idempotencyKey: idempotencyKey || null,
+          transactionRef: null, // Set in Phase 3 from provider reference
         },
       });
     }, { timeout: 10000 });
   } catch (err) {
     const statusCode = err.statusCode || 500;
-    return res.status(statusCode).json({ success: false, error: err.message });
+    return res.status(statusCode).json({ success: false, error: err.message, message: err.message });
   }
 
   // Handle idempotent duplicate — already processed successfully
@@ -413,23 +415,35 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     paymentResult = { success: false, reference: null };
   }
 
-  // Phase 3: Update record + refund on failure (transactional)
+  // Phase 3: Update record + refund on terminal failure (transactional)
+  // Tri-state: SUCCESS / PENDING (provider still processing) / FAILED
   // Wrapped in try-catch to prevent "lost transaction" — if Phase 2 succeeds
   // but Phase 3 DB write fails, we still return success to the user.
+  const isProviderPending = !paymentResult.success && paymentResult.pending === true;
+  const finalStatus = paymentResult.success
+    ? 'SUCCESSFUL'
+    : isProviderPending
+      ? 'PENDING'
+      : 'FAILED';
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.rewardRedemption.update({
         where: { id: redemption.id },
         data: {
-          status: paymentResult.success ? 'SUCCESSFUL' : 'FAILED',
+          status: finalStatus,
           transactionRef: paymentResult.reference ?? null,
-          errorMessage: paymentResult.success ? null : 'Payment provider returned failure.',
-          completedAt: new Date(),
+          errorMessage: paymentResult.success
+            ? null
+            : isProviderPending
+              ? 'Payment is being processed by the provider.'
+              : 'Payment provider returned failure.',
+          completedAt: paymentResult.success ? new Date() : null,
         },
       });
 
-      // Refund points if payment failed
-      if (!paymentResult.success) {
+      // Only refund points on terminal FAILED — NOT on PENDING
+      if (!paymentResult.success && !isProviderPending) {
         await tx.appUser.update({
           where: { id: userId },
           data: { points: { increment: pointsRequired } },
@@ -458,27 +472,35 @@ export const redeemRewards = asyncHandler(async (req, res) => {
 
     // If payment failed AND DB update failed, user's points are already deducted
     // Attempt standalone refund
-    try {
-      await prisma.appUser.update({
-        where: { id: userId },
-        data: { points: { increment: pointsRequired } },
-      });
-    } catch (refundError) {
-      log.error('CRITICAL: Standalone refund also failed — manual reconciliation required', {
-        redemptionId: redemption.id, userId, pointsToRefund: pointsRequired, error: refundError.message,
-      });
+    if (!isProviderPending) {
+      try {
+        await prisma.appUser.update({
+          where: { id: userId },
+          data: { points: { increment: pointsRequired } },
+        });
+      } catch (refundError) {
+        log.error('CRITICAL: Standalone refund also failed — manual reconciliation required', {
+          redemptionId: redemption.id, userId, pointsToRefund: pointsRequired, error: refundError.message,
+        });
+      }
     }
+
+    // Tailor message based on whether payment is pending or terminal
+    const refundMessage = isProviderPending
+      ? 'Payment is still being processed. Your points are on hold — you'll be notified of the outcome.'
+      : 'Payment processing failed. Your points have been refunded.';
 
     return res.status(502).json({
       success: false,
-      error: 'Payment processing failed. Your points have been refunded.',
+      error: isProviderPending ? 'PAYMENT_PENDING' : 'PAYMENT_PROCESSING_FAILED',
+      message: refundMessage,
     });
   }
 
   // Notify SSE subscribers about redemption status update
   publishEvent(userId, 'transaction.statusUpdate', {
     transactionId: redemption.id,
-    status: paymentResult.success ? 'SUCCESSFUL' : 'FAILED',
+    status: finalStatus,
     amount: cashValue,
   });
 
@@ -498,10 +520,23 @@ export const redeemRewards = asyncHandler(async (req, res) => {
       provider,
       status: 'SUCCESSFUL',
     });
-  } else {
-    return res.status(502).json({
-      success: false,
-      error: 'Payment processing failed. Your points have been refunded.',
+  }
+
+  if (isProviderPending) {
+    return res.json({
+      success: true,
+      transactionRef: paymentResult.reference,
+      message: `${cashValue.toLocaleString()} UGX payment is being processed. You'll be notified when complete.`,
+      pointsDeducted: pointsRequired,
+      cashValue,
+      provider,
+      status: 'PENDING',
     });
   }
+
+  return res.status(502).json({
+    success: false,
+    error: 'PAYMENT_FAILED',
+    message: 'Payment processing failed. Your points have been refunded.',
+  });
 });

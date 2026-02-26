@@ -1250,9 +1250,6 @@ export function useDeleteNotification() {
 // ===========================================
 
 /**
- * Hook to request withdrawal
- */
-/**
  * Generate a UUID v4 for idempotency keys.
  * Uses crypto.randomUUID where available, otherwise Math.random fallback.
  */
@@ -1266,6 +1263,12 @@ function generateWithdrawIdempotencyKey(): string {
   });
 }
 
+/**
+ * @deprecated Use `useRedeem` from `@/services/redemptionHooks` instead.
+ * This hook is kept for backward compatibility but no longer used by any screen.
+ * `useRedeem` provides: unified optimistic updates, rollback, cache invalidation,
+ * burst polling, and proper error extraction for both withdraw and modal flows.
+ */
 export function useWithdraw(): UseMutationResult<
   { success: boolean; transactionRef?: string; message?: string; pointsDeducted?: number; cashValue?: number },
   Error,

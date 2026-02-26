@@ -1,7 +1,8 @@
 import { PrimaryButton, StatCard } from "@/components";
 import { RewardQuestionSkeleton } from "@/components/question/QuestionSkeletons";
 import { useToast } from "@/components/ui/Toast";
-import { formatCurrency, rewardsApi } from "@/services/api";
+import { formatCurrency } from "@/services/api";
+import { useRedeem, extractErrorMessage } from "@/services/redemptionHooks";
 import { useRewardQuestion, useSubmitRewardAnswer, useUserProfile, useInstantRewardQuestions } from "@/services/hooks";
 import { useAuth } from "@/utils/auth/useAuth";
 import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
@@ -206,7 +207,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
   // ── TanStack Query — server state ──
   const { data: question, isLoading, error, refetch, isFetching } = useRewardQuestion(questionId);
   const { data: allQuestions, refetch: refetchAllQuestions } = useInstantRewardQuestions();
-  const { data: user, refetch: refetchProfile } = useUserProfile();
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   const userEmail = user?.email ?? auth?.user?.email ?? null;
@@ -230,6 +231,7 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   // ── Zustand: reactive selector for redemption eligibility ──
   const { data: rewardConfig } = useRewardConfig();
+  const redeemMutation = useRedeem();
   const rewardPoints = cashToPoints(rewardAmount, rewardConfig ?? undefined) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
   // Compare user's actual points (server truth) against minWithdrawalPoints (both in points)
   const minWithdrawalPoints = rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
@@ -792,56 +794,46 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
     );
   }, [question, selectedOption, textAnswer, isTextInput, isAuthenticated, userPhone, hasAlreadyAttempted, rewardAmount, rewardPoints, submitAnswer, markQuestionAttempted, confirmReward, updateSessionSummary, unansweredQuestions, handleTransitionToNext, showToast, addPendingSubmission, hasPendingSubmission, isOnline, user, recordAdQuestionAnswered]);
 
-  // Handle redemption via real API
-  // Persist idempotency key across ERROR → retry so the backend deduplicates
-  const redemptionKeyRef = useRef<string | null>(null);
-
+  // Handle redemption via unified useRedeem hook
+  // The hook manages idempotency keys, optimistic updates, cache invalidation, and burst polling
   const handleRedeem = useCallback(async (
-    amount: number,
+    pointsToRedeem: number,
+    cashValue: number,
     type: 'CASH' | 'AIRTIME',
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
   ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
-    const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
     initiateRedemption({
-      points: pointsNeeded,
-      cashValue: amount,
+      points: pointsToRedeem,
+      cashValue,
       type,
       provider,
       phoneNumber,
     });
 
-    // Reuse key on retry; generate fresh only on first attempt
-    if (!redemptionKeyRef.current) {
-      redemptionKeyRef.current = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-    }
-    const idempotencyKey = redemptionKeyRef.current;
-
-    try {
-      const response = await rewardsApi.redeem({ pointsToRedeem: pointsNeeded, cashValue: amount, provider, phoneNumber, type, idempotencyKey });
-
-      if (response.data?.success) {
-        redemptionKeyRef.current = null; // Clear on success for next redemption
-        const ref = response.data.transactionRef ?? idempotencyKey;
-        completeRedemption(ref, true);
-        // Re-sync wallet from server after successful payout (Robinhood pattern)
-        refetchProfile();
-        return {
-          success: true,
-          transactionRef: ref,
-          message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
-        };
-      } else {
-        const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
-        completeRedemption('', false, errorMsg);
-        return { success: false, message: `${errorMsg} Points refunded.` };
-      }
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-      completeRedemption('', false, errorMsg);
-      return { success: false, message: errorMsg };
-    }
-  }, [initiateRedemption, completeRedemption, refetchProfile, rewardConfig]);
+    return new Promise((resolve) => {
+      redeemMutation.mutate(
+        { pointsToRedeem, cashValue, provider, phoneNumber, type },
+        {
+          onSuccess: (data) => {
+            redeemMutation.resetIdempotencyKey();
+            const ref = data.transactionRef ?? '';
+            completeRedemption(ref, true);
+            resolve({
+              success: true,
+              transactionRef: ref,
+              message: data.message ?? `${formatCurrency(cashValue)} sent to your ${provider} number!`,
+            });
+          },
+          onError: (err) => {
+            const errorMsg = extractErrorMessage(err);
+            completeRedemption('', false, errorMsg);
+            resolve({ success: false, message: errorMsg });
+          },
+        },
+      );
+    });
+  }, [initiateRedemption, completeRedemption, redeemMutation]);
 
   // ── Stable modal callbacks (avoid inline arrow fns in JSX) ──
   const handleRefresh = useCallback(async () => {
@@ -915,9 +907,9 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
 
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
-    redemptionKeyRef.current = null; // Reset key when modal dismissed
+    redeemMutation.resetIdempotencyKey(); // Reset key when modal dismissed
     cancelRedemption();
-  }, [cancelRedemption]);
+  }, [cancelRedemption, redeemMutation]);
 
   // SessionClosedModal handlers
   // Refetch fresh data before transitioning — stale cache may show questions as open

@@ -90,10 +90,12 @@ import { usePaymentFlowStore, selectLastUsedPhone, selectLastUsedProvider } from
 
 export interface RedemptionModalProps {
   visible: boolean;
+  /** Raw points available for redemption */
   availableAmount: number;
   onClose: () => void;
   onRedeem: (
-    amount: number,
+    pointsToRedeem: number,
+    cashValue: number,
     type: RewardRedemptionType,
     provider: PaymentProvider,
     phoneNumber: string,
@@ -307,7 +309,7 @@ function detectProviderFromPhone(phone: string): PaymentProvider | null {
     local = '0' + local.slice(3);
   }
   if (local.length < 3 || !local.startsWith('0')) return null;
-  if (/^07[678]/.test(local)) return 'MTN';
+  if (/^(07[678]|039)/.test(local)) return 'MTN';
   if (/^07[05]/.test(local)) return 'AIRTEL';
   return null;
 }
@@ -386,7 +388,10 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
   }, [visible, initialType, initialProvider, initialPhone, userPhone]);
 
   const { data: rewardConfig } = useRewardConfig();
-  const availablePoints = availableAmount; // availableAmount is now the raw points count
+  const availablePoints = availableAmount; // availableAmount is the raw points count
+  const availableCashValue = rewardConfig
+    ? pointsToCash(availablePoints, rewardConfig)
+    : 0;
   const redemptionOptions = rewardConfig
     ? getRedemptionOptions(rewardConfig).filter((opt) => opt.points <= availablePoints)
     : [];
@@ -446,7 +451,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
 
     try {
       const cashValue = pointsToCash(selectedAmount, rewardConfig ?? undefined);
-      const result = await onRedeem(cashValue, selectedType, selectedProvider, cleanPhone);
+      const result = await onRedeem(selectedAmount, cashValue, selectedType, selectedProvider, cleanPhone);
       if (result.success) {
         triggerHaptic('success');
         // Persist phone/provider for cross-flow pre-fill on next redemption
@@ -561,7 +566,7 @@ export const RedemptionModal: React.FC<RedemptionModalProps> = ({
     <Animated.View entering={FadeInDown.duration(300)} style={styles.stepContent}>
       <Text style={[styles.stepTitle, { color: colors.text }]}>Select Amount</Text>
       <Text style={[styles.stepSubtitle, { color: colors.textMuted }]}>
-        Available: {formatCurrency(availableAmount)} ({availablePoints} pts)
+        Available: {formatCurrency(availableCashValue)} ({availablePoints} pts)
       </Text>
 
       <View style={styles.amountOptions}>

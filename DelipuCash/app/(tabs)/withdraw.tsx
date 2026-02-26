@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, memo } from "react";
+import React, { useState, useCallback, memo } from "react";
 import {
   View,
   Text,
@@ -54,7 +54,8 @@ import {
   paymentMethods,
   formatCurrency,
 } from "@/services/api";
-import { useWithdraw, queryKeys } from "@/services/hooks";
+import { queryKeys } from "@/services/hooks";
+import { useRedeem, extractErrorMessage } from "@/services/redemptionHooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
@@ -177,12 +178,11 @@ export default function WithdrawScreen(): React.ReactElement {
   
   const { data: user, refetch: refetchUser } = useUser();
   const { data: unreadCount } = useUnreadNotificationCount();
-  const withdrawMutation = useWithdraw();
+  const redeemMutation = useRedeem();
   const queryClient = useQueryClient();
   const syncWalletFromServer = useInstantRewardStore((s) => s.syncWalletFromServer);
   
   const { data: rewardConfig } = useRewardConfig();
-  const withdrawKeyRef = useRef<string | null>(null);
   const walletBalance = user?.walletBalance || 0;
   const userPoints = user?.points ?? 0;
   const pointsCashValue = rewardConfig ? pointsToUgx(userPoints, rewardConfig) : 0;
@@ -232,25 +232,20 @@ export default function WithdrawScreen(): React.ReactElement {
   const handleConfirm = async (): Promise<void> => {
     if (!selectedMethod) return;
 
-    // Reuse key on retry; generate fresh only on first attempt
-    if (!withdrawKeyRef.current) {
-      withdrawKeyRef.current = `wdr-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-    }
-
     const amount = parseFloat(form.values.amount);
     const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
 
-    withdrawMutation.mutate(
+    redeemMutation.mutate(
       {
-        amount,
-        provider: selectedMethod.id,
-        phoneNumber: form.values.phoneNumber,
         pointsToRedeem: pointsNeeded,
-        idempotencyKey: withdrawKeyRef.current,
+        cashValue: amount,
+        provider: selectedMethod.id.toUpperCase() as 'MTN' | 'AIRTEL',
+        phoneNumber: form.values.phoneNumber,
+        type: 'CASH',
       },
       {
         onSuccess: (data) => {
-          withdrawKeyRef.current = null; // Clear on success for next withdrawal
+          redeemMutation.resetIdempotencyKey();
           setTransactionRef(data?.transactionRef ?? null);
           setConfirmedCashValue(data?.cashValue ?? amount);
           setConfirmedPointsDeducted(data?.pointsDeducted ?? pointsNeeded);
@@ -260,9 +255,9 @@ export default function WithdrawScreen(): React.ReactElement {
           );
           setStep(4);
         },
-        onError: () => {
+        onError: (err) => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-          Alert.alert("Error", "Withdrawal failed. Please try again.");
+          Alert.alert("Error", extractErrorMessage(err));
         },
       }
     );
@@ -543,7 +538,7 @@ export default function WithdrawScreen(): React.ReactElement {
           <TouchableOpacity
             style={[styles.secondaryButton, { backgroundColor: colors.secondary }]}
             onPress={() => setStep(2)}
-            disabled={withdrawMutation.isPending}
+            disabled={redeemMutation.isPending}
             accessibilityRole="button"
             accessibilityLabel="Back to enter details"
           >
@@ -553,11 +548,11 @@ export default function WithdrawScreen(): React.ReactElement {
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: colors.primary }]}
             onPress={handleConfirm}
-            disabled={withdrawMutation.isPending}
+            disabled={redeemMutation.isPending}
             accessibilityRole="button"
             accessibilityLabel="Confirm withdrawal"
           >
-            {withdrawMutation.isPending ? (
+            {redeemMutation.isPending ? (
               <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
               <Text style={[styles.buttonText, { color: colors.primaryText }]}>

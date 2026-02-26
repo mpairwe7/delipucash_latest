@@ -24,7 +24,8 @@ import { useSSEEvent } from "@/services/sse";
 import { PostQuestionAdSlot } from "@/components/ads/PostQuestionAdSlot";
 import { SessionSummaryAd } from "@/components/ads/SessionSummaryAd";
 import { useQuizAdPlacement } from "@/hooks/useQuizAdPlacement";
-import { formatCurrency, rewardsApi } from "@/services/api";
+import { formatCurrency } from "@/services/api";
+import { useRedeem, extractErrorMessage } from "@/services/redemptionHooks";
 import {
   useRewardQuestion,
   useRegularRewardQuestions,
@@ -241,7 +242,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   } = useRewardQuestion(questionId);
   // Server-side filtered — only non-instant reward questions
   const { data: rewardQuestionsOnly = [] } = useRegularRewardQuestions();
-  const { data: user, refetch: refetchProfile } = useUserProfile();
+  const { data: user } = useUserProfile();
   const submitAnswer = useSubmitRewardAnswer();
 
   // ── User data — auth store (instant) with profile enrichment (network) ──
@@ -269,6 +270,7 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   // ── Zustand: reactive selector for redemption eligibility ──
   const { data: rewardConfig } = useRewardConfig();
+  const redeemMutation = useRedeem();
   const rewardPoints = cashToPoints(rewardAmount, rewardConfig ?? undefined) || REWARD_CONSTANTS.INSTANT_REWARD_POINTS;
   // Compare user's actual points (server truth) against minWithdrawalPoints (both in points)
   const minWithdrawalPoints = rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS;
@@ -764,55 +766,47 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
   );
 
   // ── Redemption handler ──
-  // Persist idempotency key across ERROR → retry so the backend deduplicates
-  const redemptionKeyRef = useRef<string | null>(null);
-
+  // Uses unified useRedeem hook for optimistic updates, cache invalidation, and burst polling
   const handleRedeem = useCallback(
     async (
-      amount: number,
+      pointsToRedeem: number,
+      cashValue: number,
       type: "CASH" | "AIRTIME",
       provider: "MTN" | "AIRTEL",
       phoneNumber: string
     ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
-      const pointsNeeded = cashToPoints(amount, rewardConfig ?? undefined);
       initiateRedemption({
-        points: pointsNeeded,
-        cashValue: amount,
+        points: pointsToRedeem,
+        cashValue,
         type,
         provider,
         phoneNumber,
       });
 
-      // Reuse key on retry; generate fresh only on first attempt
-      if (!redemptionKeyRef.current) {
-        redemptionKeyRef.current = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-      }
-      const idempotencyKey = redemptionKeyRef.current;
-
-      try {
-        const response = await rewardsApi.redeem({ pointsToRedeem: pointsNeeded, cashValue: amount, provider, phoneNumber, type, idempotencyKey });
-        if (response.data?.success) {
-          redemptionKeyRef.current = null; // Clear on success for next redemption
-          completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
-          // Re-sync wallet from server after successful payout (Robinhood pattern)
-          refetchProfile();
-          return {
-            success: true,
-            message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
-            transactionRef: response.data.transactionRef ?? idempotencyKey,
-          };
-        } else {
-          const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
-          completeRedemption('', false, errorMsg);
-          return { success: false, message: `${errorMsg} Points refunded.` };
-        }
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
-        completeRedemption('', false, errorMsg);
-        return { success: false, message: errorMsg };
-      }
+      return new Promise((resolve) => {
+        redeemMutation.mutate(
+          { pointsToRedeem, cashValue, provider, phoneNumber, type },
+          {
+            onSuccess: (data) => {
+              redeemMutation.resetIdempotencyKey();
+              const ref = data.transactionRef ?? '';
+              completeRedemption(ref, true);
+              resolve({
+                success: true,
+                transactionRef: ref,
+                message: data.message ?? `${formatCurrency(cashValue)} sent to your ${provider} number!`,
+              });
+            },
+            onError: (err) => {
+              const errorMsg = extractErrorMessage(err);
+              completeRedemption('', false, errorMsg);
+              resolve({ success: false, message: errorMsg });
+            },
+          },
+        );
+      });
     },
-    [initiateRedemption, completeRedemption, refetchProfile, rewardConfig]
+    [initiateRedemption, completeRedemption, redeemMutation]
   );
 
   // ── Stable modal callbacks ──
@@ -863,9 +857,9 @@ export default function RewardQuestionAnswerScreen(): React.ReactElement {
 
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
-    redemptionKeyRef.current = null; // Reset key when modal dismissed
+    redeemMutation.resetIdempotencyKey(); // Reset key when modal dismissed
     cancelRedemption();
-  }, [cancelRedemption]);
+  }, [cancelRedemption, redeemMutation]);
 
   const averageTimeSeconds = useMemo(() => {
     const { questionsAnswered, totalTimeSpentMs } = sessionSummary;

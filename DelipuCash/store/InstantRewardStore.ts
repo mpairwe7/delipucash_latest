@@ -140,7 +140,7 @@ export interface InstantRewardUIState {
   // Attempt History
   attemptHistory: InstantRewardAttemptHistory | null;
 
-  // Wallet State (cached from server)
+  // Wallet State (cached from server — stored in UGX, converted via pointsToCash)
   walletBalance: number;
   pendingRewards: number;
   
@@ -614,8 +614,17 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
       completeRedemption: (transactionRef, success, errorMessage) => {
         const now = new Date().toISOString();
         set(state => {
+          // Guard: if modal was closed (cancelRedemption nulled pendingRedemption),
+          // skip appending to history — the redemption result arrives via cache invalidation
+          if (!state.pendingRedemption) {
+            return {
+              isRedeeming: false,
+              sessionState: 'SESSION_SUMMARY',
+            };
+          }
+
           const completed: RedemptionRequest = {
-            ...state.pendingRedemption!,
+            ...state.pendingRedemption,
             status: success ? 'SUCCESSFUL' : 'FAILED',
             completedAt: now,
             transactionRef: success ? transactionRef : null,
@@ -627,10 +636,8 @@ export const useInstantRewardStore = create<InstantRewardUIState & InstantReward
             sessionState: 'SESSION_SUMMARY',
             pendingRedemption: null,
             redemptionHistory: [...state.redemptionHistory, completed],
-            // Deduct cash value if successful (walletBalance is in UGX, same unit as cashValue)
-            walletBalance: success
-              ? Math.max(0, state.walletBalance - completed.cashValue)
-              : state.walletBalance,
+            // Do NOT deduct walletBalance here — useRedeem hook handles optimistic
+            // deduction via onMutate, preventing double-counting.
           };
         });
       },

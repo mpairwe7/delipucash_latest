@@ -15,7 +15,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { transactionsApi } from './api';
-import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
+import { useSSEStore, selectNeedsPolling, selectIsBursting } from '@/store/SSEStore';
 import type {
   UnifiedTransaction,
   TransactionSummary,
@@ -40,10 +40,13 @@ export const transactionQueryKeys = {
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL_MS = 60_000; // 60 s when SSE is down
+const BURST_POLL_INTERVAL_MS = 10_000; // 10 s during burst window (e.g. after redemption)
 
 function useAdaptiveInterval(intervalMs: number): number | false {
   const needsPolling = useSSEStore(selectNeedsPolling);
-  return needsPolling ? intervalMs : false;
+  const isBursting = useSSEStore(selectIsBursting);
+  if (!needsPolling) return false;
+  return isBursting ? BURST_POLL_INTERVAL_MS : intervalMs;
 }
 
 // ---------------------------------------------------------------------------

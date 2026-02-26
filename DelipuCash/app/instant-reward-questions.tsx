@@ -6,10 +6,10 @@ import {
     UploadRewardQuestionModal,
 } from "@/components";
 import { formatCurrency } from "@/services";
-import { rewardsApi } from "@/services/api";
+import { useRedeem, extractErrorMessage } from "@/services/redemptionHooks";
 import { useInstantRewardQuestions, useInstantRewardQuestionAttempts } from "@/services/hooks";
 import type { UserAttemptRecord } from "@/services/hooks";
-import { useInstantRewardStore, REWARD_CONSTANTS, cashToPoints } from "@/store";
+import { useInstantRewardStore, REWARD_CONSTANTS } from "@/store";
 import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useShallow } from "zustand/react/shallow";
 import { useAuth } from "@/utils/auth/useAuth";
@@ -287,7 +287,7 @@ const UnansweredQuestionItem = memo(function UnansweredQuestionItem({
 export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
-  const { data: user, refetch: refetchProfile } = useUser();
+  const { data: user } = useUser();
   const { isReady: authReady, isAuthenticated, auth } = useAuth();
   const { showToast } = useToast();
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -313,6 +313,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
     }))
   );
   const { data: rewardConfig } = useRewardConfig();
+  const redeemMutation = useRedeem();
   const canRedeemRewards = (user?.points ?? 0) >= (rewardConfig?.minWithdrawalPoints ?? REWARD_CONSTANTS.MIN_REDEMPTION_POINTS);
   const endSession = useInstantRewardStore((s) => s.endSession);
   const startSession = useInstantRewardStore((s) => s.startSession);
@@ -667,45 +668,47 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
   const handleCloseRedemption = useCallback(() => {
     setShowRedemptionModal(false);
     cancelRedemption();
-  }, [cancelRedemption]);
+    redeemMutation.resetIdempotencyKey();
+  }, [cancelRedemption, redeemMutation]);
 
   const handleRedeem = useCallback(async (
-    amount: number,
+    pointsToRedeem: number,
+    cashValue: number,
     type: 'CASH' | 'AIRTIME',
     provider: 'MTN' | 'AIRTEL',
     phoneNumber: string
-  ): Promise<{ success: boolean; message?: string }> => {
+  ): Promise<{ success: boolean; message?: string; transactionRef?: string }> => {
     initiateRedemption({
-      points: cashToPoints(amount),
-      cashValue: amount,
+      points: pointsToRedeem,
+      cashValue,
       type,
       provider,
       phoneNumber,
     });
 
-    const idempotencyKey = `rdm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-    try {
-      const response = await rewardsApi.redeem({ cashValue: amount, provider, phoneNumber, type, idempotencyKey });
-
-      if (response.data?.success) {
-        completeRedemption(response.data.transactionRef ?? idempotencyKey, true);
-        // Re-sync wallet from server after successful payout (Robinhood pattern)
-        refetchProfile();
-        return {
-          success: true,
-          message: response.data.message ?? `${formatCurrency(amount)} sent to your ${provider} number!`,
-        };
-      } else {
-        const errorMsg = response.data?.error ?? response.error ?? 'Payment failed.';
-        completeRedemption('', false, errorMsg);
-        return { success: false, message: `${errorMsg} Points refunded.` };
-      }
-    } catch (err: any) {
-      const errorMsg = err?.message ?? 'Something went wrong. Please try again.';
-      completeRedemption('', false, errorMsg);
-      return { success: false, message: errorMsg };
-    }
-  }, [initiateRedemption, completeRedemption, refetchProfile]);
+    return new Promise((resolve) => {
+      redeemMutation.mutate(
+        { pointsToRedeem, cashValue, provider, phoneNumber, type },
+        {
+          onSuccess: (data) => {
+            redeemMutation.resetIdempotencyKey();
+            const ref = data.transactionRef ?? '';
+            completeRedemption(ref, true);
+            resolve({
+              success: true,
+              message: data.message ?? `${formatCurrency(cashValue)} sent to your ${provider} number!`,
+              transactionRef: ref,
+            });
+          },
+          onError: (err) => {
+            const errorMsg = extractErrorMessage(err);
+            completeRedemption('', false, errorMsg);
+            resolve({ success: false, message: errorMsg });
+          },
+        },
+      );
+    });
+  }, [initiateRedemption, completeRedemption, redeemMutation]);
 
   // SessionClosedModal handlers — refetch and navigate to first open question
   const handleSessionClosedContinue = useCallback(async () => {
