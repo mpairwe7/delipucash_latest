@@ -56,7 +56,7 @@ const getAuthHeaders = (): Record<string, string> => {
 // break JSON parsing. If you need a different API host, set
 // EXPO_PUBLIC_API_URL in your env (e.g. https://delipucash-latest.vercel.app or
 // http://localhost:3000/api).
-const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "http://localhost:3000" || "http://127.0.0.1:3000" ||"https://delipucash-latest.vercel.app";
+const rawApiUrl = process.env.EXPO_PUBLIC_API_URL ||"https://delipucash-latest.vercel.app";
 const apiBaseUrl = rawApiUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
 // Validate that API URL is configured
