@@ -990,14 +990,26 @@ export const paymentsApi = {
    * Request withdrawal
    */
   async withdraw(data: {
-    amount: number;
+    amount?: number;
+    cashValue?: number;
+    pointsToRedeem?: number;
     provider: string;
-    phoneNumber?: string;
+    phoneNumber: string;
+    type?: 'CASH' | 'AIRTIME';
+    idempotencyKey?: string;
     accountDetails?: Record<string, string>;
-  }): Promise<ApiResponse<Payment>> {
-    return fetchJson<Payment>(API_ROUTES.payments.withdraw, {
+  }): Promise<ApiResponse<{ success: boolean; transactionRef?: string; message?: string; error?: string }>> {
+    return fetchJson<{ success: boolean; transactionRef?: string; message?: string; error?: string }>(API_ROUTES.payments.withdraw, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        cashValue: data.cashValue ?? data.amount,
+        pointsToRedeem: data.pointsToRedeem,
+        provider: data.provider.toUpperCase(),
+        phoneNumber: data.phoneNumber,
+        type: data.type ?? 'CASH',
+        idempotencyKey: data.idempotencyKey,
+        accountDetails: data.accountDetails,
+      }),
     });
   },
 };
@@ -1366,6 +1378,24 @@ export const paymentMethods = [
   { id: "mtn", name: "MTN Mobile Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
   { id: "airtel", name: "Airtel Money", icon: "phone-portrait", minWithdrawal: 1000, maxWithdrawal: 5000000, processingTime: "Instant" },
 ];
+
+/**
+ * Curl template to test MTN withdrawals with environment variables.
+ * Copy to terminal, set env vars, then run.
+ */
+export const mtnWithdrawalCurlTemplate = [
+  'export API_BASE_URL="${API_BASE_URL:-http://localhost:3000}"',
+  'export AUTH_TOKEN="your-jwt-access-token"',
+  'export MTN_PHONE_NUMBER="0771234567"',
+  'export WITHDRAW_CASH_VALUE="5000"',
+  'export WITHDRAW_POINTS_TO_REDEEM="500"',
+  'export WITHDRAW_IDEMPOTENCY_KEY="withdraw-$(date +%s)"',
+  '',
+  'curl -sS -X POST "${API_BASE_URL%/}/api/payments/withdraw" \\',
+  '  -H "Content-Type: application/json" \\',
+  '  -H "Authorization: Bearer ${AUTH_TOKEN}" \\',
+  '  -d "{\\"cashValue\\":${WITHDRAW_CASH_VALUE},\\"pointsToRedeem\\":${WITHDRAW_POINTS_TO_REDEEM},\\"provider\\":\\"MTN\\",\\"phoneNumber\\":\\"${MTN_PHONE_NUMBER}\\",\\"type\\":\\"CASH\\",\\"idempotencyKey\\":\\"${WITHDRAW_IDEMPOTENCY_KEY}\\"}"',
+].join('\n');
 
 // ===========================================
 // Default Export - All APIs

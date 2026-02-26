@@ -10,6 +10,29 @@ Seeds the database with comprehensive mock data by making HTTP requests to the R
 ### `mockData.js`
 JavaScript version of the mock data used by the seeding script.
 
+### `test-withdrawal.sh`
+Runs a withdrawal REST API test (`POST /api/payments/withdraw`) using curl and environment variables.
+
+Example:
+```bash
+cd server
+WITHDRAW_PHONE_NUMBER=0771234567 \
+WITHDRAW_PROVIDER=MTN \
+WITHDRAW_CASH_VALUE=5000 \
+WITHDRAW_TEST_EMAIL=admin@delipucash.com \
+WITHDRAW_TEST_PASSWORD=admin123456 \
+./scripts/test-withdrawal.sh
+```
+
+You can also skip login and pass a token directly:
+```bash
+WITHDRAW_PHONE_NUMBER=0771234567 \
+WITHDRAW_PROVIDER=MTN \
+WITHDRAW_CASH_VALUE=5000 \
+WITHDRAW_AUTH_TOKEN="<jwt>" \
+./scripts/test-withdrawal.sh
+```
+
 ## Usage
 
 1. **Run the seeding script**:

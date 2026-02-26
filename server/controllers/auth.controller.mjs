@@ -753,7 +753,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
       // Step 1: No code — send OTP to email for confirmation
       const otpCode = generateOTPCode();
       const hashedCode = hashOTPCode(otpCode);
-      const expiryTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes (email OTP — NIST SP 800-63B)
+      const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes (email OTP — spec alignment)
 
       await prisma.appUser.update({
         where: { id: userId },
@@ -765,7 +765,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         },
       });
 
-      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 5);
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
       if (!emailResult.success && process.env.NODE_ENV === 'production') {
         return res.status(500).json({
@@ -780,7 +780,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         data: {
           codeSent: true,
           email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
-          expiresIn: 300,
+          expiresIn: 180,
         },
         message: "Verification code sent to confirm disabling 2FA",
         ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
@@ -791,7 +791,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
     if (enabled && !user.twoFactorEnabled) {
       const otpCode = generateOTPCode();
       const hashedCode = hashOTPCode(otpCode);
-      const expiryTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes (email OTP — NIST SP 800-63B)
+      const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes (email OTP — spec alignment)
 
       // Store hashed code and reset brute-force counters (fresh code = fresh window)
       await prisma.appUser.update({
@@ -805,7 +805,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
       });
 
       // Send code via email
-      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 5);
+      const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
       if (!emailResult.success && process.env.NODE_ENV === 'production') {
         console.error('❌ Failed to send 2FA email:', emailResult.error);
@@ -821,7 +821,7 @@ export const toggleTwoFactor = asyncHandler(async (req, res, next) => {
         data: {
           codeSent: true,
           email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'), // Mask email
-          expiresIn: 300, // seconds (5 minutes)
+          expiresIn: 180, // seconds (3 minutes)
         },
         message: "Verification code sent to your email",
         // In dev mode, include code for testing
@@ -1002,8 +1002,8 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
     }
 
     // Rate limit: Allow resend only after 1 minute
-    // Code expiry is set to now + 5 min, so sendTime = expiryTime - 5 min
-    const codeSentAt = user.twoFactorCodeExpiry.getTime() - 5 * 60 * 1000;
+    // Code expiry is set to now + 3 min, so sendTime = expiryTime - 3 min
+    const codeSentAt = user.twoFactorCodeExpiry.getTime() - 3 * 60 * 1000;
     const timeSinceLastCode = Date.now() - codeSentAt;
     if (timeSinceLastCode < 60 * 1000) {
       const waitSeconds = Math.ceil((60 * 1000 - timeSinceLastCode) / 1000);
@@ -1017,7 +1017,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
     // the attempt counter; only successful verification resets it.
     const otpCode = generateOTPCode();
     const hashedCode = hashOTPCode(otpCode);
-    const expiryTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes (email OTP — NIST SP 800-63B)
+    const expiryTime = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes (email OTP — spec alignment)
 
     await prisma.appUser.update({
       where: { id: userId },
@@ -1027,7 +1027,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       },
     });
 
-    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 5);
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 3);
 
     if (!emailResult.success && process.env.NODE_ENV === 'production') {
       return res.status(500).json({
@@ -1042,7 +1042,7 @@ export const resend2FACode = asyncHandler(async (req, res, next) => {
       data: {
         codeSent: true,
         email: user.email.replace(/(.{2})(.*)(@.*)/, '$1***$3'),
-        expiresIn: 300, // 5 minutes — matches actual server-side code expiry
+        expiresIn: 180, // 3 minutes — matches actual server-side code expiry
       },
       message: "New verification code sent",
       ...(process.env.NODE_ENV !== 'production' && emailResult.devCode && { devCode: emailResult.devCode })
