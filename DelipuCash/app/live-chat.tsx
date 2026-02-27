@@ -96,7 +96,20 @@ const CHROME_MOBILE_UA =
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36';
 
 /** Timeout before we declare the widget failed to load (ms). */
-const WIDGET_TIMEOUT_MS = 20_000;
+const WIDGET_TIMEOUT_MS = 25_000;
+
+/**
+ * Secondary timeout — if the script loads but the widget never calls onLoad,
+ * fire TIMEOUT sooner than the global timeout so we don't wait the full 25 s.
+ */
+const POST_SCRIPT_TIMEOUT_MS = 15_000;
+
+/**
+ * baseUrl gives the inline HTML a real HTTPS origin.
+ * Without this the page loads at about:blank — Tawk's widget fails to init
+ * because it can't establish WebSocket connections or pass origin checks.
+ */
+const WEBVIEW_BASE_URL = 'https://embed.tawk.to';
 
 // ---------------------------------------------------------------------------
 // Chat state machine
@@ -137,10 +150,20 @@ function buildTawkHTML(params: {
   <script>
     function msg(o){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
 
+    var __tawkReady=false;
+
+    // Catch silent JS errors from the Tawk widget
+    window.onerror=function(message,source,line,col,error){
+      if(!__tawkReady){
+        msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR',detail:'JS error: '+message});
+      }
+    };
+
     var Tawk_API=Tawk_API||{};
     Tawk_API.visitor={name:${JSON.stringify(params.userName)},email:${JSON.stringify(params.userEmail)},hash:''};
 
     Tawk_API.onLoad=function(){
+      __tawkReady=true;
       var el=document.getElementById('loading');if(el)el.style.display='none';
       try{Tawk_API.setAttributes({userId:${JSON.stringify(params.userId)},phone:${JSON.stringify(params.userPhone)},platform:'${Platform.OS}',app:'DelipuCash'},function(){});}catch(e){}
       try{Tawk_API.maximize();}catch(e){}
@@ -156,14 +179,21 @@ function buildTawkHTML(params: {
       s1.src='https://embed.tawk.to/${params.propertyId}/${params.widgetId}';
       s1.charset='UTF-8';
       s1.setAttribute('crossorigin','*');
-      s1.onload=function(){msg({type:'TAWK_SCRIPT_LOADED'});};
+      s1.onload=function(){
+        msg({type:'TAWK_SCRIPT_LOADED'});
+        // Secondary timeout: script loaded but widget never called onLoad
+        setTimeout(function(){
+          if(!__tawkReady)
+            msg({type:'TAWK_ERROR',errorKind:'TIMEOUT'});
+        },${POST_SCRIPT_TIMEOUT_MS});
+      };
       s1.onerror=function(){msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR'});};
       s0.parentNode.insertBefore(s1,s0);
     })();
 
+    // Global safety-net timeout
     setTimeout(function(){
-      var el=document.getElementById('loading');
-      if(el&&el.style.display!=='none')
+      if(!__tawkReady)
         msg({type:'TAWK_ERROR',errorKind:'TIMEOUT'});
     },${WIDGET_TIMEOUT_MS});
   </script>
@@ -360,6 +390,7 @@ export default function LiveChatScreen() {
           break;
         case 'TAWK_ERROR': {
           const kind = (data.errorKind as Exclude<ChatErrorKind, 'NONE'>) ?? 'NETWORK_ERROR';
+          if (__DEV__) console.warn('[LiveChat] Error:', kind, data.detail ?? '');
           setChatState('error');
           setErrorKind(kind);
           break;
@@ -621,7 +652,7 @@ export default function LiveChatScreen() {
           <WebView
             key={webViewKey}
             ref={webViewRef}
-            source={{ html: htmlContent }}
+            source={{ html: htmlContent, baseUrl: WEBVIEW_BASE_URL }}
             style={[
               styles.webView,
               chatState === 'loading' && styles.webViewHidden,
@@ -642,6 +673,8 @@ export default function LiveChatScreen() {
             mixedContentMode="always"
             cacheEnabled
             overScrollMode="never"
+            allowFileAccess
+            allowUniversalAccessFromFileURLs
             accessibilityLabel="Live chat with support agent"
           />
         )}
