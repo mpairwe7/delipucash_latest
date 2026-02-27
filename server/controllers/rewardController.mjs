@@ -487,7 +487,7 @@ export const redeemRewards = asyncHandler(async (req, res) => {
 
     // Tailor message based on whether payment is pending or terminal
     const refundMessage = isProviderPending
-      ? 'Payment is still being processed. Your points are on hold — you'll be notified of the outcome.'
+      ? "Payment is still being processed. Your points are on hold — you'll be notified of the outcome."
       : 'Payment processing failed. Your points have been refunded.';
 
     return res.status(502).json({

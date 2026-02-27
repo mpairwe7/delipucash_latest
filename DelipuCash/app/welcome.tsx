@@ -1,12 +1,12 @@
 /**
- * Post-Signup Welcome & Onboarding Screen - 2026 Industry Standard
+ * Post-Signup Welcome & Onboarding Screen
  *
- * Follows best practices from Cash App, Duolingo, and TikTok:
- * - Personalized greeting with user's first name
- * - 3-step swipable onboarding cards (earning pathways)
+ * Inspired by Cash App, Revolut, Wise:
+ * - Clean verified-account header (no emojis or decorative imagery)
+ * - 3-step swipable onboarding cards with lucide icons
  * - Push notification permission prompt (deferred, non-blocking)
- * - Celebration animation + haptic feedback
- * - Prefetches home data while user is reading
+ * - Subtle haptic feedback on milestones
+ * - Prefetches home data while user reads
  * - WCAG 2.2 AA accessible (screen reader, reduced motion, touch targets)
  *
  * Navigation: signup → welcome → (tabs)/home-redesigned
@@ -40,13 +40,13 @@ import Animated, {
   interpolate,
 } from "react-native-reanimated";
 import {
+  ArrowRight,
   Bell,
-  ChevronRight,
-  ClipboardCheck,
-  HelpCircle,
-  PartyPopper,
-  Sparkles,
-  Video,
+  CircleCheckBig,
+  ClipboardList,
+  MessageCircle,
+  Play,
+  Shield,
 } from "lucide-react-native";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -80,31 +80,31 @@ interface OnboardingStep {
 const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "questions",
-    icon: HelpCircle,
+    icon: MessageCircle,
     iconColor: "#6C63FF",
     title: "Answer & Earn",
     description:
-      "Answer community questions and earn 10–50 points per response. The more detailed your answers, the more you earn.",
+      "Answer community questions and earn 10\u201350 points per response. The more detailed your answers, the more you earn.",
     accessibilityLabel:
       "Step 1: Answer questions to earn 10 to 50 points each",
   },
   {
     id: "videos",
-    icon: Video,
+    icon: Play,
     iconColor: "#FF6B6B",
     title: "Watch & Earn",
     description:
-      "Watch short videos and ads to collect instant rewards. New content drops daily — never miss a payout.",
+      "Watch short videos and ads to collect instant rewards. New content drops daily \u2014 never miss a payout.",
     accessibilityLabel:
       "Step 2: Watch videos and ads for instant rewards",
   },
   {
     id: "surveys",
-    icon: ClipboardCheck,
+    icon: ClipboardList,
     iconColor: "#4ECDC4",
     title: "Survey & Cash Out",
     description:
-      "Complete quick surveys from real brands. Higher payouts, real impact — your opinion matters.",
+      "Complete quick surveys from real brands. Higher payouts, real impact \u2014 your opinion matters.",
     accessibilityLabel:
       "Step 3: Complete surveys for higher cash payouts",
   },
@@ -114,8 +114,8 @@ const ONBOARDING_STEPS: OnboardingStep[] = [
 // SUB-COMPONENTS
 // ============================================================================
 
-/** Celebration header with personalized greeting */
-const CelebrationHeader = React.memo(function CelebrationHeader({
+/** Verified-account header with personalized greeting */
+const WelcomeHeader = React.memo(function WelcomeHeader({
   firstName,
   colors,
   reduceMotion,
@@ -124,34 +124,36 @@ const CelebrationHeader = React.memo(function CelebrationHeader({
   colors: ReturnType<typeof useTheme>["colors"];
   reduceMotion: boolean;
 }) {
-  const confettiScale = useSharedValue(0);
+  const iconScale = useSharedValue(0);
 
   useEffect(() => {
     if (reduceMotion) {
-      confettiScale.value = 1;
+      iconScale.value = 1;
       return;
     }
-    confettiScale.value = withDelay(
+    iconScale.value = withDelay(
       200,
-      withSpring(1, { damping: 8, stiffness: 120 })
+      withSpring(1, { damping: 12, stiffness: 140 })
     );
-  }, [confettiScale, reduceMotion]);
+  }, [iconScale, reduceMotion]);
 
-  const confettiStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: confettiScale.value }],
-    opacity: interpolate(confettiScale.value, [0, 0.5, 1], [0, 0.8, 1]),
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+    opacity: interpolate(iconScale.value, [0, 0.5, 1], [0, 0.8, 1]),
   }));
 
   return (
     <Animated.View
       entering={reduceMotion ? undefined : FadeInDown.delay(100).springify().damping(14)}
-      style={styles.celebrationHeader}
+      style={styles.welcomeHeader}
       accessible
       accessibilityRole="header"
       accessibilityLabel={`Welcome ${firstName}! Your account is ready.`}
     >
-      <Animated.View style={[styles.confettiIcon, confettiStyle]}>
-        <PartyPopper size={48} color="#FFD700" strokeWidth={1.5} />
+      <Animated.View style={[styles.headerIcon, iconStyle]}>
+        <View style={[styles.headerIconBg, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
+          <CircleCheckBig size={36} color={colors.primary} strokeWidth={1.8} />
+        </View>
       </Animated.View>
 
       <Text
@@ -159,14 +161,14 @@ const CelebrationHeader = React.memo(function CelebrationHeader({
         allowFontScaling
         maxFontSizeMultiplier={1.3}
       >
-        Welcome, {firstName}! 🎉
+        Welcome, {firstName}
       </Text>
       <Text
         style={styles.welcomeSubtitle}
         allowFontScaling
         maxFontSizeMultiplier={1.2}
       >
-        Your account is ready. Here&apos;s how to start earning.
+        Your account is set up. Here&apos;s how you&apos;ll start earning.
       </Text>
     </Animated.View>
   );
@@ -201,27 +203,28 @@ const StepCard = React.memo(function StepCard({
         style={[
           styles.stepCard,
           {
-            backgroundColor: withAlpha(step.iconColor, 0.08),
-            borderColor: withAlpha(step.iconColor, isActive ? 0.3 : 0.12),
+            backgroundColor: "rgba(255,255,255,0.05)",
+            borderColor: withAlpha(step.iconColor, isActive ? 0.35 : 0.1),
           },
         ]}
         accessible
         accessibilityLabel={step.accessibilityLabel}
         accessibilityRole="text"
       >
+        {/* Step badge */}
+        <View style={[styles.stepBadge, { backgroundColor: withAlpha(step.iconColor, 0.12) }]}>
+          <Text style={[styles.stepBadgeText, { color: step.iconColor }]}>
+            Step {index + 1}
+          </Text>
+        </View>
+
         <View
           style={[
             styles.stepIconContainer,
-            { backgroundColor: withAlpha(step.iconColor, 0.15) },
+            { backgroundColor: withAlpha(step.iconColor, 0.12) },
           ]}
         >
-          <Icon size={28} color={step.iconColor} strokeWidth={2} />
-        </View>
-
-        <View style={styles.stepNumber}>
-          <Text style={[styles.stepNumberText, { color: step.iconColor }]}>
-            {index + 1}
-          </Text>
+          <Icon size={28} color={step.iconColor} strokeWidth={1.8} />
         </View>
 
         <Text
@@ -293,18 +296,20 @@ const NotificationCTA = React.memo(function NotificationCTA({
       accessibilityLabel="Enable push notifications to never miss a reward"
       accessibilityRole="none"
     >
-      <Bell size={18} color="#FFD700" strokeWidth={2} />
+      <View style={styles.notificationIconWrap}>
+        <Bell size={16} color={colors.primary} strokeWidth={2} />
+      </View>
       <Text style={styles.notificationText}>
-        Enable notifications so you never miss a reward
+        Get notified when you earn rewards
       </Text>
       <Pressable
         onPress={onEnable}
-        style={[styles.enableButton, { backgroundColor: withAlpha(colors.primary, 0.2) }]}
+        style={[styles.enableButton, { backgroundColor: withAlpha(colors.primary, 0.15) }]}
         accessibilityRole="button"
         accessibilityLabel="Enable notifications"
         hitSlop={12}
       >
-        <Text style={[styles.enableButtonText, { color: colors.primary }]}>Enable</Text>
+        <Text style={[styles.enableButtonText, { color: colors.primary }]}>Turn on</Text>
       </Pressable>
     </Animated.View>
   );
@@ -434,8 +439,8 @@ export default function WelcomeScreen(): React.ReactElement {
           },
         ]}
       >
-        {/* Celebration Header */}
-        <CelebrationHeader
+        {/* Welcome Header */}
+        <WelcomeHeader
           firstName={firstName}
           colors={colors}
           reduceMotion={reduceMotion}
@@ -493,7 +498,6 @@ export default function WelcomeScreen(): React.ReactElement {
             accessibilityLabel="Start Earning"
             accessibilityHint="Navigate to the home screen and begin earning rewards"
           >
-            <Sparkles size={18} color="#FFFFFF" strokeWidth={2} style={{ marginRight: 8 }} />
             <Text
               style={styles.startButtonText}
               allowFontScaling
@@ -501,7 +505,7 @@ export default function WelcomeScreen(): React.ReactElement {
             >
               Start Earning
             </Text>
-            <ChevronRight size={20} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 4 }} />
+            <ArrowRight size={20} color="#FFFFFF" strokeWidth={2.5} style={{ marginLeft: 8 }} />
           </Pressable>
 
           {/* Skip for returning users */}
@@ -511,8 +515,14 @@ export default function WelcomeScreen(): React.ReactElement {
             accessibilityRole="button"
             accessibilityLabel="Skip onboarding"
           >
-            <Text style={styles.skipText}>Skip for now</Text>
+            <Text style={styles.skipText}>I&apos;ll explore on my own</Text>
           </Pressable>
+
+          {/* Trust footer */}
+          <View style={styles.trustFooter}>
+            <Shield size={12} color="rgba(255,255,255,0.35)" strokeWidth={2} />
+            <Text style={styles.trustText}>Your data is secure and never shared</Text>
+          </View>
         </Animated.View>
       </View>
     </View>
@@ -531,25 +541,33 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingHorizontal: SPACING.xl,
   },
-  // Celebration Header
-  celebrationHeader: {
+  // Welcome Header
+  welcomeHeader: {
     alignItems: "center",
     marginBottom: SPACING["2xl"],
   },
-  confettiIcon: {
-    marginBottom: SPACING.md,
+  headerIcon: {
+    marginBottom: SPACING.base,
+  },
+  headerIconBg: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: "center",
+    justifyContent: "center",
   },
   welcomeTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize["3xl"],
     color: "#FFFFFF",
     textAlign: "center",
-    marginBottom: SPACING.sm,
+    marginBottom: SPACING.xs,
+    letterSpacing: -0.3,
   },
   welcomeSubtitle: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.base,
-    color: "rgba(255,255,255,0.65)",
+    color: "rgba(255,255,255,0.55)",
     textAlign: "center",
     lineHeight: 22,
     maxWidth: 280,
@@ -574,28 +592,26 @@ const styles = StyleSheet.create({
     padding: SPACING.xl,
     alignItems: "center",
   },
-  stepIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: SPACING.lg,
-  },
-  stepNumber: {
+  stepBadge: {
     position: "absolute",
     top: SPACING.base,
     right: SPACING.base,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.1)",
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xxs,
+    borderRadius: RADIUS.full,
+  },
+  stepBadgeText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    letterSpacing: 0.3,
+  },
+  stepIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  stepNumberText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.lg,
   },
   stepTitle: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
@@ -607,7 +623,7 @@ const styles = StyleSheet.create({
   stepDescription: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.base,
-    color: "rgba(255,255,255,0.6)",
+    color: "rgba(255,255,255,0.55)",
     textAlign: "center",
     lineHeight: 22,
     maxWidth: 280,
@@ -633,26 +649,36 @@ const styles = StyleSheet.create({
   notificationCTA: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,215,0,0.08)",
+    backgroundColor: "rgba(255,255,255,0.05)",
     borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
     paddingHorizontal: SPACING.base,
     paddingVertical: SPACING.md,
     marginTop: SPACING.lg,
     gap: SPACING.sm,
   },
+  notificationIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   notificationText: {
     flex: 1,
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    color: "rgba(255,255,255,0.7)",
+    color: "rgba(255,255,255,0.65)",
   },
   enableButton: {
     borderRadius: RADIUS.lg,
     paddingHorizontal: SPACING.md,
-    paddingVertical: SPACING.xs,
+    paddingVertical: SPACING.xs + 2,
   },
   enableButtonText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },
   // CTA Section
@@ -672,11 +698,17 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: RADIUS["2xl"],
     paddingHorizontal: SPACING.xl,
+    shadowColor: "#6C63FF",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
   },
   startButtonText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.lg,
     color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
   skipButton: {
     marginTop: SPACING.md,
@@ -687,7 +719,17 @@ const styles = StyleSheet.create({
   skipText: {
     fontFamily: TYPOGRAPHY.fontFamily.regular,
     fontSize: TYPOGRAPHY.fontSize.sm,
-    color: "rgba(255,255,255,0.45)",
-    textDecorationLine: "underline",
+    color: "rgba(255,255,255,0.4)",
+  },
+  trustFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  trustText: {
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.xs,
+    color: "rgba(255,255,255,0.35)",
   },
 });
