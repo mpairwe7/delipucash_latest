@@ -16,6 +16,6 @@
   "github.copilot.chat.copilotDebugCommand.enabled": false,
   "editor.formatOnSave": true,
   "files.exclude": {
-    "**/.env": true
+    "**/.env": false
   }
 }
