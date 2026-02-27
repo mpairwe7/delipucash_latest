@@ -451,6 +451,7 @@ export default function RootLayout() {
               {/* Profile destination screens — headerShown: false to avoid double headers
                   (each screen renders its own custom header with back navigation) */}
               <Stack.Screen name="help-support" options={{ headerShown: false }} />
+              <Stack.Screen name="live-chat" options={{ headerShown: false }} />
               <Stack.Screen name="ad-registration" options={{ headerShown: false }} />
               <Stack.Screen name="instant-reward-upload" options={{ headerShown: false }} />
               <Stack.Screen name="regular-reward-upload" options={{ headerShown: false }} />

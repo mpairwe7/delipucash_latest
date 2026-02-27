@@ -5,6 +5,7 @@
 
 import React, { memo, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Pressable, Linking, Platform } from 'react-native';
+import { router } from 'expo-router';
 import Animated, {
   FadeInDown,
   useSharedValue,
@@ -175,7 +176,7 @@ export const ContactCard = memo<ContactCardProps>(
           break;
         }
         case 'chat':
-          showToast({ message: 'Live chat coming soon!', type: 'info' });
+          router.push('/live-chat' as any);
           return;
       }
 
@@ -235,7 +236,7 @@ export const ContactCard = memo<ContactCardProps>(
           accessibilityLabel={`${contact.label}, ${contact.value}${contact.workingHours ? `, ${contact.workingHours}` : ''}`}
           accessibilityHint={
             contact.type === 'chat'
-              ? 'Coming soon'
+              ? 'Double tap to open live chat'
               : `Double tap to contact via ${contact.type}. Long press to copy.`
           }
         >
