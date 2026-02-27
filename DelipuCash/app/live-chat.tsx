@@ -151,13 +151,36 @@ function buildTawkHTML(params: {
     function msg(o){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
 
     var __tawkReady=false;
+    var __scriptLoaded=false;
+    var __errors=[];
 
-    // Catch silent JS errors from the Tawk widget
+    // Capture silent JS errors from the Tawk widget
     window.onerror=function(message,source,line,col,error){
+      __errors.push(message);
       if(!__tawkReady){
-        msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR',detail:'JS error: '+message});
+        msg({type:'TAWK_JS_ERROR',detail:String(message),source:String(source||''),line:line});
       }
     };
+
+    // Diagnostic: collect widget state snapshot for timeout reports
+    function collectDiag(){
+      var iframes=document.querySelectorAll('iframe');
+      var tawkIframes=[];
+      for(var i=0;i<iframes.length;i++){
+        try{tawkIframes.push(iframes[i].id||iframes[i].src||'(no-src)');}catch(e){tawkIframes.push('(cross-origin)');}
+      }
+      return {
+        origin:window.location.origin,
+        href:window.location.href,
+        referrer:document.referrer,
+        scriptLoaded:__scriptLoaded,
+        tawkAPIKeys:Object.keys(window.Tawk_API||{}).join(','),
+        tawkStatus:typeof Tawk_API.getStatus==='function'?Tawk_API.getStatus():'n/a',
+        iframeCount:iframes.length,
+        tawkIframes:tawkIframes.join('; '),
+        jsErrors:__errors.slice(0,5).join('; ')
+      };
+    }
 
     var Tawk_API=Tawk_API||{};
     Tawk_API.visitor={name:${JSON.stringify(params.userName)},email:${JSON.stringify(params.userEmail)},hash:''};
@@ -180,21 +203,22 @@ function buildTawkHTML(params: {
       s1.charset='UTF-8';
       s1.setAttribute('crossorigin','*');
       s1.onload=function(){
+        __scriptLoaded=true;
         msg({type:'TAWK_SCRIPT_LOADED'});
         // Secondary timeout: script loaded but widget never called onLoad
         setTimeout(function(){
           if(!__tawkReady)
-            msg({type:'TAWK_ERROR',errorKind:'TIMEOUT'});
+            msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:collectDiag()});
         },${POST_SCRIPT_TIMEOUT_MS});
       };
-      s1.onerror=function(){msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR'});};
+      s1.onerror=function(){msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR',detail:'embed script failed to fetch'});};
       s0.parentNode.insertBefore(s1,s0);
     })();
 
     // Global safety-net timeout
     setTimeout(function(){
       if(!__tawkReady)
-        msg({type:'TAWK_ERROR',errorKind:'TIMEOUT'});
+        msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:collectDiag()});
     },${WIDGET_TIMEOUT_MS});
   </script>
 </body>
@@ -383,14 +407,23 @@ export default function LiveChatScreen() {
           if (__DEV__) console.log('[LiveChat] Tawk script loaded, awaiting widget init…');
           break;
         case 'TAWK_LOADED':
+          if (__DEV__) console.log('[LiveChat] Widget ready');
           setChatState('ready');
           AccessibilityInfo.announceForAccessibility(
             'Live chat connected. You can now type your message.',
           );
           break;
+        case 'TAWK_JS_ERROR':
+          if (__DEV__) console.warn('[LiveChat] JS error in WebView:', data.detail, data.source, data.line);
+          break;
         case 'TAWK_ERROR': {
           const kind = (data.errorKind as Exclude<ChatErrorKind, 'NONE'>) ?? 'NETWORK_ERROR';
-          if (__DEV__) console.warn('[LiveChat] Error:', kind, data.detail ?? '');
+          if (__DEV__) {
+            console.warn('[LiveChat] Error:', kind, data.detail ?? '');
+            if (data.diag) {
+              console.warn('[LiveChat] Diagnostic snapshot:', JSON.stringify(data.diag, null, 2));
+            }
+          }
           setChatState('error');
           setErrorKind(kind);
           break;
