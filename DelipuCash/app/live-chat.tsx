@@ -98,40 +98,6 @@ const CHROME_MOBILE_UA =
 /** Timeout before we declare the widget failed to load (ms). */
 const WIDGET_TIMEOUT_MS = 25_000;
 
-/**
- * baseUrl gives the inline HTML a real HTTPS origin so the WebView can
- * establish WebSocket connections and pass Tawk's origin checks.
- *
- * IMPORTANT: Must NOT be a tawk.to domain — the Tawk script detects when it's
- * running on its own embed domain and skips iframe creation (anti-recursion),
- * which prevents onLoad from firing.
- */
-const DEFAULT_WEBVIEW_BASE_URL = 'https://delipucash.app';
-
-const WEBVIEW_BASE_URL = (() => {
-  const apiBase = process.env.EXPO_PUBLIC_API_URL;
-  const raw =
-    process.env.EXPO_PUBLIC_CHAT_BASE_URL ??
-    process.env.EXPO_PUBLIC_WEBVIEW_BASE_URL ??
-    apiBase ??
-    DEFAULT_WEBVIEW_BASE_URL;
-
-  try {
-    const parsed = new URL(raw);
-    return parsed.origin;
-  } catch {
-    if (__DEV__) {
-      console.warn(
-        '[LiveChat] Invalid EXPO_PUBLIC_CHAT_BASE_URL/EXPO_PUBLIC_WEBVIEW_BASE_URL:',
-        raw,
-        '— falling back to',
-        DEFAULT_WEBVIEW_BASE_URL,
-      );
-    }
-    return DEFAULT_WEBVIEW_BASE_URL;
-  }
-})();
-
 // ---------------------------------------------------------------------------
 // Chat state machine
 // ---------------------------------------------------------------------------
@@ -139,135 +105,117 @@ const WEBVIEW_BASE_URL = (() => {
 type ChatState = 'loading' | 'ready' | 'error';
 
 // ---------------------------------------------------------------------------
-// Tawk.to HTML Builder
+// Tawk.to Direct Chat URL
+// ---------------------------------------------------------------------------
+// Instead of inline HTML (loadDataWithBaseURL), load Tawk's hosted chat page
+// directly. This gives a real page navigation with proper lifecycle events
+// (DOMContentLoaded / load) — the root cause of the previous TIMEOUT was
+// loadDataWithBaseURL firing those events before the async Tawk script loaded.
+//
+// The URL https://tawk.to/chat/{propertyId}/{widgetId} is Tawk's own hosted
+// standalone chat page with isPopup:true already set.
 // ---------------------------------------------------------------------------
 
-function buildTawkHTML(params: {
-  propertyId: string;
-  widgetId: string;
+function buildTawkChatUrl(propertyId: string, widgetId: string): string {
+  return `https://tawk.to/chat/${propertyId}/${widgetId}`;
+}
+
+/**
+ * JS injected BEFORE the hosted page's scripts — best-effort visitor pre-fill.
+ * The hosted page may overwrite Tawk_API, so this is not relied upon for
+ * callbacks — those are set up in the post-load injection instead.
+ */
+function buildPreInjectedJS(params: {
+  userName: string;
+  userEmail: string;
+}): string {
+  return `(function(){
+  window.Tawk_API=window.Tawk_API||{};
+  window.Tawk_API.visitor={name:${JSON.stringify(params.userName)},email:${JSON.stringify(params.userEmail)},hash:''};
+})();true;`;
+}
+
+/**
+ * JS injected AFTER the hosted page finishes loading.
+ * By this point the Tawk widget is fully initialized (iframe created, API
+ * populated). We hook into the existing widget, set user attributes, maximize
+ * the chat, and signal TAWK_LOADED back to React Native.
+ */
+function buildPostInjectedJS(params: {
   userName: string;
   userEmail: string;
   userPhone: string;
   userId: string;
-  backgroundColor: string;
-  textColor: string;
+  timeoutMs: number;
 }): string {
-  // -----------------------------------------------------------------------
-  // Architecture: THREE separate <script> blocks.
-  //
-  // 1. Inline setup   — defines msg(), Tawk_API callbacks, diagnostics
-  // 2. Synchronous src — loads the Tawk embed script as a BLOCKING <script src>
-  //    so it executes BEFORE DOMContentLoaded / load events fire.
-  //    (The old dynamic-async insertion caused the loader to miss these events
-  //    because loadDataWithBaseURL fires them before the async fetch completes.)
-  // 3. Post-load       — timeout checks, diagnostics, re-dispatch of load event
-  //                       as a safety net in case the loader still missed it.
-  // -----------------------------------------------------------------------
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    html,body{width:100%;height:100%;background:${params.backgroundColor};color:${params.textColor};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;overflow:hidden}
-    #loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px}
-    .spinner{width:32px;height:32px;border:3px solid rgba(128,128,128,0.3);border-top-color:#4D4DFF;border-radius:50%;animation:spin .8s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-    #loading p{font-size:14px;opacity:0.6}
-  </style>
-</head>
-<body>
-  <div id="loading"><div class="spinner"></div><p>Connecting to support...</p></div>
+  return `(function(){
+  var __signalled=false;
+  function msg(o){
+    try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}
+  }
+  function signalReady(){
+    if(__signalled) return;
+    __signalled=true;
+    var api=window.Tawk_API;
+    try{api.setAttributes({
+      name:${JSON.stringify(params.userName)},
+      email:${JSON.stringify(params.userEmail)},
+      userId:${JSON.stringify(params.userId)},
+      phone:${JSON.stringify(params.userPhone)},
+      platform:'${Platform.OS}',
+      app:'DelipuCash'
+    },function(){});}catch(e){}
+    try{api.maximize();}catch(e){}
+    try{api.showWidget();}catch(e){}
+    // Ensure the chat fills the WebView viewport
+    try{
+      document.documentElement.style.cssText='width:100%;height:100%;margin:0;padding:0;overflow:hidden;';
+      document.body.style.cssText='width:100%;height:100%;margin:0;padding:0;overflow:hidden;';
+    }catch(e){}
+    msg({type:'TAWK_LOADED'});
+  }
 
-  <!-- 1. Setup: Tawk_API callbacks + diagnostics (runs immediately) -->
-  <script>
-    function msg(o){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
+  var api=window.Tawk_API;
 
-    var __tawkReady=false;
-    var __beforeLoaded=false;
-    var __errors=[];
+  // Case 1: Widget already loaded (most likely — page readyState is complete)
+  if(api && typeof api.getStatus==='function'){
+    try{
+      var status=api.getStatus();
+      if(status){signalReady();return;}
+    }catch(e){}
+  }
 
-    window.onerror=function(message,source,line,col,error){
-      __errors.push(message);
-      if(!__tawkReady){
-        msg({type:'TAWK_JS_ERROR',detail:String(message),source:String(source||''),line:line});
-      }
+  // Case 2: Widget still loading — attach callback
+  if(api){
+    var origOnLoad=api.onLoad;
+    api.onLoad=function(){
+      if(typeof origOnLoad==='function') try{origOnLoad();}catch(e){}
+      signalReady();
     };
+  }
 
-    function readTawk(methodName){
-      try{if(typeof Tawk_API[methodName]==='function') return String(Tawk_API[methodName]());}catch(e){}
-      return 'n/a';
-    }
+  // Hook into chat-started event
+  if(api){
+    api.onChatStarted=function(){msg({type:'CHAT_STARTED'});};
+  }
 
-    function collectDiag(){
-      var iframes=document.querySelectorAll('iframe');
-      var tawkIframes=[];
-      for(var i=0;i<iframes.length;i++){
-        try{tawkIframes.push(iframes[i].id||iframes[i].src||'(no-src)');}catch(e){tawkIframes.push('(cross-origin)');}
+  // Timeout fallback
+  setTimeout(function(){
+    if(!__signalled){
+      // One last try — widget may have loaded between checks
+      if(api && typeof api.getStatus==='function'){
+        try{if(api.getStatus()){signalReady();return;}}catch(e){}
       }
-      return {
+      msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:{
         origin:window.location.origin,
-        href:window.location.href,
         readyState:document.readyState,
-        beforeLoaded:__beforeLoaded,
-        ready:__tawkReady,
-        tawkStatus:readTawk('getStatus'),
-        isHidden:readTawk('isChatHidden'),
-        windowType:readTawk('getWindowType'),
-        iframeCount:iframes.length,
-        tawkIframes:tawkIframes.join('; '),
-        jsErrors:__errors.slice(0,5).join('; ')
-      };
+        iframeCount:document.querySelectorAll('iframe').length,
+        tawkStatus:api&&typeof api.getStatus==='function'?String(api.getStatus()):'n/a',
+        tawkKeys:Object.keys(api||{}).join(',')
+      }});
     }
-
-    var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
-
-    Tawk_API.visitor={name:${JSON.stringify(params.userName)},email:${JSON.stringify(params.userEmail)},hash:''};
-
-    Tawk_API.onBeforeLoaded=function(){
-      __beforeLoaded=true;
-      msg({type:'TAWK_BEFORE_LOADED'});
-    };
-
-    Tawk_API.onLoad=function(){
-      __tawkReady=true;
-      var el=document.getElementById('loading');if(el)el.style.display='none';
-      try{Tawk_API.setAttributes({userId:${JSON.stringify(params.userId)},phone:${JSON.stringify(params.userPhone)},platform:'${Platform.OS}',app:'DelipuCash'},function(){});}catch(e){}
-      try{Tawk_API.maximize();}catch(e){}
-      msg({type:'TAWK_LOADED'});
-    };
-
-    Tawk_API.onChatStarted=function(){msg({type:'CHAT_STARTED'});};
-  </script>
-
-  <!-- 2. Synchronous Tawk embed script (blocks parsing → runs BEFORE DOMContentLoaded/load) -->
-  <script src="https://embed.tawk.to/${params.propertyId}/${params.widgetId}" charset="UTF-8" crossorigin="*"></script>
-
-  <!-- 3. Post-load: runs after Tawk loader has registered its event listeners -->
-  <script>
-    msg({type:'TAWK_SCRIPT_LOADED'});
-
-    // Safety net: if the loader still missed the load event (e.g. readyState
-    // was already "complete" before the sync script finished), re-dispatch it.
-    if(document.readyState==='complete'){
-      setTimeout(function(){
-        if(!__tawkReady && !__beforeLoaded){
-          msg({type:'TAWK_REDISPATCH',readyState:document.readyState});
-          window.dispatchEvent(new Event('load'));
-          document.dispatchEvent(new Event('DOMContentLoaded'));
-        }
-      },500);
-    }
-
-    // Timeout: widget should have loaded by now
-    setTimeout(function(){
-      if(!__tawkReady)
-        msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:collectDiag()});
-    },${WIDGET_TIMEOUT_MS});
-  </script>
-</body>
-</html>`;
+  },${params.timeoutMs});
+})();true;`;
 }
 
 // ---------------------------------------------------------------------------
@@ -425,20 +373,30 @@ export default function LiveChatScreen() {
   const userPhone = user?.phone ?? '';
   const userId = user?.id ?? '';
 
-  // Generate HTML with user context and theme colors
-  const htmlContent = useMemo(() => {
+  // Direct chat URL — Tawk's hosted standalone chat page
+  const chatUri = useMemo(() => {
     if (!TAWK_CONFIG) return null;
-    return buildTawkHTML({
-      propertyId: TAWK_CONFIG.propertyId,
-      widgetId: TAWK_CONFIG.widgetId,
-      userName,
-      userEmail,
-      userPhone,
-      userId,
-      backgroundColor: colors.background,
-      textColor: colors.text,
-    });
-  }, [userName, userEmail, userPhone, userId, colors.background, colors.text]);
+    return buildTawkChatUrl(TAWK_CONFIG.propertyId, TAWK_CONFIG.widgetId);
+  }, []);
+
+  // Pre-load: best-effort visitor pre-fill (may be overwritten by page)
+  const preInjectedJS = useMemo(
+    () => buildPreInjectedJS({ userName, userEmail }),
+    [userName, userEmail],
+  );
+
+  // Post-load: hooks into the already-initialized widget, signals ready
+  const postInjectedJS = useMemo(
+    () =>
+      buildPostInjectedJS({
+        userName,
+        userEmail,
+        userPhone,
+        userId,
+        timeoutMs: WIDGET_TIMEOUT_MS,
+      }),
+    [userName, userEmail, userPhone, userId],
+  );
 
   // -----------------------------------------------------------------------
   // WebView message handler
@@ -448,15 +406,6 @@ export default function LiveChatScreen() {
     try {
       const data = JSON.parse(event.nativeEvent.data);
       switch (data.type) {
-        case 'TAWK_SCRIPT_LOADED':
-          if (__DEV__) console.log('[LiveChat] Tawk embed script executed (sync)');
-          break;
-        case 'TAWK_BEFORE_LOADED':
-          if (__DEV__) console.log('[LiveChat] Widget beforeLoaded fired');
-          break;
-        case 'TAWK_REDISPATCH':
-          if (__DEV__) console.log('[LiveChat] Re-dispatched load/DOMContentLoaded (readyState was:', data.readyState, ')');
-          break;
         case 'TAWK_LOADED':
           if (__DEV__) console.log('[LiveChat] Widget ready');
           setChatState('ready');
@@ -464,16 +413,11 @@ export default function LiveChatScreen() {
             'Live chat connected. You can now type your message.',
           );
           break;
-        case 'TAWK_JS_ERROR':
-          if (__DEV__) console.warn('[LiveChat] JS error in WebView:', data.detail, data.source, data.line);
-          break;
         case 'TAWK_ERROR': {
           const kind = (data.errorKind as Exclude<ChatErrorKind, 'NONE'>) ?? 'NETWORK_ERROR';
           if (__DEV__) {
             console.warn('[LiveChat] Error:', kind);
-            if (data.diag) {
-              console.warn('[LiveChat] Diagnostic:', JSON.stringify(data.diag, null, 2));
-            }
+            if (data.diag) console.warn('[LiveChat] Diagnostic:', JSON.stringify(data.diag, null, 2));
           }
           setChatState('error');
           setErrorKind(kind);
@@ -730,13 +674,15 @@ export default function LiveChatScreen() {
           />
         )}
 
-        {/* WebView — renders while loading (hidden) so Tawk initialises,
-            then becomes visible when TAWK_LOADED fires */}
-        {htmlContent && chatState !== 'error' && (
+        {/* WebView — loads Tawk's hosted chat page directly (real navigation,
+            proper lifecycle events). Visitor data injected before page scripts. */}
+        {chatUri && chatState !== 'error' && (
           <WebView
             key={webViewKey}
             ref={webViewRef}
-            source={{ html: htmlContent, baseUrl: WEBVIEW_BASE_URL }}
+            source={{ uri: chatUri }}
+            injectedJavaScriptBeforeContentLoaded={preInjectedJS}
+            injectedJavaScript={postInjectedJS}
             style={[
               styles.webView,
               chatState === 'loading' && styles.webViewHidden,
@@ -752,13 +698,10 @@ export default function LiveChatScreen() {
             thirdPartyCookiesEnabled
             setSupportMultipleWindows={false}
             startInLoadingState={false}
-            scalesPageToFit={false}
             allowsInlineMediaPlayback
             mixedContentMode="always"
             cacheEnabled
             overScrollMode="never"
-            allowFileAccess
-            allowUniversalAccessFromFileURLs
             accessibilityLabel="Live chat with support agent"
           />
         )}
