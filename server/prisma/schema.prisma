@@ -23,6 +23,8 @@ model AppUser {
   twoFactorCodeExpiry      DateTime?             // OTP expiration time
   twoFactorAttempts        Int                   @default(0)
   twoFactorLockedUntil     DateTime?
+  magicLinkToken           String?               // Hashed magic link token (login 2FA)
+  magicLinkExpiry          DateTime?             // Magic link expiration time
   passwordResetToken       String?               // Hashed password reset token
   passwordResetExpiry      DateTime?             // Password reset token expiration
   subscriptionStatus       SubscriptionStatus    @default(INACTIVE)

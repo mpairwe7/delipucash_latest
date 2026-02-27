@@ -43,13 +43,19 @@ import {
   StyleSheet,
   Platform,
   KeyboardAvoidingView,
-  ActivityIndicator,
   AccessibilityInfo,
+  AppState,
+  Linking,
   Pressable,
   useWindowDimensions,
 } from 'react-native';
-import { Shield, KeyRound, X, RefreshCw, AlertCircle } from 'lucide-react-native';
+import * as Clipboard from 'expo-clipboard';
+import {
+  Shield, KeyRound, X, RefreshCw, AlertCircle,
+  ClipboardPaste, Mail, CircleCheck,
+} from 'lucide-react-native';
 import Animated, {
+  Easing,
   FadeIn,
   FadeInUp,
   ReduceMotion,
@@ -57,6 +63,7 @@ import Animated, {
   useAnimatedStyle,
   withRepeat,
   withSequence,
+  withSpring,
   withTiming,
   cancelAnimation,
 } from 'react-native-reanimated';
@@ -108,6 +115,10 @@ export interface OTPVerificationModalProps {
   icon?: React.ReactNode;
   /** Test ID */
   testID?: string;
+  /** Whether verification succeeded (triggers success animation) */
+  verificationSucceeded?: boolean;
+  /** Called after success animation completes */
+  onVerificationSuccess?: () => void;
 }
 
 /**
@@ -135,6 +146,8 @@ export function OTPVerificationModal({
   error,
   icon,
   testID,
+  verificationSucceeded = false,
+  onVerificationSuccess,
 }: OTPVerificationModalProps): React.ReactElement {
   const { colors } = useTheme();
   const { width: SCREEN_WIDTH } = useWindowDimensions();
@@ -147,11 +160,16 @@ export function OTPVerificationModal({
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSubmittedRef = useRef(false);
+  const [clipboardCode, setClipboardCode] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   // Animation values
   const shakeX = useSharedValue(0);
   const iconPulse = useSharedValue(1);
   const cursorOpacity = useSharedValue(1);
+  const spinnerRotation = useSharedValue(0);
+  const successScale = useSharedValue(0);
+  const successOpacity = useSharedValue(0);
 
   // Clear code on close + cancel pending timers/animations
   useEffect(() => {
@@ -159,6 +177,8 @@ export function OTPVerificationModal({
       setCode('');
       setCountdown(0);
       setResendCooldown(0);
+      setClipboardCode(null);
+      setShowSuccess(false);
       autoSubmittedRef.current = false;
       if (focusTimerRef.current) {
         clearTimeout(focusTimerRef.current);
@@ -179,6 +199,9 @@ export function OTPVerificationModal({
       // Stop looping animations when modal closes
       cancelAnimation(iconPulse);
       cancelAnimation(cursorOpacity);
+      cancelAnimation(spinnerRotation);
+      cancelAnimation(successScale);
+      cancelAnimation(successOpacity);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
@@ -287,6 +310,80 @@ export function OTPVerificationModal({
     opacity: cursorOpacity.value,
   }));
 
+  const spinnerAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotateZ: `${spinnerRotation.value}deg` }],
+  }));
+
+  const successScaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: successScale.value }],
+    opacity: successOpacity.value,
+  }));
+
+  // Clipboard intelligence — detect 6-digit codes when user returns to app
+  useEffect(() => {
+    if (!visible) return;
+
+    const checkClipboard = async () => {
+      try {
+        const content = await Clipboard.getStringAsync();
+        const match = content?.match(/^\d{6}$/);
+        if (match && match[0] !== code) {
+          setClipboardCode(match[0]);
+        } else {
+          setClipboardCode(null);
+        }
+      } catch {
+        // Clipboard access denied — ignore silently
+      }
+    };
+
+    // Check immediately when modal opens
+    checkClipboard();
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkClipboard();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [visible, code]);
+
+  // Spinner rotation when verifying
+  useEffect(() => {
+    if (isVerifying) {
+      spinnerRotation.value = 0;
+      spinnerRotation.value = withRepeat(
+        withTiming(360, { duration: 800, easing: Easing.linear }),
+        -1,
+        false
+      );
+    } else {
+      cancelAnimation(spinnerRotation);
+      spinnerRotation.value = 0;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isVerifying]);
+
+  // Success animation
+  useEffect(() => {
+    if (verificationSucceeded) {
+      setShowSuccess(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      successScale.value = withSpring(1, { damping: 12, stiffness: 180 });
+      successOpacity.value = withTiming(1, { duration: 300 });
+      const timer = setTimeout(() => {
+        onVerificationSuccess?.();
+      }, 1200);
+      return () => clearTimeout(timer);
+    } else {
+      setShowSuccess(false);
+      successScale.value = 0;
+      successOpacity.value = 0;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [verificationSucceeded]);
+
   const triggerShake = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     shakeX.value = withSequence(
@@ -323,6 +420,19 @@ export function OTPVerificationModal({
       }, 150);
     }
   }, [codeLength, expiresAt, isVerifying, onVerify, triggerShake]);
+
+  // Handle paste from clipboard detection pill
+  const handlePasteCode = useCallback(async () => {
+    if (!clipboardCode) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    handleCodeChange(clipboardCode);
+    setClipboardCode(null);
+    try {
+      await Clipboard.setStringAsync('');
+    } catch {
+      // Ignore clipboard clear failure
+    }
+  }, [clipboardCode, handleCodeChange]);
 
   const handleVerify = useCallback(() => {
     if (code.length !== codeLength) {
@@ -492,6 +602,19 @@ export function OTPVerificationModal({
             {subtitle || config.defaultSubtitle}
           </AccessibleText>
 
+          {/* Open Email App — helps users quickly find the code */}
+          <TouchableOpacity
+            style={[styles.openEmailPill, { borderColor: withAlpha(colors.primary, 0.2) }]}
+            onPress={() => Linking.openURL('mailto:')}
+            accessibilityRole="button"
+            accessibilityLabel="Open email app to find verification code"
+          >
+            <Mail size={14} color={colors.primary} />
+            <AccessibleText variant="bodySmall" medium color="primary">
+              Open Email App
+            </AccessibleText>
+          </TouchableOpacity>
+
           {/* Countdown Timer */}
           {expiresAt && (
             <View
@@ -596,6 +719,23 @@ export function OTPVerificationModal({
             </Pressable>
           </Animated.View>
 
+          {/* Clipboard Paste Pill */}
+          {clipboardCode && !isVerifying && !isExpired && code.length < codeLength && (
+            <Animated.View entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)}>
+              <TouchableOpacity
+                style={[styles.pastePill, { backgroundColor: withAlpha(colors.primary, 0.1) }]}
+                onPress={handlePasteCode}
+                accessibilityRole="button"
+                accessibilityLabel={`Paste code ${clipboardCode}`}
+              >
+                <ClipboardPaste size={14} color={colors.primary} />
+                <AccessibleText variant="bodySmall" medium color="primary">
+                  Paste {clipboardCode}
+                </AccessibleText>
+              </TouchableOpacity>
+            </Animated.View>
+          )}
+
           {/* Inline Error Message */}
           {error && (
             <Animated.View
@@ -637,7 +777,9 @@ export function OTPVerificationModal({
               accessibilityState={{ disabled: !canVerify }}
             >
               {isVerifying ? (
-                <ActivityIndicator size="small" color="#FFF" />
+                <Animated.View style={spinnerAnimatedStyle}>
+                  <RefreshCw size={18} color="#FFF" strokeWidth={2.5} />
+                </Animated.View>
               ) : (
                 <AccessibleText variant="button" customColor="#FFF">
                   Verify
@@ -661,7 +803,9 @@ export function OTPVerificationModal({
               accessibilityState={{ disabled: !canResend }}
             >
               {isResending ? (
-                <ActivityIndicator size="small" color={colors.primary} />
+                <Animated.View style={spinnerAnimatedStyle}>
+                  <RefreshCw size={14} color={colors.primary} strokeWidth={2.5} />
+                </Animated.View>
               ) : resendCooldown > 0 ? (
                 <AccessibleText
                   variant="bodySmall"
@@ -680,6 +824,29 @@ export function OTPVerificationModal({
                 </View>
               )}
             </TouchableOpacity>
+          )}
+
+          {/* Success Overlay */}
+          {showSuccess && (
+            <Animated.View
+              style={[
+                styles.successOverlay,
+                { backgroundColor: colors.card },
+                successScaleStyle,
+              ]}
+            >
+              <View style={[styles.successIconCircle, { backgroundColor: withAlpha(colors.success, 0.1) }]}>
+                <CircleCheck size={48} color={colors.success} />
+              </View>
+              <AccessibleText
+                variant="h3"
+                center
+                style={styles.successText}
+                accessibilityRole="alert"
+              >
+                Verified!
+              </AccessibleText>
+            </Animated.View>
           )}
         </Animated.View>
       </KeyboardAvoidingView>
@@ -809,6 +976,44 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
+  },
+  openEmailPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.xl,
+    borderWidth: 1,
+    marginBottom: SPACING.md,
+  },
+  pastePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.xl,
+    alignSelf: 'center',
+    marginBottom: SPACING.md,
+  },
+  successOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: RADIUS['2xl'],
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  successIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.md,
+  },
+  successText: {
+    marginTop: SPACING.xs,
   },
 });
 

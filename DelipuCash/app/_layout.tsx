@@ -462,6 +462,7 @@ export default function RootLayout() {
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
               <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
               <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
+              <Stack.Screen name="verify-login" options={{ headerShown: false }} />
             </Stack>
             <GlobalSystemBars isDark={isDark} />
             </ToastProvider>

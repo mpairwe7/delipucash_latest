@@ -35,7 +35,7 @@ import surveyImportRoutes from './routes/surveyImportRoutes.mjs';
 import configRoutes from './routes/configRoutes.mjs';
 import followRoutes from './routes/followRoutes.mjs';
 import transactionRoutes from './routes/transactionRoutes.mjs';
-import { resetPasswordRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
+import { resetPasswordRedirect, verifyLoginRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
 import { videoOgRedirect } from './controllers/ogController.mjs';
 
 dotenv.config();
@@ -106,6 +106,7 @@ app.use('/public', express.static(path.join(__dirname, 'public'), {
 // Android App Links and iOS Universal Links.
 // =============================================
 app.get('/reset-password', resetPasswordRedirect);
+app.get('/verify-login', verifyLoginRedirect);
 app.get('/video/:id', videoOgRedirect); // OG meta + smart redirect for shared videos
 app.get('/.well-known/apple-app-site-association', appleAppSiteAssociation);
 app.get('/.well-known/assetlinks.json', androidAssetLinks);

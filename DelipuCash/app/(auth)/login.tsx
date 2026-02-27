@@ -75,6 +75,8 @@ export default function LoginScreen(): React.ReactElement {
   const [maskedEmail, setMaskedEmail] = useState("");
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [login2FAError, setLogin2FAError] = useState<string | null>(null);
+  const [verificationSucceeded, setVerificationSucceeded] = useState(false);
+  const hasOnboardedRef = useRef<string | null>(null);
 
   const send2FAMutation = useSend2FACodeMutation();
   const verify2FAMutation = useVerify2FALoginMutation();
@@ -194,23 +196,16 @@ export default function LoginScreen(): React.ReactElement {
     setLogin2FAError(null);
     // Pre-read onboarding flag before auth state change
     const hasOnboarded = await AsyncStorage.getItem('hasCompletedOnboarding');
+    hasOnboardedRef.current = hasOnboarded;
     isNavigatingRef.current = true;
 
     verify2FAMutation.mutate(
       { email: loginEmail, code },
       {
         onSuccess: () => {
-          setShow2FAModal(false);
           setLogin2FAError(null);
           queryClient.invalidateQueries();
-          requestAnimationFrame(() => {
-            if (!hasOnboarded) {
-              AsyncStorage.setItem('hasCompletedOnboarding', 'true');
-              router.replace("/welcome");
-            } else {
-              router.replace("/(tabs)/home-redesigned");
-            }
-          });
+          setVerificationSucceeded(true);
         },
         onError: (err) => {
           isNavigatingRef.current = false;
@@ -219,6 +214,21 @@ export default function LoginScreen(): React.ReactElement {
       }
     );
   }, [loginEmail, verify2FAMutation, queryClient]);
+
+  /** Called after the success animation completes in the OTP modal */
+  const handle2FASuccess = useCallback(() => {
+    setShow2FAModal(false);
+    setLogin2FAError(null);
+    setVerificationSucceeded(false);
+    requestAnimationFrame(() => {
+      if (!hasOnboardedRef.current) {
+        AsyncStorage.setItem('hasCompletedOnboarding', 'true');
+        router.replace("/welcome");
+      } else {
+        router.replace("/(tabs)/home-redesigned");
+      }
+    });
+  }, []);
 
   /** Resend 2FA code */
   const handle2FAResend = useCallback(() => {
@@ -391,11 +401,14 @@ export default function LoginScreen(): React.ReactElement {
         onClose={() => {
           setShow2FAModal(false);
           setLogin2FAError(null);
+          setVerificationSucceeded(false);
           isNavigatingRef.current = false;
         }}
         isVerifying={verify2FAMutation.isPending}
         isResending={send2FAMutation.isPending}
         error={login2FAError}
+        verificationSucceeded={verificationSucceeded}
+        onVerificationSuccess={handle2FASuccess}
       />
     </View>
   );

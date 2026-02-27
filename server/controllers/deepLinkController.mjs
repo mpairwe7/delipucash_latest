@@ -66,6 +66,30 @@ export const resetPasswordRedirect = (req, res) => {
 };
 
 /**
+ * GET /verify-login?token=...&email=...
+ *
+ * Smart redirect for magic link login verification.
+ * Same pattern as resetPasswordRedirect — tries Universal/App Links first,
+ * then falls back to custom scheme redirect page.
+ */
+export const verifyLoginRedirect = (req, res) => {
+  const { token, email } = req.query;
+
+  if (!token || !email) {
+    return res.status(400).send(generateErrorPage('Missing token or email parameter.'));
+  }
+
+  const encodedToken = encodeURIComponent(token);
+  const encodedEmail = encodeURIComponent(email);
+  const safeEmail = escapeHtml(email);
+
+  const deepLink = `${APP_SCHEME}://verify-login?token=${encodedToken}&email=${encodedEmail}`;
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(generateVerifyLoginPage(deepLink, safeEmail));
+};
+
+/**
  * GET /.well-known/apple-app-site-association
  *
  * Required by iOS to verify Universal Links.
@@ -85,7 +109,7 @@ export const appleAppSiteAssociation = (req, res) => {
       details: [
         {
           appID: `${teamId}.${bundleId}`,
-          paths: ['/reset-password*', '/video/*'],
+          paths: ['/reset-password*', '/verify-login*', '/video/*'],
         },
       ],
     },
@@ -280,6 +304,112 @@ function generateRedirectPage(deepLink, token, email) {
           // App opened successfully — clear the fallback timer
           loading.classList.add('hidden');
         }
+      });
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+function generateVerifyLoginPage(deepLink, email) {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Verify Login – ${APP_NAME}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #f0f0ff 0%, #e8e0f7 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.12);
+      max-width: 420px;
+      width: 100%;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+      padding: 32px 24px;
+      text-align: center;
+    }
+    .header h1 { color: #fff; font-size: 22px; font-weight: 700; }
+    .header p { color: rgba(255,255,255,0.85); font-size: 14px; margin-top: 8px; }
+    .body { padding: 32px 24px; }
+    .spinner-wrap { text-align: center; margin-bottom: 24px; }
+    .spinner {
+      display: inline-block; width: 40px; height: 40px;
+      border: 4px solid #e5e7eb; border-top-color: #6366f1;
+      border-radius: 50%; animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #status { text-align: center; color: #6b7280; font-size: 15px; margin-bottom: 24px; line-height: 1.5; }
+    .btn {
+      display: block; width: 100%; padding: 14px; border: none; border-radius: 10px;
+      font-size: 16px; font-weight: 600; cursor: pointer; text-align: center;
+      text-decoration: none; margin-bottom: 12px; transition: opacity .2s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #fff; }
+    .hidden { display: none; }
+    .footer { text-align: center; padding: 16px 24px 24px; border-top: 1px solid #f3f4f6; }
+    .footer p { color: #9ca3af; font-size: 12px; line-height: 1.5; }
+    .footer a { color: #6366f1; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>🔐 Verify Your Login</h1>
+      <p>Opening ${APP_NAME} app…</p>
+    </div>
+    <div class="body">
+      <div id="phase-loading">
+        <div class="spinner-wrap"><div class="spinner"></div></div>
+        <p id="status">Redirecting to the app…</p>
+      </div>
+      <div id="phase-fallback" class="hidden">
+        <p style="margin-bottom:20px; color:#374151; font-size:15px;">
+          If the app didn't open automatically, tap the button below:
+        </p>
+        <a href="${deepLink}" class="btn btn-primary">Open in ${APP_NAME} App</a>
+        <p style="text-align:center; color:#9ca3af; font-size:13px; margin:8px 0 16px;">
+          Make sure ${APP_NAME} is installed on your device.
+        </p>
+      </div>
+    </div>
+    <div class="footer">
+      <p>This link expires in 15 minutes.<br>
+         Need help? <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+    </div>
+  </div>
+  <script>
+    (function() {
+      var deepLink = ${JSON.stringify(deepLink)};
+      var fallback = document.getElementById('phase-fallback');
+      var loading  = document.getElementById('phase-loading');
+      try {
+        var iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = deepLink;
+        document.body.appendChild(iframe);
+      } catch(e) {}
+      setTimeout(function() { window.location.href = deepLink; }, 300);
+      setTimeout(function() {
+        loading.classList.add('hidden');
+        fallback.classList.remove('hidden');
+      }, 2500);
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) loading.classList.add('hidden');
       });
     })();
   </script>

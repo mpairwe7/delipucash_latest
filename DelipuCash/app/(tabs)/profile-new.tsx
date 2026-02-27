@@ -665,6 +665,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [showQuickSettings, setShowQuickSettings] = useState(false);
   const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
   const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
+  const [enableVerificationSucceeded, setEnableVerificationSucceeded] = useState(false);
+  const [disableVerificationSucceeded, setDisableVerificationSucceeded] = useState(false);
   // Tracks whether the pending disable-2FA mutation is a resend (vs verify)
   const [isDisable2FAResending, setIsDisable2FAResending] = useState(false);
 
@@ -1000,15 +1002,21 @@ export default function ProfileScreen(): React.ReactElement {
     try {
       await updateTwoFactorMutation.mutateAsync({ enabled: false, password: disable2FAPassword, code });
       setTwoFactorEnabled(false);
-      setShowDisable2FAOTPModal(false);
-      setDisable2FAPassword('');
       setDisable2FAError(null);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showToast({ type: 'success', message: 'Two-factor authentication has been disabled.' });
+      setDisableVerificationSucceeded(true);
     } catch (err: any) {
       setDisable2FAError(err.message || 'Invalid verification code.');
     }
-  }, [disable2FAPassword, updateTwoFactorMutation, showToast]);
+  }, [disable2FAPassword, updateTwoFactorMutation]);
+
+  /** Called after the disable-2FA success animation completes */
+  const handleDisable2FASuccess = useCallback(() => {
+    setShowDisable2FAOTPModal(false);
+    setDisable2FAPassword('');
+    setDisable2FAError(null);
+    setDisableVerificationSucceeded(false);
+    showToast({ type: 'success', message: 'Two-factor authentication has been disabled.' });
+  }, [showToast]);
 
   /** Resend disable-2FA OTP code.
    *  Uses mutateAsync to avoid callback-cancellation race with verify.
@@ -1033,18 +1041,24 @@ export default function ProfileScreen(): React.ReactElement {
     verify2FAMutation.mutate(code, {
       onSuccess: () => {
         setTwoFactorEnabled(true);
-        setShow2FAModal(false);
-        setMaskedEmail('');
-        setOtpExpiresAt(null);
         setEnable2FAError(null);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showToast({ type: 'success', message: 'Two-factor authentication is now active.' });
+        setEnableVerificationSucceeded(true);
       },
       onError: (err) => {
         setEnable2FAError(err.message || 'Invalid verification code.');
       },
     });
-  }, [verify2FAMutation, showToast]);
+  }, [verify2FAMutation]);
+
+  /** Called after the enable-2FA success animation completes */
+  const handleEnable2FASuccess = useCallback(() => {
+    setShow2FAModal(false);
+    setMaskedEmail('');
+    setOtpExpiresAt(null);
+    setEnable2FAError(null);
+    setEnableVerificationSucceeded(false);
+    showToast({ type: 'success', message: 'Two-factor authentication is now active.' });
+  }, [showToast]);
 
   const handleResend2FA = useCallback(() => {
     setEnable2FAError(null);
@@ -1483,12 +1497,15 @@ export default function ProfileScreen(): React.ReactElement {
           if (verify2FAMutation.isPending || resend2FAMutation.isPending) return;
           setShow2FAModal(false);
           setEnable2FAError(null);
+          setEnableVerificationSucceeded(false);
           setMaskedEmail('');
           setOtpExpiresAt(null);
         }}
         isVerifying={verify2FAMutation.isPending}
         isResending={resend2FAMutation.isPending}
         error={enable2FAError}
+        verificationSucceeded={enableVerificationSucceeded}
+        onVerificationSuccess={handleEnable2FASuccess}
       />
 
       {/* 2FA Disable Password Modal */}
@@ -1576,11 +1593,14 @@ export default function ProfileScreen(): React.ReactElement {
           setShowDisable2FAOTPModal(false);
           setDisable2FAPassword('');
           setDisable2FAError(null);
+          setDisableVerificationSucceeded(false);
           setIsDisable2FAResending(false);
         }}
         isVerifying={updateTwoFactorMutation.isPending && !isDisable2FAResending}
         isResending={isDisable2FAResending}
         error={disable2FAError}
+        verificationSucceeded={disableVerificationSucceeded}
+        onVerificationSuccess={handleDisable2FASuccess}
       />
 
       {/* Change Password Modal */}

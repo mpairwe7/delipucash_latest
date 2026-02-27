@@ -378,3 +378,34 @@ export function useVerify2FALoginMutation(): UseMutationResult<
     retry: false,
   });
 }
+
+/**
+ * Verify magic link token (completes login, returns JWT).
+ * Same auth flow as useVerify2FALoginMutation but with token instead of code.
+ */
+export function useVerifyMagicLinkMutation(): UseMutationResult<
+  TwoFactorVerifyLoginResponse,
+  AuthApiError,
+  { email: string; token: string }
+> {
+  const setAuth = useAuthStore(s => s.setAuth);
+  const close = useAuthModal(s => s.close);
+
+  return useMutation({
+    mutationKey: ['auth', '2fa', 'verifyMagicLink'],
+    mutationFn: ({ email, token }: { email: string; token: string }) =>
+      authFetch<TwoFactorVerifyLoginResponse>(API_ROUTES.auth.twoFactorVerifyMagicLink, {
+        method: 'POST',
+        body: JSON.stringify({ email, token }),
+      }),
+    onSuccess: (data) => {
+      if (data.token && data.user) {
+        setAuth({ token: data.token, refreshToken: data.refreshToken, user: data.user });
+        close();
+
+        useSSEStore.getState().startBurstPolling();
+      }
+    },
+    retry: false,
+  });
+}

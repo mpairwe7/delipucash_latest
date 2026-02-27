@@ -81,10 +81,30 @@ const record2FAFailure = async (userId) => {
         twoFactorLockedUntil: new Date(Date.now() + LOCKOUT_DURATION_MS),
         twoFactorCode: null,
         twoFactorCodeExpiry: null,
+        magicLinkToken: null,
+        magicLinkExpiry: null,
       },
     });
   }
 };
+
+/**
+ * Atomically clear ALL 2FA verification fields (OTP + magic link).
+ * Used by both verify2FALoginCode and verifyMagicLink to ensure
+ * whichever path wins, the other is immediately invalidated.
+ */
+const clearAll2FAFields = (userId) =>
+  prisma.appUser.update({
+    where: { id: userId },
+    data: {
+      twoFactorCode: null,
+      twoFactorCodeExpiry: null,
+      twoFactorAttempts: 0,
+      twoFactorLockedUntil: null,
+      magicLinkToken: null,
+      magicLinkExpiry: null,
+    },
+  });
 
 // User Signup
 export const signup = asyncHandler(async (req, res, next) => {
@@ -1111,16 +1131,27 @@ export const send2FALoginCode = asyncHandler(async (req, res, next) => {
     const hashedCode = hashOTPCode(otpCode);
     const expiryTime = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Store hashed code — keep brute-force counters across resends
+    // Generate magic link token alongside OTP
+    const rawMagicToken = crypto.randomUUID();
+    const hashedMagicToken = hashOTPCode(rawMagicToken);
+    const magicLinkExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+    // Store hashed code + magic link — keep brute-force counters across resends
     await prisma.appUser.update({
       where: { id: user.id },
       data: {
         twoFactorCode: hashedCode,
         twoFactorCodeExpiry: expiryTime,
+        magicLinkToken: hashedMagicToken,
+        magicLinkExpiry,
       },
     });
 
-    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 10);
+    // Construct magic link URL for email
+    const serverBase = process.env.SERVER_URL || 'https://delipucash-latest.vercel.app';
+    const magicLinkUrl = `${serverBase}/verify-login?token=${encodeURIComponent(rawMagicToken)}&email=${encodeURIComponent(user.email)}`;
+
+    const emailResult = await send2FACode(user.email, otpCode, user.firstName, 10, magicLinkUrl);
 
     if (!emailResult.success && process.env.NODE_ENV === 'production') {
       return res.status(500).json({
@@ -1184,6 +1215,8 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
         twoFactorCodeExpiry: true,
         twoFactorAttempts: true,
         twoFactorLockedUntil: true,
+        magicLinkToken: true,
+        magicLinkExpiry: true,
         subscriptionStatus: true,
         surveysubscriptionStatus: true,
         currentSubscriptionId: true,
@@ -1231,19 +1264,8 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
       });
     }
 
-    // Verify → clear → token in a transaction to prevent TOCTOU race
-    // (concurrent requests with the same code both verifying before either clears).
-    await prisma.$transaction(async (tx) => {
-      await tx.appUser.update({
-        where: { id: user.id },
-        data: {
-          twoFactorCode: null,
-          twoFactorCodeExpiry: null,
-          twoFactorAttempts: 0,
-          twoFactorLockedUntil: null,
-        },
-      });
-    });
+    // Atomically clear ALL 2FA fields (OTP + magic link) to prevent race conditions
+    await clearAll2FAFields(user.id);
 
     // Issue access + refresh token pair for successful 2FA login
     const { accessToken, refreshToken } = await issueTokenPair(user.id, req);
@@ -1255,6 +1277,8 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
       twoFactorCodeExpiry: _te,
       twoFactorAttempts: _ta,
       twoFactorLockedUntil: _tl,
+      magicLinkToken: _mt,
+      magicLinkExpiry: _me,
       ...safeUser
     } = user;
 
@@ -1270,6 +1294,122 @@ export const verify2FALoginCode = asyncHandler(async (req, res, next) => {
   } catch (error) {
     console.error("❌ Failed to verify login 2FA code:", error);
     next(errorHandler(500, "Failed to verify code"));
+  }
+});
+
+/**
+ * Verify magic link token during login
+ * POST /api/auth/two-factor/verify-magic-link
+ */
+export const verifyMagicLink = asyncHandler(async (req, res, next) => {
+  const rawEmail = req.body?.email;
+  const { token } = req.body;
+  const email = typeof rawEmail === 'string' ? rawEmail.toLowerCase().trim() : '';
+
+  console.log('🔗 Magic link verification attempt');
+
+  if (!email || !token || typeof token !== 'string') {
+    return res.status(400).json({
+      success: false,
+      error: "Email and token are required"
+    });
+  }
+
+  try {
+    const user = await prisma.appUser.findUnique({
+      where: { email },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        points: true,
+        avatar: true,
+        role: true,
+        password: true,
+        twoFactorEnabled: true,
+        emailVerified: true,
+        twoFactorAttempts: true,
+        twoFactorLockedUntil: true,
+        magicLinkToken: true,
+        magicLinkExpiry: true,
+        subscriptionStatus: true,
+        surveysubscriptionStatus: true,
+        currentSubscriptionId: true,
+        privacySettings: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (!user || !user.twoFactorEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request"
+      });
+    }
+
+    // Brute-force lockout check (shared with OTP)
+    const lockout = check2FALockout(user);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many failed attempts. Please try again in ${lockout.waitSeconds} seconds.`
+      });
+    }
+
+    if (!user.magicLinkToken || !user.magicLinkExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "No magic link found. Please request a new verification code."
+      });
+    }
+
+    if (new Date() > user.magicLinkExpiry) {
+      return res.status(400).json({
+        success: false,
+        error: "Magic link has expired. Please request a new one."
+      });
+    }
+
+    // Timing-safe comparison of hashed tokens
+    if (!verifyOTPCode(token, user.magicLinkToken)) {
+      await record2FAFailure(user.id);
+      return res.status(400).json({
+        success: false,
+        error: "Invalid or expired magic link"
+      });
+    }
+
+    // Atomically clear ALL 2FA fields (OTP + magic link)
+    await clearAll2FAFields(user.id);
+
+    // Issue access + refresh token pair
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, req);
+
+    // Strip sensitive fields
+    const {
+      password: _pw,
+      magicLinkToken: _mt,
+      magicLinkExpiry: _me,
+      twoFactorAttempts: _ta,
+      twoFactorLockedUntil: _tl,
+      ...safeUser
+    } = user;
+
+    console.log('✅ Magic link login successful');
+    return res.status(200).json({
+      success: true,
+      message: "Two-factor authentication verified",
+      user: safeUser,
+      token: accessToken,
+      refreshToken,
+    });
+
+  } catch (error) {
+    console.error("❌ Failed to verify magic link:", error);
+    next(errorHandler(500, "Failed to verify magic link"));
   }
 });
 

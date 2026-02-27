@@ -16,6 +16,7 @@ import {
     resend2FACode,
     send2FALoginCode,
     verify2FALoginCode,
+    verifyMagicLink,
     forgotPassword,
     resetPassword,
     validateResetToken,
@@ -57,5 +58,6 @@ router.post("/two-factor/resend", verifyToken, resend2FACode);     // Resend ver
 // Public routes (for login flow)
 router.post("/two-factor/send", send2FALoginCode);                 // Send 2FA code during login
 router.post("/two-factor/verify-login", verify2FALoginCode);       // Verify 2FA code to complete login
+router.post("/two-factor/verify-magic-link", verifyMagicLink);     // Verify magic link to complete login
 
 export default router;

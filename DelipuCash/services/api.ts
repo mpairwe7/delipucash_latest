@@ -226,6 +226,7 @@ export const API_ROUTES = {
     validateResetToken: "/api/auth/validate-reset-token",
     twoFactorSend: "/api/auth/two-factor/send",
     twoFactorVerifyLogin: "/api/auth/two-factor/verify-login",
+    twoFactorVerifyMagicLink: "/api/auth/two-factor/verify-magic-link",
     twoFactorToggle: "/api/auth/two-factor",
     twoFactorVerify: "/api/auth/two-factor/verify",
     twoFactorResend: "/api/auth/two-factor/resend",

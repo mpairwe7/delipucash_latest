@@ -54,8 +54,25 @@ const SUPPORT_EMAIL = process.env.SUPPORT_EMAIL || 'support@delipucash.com';
 
 /**
  * Generate 2FA OTP email HTML template
+ * When magicLinkUrl is provided, renders a dual-layout: prominent "Verify My Login" button + OTP fallback
  */
-const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10) => {
+const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10, magicLinkUrl = null) => {
+  const magicLinkSection = magicLinkUrl ? `
+              <!-- Magic Link Button (Primary) -->
+              <div style="text-align: center; margin-bottom: 24px;">
+                <a href="${magicLinkUrl}" style="display: inline-block; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 8px; font-weight: 700; font-size: 16px;">
+                  Verify My Login
+                </a>
+              </div>
+
+              <div style="text-align: center; margin-bottom: 20px; position: relative;">
+                <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 0;">
+                <span style="position: relative; top: -10px; background-color: #ffffff; padding: 0 12px; color: #9ca3af; font-size: 13px;">
+                  Or enter this code manually
+                </span>
+              </div>
+  ` : '';
+
   return `
 <!DOCTYPE html>
 <html>
@@ -75,7 +92,7 @@ const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10) => {
               <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 700;">🔐 Verification Code</h1>
             </td>
           </tr>
-          
+
           <!-- Content -->
           <tr>
             <td style="padding: 32px;">
@@ -83,23 +100,25 @@ const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10) => {
                 Hi ${userName || 'there'},
               </p>
               <p style="margin: 0 0 24px; color: #6b7280; font-size: 14px; line-height: 1.5;">
-                You requested a verification code for your ${APP_NAME} account. Use the code below to complete your sign-in:
+                You requested a verification code for your ${APP_NAME} account.${magicLinkUrl ? ' Tap the button below or enter the code manually:' : ' Use the code below to complete your sign-in:'}
               </p>
-              
+
+              ${magicLinkSection}
+
               <!-- OTP Code Box -->
               <div style="background-color: #f3f4f6; border-radius: 8px; padding: 24px; text-align: center; margin-bottom: 24px;">
                 <span style="font-family: 'Courier New', monospace; font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #6366f1;">
                   ${code}
                 </span>
               </div>
-              
+
               <p style="margin: 0 0 8px; color: #6b7280; font-size: 13px;">
                 ⏱️ This code expires in <strong>${expiryMinutes} minutes</strong>
               </p>
               <p style="margin: 0 0 24px; color: #9ca3af; font-size: 13px;">
                 If you didn't request this code, please ignore this email or contact support if you have concerns.
               </p>
-              
+
               <!-- Security Notice -->
               <div style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 0 4px 4px 0;">
                 <p style="margin: 0; color: #92400e; font-size: 13px;">
@@ -108,7 +127,7 @@ const generate2FAEmailTemplate = (code, userName, expiryMinutes = 10) => {
               </div>
             </td>
           </tr>
-          
+
           <!-- Footer -->
           <tr>
             <td style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
@@ -224,14 +243,15 @@ const generatePasswordResetTemplate = (resetLink, userName, expiryMinutes = 30) 
 
 /**
  * Send 2FA verification code via email
- * 
+ *
  * @param {string} to - Recipient email address
  * @param {string} code - 6-digit OTP code
  * @param {string} userName - User's name for personalization
  * @param {number} expiryMinutes - Code expiry in minutes (default 10, should match server-side expiry)
+ * @param {string|null} magicLinkUrl - Optional magic link URL (login flow only)
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
-export const send2FACode = async (to, code, userName = '', expiryMinutes = 10) => {
+export const send2FACode = async (to, code, userName = '', expiryMinutes = 10, magicLinkUrl = null) => {
   console.log(`📧 Sending 2FA code to: ${to}`);
   
   if (!transporter) {
@@ -252,7 +272,7 @@ export const send2FACode = async (to, code, userName = '', expiryMinutes = 10) =
       to,
       subject: `${code} is your ${APP_NAME} verification code`,
       text: `Your ${APP_NAME} verification code is: ${code}\n\nThis code expires in ${expiryMinutes} minutes.\n\nIf you didn't request this code, please ignore this email.`,
-      html: generate2FAEmailTemplate(code, userName, expiryMinutes),
+      html: generate2FAEmailTemplate(code, userName, expiryMinutes, magicLinkUrl),
     });
 
     console.log('✅ 2FA email sent:', info.messageId);

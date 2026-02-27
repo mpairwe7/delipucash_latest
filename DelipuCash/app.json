@@ -65,6 +65,11 @@
             {
               "scheme": "https",
               "host": "delipucash-latest.vercel.app",
+              "pathPrefix": "/verify-login"
+            },
+            {
+              "scheme": "https",
+              "host": "delipucash-latest.vercel.app",
               "pathPrefix": "/video"
             }
           ],
