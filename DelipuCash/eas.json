@@ -8,7 +8,9 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "NODE_ENV": "development"
+        "NODE_ENV": "development",
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j"
       }
     },
     "preview": {
@@ -18,13 +20,17 @@
         "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
       },
       "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "NODE_ENV": "production",
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j",
         "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
         "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
       },

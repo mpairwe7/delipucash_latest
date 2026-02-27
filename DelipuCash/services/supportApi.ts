@@ -2,7 +2,12 @@
  * Support API Service
  * Mock REST API for help & support functionality
  * Design System Compliant - Consistent patterns and error handling
+ *
+ * FIX: Live Chat contact method now reflects runtime Tawk.to config status
+ *      via isTawkConfigured(). Previously hard-coded `available: true`.
  */
+
+import { isTawkConfigured } from '@/utils/tawkConfig';
 
 // ============================================================================
 // TYPES
@@ -224,8 +229,11 @@ const MOCK_CONTACT_METHODS: ContactMethod[] = [
     type: 'chat',
     label: 'Live Chat',
     value: 'in-app',
-    available: true,
-    workingHours: '24/7 - AI + Human agents',
+    // FIX: Reflects actual Tawk.to config presence at runtime.
+    // When env vars are missing (e.g. cloud build without secrets),
+    // this returns false so the card shows "Unavailable".
+    available: isTawkConfigured(),
+    workingHours: isTawkConfigured() ? '24/7 - AI + Human agents' : 'Currently unavailable',
   },
 ];
 

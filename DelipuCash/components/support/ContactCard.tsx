@@ -34,6 +34,7 @@ import {
   type ThemeColors,
 } from '@/utils/theme';
 import type { ContactMethod } from '@/services/supportApi';
+import { isTawkConfigured } from '@/utils/tawkConfig';
 
 interface ContactCardProps {
   contact: ContactMethod;
@@ -176,7 +177,17 @@ export const ContactCard = memo<ContactCardProps>(
           break;
         }
         case 'chat':
-          router.push('/live-chat' as any);
+          // FIX: Only navigate to live chat if Tawk.to is properly configured.
+          // When env vars are missing (e.g. EAS build without secrets), show
+          // a toast instead of navigating to a screen that will always fail.
+          if (isTawkConfigured()) {
+            router.push('/live-chat' as any);
+          } else {
+            showToast({
+              message: 'Live chat is currently unavailable. Try WhatsApp instead.',
+              type: 'info',
+            });
+          }
           return;
       }
 
