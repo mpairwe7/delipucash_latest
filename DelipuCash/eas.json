@@ -9,8 +9,8 @@
       "distribution": "internal",
       "env": {
         "NODE_ENV": "development",
-        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
-        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j"
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6"
       }
     },
     "preview": {
@@ -21,16 +21,16 @@
       },
       "env": {
         "NODE_ENV": "production",
-        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
-        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j"
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "NODE_ENV": "production",
-        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a12b859293fb1c3a2739e1",
-        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jiep410j",
+        "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6",
         "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
         "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
       },

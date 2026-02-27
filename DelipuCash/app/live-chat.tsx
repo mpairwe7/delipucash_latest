@@ -104,12 +104,40 @@ const WIDGET_TIMEOUT_MS = 25_000;
  */
 const POST_SCRIPT_TIMEOUT_MS = 15_000;
 
+/** Early recovery probe after script load (tries start/show/maximize). */
+const POST_SCRIPT_PROBE_MS = 3_500;
+
 /**
- * baseUrl gives the inline HTML a real HTTPS origin.
- * Without this the page loads at about:blank — Tawk's widget fails to init
- * because it can't establish WebSocket connections or pass origin checks.
+ * baseUrl gives the inline HTML a real HTTPS origin so the WebView can
+ * establish WebSocket connections and pass Tawk's origin checks.
+ *
+ * IMPORTANT: Must NOT be a tawk.to domain — the Tawk script detects when it's
+ * running on its own embed domain and skips iframe creation (anti-recursion),
+ * which prevents onLoad from firing.
  */
-const WEBVIEW_BASE_URL = 'https://embed.tawk.to';
+const DEFAULT_WEBVIEW_BASE_URL = 'https://delipucash.app';
+
+const WEBVIEW_BASE_URL = (() => {
+  const raw =
+    process.env.EXPO_PUBLIC_CHAT_BASE_URL ??
+    process.env.EXPO_PUBLIC_WEBVIEW_BASE_URL ??
+    DEFAULT_WEBVIEW_BASE_URL;
+
+  try {
+    const parsed = new URL(raw);
+    return parsed.origin;
+  } catch {
+    if (__DEV__) {
+      console.warn(
+        '[LiveChat] Invalid EXPO_PUBLIC_CHAT_BASE_URL/EXPO_PUBLIC_WEBVIEW_BASE_URL:',
+        raw,
+        '— falling back to',
+        DEFAULT_WEBVIEW_BASE_URL,
+      );
+    }
+    return DEFAULT_WEBVIEW_BASE_URL;
+  }
+})();
 
 // ---------------------------------------------------------------------------
 // Chat state machine
@@ -151,8 +179,10 @@ function buildTawkHTML(params: {
     function msg(o){try{if(window.ReactNativeWebView)window.ReactNativeWebView.postMessage(JSON.stringify(o));}catch(e){}}
 
     var __tawkReady=false;
+    var __beforeLoaded=false;
     var __scriptLoaded=false;
     var __errors=[];
+    var __forceActions={start:'not_attempted',showWidget:'not_attempted',maximize:'not_attempted'};
 
     // Capture silent JS errors from the Tawk widget
     window.onerror=function(message,source,line,col,error){
@@ -161,6 +191,35 @@ function buildTawkHTML(params: {
         msg({type:'TAWK_JS_ERROR',detail:String(message),source:String(source||''),line:line});
       }
     };
+
+    function callTawk(methodName){
+      try{
+        if(typeof Tawk_API[methodName]==='function'){
+          Tawk_API[methodName]();
+          return 'ok';
+        }
+        return 'missing';
+      }catch(e){
+        return 'error:' + (e&&e.message?e.message:String(e));
+      }
+    }
+
+    function readTawk(methodName){
+      try{
+        if(typeof Tawk_API[methodName]==='function'){
+          return String(Tawk_API[methodName]());
+        }
+      }catch(e){}
+      return 'n/a';
+    }
+
+    function forceWidgetStart(reason){
+      if(__tawkReady) return;
+      __forceActions.start=callTawk('start');
+      __forceActions.showWidget=callTawk('showWidget');
+      __forceActions.maximize=callTawk('maximize');
+      msg({type:'TAWK_FORCE_ACTIONS',reason:reason,actions:__forceActions,diag:collectDiag()});
+    }
 
     // Diagnostic: collect widget state snapshot for timeout reports
     function collectDiag(){
@@ -173,17 +232,26 @@ function buildTawkHTML(params: {
         origin:window.location.origin,
         href:window.location.href,
         referrer:document.referrer,
+        beforeLoaded:__beforeLoaded,
+        ready:__tawkReady,
         scriptLoaded:__scriptLoaded,
         tawkAPIKeys:Object.keys(window.Tawk_API||{}).join(','),
-        tawkStatus:typeof Tawk_API.getStatus==='function'?Tawk_API.getStatus():'n/a',
+        tawkStatus:readTawk('getStatus'),
+        isHidden:readTawk('isChatHidden'),
+        windowType:readTawk('getWindowType'),
         iframeCount:iframes.length,
         tawkIframes:tawkIframes.join('; '),
-        jsErrors:__errors.slice(0,5).join('; ')
+        jsErrors:__errors.slice(0,5).join('; '),
+        forceActions:__forceActions
       };
     }
 
     var Tawk_API=Tawk_API||{};
     Tawk_API.visitor={name:${JSON.stringify(params.userName)},email:${JSON.stringify(params.userEmail)},hash:''};
+    Tawk_API.onBeforeLoaded=function(){
+      __beforeLoaded=true;
+      msg({type:'TAWK_BEFORE_LOADED'});
+    };
 
     Tawk_API.onLoad=function(){
       __tawkReady=true;
@@ -205,10 +273,16 @@ function buildTawkHTML(params: {
       s1.onload=function(){
         __scriptLoaded=true;
         msg({type:'TAWK_SCRIPT_LOADED'});
+        // Force-start recovery: script may load but not mount widget iframe.
+        setTimeout(function(){
+          if(!__tawkReady) forceWidgetStart('post_script_probe');
+        },${POST_SCRIPT_PROBE_MS});
         // Secondary timeout: script loaded but widget never called onLoad
         setTimeout(function(){
-          if(!__tawkReady)
+          if(!__tawkReady){
+            forceWidgetStart('post_script_timeout');
             msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:collectDiag()});
+          }
         },${POST_SCRIPT_TIMEOUT_MS});
       };
       s1.onerror=function(){msg({type:'TAWK_ERROR',errorKind:'NETWORK_ERROR',detail:'embed script failed to fetch'});};
@@ -217,8 +291,10 @@ function buildTawkHTML(params: {
 
     // Global safety-net timeout
     setTimeout(function(){
-      if(!__tawkReady)
+      if(!__tawkReady){
+        forceWidgetStart('global_timeout');
         msg({type:'TAWK_ERROR',errorKind:'TIMEOUT',diag:collectDiag()});
+      }
     },${WIDGET_TIMEOUT_MS});
   </script>
 </body>
@@ -406,12 +482,23 @@ export default function LiveChatScreen() {
         case 'TAWK_SCRIPT_LOADED':
           if (__DEV__) console.log('[LiveChat] Tawk script loaded, awaiting widget init…');
           break;
+        case 'TAWK_BEFORE_LOADED':
+          if (__DEV__) console.log('[LiveChat] Tawk beforeLoaded fired');
+          break;
         case 'TAWK_LOADED':
           if (__DEV__) console.log('[LiveChat] Widget ready');
           setChatState('ready');
           AccessibilityInfo.announceForAccessibility(
             'Live chat connected. You can now type your message.',
           );
+          break;
+        case 'TAWK_FORCE_ACTIONS':
+          if (__DEV__) {
+            console.log('[LiveChat] Forced widget actions:', data.reason, data.actions ?? {});
+            if (data.diag) {
+              console.log('[LiveChat] Force-action snapshot:', JSON.stringify(data.diag, null, 2));
+            }
+          }
           break;
         case 'TAWK_JS_ERROR':
           if (__DEV__) console.warn('[LiveChat] JS error in WebView:', data.detail, data.source, data.line);
