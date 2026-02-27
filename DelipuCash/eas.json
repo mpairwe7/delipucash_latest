@@ -10,7 +10,8 @@
       "env": {
         "NODE_ENV": "development",
         "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
-        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6"
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6",
+        "EXPO_PUBLIC_CHAT_BASE_URL": "https://delipucash.app"
       }
     },
     "preview": {
@@ -22,7 +23,8 @@
       "env": {
         "NODE_ENV": "production",
         "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
-        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6"
+        "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6",
+        "EXPO_PUBLIC_CHAT_BASE_URL": "https://delipucash.app"
       }
     },
     "production": {
@@ -31,6 +33,7 @@
         "NODE_ENV": "production",
         "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",
         "EXPO_PUBLIC_TAWK_WIDGET_ID": "1jienqhi6",
+        "EXPO_PUBLIC_CHAT_BASE_URL": "https://delipucash.app",
         "GRADLE_OPTS": "-Xmx4096m -XX:MaxMetaspaceSize=512m",
         "ORG_GRADLE_PROJECT_lintOptions": "checkReleaseBuilds=false"
       },
