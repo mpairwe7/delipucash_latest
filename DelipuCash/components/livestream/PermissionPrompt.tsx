@@ -2,6 +2,12 @@
  * PermissionPrompt Component
  * Camera/microphone permission request screen
  * Design System Compliant - Clean permission UX
+ *
+ * Handles three permission states per item:
+ * - Not yet requested (null) — no badge
+ * - Denied but can ask again — orange AlertCircle
+ * - Permanently denied — red XCircle + "Open Settings" button
+ * - Granted — green Check
  */
 
 import React, { memo } from 'react';
@@ -13,7 +19,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Video, Mic, Image as ImageIcon } from 'lucide-react-native';
+import { Video, Mic, Image as ImageIcon, Check, XCircle, AlertCircle, ExternalLink } from 'lucide-react-native';
 import { SPACING, TYPOGRAPHY, RADIUS, useTheme, withAlpha } from '@/utils/theme';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import { getResponsiveSize } from '@/utils/video-utils';
@@ -22,11 +28,28 @@ import { getResponsiveSize } from '@/utils/video-utils';
 // TYPES
 // ============================================================================
 
+export interface PermissionStatus {
+  granted: boolean | null;
+  canAskAgain: boolean;
+}
+
 export interface PermissionPromptProps {
   /** Type of permission screen */
   type: 'loading' | 'request';
   /** Handler for requesting permissions */
   onRequestPermissions?: () => void;
+  /** Open device settings (for permanently denied permissions) */
+  onOpenSettings?: () => void;
+  /** Whether a permission request is currently in progress */
+  isRequesting?: boolean;
+  /** Per-permission status for visual indicators */
+  permissionStatuses?: {
+    camera: PermissionStatus;
+    microphone: PermissionStatus;
+    mediaLibrary: PermissionStatus;
+  };
+  /** Whether any permission is permanently denied */
+  hasPermanentlyDenied?: boolean;
   /** Loading message */
   loadingMessage?: string;
   /** Custom title */
@@ -42,6 +65,10 @@ export interface PermissionPromptProps {
 export const PermissionPrompt = memo<PermissionPromptProps>(({
   type,
   onRequestPermissions,
+  onOpenSettings,
+  isRequesting = false,
+  permissionStatuses,
+  hasPermanentlyDenied = false,
   loadingMessage = 'Initializing camera...',
   title = 'Camera Access Required',
   description = 'We need permissions to access your camera, microphone, and media library to enable recording.',
@@ -58,7 +85,7 @@ export const PermissionPrompt = memo<PermissionPromptProps>(({
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[
             styles.loadingText,
-            { 
+            {
               color: colors.textMuted,
               fontSize: descriptionSize,
             }
@@ -69,6 +96,16 @@ export const PermissionPrompt = memo<PermissionPromptProps>(({
       </SafeAreaView>
     );
   }
+
+  // Determine which buttons to show
+  const someCanStillAsk = permissionStatuses ? (
+    (!permissionStatuses.camera.granted && permissionStatuses.camera.canAskAgain) ||
+    (!permissionStatuses.microphone.granted && permissionStatuses.microphone.canAskAgain) ||
+    (!permissionStatuses.mediaLibrary.granted && permissionStatuses.mediaLibrary.canAskAgain)
+  ) : false;
+
+  const showGrantButton = !!onRequestPermissions && (!hasPermanentlyDenied || someCanStillAsk);
+  const showSettingsButton = hasPermanentlyDenied && !!onOpenSettings;
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -89,7 +126,7 @@ export const PermissionPrompt = memo<PermissionPromptProps>(({
         {/* Title */}
         <Text style={[
           styles.title,
-          { 
+          {
             color: colors.text,
             fontSize: titleSize,
           }
@@ -100,7 +137,7 @@ export const PermissionPrompt = memo<PermissionPromptProps>(({
         {/* Description */}
         <Text style={[
           styles.description,
-          { 
+          {
             color: colors.textMuted,
             fontSize: descriptionSize,
           }
@@ -108,33 +145,67 @@ export const PermissionPrompt = memo<PermissionPromptProps>(({
           {description}
         </Text>
 
-        {/* Permission items */}
+        {/* Permission items with status badges */}
         <View style={styles.permissionList}>
-          <PermissionItem 
+          <PermissionItem
             icon={<Video size={20} color={colors.primary} />}
             label="Camera"
             description="Record videos"
             colors={colors}
+            status={permissionStatuses?.camera}
           />
-          <PermissionItem 
+          <PermissionItem
             icon={<Mic size={20} color={colors.error} />}
             label="Microphone"
             description="Record audio"
             colors={colors}
+            status={permissionStatuses?.microphone}
           />
-          <PermissionItem 
+          <PermissionItem
             icon={<ImageIcon size={20} color={colors.success} />}
             label="Media Library"
             description="Save recordings"
             colors={colors}
+            status={permissionStatuses?.mediaLibrary}
           />
         </View>
 
-        {/* Grant Button */}
-        {onRequestPermissions && (
+        {/* Grant Permissions button */}
+        {showGrantButton && (
+          <PrimaryButton
+            title={hasPermanentlyDenied ? 'Grant Remaining Permissions' : 'Grant Permissions'}
+            onPress={onRequestPermissions!}
+            loading={isRequesting}
+            disabled={isRequesting}
+            style={styles.button}
+          />
+        )}
+
+        {/* Open Settings fallback for permanently denied permissions */}
+        {showSettingsButton && (
+          <>
+            <Text style={[styles.settingsHint, { color: colors.textMuted }]}>
+              {someCanStillAsk
+                ? 'Some permissions were permanently denied and need to be enabled in settings.'
+                : 'Permissions were permanently denied. Please enable them in your device settings.'}
+            </Text>
+            <PrimaryButton
+              title="Open Settings"
+              onPress={onOpenSettings!}
+              variant="outline"
+              leftIcon={<ExternalLink size={18} color={colors.primary} />}
+              style={showGrantButton ? { ...styles.button, ...styles.buttonSpacing } : styles.button}
+            />
+          </>
+        )}
+
+        {/* Initial state — no statuses yet, just the standard button */}
+        {!showGrantButton && !showSettingsButton && onRequestPermissions && (
           <PrimaryButton
             title="Grant Permissions"
             onPress={onRequestPermissions}
+            loading={isRequesting}
+            disabled={isRequesting}
             style={styles.button}
           />
         )}
@@ -152,6 +223,7 @@ interface PermissionItemProps {
   label: string;
   description: string;
   colors: ReturnType<typeof useTheme>['colors'];
+  status?: PermissionStatus;
 }
 
 const PermissionItem = memo<PermissionItemProps>(({
@@ -159,6 +231,7 @@ const PermissionItem = memo<PermissionItemProps>(({
   label,
   description,
   colors,
+  status,
 }) => (
   <View style={styles.permissionItem}>
     <View style={[styles.permissionIcon, { backgroundColor: withAlpha(colors.border, 0.5) }]}>
@@ -168,6 +241,27 @@ const PermissionItem = memo<PermissionItemProps>(({
       <Text style={[styles.permissionLabel, { color: colors.text }]}>{label}</Text>
       <Text style={[styles.permissionDesc, { color: colors.textMuted }]}>{description}</Text>
     </View>
+    {status && status.granted !== null && (
+      <View
+        style={styles.statusBadge}
+        accessibilityLabel={
+          status.granted
+            ? `${label} permission granted`
+            : !status.canAskAgain
+              ? `${label} permission blocked — open settings to enable`
+              : `${label} permission denied`
+        }
+        accessibilityRole="text"
+      >
+        {status.granted ? (
+          <Check size={18} color={colors.success} />
+        ) : !status.canAskAgain ? (
+          <XCircle size={18} color={colors.error} />
+        ) : (
+          <AlertCircle size={18} color={colors.warning} />
+        )}
+      </View>
+    )}
   </View>
 ));
 
@@ -249,9 +343,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
+  statusBadge: {
+    marginLeft: SPACING.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsHint: {
+    textAlign: 'center',
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.lg,
+    lineHeight: 20,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
   button: {
     width: '100%',
     maxWidth: 300,
+  },
+  buttonSpacing: {
+    marginTop: SPACING.sm,
   },
 });
 

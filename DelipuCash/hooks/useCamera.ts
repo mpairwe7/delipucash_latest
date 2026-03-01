@@ -20,8 +20,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, AppState, AppStateStatus } from 'react-native';
-import { CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { Platform, AppState, AppStateStatus, Linking } from 'react-native';
+import { Camera, CameraView, CameraType, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as MediaLibrary from 'expo-media-library';
 
 // ============================================================================
@@ -37,6 +37,14 @@ export interface CameraState {
   hasMediaLibraryPermission: boolean | null;
   /** Whether all required permissions are granted */
   hasAllPermissions: boolean;
+  /** Whether the system can show the camera permission dialog again */
+  cameraCanAskAgain: boolean;
+  /** Whether the system can show the microphone permission dialog again */
+  microphoneCanAskAgain: boolean;
+  /** Whether the system can show the media library permission dialog again */
+  mediaLibraryCanAskAgain: boolean;
+  /** Whether any permission is permanently denied (can't ask again + not granted) */
+  hasPermanentlyDenied: boolean;
   /** Whether camera is ready to use */
   isReady: boolean;
   /** Whether camera is currently active/mounted */
@@ -99,6 +107,8 @@ export interface UseCameraReturn extends CameraState {
   stopRecording: () => Promise<string | null>;
   /** Save recording to media library */
   saveToMediaLibrary: (uri: string) => Promise<string | null>;
+  /** Open device settings (for permanently denied permissions) */
+  openSettings: () => void;
   /** Reset camera state */
   reset: () => void;
 }
@@ -143,6 +153,10 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     hasMicrophonePermission: null,
     hasMediaLibraryPermission: null,
     hasAllPermissions: false,
+    cameraCanAskAgain: true,
+    microphoneCanAskAgain: true,
+    mediaLibraryCanAskAgain: true,
+    hasPermanentlyDenied: false,
     isReady: false,
     isActive: true,
     facing: opts.initialFacing,
@@ -161,60 +175,73 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
   // PERMISSION HANDLING
   // ============================================================================
 
-  // Request all permissions (camera, microphone, media library) - industry standard
+  // Request all permissions (camera, microphone, media library)
+  // SEQUENTIAL requests — Android permission dialogs are modal; parallel
+  // requests via Promise.all can cause some to be silently dropped/auto-denied.
   const requestPermissions = useCallback(async (): Promise<boolean> => {
     // Web doesn't support camera in the same way
     if (Platform.OS === 'web') {
-      setState(prev => ({ 
-        ...prev, 
+      setState(prev => ({
+        ...prev,
         hasPermission: false,
         hasAllPermissions: false,
-        error: 'Camera not supported on web' 
+        error: 'Camera not supported on web'
       }));
       return false;
     }
-    
+
     setState(prev => ({ ...prev, isRequestingPermission: true, error: null }));
-    
+
     try {
-      // Request all permissions in parallel for better UX
-      const [cameraResult, micResult, mediaResult] = await Promise.all([
-        requestCameraPermission(),
-        requestMicrophonePermission(),
-        requestMediaLibraryPermission(),
-      ]);
+      // Sequential requests ensure each system dialog is shown properly
+      const cameraResult = await requestCameraPermission();
+      const micResult = await requestMicrophonePermission();
+      const mediaResult = await requestMediaLibraryPermission();
 
       const cameraGranted = cameraResult?.granted ?? false;
       const micGranted = micResult?.granted ?? false;
       const mediaGranted = mediaResult?.granted ?? false;
       const allGranted = cameraGranted && micGranted && mediaGranted;
-      
+
+      // Track canAskAgain for "Open Settings" fallback
+      const camCanAsk = cameraResult?.canAskAgain ?? true;
+      const micCanAsk = micResult?.canAskAgain ?? true;
+      const mediaCanAsk = mediaResult?.canAskAgain ?? true;
+      const anyPermanentlyDenied =
+        (!cameraGranted && !camCanAsk) ||
+        (!micGranted && !micCanAsk) ||
+        (!mediaGranted && !mediaCanAsk);
+
       if (isMountedRef.current) {
         let errorMessage: string | null = null;
         if (!cameraGranted) errorMessage = 'Camera permission denied';
         else if (!micGranted) errorMessage = 'Microphone permission denied';
         else if (!mediaGranted) errorMessage = 'Media library permission denied';
 
-        setState(prev => ({ 
-          ...prev, 
+        setState(prev => ({
+          ...prev,
           hasPermission: cameraGranted,
           hasMicrophonePermission: micGranted,
           hasMediaLibraryPermission: mediaGranted,
           hasAllPermissions: allGranted,
+          cameraCanAskAgain: camCanAsk,
+          microphoneCanAskAgain: micCanAsk,
+          mediaLibraryCanAskAgain: mediaCanAsk,
+          hasPermanentlyDenied: anyPermanentlyDenied,
           isRequestingPermission: false,
           error: errorMessage,
         }));
-        
+
         opts.onPermissionChange(allGranted);
       }
-      
+
       return allGranted;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to request permissions';
-      
+
       if (isMountedRef.current) {
-        setState(prev => ({ 
-          ...prev, 
+        setState(prev => ({
+          ...prev,
           hasPermission: false,
           hasMicrophonePermission: false,
           hasMediaLibraryPermission: false,
@@ -222,37 +249,65 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
           isRequestingPermission: false,
           error: errorMessage,
         }));
-        
+
         opts.onError(errorMessage);
       }
-      
+
       return false;
     }
   }, [requestCameraPermission, requestMicrophonePermission, requestMediaLibraryPermission, opts]);
   
-  // Sync permission state from expo-camera hooks
+  // Track previous permission values to detect actual changes without state in deps
+  const prevPermissionsRef = useRef<{
+    camera: boolean | null;
+    mic: boolean | null;
+    media: boolean | null;
+  }>({ camera: null, mic: null, media: null });
+
+  // Sync permission state from expo-camera hooks.
+  // Uses a ref (not state) for comparison to avoid feedback loops where the effect
+  // depends on the same values it updates.
   useEffect(() => {
     const cameraGranted = cameraPermission?.granted ?? null;
     const micGranted = microphonePermission?.granted ?? null;
     const mediaGranted = mediaLibraryPermission?.granted ?? null;
+
+    const prev = prevPermissionsRef.current;
+    if (cameraGranted === prev.camera &&
+      micGranted === prev.mic &&
+      mediaGranted === prev.media) {
+      return; // No change
+    }
+
+    prevPermissionsRef.current = { camera: cameraGranted, mic: micGranted, media: mediaGranted };
+
     const allGranted = (cameraGranted && micGranted && mediaGranted) ?? false;
 
-    if (cameraGranted !== state.hasPermission ||
-      micGranted !== state.hasMicrophonePermission ||
-      mediaGranted !== state.hasMediaLibraryPermission) {
-      setState(prev => ({
-        ...prev,
-        hasPermission: cameraGranted,
-        hasMicrophonePermission: micGranted,
-        hasMediaLibraryPermission: mediaGranted,
-        hasAllPermissions: allGranted,
-      }));
+    // Also sync canAskAgain from the permission objects
+    const camCanAsk = cameraPermission?.canAskAgain ?? true;
+    const micCanAsk = microphonePermission?.canAskAgain ?? true;
+    const mediaCanAsk = mediaLibraryPermission?.canAskAgain ?? true;
+    const anyPermanentlyDenied =
+      (!cameraGranted && !camCanAsk) ||
+      (!micGranted && !micCanAsk) ||
+      (!mediaGranted && !mediaCanAsk);
 
-      if (cameraGranted !== null) {
-        opts.onPermissionChange(allGranted);
-      }
+    setState(prev => ({
+      ...prev,
+      hasPermission: cameraGranted,
+      hasMicrophonePermission: micGranted,
+      hasMediaLibraryPermission: mediaGranted,
+      hasAllPermissions: allGranted,
+      cameraCanAskAgain: camCanAsk,
+      microphoneCanAskAgain: micCanAsk,
+      mediaLibraryCanAskAgain: mediaCanAsk,
+      hasPermanentlyDenied: anyPermanentlyDenied,
+    }));
+
+    if (cameraGranted !== null) {
+      opts.onPermissionChange(allGranted);
     }
-  }, [cameraPermission?.granted, microphonePermission?.granted, mediaLibraryPermission?.granted, state.hasPermission, state.hasMicrophonePermission, state.hasMediaLibraryPermission, opts]);
+  }, [cameraPermission, microphonePermission, mediaLibraryPermission, opts]);
   
   // Auto-request permissions if enabled
   useEffect(() => {
@@ -285,6 +340,68 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     };
   }, [opts.pauseOnBackground]);
   
+  // ============================================================================
+  // FOREGROUND RESUME — Re-check permissions after user returns from Settings
+  // Workaround for expo/expo#30351: permission hooks don't update when user
+  // changes permissions in the device Settings app.
+  // ============================================================================
+
+  const prevAppStateRef = useRef<AppStateStatus>(AppState.currentState);
+
+  useEffect(() => {
+    const handleForegroundResume = async (nextAppState: AppStateStatus) => {
+      // Only re-check when transitioning from background/inactive → active
+      if (prevAppStateRef.current.match(/inactive|background/) && nextAppState === 'active') {
+        if (!isMountedRef.current) return;
+
+        try {
+          const [camPerm, micPerm, mediaPerm] = await Promise.all([
+            Camera.getCameraPermissionsAsync(),
+            Camera.getMicrophonePermissionsAsync(),
+            MediaLibrary.getPermissionsAsync(),
+          ]);
+
+          const cameraGranted = camPerm?.granted ?? false;
+          const micGranted = micPerm?.granted ?? false;
+          const mediaGranted = mediaPerm?.granted ?? false;
+          const allGranted = cameraGranted && micGranted && mediaGranted;
+
+          const camCanAsk = camPerm?.canAskAgain ?? true;
+          const micCanAsk = micPerm?.canAskAgain ?? true;
+          const mediaCanAsk = mediaPerm?.canAskAgain ?? true;
+          const anyPermanentlyDenied =
+            (!cameraGranted && !camCanAsk) ||
+            (!micGranted && !micCanAsk) ||
+            (!mediaGranted && !mediaCanAsk);
+
+          if (isMountedRef.current) {
+            prevPermissionsRef.current = { camera: cameraGranted, mic: micGranted, media: mediaGranted };
+
+            setState(prev => ({
+              ...prev,
+              hasPermission: cameraGranted,
+              hasMicrophonePermission: micGranted,
+              hasMediaLibraryPermission: mediaGranted,
+              hasAllPermissions: allGranted,
+              cameraCanAskAgain: camCanAsk,
+              microphoneCanAskAgain: micCanAsk,
+              mediaLibraryCanAskAgain: mediaCanAsk,
+              hasPermanentlyDenied: anyPermanentlyDenied,
+            }));
+
+            opts.onPermissionChange(allGranted);
+          }
+        } catch {
+          // Best-effort — don't crash if permission check fails
+        }
+      }
+      prevAppStateRef.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleForegroundResume);
+    return () => subscription.remove();
+  }, [opts]);
+
   // ============================================================================
   // CAMERA CONTROLS
   // ============================================================================
@@ -348,12 +465,20 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     setState(prev => ({ ...prev, isActive: true }));
   }, []);
   
+  const openSettings = useCallback(() => {
+    Linking.openSettings();
+  }, []);
+
   const reset = useCallback(() => {
     setState({
       hasPermission: cameraPermission?.granted ?? null,
       hasMicrophonePermission: microphonePermission?.granted ?? null,
       hasMediaLibraryPermission: mediaLibraryPermission?.granted ?? null,
       hasAllPermissions: (cameraPermission?.granted && microphonePermission?.granted && mediaLibraryPermission?.granted) ?? false,
+      cameraCanAskAgain: cameraPermission?.canAskAgain ?? true,
+      microphoneCanAskAgain: microphonePermission?.canAskAgain ?? true,
+      mediaLibraryCanAskAgain: mediaLibraryPermission?.canAskAgain ?? true,
+      hasPermanentlyDenied: false,
       isReady: false,
       isActive: true,
       facing: opts.initialFacing,
@@ -544,6 +669,7 @@ export function useCamera(options: UseCameraOptions = {}): UseCameraReturn {
     startRecording,
     stopRecording,
     saveToMediaLibrary,
+    openSettings,
     reset,
   };
 }

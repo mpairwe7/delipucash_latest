@@ -166,7 +166,13 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
     hasAllPermissions,
     hasMicrophonePermission,
     hasMediaLibraryPermission,
+    isRequestingPermission,
+    cameraCanAskAgain,
+    microphoneCanAskAgain,
+    mediaLibraryCanAskAgain,
+    hasPermanentlyDenied,
     requestPermissions,
+    openSettings,
     cameraRef,
     facing,
     torchEnabled,
@@ -638,6 +644,13 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
   // Determine screen content based on permission / draft state
   let content: React.ReactNode;
 
+  // Build per-permission status objects for PermissionPrompt badges
+  const permissionStatuses = {
+    camera: { granted: hasPermission, canAskAgain: cameraCanAskAgain },
+    microphone: { granted: hasMicrophonePermission, canAskAgain: microphoneCanAskAgain },
+    mediaLibrary: { granted: hasMediaLibraryPermission, canAskAgain: mediaLibraryCanAskAgain },
+  };
+
   if (hasPermission === null) {
     // Permission not yet requested — show context prompt (industry best practice)
     // Users should understand WHY camera access is needed before system dialog
@@ -645,25 +658,32 @@ export const LiveStreamScreen = memo<LiveStreamScreenProps>(({
       <PermissionPrompt
         type="request"
         onRequestPermissions={requestPermissions}
+        isRequesting={isRequestingPermission}
         title="Enable Camera Access"
         description="To record videos and go live, we need access to your camera, microphone, and media library. Your recordings stay private until you choose to share them."
       />
     );
   } else if (hasPermission === false || !hasAllPermissions) {
-    // Permission denied — show detailed permission status
+    // Permission denied — show detailed permission status with per-item badges
     const missingPermissions: string[] = [];
     if (!hasPermission) missingPermissions.push('Camera');
     if (!hasMicrophonePermission) missingPermissions.push('Microphone');
     if (!hasMediaLibraryPermission) missingPermissions.push('Media Library');
 
-    const description = missingPermissions.length > 0
-      ? `The following permissions are required: ${missingPermissions.join(', ')}. Please grant access to continue.`
-      : 'Please grant camera, microphone, and media library access to record videos.';
+    const description = hasPermanentlyDenied
+      ? `Some permissions were permanently denied. Please open your device settings to grant: ${missingPermissions.join(', ')}.`
+      : missingPermissions.length > 0
+        ? `The following permissions are required: ${missingPermissions.join(', ')}. Please grant access to continue.`
+        : 'Please grant camera, microphone, and media library access to record videos.';
 
     content = (
       <PermissionPrompt
         type="request"
         onRequestPermissions={requestPermissions}
+        onOpenSettings={openSettings}
+        isRequesting={isRequestingPermission}
+        permissionStatuses={permissionStatuses}
+        hasPermanentlyDenied={hasPermanentlyDenied}
         title="Permissions Required"
         description={description}
       />
