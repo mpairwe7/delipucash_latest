@@ -613,6 +613,8 @@ function VideoFeedItemComponent({
   // Refs
   const lastTapRef = useRef<number>(0);
   const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Guards play/pause when a UI button (mute, like, etc.) was tapped inside the gesture area
+  const buttonTappedRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accumulatedSeekRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -963,6 +965,7 @@ function VideoFeedItemComponent({
 
   // 2026: Ad CTA press handler — opens ad URL or delegates to parent
   const handleAdCtaPress = useCallback(() => {
+    buttonTappedRef.current = true;
     if (!video.isSponsored) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (onAdCtaPress) {
@@ -974,6 +977,7 @@ function VideoFeedItemComponent({
 
   // 2026: "Why this ad?" feedback handler
   const handleAdFeedback = useCallback(() => {
+    buttonTappedRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     onAdFeedback?.(video);
   }, [video, onAdFeedback]);
@@ -1049,11 +1053,13 @@ function VideoFeedItemComponent({
   }, [onExpand, video]);
 
   const handleToggleMute = useCallback(() => {
+    buttonTappedRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     toggleMute();
   }, [toggleMute]);
 
   const handleCreatorProfile = useCallback((_creatorId: string) => {
+    buttonTappedRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     // Profile route placeholder — wire when creator profile screen exists
   }, []);
@@ -1063,10 +1069,12 @@ function VideoFeedItemComponent({
     : 'creator';
 
   const handleCreatorFollow = useCallback((cid: string) => {
+    buttonTappedRef.current = true;
     followMutation.mutate(cid);
   }, [followMutation]);
 
   const handleCreatorUnfollow = useCallback((cid: string) => {
+    buttonTappedRef.current = true;
     unfollowMutation.mutate(cid, {
       onSuccess: () => {
         showToast({
@@ -1116,7 +1124,12 @@ function VideoFeedItemComponent({
         })
         .onEnd(() => {
           // Check if this was a single tap (no double tap followed)
+          // Also skip if a UI button (mute, like, etc.) consumed the tap
           setTimeout(() => {
+            if (buttonTappedRef.current) {
+              buttonTappedRef.current = false;
+              return;
+            }
             if (Date.now() - lastTapRef.current >= DOUBLE_TAP_DELAY) {
               runOnJS(handlePlayPause)();
             }
@@ -1232,6 +1245,7 @@ function VideoFeedItemComponent({
               <Pressable
                 style={styles.retryButton}
                 onPress={async () => {
+                  buttonTappedRef.current = true;
                   setHasError(false);
                   setIsBuffering(true);
                   isPlayerReadyRef.current = false;
@@ -1334,6 +1348,7 @@ function VideoFeedItemComponent({
             {/* Like — Primary action with spring animation */}
             <Pressable
               onPress={() => {
+                buttonTappedRef.current = true;
                 Haptics.notificationAsync(
                   isLiked ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success
                 );
@@ -1362,6 +1377,7 @@ function VideoFeedItemComponent({
             {/* Comment */}
             <Pressable
               onPress={() => {
+                buttonTappedRef.current = true;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
                 onComment(video);
               }}
@@ -1376,6 +1392,7 @@ function VideoFeedItemComponent({
             {/* Bookmark — Spring scale animation */}
             <Pressable
               onPress={() => {
+                buttonTappedRef.current = true;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
                 onBookmark(video);
                 bookmarkScale.value = withSequence(
@@ -1401,6 +1418,7 @@ function VideoFeedItemComponent({
             {/* Share */}
             <Pressable
               onPress={() => {
+                buttonTappedRef.current = true;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                 onShare(video);
               }}
