@@ -10,8 +10,14 @@ import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
  */
 async function signVideoUrls(video) {
   try {
+    // Legacy livestream rows may have an incomplete key like "livestreams/<sessionId>"
+    // (folder prefix without an actual file object). Signed URLs for those keys play
+    // unreliably or fail. Prefer the stored recording URL in that case.
+    const hasLegacyLivestreamPrefixKey =
+      typeof video.r2VideoKey === 'string' && /^livestreams\/[^/]+$/.test(video.r2VideoKey);
+
     const [videoUrl, thumbnail] = await Promise.all([
-      video.r2VideoKey
+      video.r2VideoKey && !hasLegacyLivestreamPrefixKey
         ? getSignedDownloadUrl(video.r2VideoKey, URL_EXPIRY.DOWNLOAD_URL_EXPIRY)
         : Promise.resolve(video.videoUrl),
       video.r2ThumbnailKey

@@ -612,13 +612,17 @@ function VideoFeedItemComponent({
 
   // Refs
   const lastTapRef = useRef<number>(0);
-  const lastTapPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   // Guards play/pause when a UI button (mute, like, etc.) was tapped inside the gesture area
   const buttonTappedRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accumulatedSeekRef = useRef(0);
   const isMountedRef = useRef(true);
-  // Playback error → URL refresh retry (max 1 auto-retry per mount)
+  // Playback recovery refs
+  // 1) Retry transient transport timeouts with same source
+  // 2) Retry once with fresh signed URL fallback
+  const timeoutRetryCountRef = useRef(0);
+  const isRecoveryInFlightRef = useRef(false);
+  const MAX_TIMEOUT_RETRIES = 2;
   const urlRetryCountRef = useRef(0);
   const MAX_URL_RETRIES = 1;
 
@@ -680,6 +684,13 @@ function VideoFeedItemComponent({
       isMountedRef.current = false;
     };
   }, []);
+
+  // Reset playback recovery counters whenever this item/source changes
+  useEffect(() => {
+    timeoutRetryCountRef.current = 0;
+    urlRetryCountRef.current = 0;
+    isRecoveryInFlightRef.current = false;
+  }, [video.id, videoSource]);
 
   // Safe player method wrapper to prevent calls on released objects
   const safePlayerCall = useCallback(<T,>(fn: () => T, fallback?: T): T | undefined => {
@@ -799,6 +810,9 @@ function VideoFeedItemComponent({
           isPlayerReadyRef.current = true;
           setIsBuffering(false);
           setHasError(false);
+          timeoutRetryCountRef.current = 0;
+          urlRetryCountRef.current = 0;
+          isRecoveryInFlightRef.current = false;
           try {
             if (player.duration) {
               setDuration(player.duration);
@@ -820,31 +834,73 @@ function VideoFeedItemComponent({
         } else if (event.status === 'error') {
           isPlayerReadyRef.current = false;
           setIsBuffering(false);
-          if (__DEV__) console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, (event as any).error || 'Unknown error');
+          const rawError = (event as any).error;
+          const errorMessage = typeof rawError?.message === 'string'
+            ? rawError.message
+            : typeof rawError === 'string'
+              ? rawError
+              : 'Unknown error';
+          if (__DEV__) console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, rawError || 'Unknown error');
 
-          // Auto-retry once with a fresh signed URL (expired R2 URLs return XML → extractor error)
-          if (urlRetryCountRef.current < MAX_URL_RETRIES) {
-            urlRetryCountRef.current += 1;
-            (async () => {
-              try {
+          // Ignore duplicate error callbacks while one recovery path is active
+          if (isRecoveryInFlightRef.current) {
+            return;
+          }
+
+          isRecoveryInFlightRef.current = true;
+
+          (async () => {
+            try {
+              const normalized = errorMessage.toLowerCase();
+              const isTimeoutError =
+                normalized.includes('sockettimeoutexception') ||
+                normalized.includes('timed out') ||
+                normalized.includes('timeout') ||
+                normalized.includes('etimedout') ||
+                normalized.includes('econnreset');
+
+              // First: retry same source for transient transport timeouts
+              if (isTimeoutError && timeoutRetryCountRef.current < MAX_TIMEOUT_RETRIES && videoSource) {
+                timeoutRetryCountRef.current += 1;
+                const attempt = timeoutRetryCountRef.current;
+                const backoffMs = attempt === 1 ? 300 : 900;
+                await new Promise((resolve) => setTimeout(resolve, backoffMs));
+
+                if (isMountedRef.current && player) {
+                  if (__DEV__) {
+                    console.log(`[VideoFeedItem] Timeout retry ${attempt}/${MAX_TIMEOUT_RETRIES} for video ${video.id}`);
+                  }
+                  setIsBuffering(true);
+                  setHasError(false);
+                  await player.replaceAsync(videoSource);
+                  return;
+                }
+              }
+
+              // Fallback: refresh signed URL once
+              if (urlRetryCountRef.current < MAX_URL_RETRIES) {
+                urlRetryCountRef.current += 1;
                 const fresh = await videoApi.refreshVideoUrl(video.id);
                 if (fresh && fresh.videoUrl && isMountedRef.current && player) {
                   if (__DEV__) console.log(`[VideoFeedItem] Retrying video ${video.id} with fresh URL`);
                   setIsBuffering(true);
+                  setHasError(false);
                   await player.replaceAsync(fresh.videoUrl);
-                  // statusChange → readyToPlay will auto-play
                   return;
                 }
-              } catch {
-                // URL refresh failed — fall through to error state
               }
+
               if (isMountedRef.current) {
                 setHasError(true);
               }
-            })();
-          } else {
-            setHasError(true);
-          }
+            } catch {
+              if (isMountedRef.current) {
+                setHasError(true);
+              }
+            } finally {
+              isRecoveryInFlightRef.current = false;
+            }
+          })();
         }
       });
 
@@ -864,7 +920,7 @@ function VideoFeedItemComponent({
         // Listeners may already be removed
       }
     };
-  }, [player]);
+  }, [player, video.id, videoSource, isDataSaver, safePlayerCall, setPlayerStatus]);
 
   // Progress tracking
   useEffect(() => {
@@ -1088,6 +1144,37 @@ function VideoFeedItemComponent({
     });
   }, [unfollowMutation, followMutation, showToast, creatorDisplayName]);
 
+  const handleTapStart = useCallback((x: number, y: number, now: number) => {
+    const timeSinceLastTap = now - lastTapRef.current;
+
+    if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
+      const screenThird = SCREEN_WIDTH / 3;
+
+      if (x < screenThird) {
+        handleDoubleTapSeek('left');
+      } else if (x > screenThird * 2) {
+        handleDoubleTapSeek('right');
+      } else {
+        handleDoubleTapLike(x, y);
+      }
+    }
+
+    lastTapRef.current = now;
+  }, [handleDoubleTapSeek, handleDoubleTapLike]);
+
+  const handleTapEnd = useCallback(() => {
+    setTimeout(() => {
+      if (buttonTappedRef.current) {
+        buttonTappedRef.current = false;
+        return;
+      }
+
+      if (Date.now() - lastTapRef.current >= DOUBLE_TAP_DELAY) {
+        handlePlayPause();
+      }
+    }, DOUBLE_TAP_DELAY);
+  }, [handlePlayPause]);
+
   // ============================================================================
   // GESTURES
   // ============================================================================
@@ -1097,45 +1184,12 @@ function VideoFeedItemComponent({
       Gesture.Tap()
         .maxDuration(250)
         .onStart((event) => {
-          const now = Date.now();
-          const timeSinceLastTap = now - lastTapRef.current;
-          const { x, y } = event;
-
-          if (timeSinceLastTap < DOUBLE_TAP_DELAY) {
-            // Double tap
-            const screenThird = SCREEN_WIDTH / 3;
-            
-            if (x < screenThird) {
-              // Left third - seek backward
-              runOnJS(handleDoubleTapSeek)('left');
-            } else if (x > screenThird * 2) {
-              // Right third - seek forward
-              runOnJS(handleDoubleTapSeek)('right');
-            } else {
-              // Center - like
-              runOnJS(handleDoubleTapLike)(x, y);
-            }
-          } else {
-            // Single tap - toggle play/pause (with delay to check for double tap)
-            lastTapPositionRef.current = { x, y };
-          }
-
-          lastTapRef.current = now;
+          runOnJS(handleTapStart)(event.x, event.y, Date.now());
         })
         .onEnd(() => {
-          // Check if this was a single tap (no double tap followed)
-          // Also skip if a UI button (mute, like, etc.) consumed the tap
-          setTimeout(() => {
-            if (buttonTappedRef.current) {
-              buttonTappedRef.current = false;
-              return;
-            }
-            if (Date.now() - lastTapRef.current >= DOUBLE_TAP_DELAY) {
-              runOnJS(handlePlayPause)();
-            }
-          }, DOUBLE_TAP_DELAY);
+          runOnJS(handleTapEnd)();
         }),
-    [handleDoubleTapSeek, handleDoubleTapLike, handlePlayPause]
+    [handleTapStart, handleTapEnd]
   );
 
   const longPressGesture = useMemo(
@@ -1249,8 +1303,10 @@ function VideoFeedItemComponent({
                   setHasError(false);
                   setIsBuffering(true);
                   isPlayerReadyRef.current = false;
-                  // Reset retry counter so the auto-retry can fire again after manual retry
+                  // Reset recovery counters so auto-recovery can fire again after manual retry
+                  timeoutRetryCountRef.current = 0;
                   urlRetryCountRef.current = 0;
+                  isRecoveryInFlightRef.current = false;
 
                   if (player) {
                     try {

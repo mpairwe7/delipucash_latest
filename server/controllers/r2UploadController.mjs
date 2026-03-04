@@ -772,6 +772,7 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
   try {
     // Finalize the R2 session
     const result = await finalizeLivestreamSession(sessionId);
+    const recordingKey = result.recordingKey || `${STORAGE_PATHS.LIVESTREAMS}/${sessionId}`;
     
     console.log(`[R2Controller] Livestream finalized: ${result.recordingUrl}`);
     
@@ -782,6 +783,7 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
         status: 'ended',
         endedAt: new Date(),
         recordingUrl: result.recordingUrl,
+        r2RecordingKey: recordingKey,
         recordingSizeBytes: BigInt(result.totalSize),
       },
       create: {
@@ -793,6 +795,7 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
         startedAt: new Date(),
         endedAt: new Date(),
         recordingUrl: result.recordingUrl,
+        r2RecordingKey: recordingKey,
         recordingSizeBytes: BigInt(result.totalSize),
       },
     });
@@ -806,7 +809,7 @@ export const finalizeLivestreamRecording = asyncHandler(async (req, res) => {
         thumbnail: '', // Generate thumbnail later
         userId,
         duration: livestream.durationSeconds || 0,
-        r2VideoKey: `${STORAGE_PATHS.LIVESTREAMS}/${sessionId}`,
+        r2VideoKey: recordingKey,
         videoSizeBytes: BigInt(result.totalSize),
         storageProvider: 'r2',
         isProcessed: true,

@@ -635,7 +635,7 @@ export async function createLivestreamSession(sessionId) {
 /**
  * Finalize a livestream session (merge chunks if needed)
  * @param {string} sessionId - Session ID
- * @returns {Promise<{recordingUrl: string, totalSize: number}>}
+ * @returns {Promise<{recordingUrl: string, recordingKey: string, totalSize: number, chunkCount?: number}>}
  */
 export async function finalizeLivestreamSession(sessionId) {
   const prefix = `${STORAGE_PATHS.LIVESTREAMS}/${sessionId}`;
@@ -654,7 +654,9 @@ export async function finalizeLivestreamSession(sessionId) {
   if (chunks.length === 1) {
     return {
       recordingUrl: getPublicUrl(chunks[0].key),
+      recordingKey: chunks[0].key,
       totalSize: chunks[0].size,
+      chunkCount: 1,
     };
   }
   
@@ -664,6 +666,7 @@ export async function finalizeLivestreamSession(sessionId) {
   
   return {
     recordingUrl: getPublicUrl(chunks[chunks.length - 1].key),
+    recordingKey: chunks[chunks.length - 1].key,
     totalSize,
     chunkCount: chunks.length,
   };
