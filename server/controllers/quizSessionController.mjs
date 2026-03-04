@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { processMtnPayment, processAirtelPayment } from './paymentController.mjs';
 import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 /**
  * Quiz Session Controller
@@ -345,6 +346,14 @@ export const updateUserPoints = asyncHandler(async (req, res) => {
       },
     });
 
+    // SSE: Notify client of points update
+    publishEvent(userId, 'transaction.new', {
+      type: 'reward',
+      amount: points,
+      description: `Quiz session: ${source}`,
+      balance: updatedUser.points,
+    }).catch(() => {});
+
     res.json({
       userId: updatedUser.id,
       totalPoints: updatedUser.points,
@@ -405,6 +414,15 @@ export const saveQuizSession = asyncHandler(async (req, res) => {
           points: { increment: clampedPoints },
         },
       });
+
+      // SSE: Notify client of quiz completion and points earned
+      publishEvent(userId, 'quiz.completed', {
+        sessionId: sessionData.id,
+        pointsEarned: clampedPoints,
+        correctCount,
+        incorrectCount,
+        maxStreak,
+      }).catch(() => {});
     }
 
     res.json(sessionData);

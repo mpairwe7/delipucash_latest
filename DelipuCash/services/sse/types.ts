@@ -12,6 +12,8 @@ export type SSEEventType =
   | 'question.new'
   | 'question.response'
   | 'question.vote'
+  | 'question.attempt'
+  | 'question.newAttempt'
   | 'response.like'
   | 'response.dislike'
   | 'response.reply'
@@ -30,6 +32,7 @@ export type SSEEventType =
   | 'video.bookmark'
   | 'transaction.new'
   | 'transaction.statusUpdate'
+  | 'quiz.completed'
   | 'reconnect';
 
 // Payload types per event
@@ -152,6 +155,25 @@ export interface TransactionStatusUpdatePayload {
   transactionId: string;
   status: 'PENDING' | 'SUCCESSFUL' | 'FAILED';
   amount: number;
+}
+
+export interface QuestionAttemptPayload {
+  attemptId: string;
+  questionId: string;
+  isCorrect: boolean;
+}
+
+export interface QuestionNewAttemptPayload {
+  attemptId: string;
+  questionId: string;
+}
+
+export interface QuizCompletedPayload {
+  sessionId: string;
+  pointsEarned: number;
+  correctCount: number;
+  incorrectCount: number;
+  maxStreak: number;
 }
 
 export type SSEConnectionStatus =

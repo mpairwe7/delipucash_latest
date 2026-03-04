@@ -202,6 +202,18 @@ export function useSSEConnection(): void {
           queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
         },
       ],
+      // Quiz completed — refresh user stats, rewards, and transactions
+      // (points earned from quiz are reflected in balance and transaction list)
+      [
+        'quiz.completed',
+        () => {
+          queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+          queryClient.invalidateQueries({ queryKey: queryKeys.rewards });
+          queryClient.invalidateQueries({ queryKey: queryKeys.user });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.all });
+          queryClient.invalidateQueries({ queryKey: transactionQueryKeys.summary() });
+        },
+      ],
     ];
 
     for (const [eventType, handler] of routes) {
@@ -257,6 +269,35 @@ export function useSSEConnection(): void {
             queryKey: questionQueryKeys.detail(payload.questionId),
           });
         }
+      }),
+    );
+
+    // Question attempt — refresh the question detail and feed
+    // (attempt counts, user's attempt status may have changed)
+    cleanupRef.current.push(
+      manager.on('question.attempt', (data: unknown) => {
+        const payload = data as { questionId?: string };
+        if (payload?.questionId) {
+          queryClient.invalidateQueries({
+            queryKey: questionQueryKeys.detail(payload.questionId),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: queryKeys.rewardQuestions });
+        queryClient.invalidateQueries({ queryKey: queryKeys.userStats });
+      }),
+    );
+
+    // New attempt on YOUR question — refresh the question detail
+    // (sent to the question author when someone else attempts it)
+    cleanupRef.current.push(
+      manager.on('question.newAttempt', (data: unknown) => {
+        const payload = data as { questionId?: string };
+        if (payload?.questionId) {
+          queryClient.invalidateQueries({
+            queryKey: questionQueryKeys.detail(payload.questionId),
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: questionQueryKeys.feeds() });
       }),
     );
 

@@ -1317,11 +1317,11 @@ export const startLivestream = asyncHandler(async (req, res) => {
 
     // Only notify via SSE for actual livestreams (not plain recordings)
     if (sessionType !== 'recording') {
-      await publishEvent(userId, 'livestream.started', {
+      publishEvent(userId, 'livestream.started', {
         sessionId: livestream.sessionId,
         userId,
         title: livestream.title,
-      });
+      }).catch(() => {});
     }
 
     res.json({
@@ -1373,10 +1373,10 @@ export const endLivestream = asyncHandler(async (req, res) => {
 
     // Only notify via SSE for actual livestreams (not plain recordings)
     if (livestream.type === 'livestream') {
-      await publishEvent(livestream.userId, 'livestream.ended', {
+      publishEvent(livestream.userId, 'livestream.ended', {
         sessionId,
         durationSeconds: livestream.durationSeconds,
-      });
+      }).catch(() => {});
     }
 
     res.json({
@@ -1480,12 +1480,12 @@ export const joinLivestream = asyncHandler(async (req, res) => {
       },
     });
 
-    // Notify stream owner of viewer count change
-    await publishEvent(livestream.userId, 'livestream.viewerCount', {
+    // Notify stream owner of viewer count change (fire-and-forget — don't block response)
+    publishEvent(livestream.userId, 'livestream.viewerCount', {
       sessionId,
       viewerCount: updated.viewerCount,
       peakViewerCount: updated.peakViewerCount,
-    });
+    }).catch(() => {});
 
     res.json({ success: true, viewerCount: updated.viewerCount });
   } catch (error) {
@@ -1514,11 +1514,11 @@ export const leaveLivestream = asyncHandler(async (req, res) => {
       },
     });
 
-    await publishEvent(livestream.userId, 'livestream.viewerCount', {
+    publishEvent(livestream.userId, 'livestream.viewerCount', {
       sessionId,
       viewerCount: updated.viewerCount,
       peakViewerCount: updated.peakViewerCount,
-    });
+    }).catch(() => {});
 
     res.json({ success: true, viewerCount: updated.viewerCount });
   } catch (error) {
@@ -1561,8 +1561,8 @@ export const sendLivestreamChat = asyncHandler(async (req, res) => {
       timestamp: new Date().toISOString(),
     };
 
-    // Notify stream owner of chat message
-    await publishEvent(livestream.userId, 'livestream.chat', chatPayload);
+    // Notify stream owner of chat message (fire-and-forget)
+    publishEvent(livestream.userId, 'livestream.chat', chatPayload).catch(() => {});
 
     res.json({ success: true, data: chatPayload });
   } catch (error) {

@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
+import { publishEvent } from '../lib/eventBus.mjs';
 
 // Record a Question Attempt
 export const recordAttempt = asyncHandler(async (req, res) => {
@@ -30,6 +31,19 @@ export const recordAttempt = asyncHandler(async (req, res) => {
       isCorrect,
     },
   });
+
+  // SSE: Notify user of attempt result (and question author if different)
+  publishEvent(user.id, 'question.attempt', {
+    attemptId: attempt.id,
+    questionId,
+    isCorrect,
+  }).catch(() => {});
+  if (question.userId && question.userId !== user.id) {
+    publishEvent(question.userId, 'question.newAttempt', {
+      attemptId: attempt.id,
+      questionId,
+    }).catch(() => {});
+  }
 
   res.status(201).json({ message: 'Attempt recorded', attempt });
 });

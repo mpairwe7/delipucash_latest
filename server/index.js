@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import bodyParser from 'body-parser';
 import connectDB from './config/db.mjs';
 import { ensureDefaultAdminExists } from './utils/adminInit.mjs';
+import { initListener, shutdownListener } from './lib/pgNotify.mjs';
 
 // Import routes
 import authRouter from './routes/auth.route.mjs';
@@ -27,6 +28,7 @@ import surveySubscriptionRoutes from './routes/surveySubscriptionRoutes.mjs';
 import surveyPaymentRoutes from './routes/surveyPaymentRoutes.mjs';
 import r2UploadRoutes from './routes/r2UploadRoutes.mjs';
 import sseRoutes from './routes/sseRoutes.mjs';
+import realtimeRoutes from './routes/realtimeRoutes.mjs';
 import surveyFileRoutes from './routes/surveyFileRoutes.mjs';
 import surveyWebhookRoutes from './routes/surveyWebhookRoutes.mjs';
 import surveyTemplateRoutes from './routes/surveyTemplateRoutes.mjs';
@@ -48,6 +50,11 @@ const app = express();
 // connectDB is the postgres tagged-template client — calling it validates the connection
 connectDB`SELECT 1`.catch((err) =>
   console.warn('[DB] Initial health check failed:', err.message)
+);
+
+// Initialize PostgreSQL LISTEN/NOTIFY for real-time SSE push (non-blocking)
+initListener().catch((err) =>
+  console.warn('[PgNotify] Initial LISTEN setup failed:', err.message)
 );
 
 // Middleware
@@ -134,7 +141,8 @@ app.use('/api/surveys', surveyWebhookRoutes); // Survey webhook routes
 app.use('/api/surveys', surveyTemplateRoutes); // Survey template routes
 app.use('/api/surveys', surveyCollabRoutes); // Survey collaboration routes
 app.use('/api/surveys', surveyImportRoutes); // Survey import preview & samples
-app.use('/api/sse', sseRoutes); // Server-Sent Events stream
+app.use('/api/sse', sseRoutes); // Server-Sent Events stream (legacy)
+app.use('/api/realtime', realtimeRoutes); // Real-time SSE via LISTEN/NOTIFY (canonical)
 app.use('/api/config', configRoutes); // App configuration (reward rates, etc.)
 app.use('/api/follows', followRoutes); // Creator follow graph + user blocks
 app.use('/api/transactions', transactionRoutes); // Unified transaction history
@@ -171,6 +179,15 @@ app.use('/api/*', (req, res) => {
   });
 });
 
+// Graceful shutdown — close LISTEN/NOTIFY connection
+const gracefulShutdown = async (signal) => {
+  console.log(`\n[Server] ${signal} received — shutting down...`);
+  await shutdownListener();
+  process.exit(0);
+};
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Start server for local development (not on Vercel)
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 3000;
@@ -178,6 +195,7 @@ if (process.env.VERCEL !== '1') {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
+    console.log(`Real-time SSE: http://localhost:${PORT}/api/realtime/sse`);
 
     // Ensure default admin user exists
     await ensureDefaultAdminExists();
