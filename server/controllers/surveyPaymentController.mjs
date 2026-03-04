@@ -20,6 +20,7 @@ import {
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
+import { getSubscriptionConfig } from '../lib/subscriptionConfig.mjs';
 
 const log = createPaymentLogger('survey-payment');
 
@@ -242,14 +243,61 @@ const calculateEndDate = (startDate, durationDays) => {
   return endDate;
 };
 
+/** Map planType → DB field name for survey plans */
+const SURVEY_PRICE_FIELDS = {
+  ONCE: 'subSurveyOncePrice',
+  DAILY: 'subSurveyDailyPrice',
+  WEEKLY: 'subSurveyWeeklyPrice',
+  MONTHLY: 'subSurveyMonthlyPrice',
+  QUARTERLY: 'subSurveyQuarterlyPrice',
+  HALF_YEARLY: 'subSurveyHalfYearlyPrice',
+  YEARLY: 'subSurveyYearlyPrice',
+  LIFETIME: 'subSurveyLifetimePrice',
+};
+
+/** Map planType → DB field name for video plans */
+const VIDEO_PRICE_FIELDS = {
+  DAILY: 'subVideoDailyPrice',
+  WEEKLY: 'subVideoWeeklyPrice',
+  MONTHLY: 'subVideoMonthlyPrice',
+  QUARTERLY: 'subVideoQuarterlyPrice',
+  HALF_YEARLY: 'subVideoHalfYearlyPrice',
+  YEARLY: 'subVideoYearlyPrice',
+  LIFETIME: 'subVideoLifetimePrice',
+};
+
 /**
- * Get plan by type and feature
+ * Apply DB price overrides to an array of hardcoded plans.
+ * Returns new array — does not mutate originals.
+ */
+function applyPriceOverrides(plans, priceFields, dbConfig) {
+  return plans.map(plan => {
+    const field = priceFields[plan.type];
+    if (field && dbConfig[field] != null) {
+      return { ...plan, price: dbConfig[field] };
+    }
+    return plan;
+  });
+}
+
+/**
+ * Get plan by type and feature, with DB price override applied.
  * @param {string} type - Plan type (e.g., 'MONTHLY')
  * @param {string} featureType - 'SURVEY' or 'VIDEO' (default: 'SURVEY')
  */
-const getPlanByType = (type, featureType = 'SURVEY') => {
+const getPlanByType = async (type, featureType = 'SURVEY') => {
   const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
-  return plans.find(p => p.type === type);
+  const plan = plans.find(p => p.type === type);
+  if (!plan) return undefined;
+
+  // Apply DB price override
+  const dbConfig = await getSubscriptionConfig();
+  const priceFields = featureType === 'VIDEO' ? VIDEO_PRICE_FIELDS : SURVEY_PRICE_FIELDS;
+  const field = priceFields[type];
+  if (field && dbConfig[field] != null) {
+    return { ...plan, price: dbConfig[field] };
+  }
+  return plan;
 };
 
 const VALID_FEATURE_TYPES = ['SURVEY', 'VIDEO'];
@@ -268,7 +316,10 @@ export const getPlans = asyncHandler(async (req, res) => {
   const featureType = req.query.featureType || 'SURVEY';
   log.info('Fetching subscription plans', { featureType });
 
-  const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+  const basePlans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+  const priceFields = featureType === 'VIDEO' ? VIDEO_PRICE_FIELDS : SURVEY_PRICE_FIELDS;
+  const dbConfig = await getSubscriptionConfig();
+  const plans = applyPriceOverrides(basePlans, priceFields, dbConfig);
   const activePlans = plans.filter(p => p.isActive);
 
   res.json(activePlans);
@@ -340,7 +391,10 @@ export const getSubscriptionStatus = asyncHandler(async (req, res) => {
       }
     }
 
-    const plans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+    const basePlans = featureType === 'VIDEO' ? VIDEO_SUBSCRIPTION_PLANS : SURVEY_SUBSCRIPTION_PLANS;
+    const priceFields = featureType === 'VIDEO' ? VIDEO_PRICE_FIELDS : SURVEY_PRICE_FIELDS;
+    const dbConfig = await getSubscriptionConfig();
+    const plans = applyPriceOverrides(basePlans, priceFields, dbConfig);
 
     res.json({
       hasActiveSubscription,
@@ -391,7 +445,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
     });
   }
 
-  const plan = getPlanByType(planType, featureType);
+  const plan = await getPlanByType(planType, featureType);
   if (!plan) {
     return res.status(400).json({ error: 'Invalid subscription plan type', code: 'INVALID_PLAN' });
   }
@@ -441,7 +495,7 @@ export const initiatePayment = asyncHandler(async (req, res) => {
         }
 
         log.info('Idempotency hit', { idempotencyKey, paymentId: existingByKey.id });
-        const existingPlan = getPlanByType(existingByKey.subscriptionType, existingByKey.featureType);
+        const existingPlan = await getPlanByType(existingByKey.subscriptionType, existingByKey.featureType);
         return res.status(200).json({
           payment: {
             id: existingByKey.id,
@@ -769,7 +823,7 @@ export const checkPaymentStatus = asyncHandler(async (req, res) => {
       }
     }
 
-    const plan = getPlanByType(payment.subscriptionType, payment.featureType);
+    const plan = await getPlanByType(payment.subscriptionType, payment.featureType);
 
     let subscription = null;
     if (payment.status === 'SUCCESSFUL') {
@@ -851,8 +905,8 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
       take: 50,
     });
 
-    const formattedPayments = payments.map(payment => {
-      const plan = getPlanByType(payment.subscriptionType, payment.featureType);
+    const formattedPayments = await Promise.all(payments.map(async (payment) => {
+      const plan = await getPlanByType(payment.subscriptionType, payment.featureType);
 
       return {
         id: payment.id,
@@ -874,7 +928,7 @@ export const getPaymentHistory = asyncHandler(async (req, res) => {
         createdAt: payment.createdAt.toISOString(),
         updatedAt: payment.updatedAt.toISOString(),
       };
-    });
+    }));
 
     res.json(formattedPayments);
   } catch (error) {

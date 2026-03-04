@@ -9,6 +9,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from './api';
+import { subscriptionPaymentKeys } from './subscriptionPaymentHooks';
 
 // ============================================================================
 // TYPES
@@ -31,6 +32,7 @@ export interface RewardConfig {
 export const configKeys = {
   all: ['config'] as const,
   rewards: () => [...configKeys.all, 'rewards'] as const,
+  subscriptions: () => [...configKeys.all, 'subscriptions'] as const,
 };
 
 // ============================================================================
@@ -111,6 +113,78 @@ export function useUpdateRewardConfig() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: configKeys.rewards() });
+    },
+  });
+}
+
+// ============================================================================
+// SUBSCRIPTION PRICE CONFIG
+// ============================================================================
+
+export interface SubscriptionPriceConfig {
+  subSurveyOncePrice: number;
+  subSurveyDailyPrice: number;
+  subSurveyWeeklyPrice: number;
+  subSurveyMonthlyPrice: number;
+  subSurveyQuarterlyPrice: number;
+  subSurveyHalfYearlyPrice: number;
+  subSurveyYearlyPrice: number;
+  subSurveyLifetimePrice: number;
+  subVideoDailyPrice: number;
+  subVideoWeeklyPrice: number;
+  subVideoMonthlyPrice: number;
+  subVideoQuarterlyPrice: number;
+  subVideoHalfYearlyPrice: number;
+  subVideoYearlyPrice: number;
+  subVideoLifetimePrice: number;
+}
+
+const DEFAULT_SUB_CONFIG: SubscriptionPriceConfig = {
+  subSurveyOncePrice: 500,
+  subSurveyDailyPrice: 300,
+  subSurveyWeeklyPrice: 1500,
+  subSurveyMonthlyPrice: 5000,
+  subSurveyQuarterlyPrice: 12000,
+  subSurveyHalfYearlyPrice: 22000,
+  subSurveyYearlyPrice: 40000,
+  subSurveyLifetimePrice: 100000,
+  subVideoDailyPrice: 200,
+  subVideoWeeklyPrice: 1000,
+  subVideoMonthlyPrice: 3500,
+  subVideoQuarterlyPrice: 9000,
+  subVideoHalfYearlyPrice: 16000,
+  subVideoYearlyPrice: 28000,
+  subVideoLifetimePrice: 70000,
+};
+
+/** Fetch subscription price config from backend. */
+export function useSubscriptionPriceConfig() {
+  return useQuery<SubscriptionPriceConfig>({
+    queryKey: configKeys.subscriptions(),
+    queryFn: async () => {
+      const { data } = await api.get<SubscriptionPriceConfig>('/api/config/subscriptions');
+      return data;
+    },
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    placeholderData: DEFAULT_SUB_CONFIG,
+  });
+}
+
+/** Mutation to update subscription prices (admin/moderator only). */
+export function useUpdateSubscriptionPriceConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: Partial<SubscriptionPriceConfig>) => {
+      const { data: result } = await api.put('/api/config/subscriptions', data);
+      return result as { success: boolean; data: SubscriptionPriceConfig };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: configKeys.subscriptions() });
+      // Invalidate both feature-type plan caches so MoMoPlanCard picks up new prices
+      queryClient.invalidateQueries({ queryKey: subscriptionPaymentKeys.plans('SURVEY') });
+      queryClient.invalidateQueries({ queryKey: subscriptionPaymentKeys.plans('VIDEO') });
     },
   });
 }

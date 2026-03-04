@@ -28,19 +28,23 @@ import Animated, {
   FadeOut,
   SlideInDown,
   SlideOutDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  useReducedMotion,
+  interpolateColor,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
 import {
   X,
   Settings2,
-  Check,
   AlertCircle,
   Coins,
   ArrowRightLeft,
   Wallet,
   Sparkles,
-  Zap,
   Users,
+  Gift,
 } from 'lucide-react-native';
 import * as Haptics from '@/utils/haptics';
 
@@ -58,13 +62,13 @@ import { PrimaryButton } from '@/components/PrimaryButton';
 import {
   useRewardConfig,
   useUpdateRewardConfig,
-  pointsToUgx,
-  type RewardConfig,
 } from '@/services/configHooks';
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+type RewardTab = 'points' | 'rewards';
 
 export interface RewardSettingsSheetProps {
   visible: boolean;
@@ -89,6 +93,7 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
   const [defaultInstantReward, setDefaultInstantReward] = useState('');
   const [referralBonus, setReferralBonus] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<RewardTab>('points');
 
   // Sync form from server config when sheet opens
   useEffect(() => {
@@ -152,6 +157,11 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     return `${min} points = ${ugx.toLocaleString()} UGX minimum`;
   }, [minWithdrawal, cashNumerator, cashDenominator]);
 
+  const handleTabChange = useCallback((tab: RewardTab) => {
+    setActiveTab(tab);
+    setError(null);
+  }, []);
+
   const validate = useCallback((): boolean => {
     const pps = Number(pointsPerSurvey);
     const cn = Number(cashNumerator);
@@ -161,31 +171,41 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     const dir = Number(defaultInstantReward);
     const rb = Number(referralBonus);
 
+    // Points & Rates tab validations
     if (!Number.isInteger(pps) || pps < 1) {
+      setActiveTab('points');
       setError('Points per survey must be a positive whole number.');
       return false;
     }
     if (!Number.isInteger(cn) || cn < 1) {
+      setActiveTab('points');
       setError('Cash amount (UGX) must be a positive whole number.');
       return false;
     }
     if (!Number.isInteger(cd) || cd < 1) {
+      setActiveTab('points');
       setError('Points count must be a positive whole number.');
       return false;
     }
     if (!Number.isInteger(mw) || mw < 1) {
+      setActiveTab('points');
       setError('Minimum withdrawal must be a positive whole number.');
       return false;
     }
+
+    // Rewards & Referrals tab validations
     if (!Number.isInteger(drr) || drr < 1 || drr > 1000000) {
+      setActiveTab('rewards');
       setError('Default regular reward must be between 1 and 1,000,000 UGX.');
       return false;
     }
     if (!Number.isInteger(dir) || dir < 1 || dir > 1000000) {
+      setActiveTab('rewards');
       setError('Default instant reward must be between 1 and 1,000,000 UGX.');
       return false;
     }
     if (!Number.isInteger(rb) || rb < 1 || rb > 10000) {
+      setActiveTab('rewards');
       setError('Referral bonus must be between 1 and 10,000 points.');
       return false;
     }
@@ -274,157 +294,158 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
             </Pressable>
           </View>
 
+          {/* Tab Switcher */}
+          <View style={styles.tabSwitcherContainer}>
+            <RewardTabSwitcher
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              colors={colors}
+              isDark={isDark}
+            />
+          </View>
+
           <ScrollView
             style={styles.body}
             contentContainerStyle={styles.bodyContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
           >
-            {/* Points per survey */}
-            <SettingField
-              icon={<Coins size={18} color={colors.primary} />}
-              label="Points per completed survey"
-              hint="How many points a user earns for each survey"
-              value={pointsPerSurvey}
-              onChangeText={setPointsPerSurvey}
-              colors={colors}
-            />
+            {activeTab === 'points' ? (
+              <>
+                {/* Points per survey */}
+                <SettingField
+                  icon={<Coins size={18} color={colors.primary} />}
+                  label="Points per completed survey"
+                  hint="How many points a user earns for each survey"
+                  value={pointsPerSurvey}
+                  onChangeText={setPointsPerSurvey}
+                  colors={colors}
+                />
 
-            {/* Reward Question Defaults */}
-            <View style={styles.sectionDivider}>
-              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
-              <Text style={[styles.sectionDividerText, { color: colors.textMuted }]}>
-                Reward Question Defaults
-              </Text>
-              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
-            </View>
-
-            <SettingField
-              icon={<Coins size={18} color="#4CAF50" />}
-              label="Default regular reward (UGX)"
-              hint="Auto-filled when creating regular reward questions"
-              value={defaultRegularReward}
-              onChangeText={setDefaultRegularReward}
-              colors={colors}
-            />
-            {regularRewardPreview && (
-              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
-                <Text style={[styles.previewText, { color: colors.success }]}>
-                  {regularRewardPreview}
-                </Text>
-              </Animated.View>
-            )}
-
-            <SettingField
-              icon={<Sparkles size={18} color="#FF9800" />}
-              label="Default instant reward (UGX)"
-              hint="Auto-filled when creating instant reward questions"
-              value={defaultInstantReward}
-              onChangeText={setDefaultInstantReward}
-              colors={colors}
-            />
-            {instantRewardPreview && (
-              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
-                <Text style={[styles.previewText, { color: colors.success }]}>
-                  {instantRewardPreview}
-                </Text>
-              </Animated.View>
-            )}
-
-            {/* Conversion rate */}
-            <View style={styles.fieldGroup}>
-              <View style={styles.fieldHeader}>
-                <ArrowRightLeft size={18} color={colors.primary} />
-                <Text style={[styles.fieldLabel, { color: colors.text }]}>
-                  Cash conversion rate
-                </Text>
-              </View>
-              <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
-                How much UGX users get per N points
-              </Text>
-              <View style={styles.rateRow}>
-                <View style={styles.rateInput}>
-                  <Text style={[styles.rateLabel, { color: colors.textSecondary }]}>UGX</Text>
-                  <TextInput
-                    style={[styles.input, {
-                      color: colors.text,
-                      backgroundColor: withAlpha(colors.text, 0.04),
-                      borderColor: withAlpha(colors.border, 0.3),
-                    }]}
-                    value={cashNumerator}
-                    onChangeText={setCashNumerator}
-                    keyboardType="number-pad"
-                    accessibilityLabel="UGX amount"
-                    accessibilityHint="Cash amount users receive"
-                  />
-                </View>
-                <Text style={[styles.rateSeparator, { color: colors.textMuted }]}>per</Text>
-                <View style={styles.rateInput}>
-                  <Text style={[styles.rateLabel, { color: colors.textSecondary }]}>Points</Text>
-                  <TextInput
-                    style={[styles.input, {
-                      color: colors.text,
-                      backgroundColor: withAlpha(colors.text, 0.04),
-                      borderColor: withAlpha(colors.border, 0.3),
-                    }]}
-                    value={cashDenominator}
-                    onChangeText={setCashDenominator}
-                    keyboardType="number-pad"
-                    accessibilityLabel="Points count"
-                    accessibilityHint="Number of points for the cash amount"
-                  />
-                </View>
-              </View>
-              {previewText && (
-                <Animated.View entering={FadeIn.duration(200)}>
-                  <Text style={[styles.previewText, { color: colors.success }]}>
-                    {previewText}
+                {/* Conversion rate */}
+                <View style={styles.fieldGroup}>
+                  <View style={styles.fieldHeader}>
+                    <ArrowRightLeft size={18} color={colors.primary} />
+                    <Text style={[styles.fieldLabel, { color: colors.text }]}>
+                      Cash conversion rate
+                    </Text>
+                  </View>
+                  <Text style={[styles.fieldHint, { color: colors.textMuted }]}>
+                    How much UGX users get per N points
                   </Text>
-                </Animated.View>
-              )}
-            </View>
+                  <View style={styles.rateRow}>
+                    <View style={styles.rateInput}>
+                      <Text style={[styles.rateLabel, { color: colors.textSecondary }]}>UGX</Text>
+                      <TextInput
+                        style={[styles.input, {
+                          color: colors.text,
+                          backgroundColor: withAlpha(colors.text, 0.04),
+                          borderColor: withAlpha(colors.border, 0.3),
+                        }]}
+                        value={cashNumerator}
+                        onChangeText={setCashNumerator}
+                        keyboardType="number-pad"
+                        accessibilityLabel="UGX amount"
+                        accessibilityHint="Cash amount users receive"
+                      />
+                    </View>
+                    <Text style={[styles.rateSeparator, { color: colors.textMuted }]}>per</Text>
+                    <View style={styles.rateInput}>
+                      <Text style={[styles.rateLabel, { color: colors.textSecondary }]}>Points</Text>
+                      <TextInput
+                        style={[styles.input, {
+                          color: colors.text,
+                          backgroundColor: withAlpha(colors.text, 0.04),
+                          borderColor: withAlpha(colors.border, 0.3),
+                        }]}
+                        value={cashDenominator}
+                        onChangeText={setCashDenominator}
+                        keyboardType="number-pad"
+                        accessibilityLabel="Points count"
+                        accessibilityHint="Number of points for the cash amount"
+                      />
+                    </View>
+                  </View>
+                  {previewText && (
+                    <Animated.View entering={FadeIn.duration(200)}>
+                      <Text style={[styles.previewText, { color: colors.success }]}>
+                        {previewText}
+                      </Text>
+                    </Animated.View>
+                  )}
+                </View>
 
-            {/* Minimum withdrawal */}
-            <SettingField
-              icon={<Wallet size={18} color={colors.primary} />}
-              label="Minimum withdrawal (points)"
-              hint="Users must reach this many points before withdrawing"
-              value={minWithdrawal}
-              onChangeText={setMinWithdrawal}
-              colors={colors}
-            />
+                {/* Minimum withdrawal */}
+                <SettingField
+                  icon={<Wallet size={18} color={colors.primary} />}
+                  label="Minimum withdrawal (points)"
+                  hint="Users must reach this many points before withdrawing"
+                  value={minWithdrawal}
+                  onChangeText={setMinWithdrawal}
+                  colors={colors}
+                />
 
-            {withdrawalPreview && (
-              <View style={[styles.previewCard, { backgroundColor: withAlpha(colors.primary, 0.06) }]}>
-                <Text style={[styles.previewCardText, { color: colors.primary }]}>
-                  {withdrawalPreview}
-                </Text>
-              </View>
-            )}
+                {withdrawalPreview && (
+                  <View style={[styles.previewCard, { backgroundColor: withAlpha(colors.primary, 0.06) }]}>
+                    <Text style={[styles.previewCardText, { color: colors.primary }]}>
+                      {withdrawalPreview}
+                    </Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <>
+                {/* Default regular reward */}
+                <SettingField
+                  icon={<Coins size={18} color="#4CAF50" />}
+                  label="Default regular reward (UGX)"
+                  hint="Auto-filled when creating regular reward questions"
+                  value={defaultRegularReward}
+                  onChangeText={setDefaultRegularReward}
+                  colors={colors}
+                />
+                {regularRewardPreview && (
+                  <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                    <Text style={[styles.previewText, { color: colors.success }]}>
+                      {regularRewardPreview}
+                    </Text>
+                  </Animated.View>
+                )}
 
-            {/* Referral Bonus */}
-            <View style={styles.sectionDivider}>
-              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
-              <Text style={[styles.sectionDividerText, { color: colors.textMuted }]}>
-                Referral Program
-              </Text>
-              <View style={[styles.dividerLine, { backgroundColor: withAlpha(colors.border, 0.3) }]} />
-            </View>
+                {/* Default instant reward */}
+                <SettingField
+                  icon={<Sparkles size={18} color="#FF9800" />}
+                  label="Default instant reward (UGX)"
+                  hint="Auto-filled when creating instant reward questions"
+                  value={defaultInstantReward}
+                  onChangeText={setDefaultInstantReward}
+                  colors={colors}
+                />
+                {instantRewardPreview && (
+                  <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                    <Text style={[styles.previewText, { color: colors.success }]}>
+                      {instantRewardPreview}
+                    </Text>
+                  </Animated.View>
+                )}
 
-            <SettingField
-              icon={<Users size={18} color="#9C27B0" />}
-              label="Referral bonus (points)"
-              hint="Points awarded to both referrer and new user on signup"
-              value={referralBonus}
-              onChangeText={setReferralBonus}
-              colors={colors}
-            />
-            {referralBonusPreview && (
-              <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
-                <Text style={[styles.previewText, { color: colors.success }]}>
-                  {referralBonusPreview}
-                </Text>
-              </Animated.View>
+                {/* Referral bonus */}
+                <SettingField
+                  icon={<Users size={18} color="#9C27B0" />}
+                  label="Referral bonus (points)"
+                  hint="Points awarded to both referrer and new user on signup"
+                  value={referralBonus}
+                  onChangeText={setReferralBonus}
+                  colors={colors}
+                />
+                {referralBonusPreview && (
+                  <Animated.View entering={FadeIn.duration(200)} style={{ marginTop: -SPACING.sm }}>
+                    <Text style={[styles.previewText, { color: colors.success }]}>
+                      {referralBonusPreview}
+                    </Text>
+                  </Animated.View>
+                )}
+              </>
             )}
 
             {/* Error */}
@@ -456,6 +477,154 @@ export function RewardSettingsSheet({ visible, onClose }: RewardSettingsSheetPro
     </Modal>
   );
 }
+
+// ============================================================================
+// REWARD TAB SWITCHER SUB-COMPONENT
+// ============================================================================
+
+const TAB_SPRING_CONFIG = { damping: 20, stiffness: 300 };
+const MIN_TOUCH_TARGET = 48;
+
+interface RewardTabSwitcherProps {
+  activeTab: RewardTab;
+  onTabChange: (tab: RewardTab) => void;
+  colors: ReturnType<typeof useTheme>['colors'];
+  isDark: boolean;
+}
+
+const RewardTabSwitcher = React.memo<RewardTabSwitcherProps>(({
+  activeTab,
+  onTabChange,
+  colors,
+  isDark,
+}) => {
+  const reduceMotion = useReducedMotion();
+  const indicatorPos = useSharedValue(activeTab === 'rewards' ? 1 : 0);
+
+  useEffect(() => {
+    const target = activeTab === 'rewards' ? 1 : 0;
+    indicatorPos.value = reduceMotion
+      ? target
+      : withSpring(target, TAB_SPRING_CONFIG);
+  }, [activeTab, indicatorPos, reduceMotion]);
+
+  const handleTabPress = useCallback((tab: RewardTab) => {
+    if (tab === activeTab) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    AccessibilityInfo.announceForAccessibility(
+      tab === 'points' ? 'Showing points and rates settings' : 'Showing rewards and referrals settings'
+    );
+    onTabChange(tab);
+  }, [activeTab, onTabChange]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    left: `${indicatorPos.value * 50}%` as any,
+  }));
+
+  const pointsTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      indicatorPos.value,
+      [0, 1],
+      [isDark ? '#FFFFFF' : '#000000', isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)']
+    ),
+  }));
+
+  const rewardsTextStyle = useAnimatedStyle(() => ({
+    color: interpolateColor(
+      indicatorPos.value,
+      [0, 1],
+      [isDark ? 'rgba(255,255,255,0.55)' : 'rgba(0,0,0,0.45)', isDark ? '#FFFFFF' : '#000000']
+    ),
+  }));
+
+  const containerBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)';
+  const pillBg = isDark ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.9)';
+
+  return (
+    <View
+      role="tablist"
+      accessibilityLabel="Reward settings category tabs"
+      style={[tabStyles.container, { backgroundColor: containerBg, borderColor: withAlpha(colors.border, 0.3) }]}
+    >
+      <Animated.View style={[tabStyles.indicator, { backgroundColor: pillBg }, indicatorStyle]} />
+
+      <Pressable
+        style={tabStyles.tab}
+        onPress={() => handleTabPress('points')}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: activeTab === 'points' }}
+        accessibilityLabel="Points and Rates"
+        accessibilityHint="Show points and conversion rate settings"
+      >
+        <Coins
+          size={16}
+          color={activeTab === 'points' ? colors.text : withAlpha(colors.text, 0.45)}
+          strokeWidth={2}
+        />
+        <Animated.Text style={[tabStyles.tabText, pointsTextStyle]}>
+          Points & Rates
+        </Animated.Text>
+      </Pressable>
+
+      <Pressable
+        style={tabStyles.tab}
+        onPress={() => handleTabPress('rewards')}
+        accessibilityRole="tab"
+        accessibilityState={{ selected: activeTab === 'rewards' }}
+        accessibilityLabel="Rewards and Referrals"
+        accessibilityHint="Show reward defaults and referral bonus settings"
+      >
+        <Gift
+          size={16}
+          color={activeTab === 'rewards' ? colors.text : withAlpha(colors.text, 0.45)}
+          strokeWidth={2}
+        />
+        <Animated.Text style={[tabStyles.tabText, rewardsTextStyle]}>
+          Rewards & Referrals
+        </Animated.Text>
+      </Pressable>
+    </View>
+  );
+});
+
+RewardTabSwitcher.displayName = 'RewardTabSwitcher';
+
+const tabStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    borderRadius: RADIUS.lg,
+    borderWidth: BORDER_WIDTH.thin,
+    padding: 3,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  indicator: {
+    position: 'absolute',
+    top: 3,
+    bottom: 3,
+    width: '50%',
+    borderRadius: RADIUS.lg - 2,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    paddingVertical: SPACING.sm,
+    minHeight: MIN_TOUCH_TARGET,
+    zIndex: 1,
+  },
+  tabText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+});
 
 // ============================================================================
 // SETTING FIELD SUB-COMPONENT
@@ -543,6 +712,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tabSwitcherContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.base,
+  },
   body: {
     flexGrow: 0,
   },
@@ -619,22 +792,6 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
     flex: 1,
-  },
-  sectionDivider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: SPACING.sm,
-    marginVertical: SPACING.xs,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  sectionDividerText: {
-    fontFamily: TYPOGRAPHY.fontFamily.medium,
-    fontSize: TYPOGRAPHY.fontSize.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   footer: {
     padding: SPACING.lg,

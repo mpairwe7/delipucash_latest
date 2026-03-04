@@ -735,6 +735,26 @@ model AppConfig {
   defaultRegularRewardAmount Int      @default(200)
   defaultInstantRewardAmount Int      @default(500)
   referralBonusPoints        Int      @default(60)
+
+  // Subscription plan prices (UGX) — Survey
+  subSurveyOncePrice         Int      @default(500)
+  subSurveyDailyPrice        Int      @default(300)
+  subSurveyWeeklyPrice       Int      @default(1500)
+  subSurveyMonthlyPrice      Int      @default(5000)
+  subSurveyQuarterlyPrice    Int      @default(12000)
+  subSurveyHalfYearlyPrice   Int      @default(22000)
+  subSurveyYearlyPrice       Int      @default(40000)
+  subSurveyLifetimePrice     Int      @default(100000)
+
+  // Subscription plan prices (UGX) — Video
+  subVideoDailyPrice         Int      @default(200)
+  subVideoWeeklyPrice        Int      @default(1000)
+  subVideoMonthlyPrice       Int      @default(3500)
+  subVideoQuarterlyPrice     Int      @default(9000)
+  subVideoHalfYearlyPrice    Int      @default(16000)
+  subVideoYearlyPrice        Int      @default(28000)
+  subVideoLifetimePrice      Int      @default(70000)
+
   updatedAt                  DateTime @updatedAt
   updatedBy                  String?  @db.Uuid
 }

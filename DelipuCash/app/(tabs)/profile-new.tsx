@@ -74,6 +74,7 @@ import {
   Users,
   Copy,
   Share2,
+  CreditCard,
 } from 'lucide-react-native';
 
 // Components
@@ -117,6 +118,7 @@ import { useAuth } from '@/utils/auth/useAuth';
 import useUser from '@/utils/useUser';
 import { UserRole } from '@/types';
 import { RewardSettingsSheet } from '@/components/profile/RewardSettingsSheet';
+import { SubscriptionSettingsSheet } from '@/components/profile/SubscriptionSettingsSheet';
 import { useRewardConfig, pointsToUgx, ugxToPoints } from '@/services/configHooks';
 import { useToast } from '@/components/ui/Toast';
 import * as Clipboard from 'expo-clipboard';
@@ -662,6 +664,7 @@ export default function ProfileScreen(): React.ReactElement {
   const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showRewardSettings, setShowRewardSettings] = useState(false);
+  const [showSubscriptionSettings, setShowSubscriptionSettings] = useState(false);
   const [showQuickSettings, setShowQuickSettings] = useState(false);
   const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
   const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
@@ -795,6 +798,16 @@ export default function ProfileScreen(): React.ReactElement {
       onPress: () => setShowRewardSettings(true),
       adminOnly: true,
       accessibilityHint: 'Configure survey reward rates and withdrawal limits',
+    },
+    {
+      id: 'subscription-settings',
+      title: 'Subscription Pricing',
+      icon: CreditCard,
+      iconColor: '#2196F3',
+      iconBgColor: 'rgba(33, 150, 243, 0.1)',
+      onPress: () => setShowSubscriptionSettings(true),
+      adminOnly: true,
+      accessibilityHint: 'Configure subscription plan prices',
     },
     {
       id: 'upload-questions-file',
@@ -1629,6 +1642,11 @@ export default function ProfileScreen(): React.ReactElement {
       <RewardSettingsSheet
         visible={showRewardSettings}
         onClose={() => setShowRewardSettings(false)}
+      />
+
+      <SubscriptionSettingsSheet
+        visible={showSubscriptionSettings}
+        onClose={() => setShowSubscriptionSettings(false)}
       />
 
       {/* Quick Settings Bottom Sheet */}
