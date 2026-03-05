@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)",
+      "WebFetch(domain:docs.expo.dev)",
+      "WebFetch(domain:expo.dev)",
+      "WebSearch",
+      "Bash(tail:*)",
+      "WebFetch(domain:blog.logrocket.com)",
+      "WebFetch(domain:oneuptime.com)",
+      "WebFetch(domain:bendyworks.com)",
+      "Bash(head:*)",
+      "Bash(comm:*)",
+      "Bash(git status:*)",
+      "Bash(node scripts/upload-og-logo.mjs:*)",
+      "Bash(curl:*)",
+      "Bash(git stash:*)",
+      "Bash(npx prisma generate)",
+      "Bash(/tmp/verify_subscription.sh:*)",
+      "Bash(__NEW_LINE_a21c39a700638dfd__ bash /tmp/verify_subscription.sh)",
+      "Bash(eas whoami:*)",
+      "Bash(npx eas-cli:*)",
+      "Bash(eas:*)",
+      "Bash(node -e:*)",
+      "Bash(npx react-native-webview:*)",
+      "Bash(wc:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.swmansion.com)",
+      "WebFetch(domain:www.mux.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}
