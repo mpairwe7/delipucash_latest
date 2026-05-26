@@ -26,8 +26,13 @@
  * @module lib/circuitBreaker
  */
 
+import { redisEnabled, rGet, rSet, rIncr, rExpire, rDel, rSetNX, INSTANCE_ID } from './redis.mjs';
+
 // Inline env check to avoid circular dependency with mtnConfig
 const isSandbox = (process.env.X_TARGET_ENVIRONMENT || 'sandbox') === 'sandbox';
+
+// Hard cap on the single awaited Redis read on the payment path (fail-open).
+const REDIS_READ_TIMEOUT_MS = 800;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -187,10 +192,38 @@ class CircuitBreaker {
       this.halfOpenInFlight = true;
     }
 
-    // --- CLOSED or HALF_OPEN probe ---
+    // --- L2: fleet-wide state in Redis. Consulted ONLY when L1 is CLOSED, so we
+    // add at most one awaited GET to the happy path. Fully fail-open: when Redis
+    // is down/slow the GET returns null and we proceed as if CLOSED — a payment
+    // is never blocked because Redis is unavailable. ---
+    let isFleetProbe = false;
+    if (redisEnabled && this.state === STATE.CLOSED) {
+      const open = await rGet(`cb:${this.name}:open`, REDIS_READ_TIMEOUT_MS);
+      if (open) {
+        // The fleet has tripped this breaker. Claim the single probe slot; if we
+        // don't win it (another instance is probing), short-circuit. Note: when
+        // Redis is truly down the GET above already returned null, so we only get
+        // here when Redis is reachable and the breaker is genuinely open.
+        const won = await rSetNX(`cb:${this.name}:probe`, INSTANCE_ID, this._probeTtlSec(), REDIS_READ_TIMEOUT_MS);
+        if (won !== 'OK') {
+          const err = new Error(
+            `[CircuitBreaker:${this.name}] Circuit is OPEN (fleet) — ${this.name.toUpperCase()} API is temporarily unavailable. Retry shortly.`
+          );
+          err.circuitOpen = true;
+          err.retryAfterMs = 3000;
+          throw err;
+        }
+        isFleetProbe = true; // we hold the probe → execute fn() as the probe
+      }
+    }
+
+    // --- CLOSED, local HALF_OPEN probe, or fleet probe ---
     try {
       const result = await fn();
       this._recordSuccess();
+      if (isFleetProbe) {
+        void this._redisClose(); // probe succeeded → close the fleet breaker
+      }
       return result;
     } catch (error) {
       // Only count network/timeout errors as circuit failures.
@@ -200,6 +233,14 @@ class CircuitBreaker {
 
       if (!isClientError) {
         this._recordFailure();
+        if (redisEnabled) {
+          // Fire-and-forget: never extend payment latency with breaker writes.
+          if (isFleetProbe) {
+            void this._redisReopen(); // probe failed → re-open across the fleet
+          } else {
+            void this._redisRecordFailure(); // count toward the fleet threshold
+          }
+        }
       }
 
       throw error;
@@ -208,6 +249,39 @@ class CircuitBreaker {
         this.halfOpenInFlight = false;
       }
     }
+  }
+
+  // ---- Redis (L2) coordination helpers. All fire-and-forget & fail-open. ----
+
+  /** Probe lock TTL — must outlast a provider call so two instances can't probe
+   *  at once. Falls back to the open-state TTL but never under 20s. */
+  _probeTtlSec() {
+    return Math.max(20, Math.ceil(this.cfg.resetTimeoutMs / 1000));
+  }
+
+  /** Increment the fleet failure counter (fixed window via INCR+EXPIRE) and trip
+   *  the fleet breaker once the threshold is crossed. */
+  async _redisRecordFailure() {
+    const failKey = `cb:${this.name}:fails`;
+    const n = await rIncr(failKey);
+    if (n === null) return; // Redis unavailable — L1 already recorded it locally
+    if (n === 1) {
+      await rExpire(failKey, Math.ceil(this.cfg.failureWindowMs / 1000));
+    }
+    if (n >= this.cfg.failureThreshold) {
+      await rSet(`cb:${this.name}:open`, '1', { ex: Math.ceil(this.cfg.resetTimeoutMs / 1000) });
+    }
+  }
+
+  /** Re-open the fleet breaker after a failed probe and release the probe slot. */
+  async _redisReopen() {
+    await rSet(`cb:${this.name}:open`, '1', { ex: Math.ceil(this.cfg.resetTimeoutMs / 1000) });
+    await rDel(`cb:${this.name}:probe`);
+  }
+
+  /** Close the fleet breaker after a successful probe (clear all state). */
+  async _redisClose() {
+    await rDel([`cb:${this.name}:open`, `cb:${this.name}:fails`, `cb:${this.name}:probe`]);
   }
 
   /** Get current breaker state (for health checks / monitoring) */

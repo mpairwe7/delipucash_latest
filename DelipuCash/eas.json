@@ -16,6 +16,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease"
@@ -29,6 +30,7 @@
     },
     "production": {
       "autoIncrement": true,
+      "channel": "production",
       "env": {
         "NODE_ENV": "production",
         "EXPO_PUBLIC_TAWK_PROPERTY_ID": "69a126362b22dd1c3aff0c4d",

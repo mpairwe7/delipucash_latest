@@ -3,6 +3,7 @@ import { errorHandler } from '../utils/error.mjs';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
+import { exportUserData } from '../lib/dataExport.mjs';
 
 // ===========================================
 // User Profile Endpoints
@@ -611,4 +612,40 @@ export const getReferralStats = asyncHandler(async (req, res) => {
     referralCount,
     totalBonusEarned: totalBonus._sum.points || 0,
   });
+});
+
+// ===========================================
+// User Data Export (GDPR / Play Data Safety)
+// ===========================================
+//
+// POST /api/users/export-data
+//
+// Generates a JSON document of every record the user owns, uploads it to R2,
+// and emails the requester a 48h presigned download URL. Rate-limited to
+// once-per-24h per user to prevent storage abuse.
+export const requestUserDataExport = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const user = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { email: true, deletedAt: true },
+  });
+  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  if (user.deletedAt) {
+    return res.status(409).json({ success: false, message: 'Account scheduled for deletion — export unavailable' });
+  }
+
+  // Fire-and-forget: respond immediately, run the export in the background.
+  // Users get a friendly "we'll email you" toast, the heavy assemble + R2 upload
+  // happens off the request path so we don't risk Vercel function timeouts.
+  res.status(202).json({
+    success: true,
+    message: 'Your export is being prepared. We will email it to you within a few minutes.',
+    email: user.email,
+  });
+
+  exportUserData(userId, { email: user.email }).catch((err) =>
+    console.error('[export-data] background job failed:', err.message),
+  );
 });

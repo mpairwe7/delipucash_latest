@@ -1,6 +1,13 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+import { getStore, mediaCacheMaxMs } from '../lib/memoryCache.mjs';
+
+// In-process cache for the public ad feed. The response is fully global (no
+// per-user state), so it is safe to cache by query params. 5 min TTL — well
+// under the signed-URL lifetime (DOWNLOAD_URL_EXPIRY = 24h).
+const adsCache = getStore('ads', 200);
+const ADS_TTL_MS = Math.min(5 * 60 * 1000, mediaCacheMaxMs(URL_EXPIRY.DOWNLOAD_URL_EXPIRY));
 
 /**
  * Replace public R2 URLs with signed URLs for ad media.
@@ -395,8 +402,13 @@ export const getAllAds = asyncHandler(async (req, res) => {
       sponsored, 
       userId,
       limit = 50,
-      offset = 0 
+      offset = 0
     } = req.query;
+
+    // Serve from cache when warm (key on every param that varies the result).
+    const cacheKey = `ads:${type || ''}:${placement || ''}:${status || ''}:${sponsored ?? ''}:${userId || ''}:${limit}:${offset}`;
+    const cachedPayload = adsCache.get(cacheKey);
+    if (cachedPayload) return res.json(cachedPayload);
 
     // Build where clause — default to approved ads only (public feed safety)
     const where = { isActive: true, status: 'approved' };
@@ -476,7 +488,7 @@ export const getAllAds = asyncHandler(async (req, res) => {
     const bannerAd = formattedAds.find(ad => ad.type === 'banner') || null;
     const regularAds = formattedAds.filter(ad => ad.type === 'regular' || !ad.type);
    
-    res.json({
+    const payload = {
       success: true,
       data: {
         ads: regularAds,
@@ -490,7 +502,9 @@ export const getAllAds = asyncHandler(async (req, res) => {
         offset: parseInt(offset),
         hasMore: parseInt(offset) + parseInt(limit) < total,
       }
-    });
+    };
+    adsCache.set(cacheKey, payload, ADS_TTL_MS);
+    res.json(payload);
 
   } catch (error) {
     console.error("Error fetching ads:", error);

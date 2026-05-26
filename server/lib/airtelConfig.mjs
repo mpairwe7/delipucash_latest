@@ -16,6 +16,7 @@ import axios from 'axios';
 import { isSandbox, tokenCache, EXPIRY_BUFFER_MS } from './mtnConfig.mjs';
 import { createPaymentLogger } from './paymentLogger.mjs';
 import { getBreaker } from './circuitBreaker.mjs';
+import { redisEnabled, rGet, rSet, sharedTokenRefresh } from './redis.mjs';
 
 const log = createPaymentLogger('airtel');
 const breaker = getBreaker('airtel');
@@ -70,7 +71,16 @@ export const getAirtelToken = async () => {
     return cached.token;
   }
 
-  // Coalesce concurrent refresh requests (thundering herd guard)
+  // L2: a sibling instance may already hold a fresh token in shared Redis.
+  if (redisEnabled) {
+    const shared = await rGet(`tok:${cacheKey}`, 800);
+    if (shared && shared.token && Date.now() < shared.expiresAt) {
+      tokenCache[cacheKey] = shared; // hydrate L1
+      return shared.token;
+    }
+  }
+
+  // Coalesce concurrent refresh requests within this instance (herd guard)
   if (inflightRequests[cacheKey]) {
     return inflightRequests[cacheKey];
   }
@@ -109,6 +119,12 @@ export const getAirtelToken = async () => {
       const expiresAt = Date.now() + Math.max(ttl - EXPIRY_BUFFER_MS, MIN_CACHE_MS);
 
       tokenCache[cacheKey] = { token: accessToken, expiresAt };
+      // Share across instances (best-effort, fire-and-forget). TTL = buffered
+      // remaining lifetime so readers never receive a near-expired token.
+      if (redisEnabled) {
+        const ttlSec = Math.max(30, Math.floor((expiresAt - Date.now()) / 1000));
+        void rSet(`tok:${cacheKey}`, { token: accessToken, expiresAt }, { ex: ttlSec });
+      }
       log.info('Fresh Airtel token acquired', { expiresIn });
       return accessToken;
     } catch (error) {
@@ -124,7 +140,19 @@ export const getAirtelToken = async () => {
     }
   };
 
-  inflightRequests[cacheKey] = fetchToken().finally(() => {
+  // Cross-instance lock so only one instance refreshes at a time, with a
+  // poll-or-proceed fallback that never blocks a payment.
+  inflightRequests[cacheKey] = sharedTokenRefresh(
+    cacheKey,
+    fetchToken,
+    (shared) => {
+      if (shared && shared.token && Date.now() < shared.expiresAt) {
+        tokenCache[cacheKey] = shared;
+        return shared.token;
+      }
+      return null;
+    },
+  ).finally(() => {
     delete inflightRequests[cacheKey];
   });
 

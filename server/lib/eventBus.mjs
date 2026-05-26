@@ -1,5 +1,6 @@
 import prisma from './prisma.mjs';
 import { isListenerActive } from './pgNotify.mjs';
+import { REALTIME_ENABLED } from './realtimeFlag.mjs';
 
 /**
  * Publish an event to the SSE event log.
@@ -21,6 +22,11 @@ import { isListenerActive } from './pgNotify.mjs';
  * @returns {Promise<{ id: string, seq: number } | null>}
  */
 export async function publishEvent(userId, type, payload) {
+  // Real-time disabled (serverless default): skip the SSEEvent write entirely.
+  // Nothing consumes these rows when SSE is off, so persisting them would be
+  // dead writes that grow the table unbounded. Delivery is via Expo Push/polling.
+  if (!REALTIME_ENABLED) return null;
+
   try {
     // Guard: validate payload won't cause issues downstream
     const payloadStr = JSON.stringify(payload);
@@ -61,6 +67,7 @@ export async function publishEvent(userId, type, payload) {
  * @param {Object} payload - Shared JSON payload
  */
 export async function publishEventToMany(userIds, type, payload) {
+  if (!REALTIME_ENABLED) return; // SSE disabled — skip dead writes (see publishEvent)
   if (!userIds || userIds.length === 0) return;
 
   const BATCH_SIZE = 500;

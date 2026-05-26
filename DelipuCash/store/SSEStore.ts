@@ -29,13 +29,19 @@ export interface SSEActions {
   startBurstPolling: (durationMs?: number) => void;
 }
 
+// 2026 cutover: SSE is no longer the canonical realtime channel — Expo Push
+// + TanStack Query polling fallback own delivery now. We keep the SSE store
+// intact (status, burstUntil, etc.) so existing consumers don't break and we
+// can re-enable per-feature later (e.g. for live chat) without code surgery.
+// `isEnabled: false` here ensures useSSEConnection short-circuits, status
+// stays 'disconnected', and selectNeedsPolling returns true → polling kicks in.
 export const useSSEStore = create<SSEState & SSEActions>()(
   devtools((set) => ({
   status: 'disconnected',
   lastEventId: null,
   reconnectAttempt: 0,
   lastError: null,
-  isEnabled: true,
+  isEnabled: false,
   burstUntil: 0,
 
   setStatus: (status) => set({ status }),

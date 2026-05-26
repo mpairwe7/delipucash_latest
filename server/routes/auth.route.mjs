@@ -20,6 +20,9 @@ import {
     forgotPassword,
     resetPassword,
     validateResetToken,
+    requestAccountDeletion,
+    registerPushToken,
+    getReferralStats,
 } from '../controllers/auth.controller.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
@@ -59,5 +62,14 @@ router.post("/two-factor/resend", verifyToken, resend2FACode);     // Resend ver
 router.post("/two-factor/send", send2FALoginCode);                 // Send 2FA code during login
 router.post("/two-factor/verify-login", verify2FALoginCode);       // Verify 2FA code to complete login
 router.post("/two-factor/verify-magic-link", verifyMagicLink);     // Verify magic link to complete login
+
+// Account lifecycle (Play Store policy mandate)
+router.post("/delete-account", verifyToken, requestAccountDeletion);
+
+// Push notifications (Expo Push Service)
+router.post("/push-token", verifyToken, registerPushToken);
+
+// Referral stats for current user
+router.get("/referral", verifyToken, getReferralStats);
 
 export default router;

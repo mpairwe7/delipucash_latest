@@ -90,6 +90,71 @@ export const verifyLoginRedirect = (req, res) => {
 };
 
 /**
+ * GET /invite/:code
+ *
+ * Referral link landing page. Same smart-redirect pattern: if the user has
+ * the app installed, App Links open it directly; otherwise we encourage
+ * Play Store / App Store install while preserving the code so signup can
+ * still credit the inviter on first launch.
+ */
+export const inviteRedirect = (req, res) => {
+  const { code } = req.params;
+  if (!code || !/^[A-Za-z0-9]{4,16}$/.test(code)) {
+    return res.status(400).send(generateErrorPage('Invalid invite code.'));
+  }
+  const safeCode = escapeHtml(code).toUpperCase();
+  const deepLink = `${APP_SCHEME}://invite/${encodeURIComponent(safeCode)}`;
+  const playStoreUrl = process.env.GOOGLE_PLAY_URL || 'https://play.google.com/store/apps/details?id=com.arolainc.DelipuCash';
+  const appStoreUrl = process.env.APP_STORE_URL || 'https://apps.apple.com/app/delipucash';
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Join DelipuCash with code ${safeCode}</title>
+  <meta property="og:title" content="Join DelipuCash" />
+  <meta property="og:description" content="Earn real cash by answering questions. Sign up with code ${safeCode} to get a head-start." />
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+           background: linear-gradient(180deg, #1a1a2e 0%, #0f0f23 100%);
+           color: #fff; min-height: 100vh; margin: 0; display: flex; align-items: center;
+           justify-content: center; padding: 24px; }
+    .card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 24px; padding: 32px; max-width: 420px; text-align: center; }
+    h1 { font-size: 28px; margin-top: 0; }
+    .code { display: inline-block; padding: 12px 20px; background: rgba(108,99,255,0.15);
+            border: 1px solid rgba(108,99,255,0.4); border-radius: 12px; font-size: 28px;
+            letter-spacing: 6px; font-weight: 700; margin: 16px 0; }
+    .btn { display: block; padding: 14px 24px; background: #4D4DFF; color: #fff;
+           text-decoration: none; border-radius: 12px; font-weight: 600; margin-top: 12px; }
+    .btn.secondary { background: transparent; border: 1px solid rgba(255,255,255,0.2); }
+    p { color: rgba(255,255,255,0.7); line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>You've been invited!</h1>
+    <p>Earn real cash on DelipuCash by answering questions, watching videos, and completing surveys. Sign up with this code:</p>
+    <div class="code">${safeCode}</div>
+    <p style="font-size:14px;">Both you and your friend get 500 bonus points after your first successful withdrawal.</p>
+    <a class="btn" href="${deepLink}">Open DelipuCash</a>
+    <a class="btn secondary" href="${playStoreUrl}">Get on Google Play</a>
+    <a class="btn secondary" href="${appStoreUrl}">Get on App Store</a>
+  </div>
+  <script>
+    // Try the app deep link first; if nothing handles it within 800ms, leave the
+    // page on the install CTAs so the user can grab the app from the store.
+    setTimeout(function() { window.location.href = ${JSON.stringify(deepLink)}; }, 100);
+    // Stash the code in localStorage as a fallback for web-only signups.
+    try { localStorage.setItem('delipucash_referral_code', ${JSON.stringify(safeCode)}); } catch (e) {}
+  </script>
+</body>
+</html>`);
+};
+
+/**
  * GET /.well-known/apple-app-site-association
  *
  * Required by iOS to verify Universal Links.
@@ -109,7 +174,7 @@ export const appleAppSiteAssociation = (req, res) => {
       details: [
         {
           appID: `${teamId}.${bundleId}`,
-          paths: ['/reset-password*', '/verify-login*', '/video/*'],
+          paths: ['/reset-password*', '/verify-login*', '/video/*', '/invite/*'],
         },
       ],
     },

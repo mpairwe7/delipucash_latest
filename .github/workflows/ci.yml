@@ -1,0 +1,131 @@
+# =============================================================================
+# CI — runs on every PR + push to main.
+#
+# Jobs:
+#   1. mobile-typecheck-lint  — TypeScript + ESLint on the Expo app
+#   2. mobile-test            — Jest unit tests for client code
+#   3. server-test            — Bun test for backend (controllers, lib helpers)
+#
+# Maestro smoke tests run in a separate workflow (maestro.yml) because they
+# require an Android emulator and take 10+ minutes.
+#
+# Requires the existing `secret-scan.yml` workflow to also pass on PR.
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, develop, staging]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-typecheck-lint:
+    name: Mobile — typecheck + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: DelipuCash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: |
+            DelipuCash/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-mobile-${{ hashFiles('DelipuCash/bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: TypeScript check
+        run: bunx tsc --noEmit
+
+      - name: ESLint
+        run: bun run lint
+
+  mobile-test:
+    name: Mobile — unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: DelipuCash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: |
+            DelipuCash/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-mobile-${{ hashFiles('DelipuCash/bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Jest tests
+        run: bunx jest --ci --reporters=default --maxWorkers=2
+        env:
+          NODE_ENV: test
+
+  server-test:
+    name: Server — unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Cache bun install
+        uses: actions/cache@v4
+        with:
+          path: |
+            server/node_modules
+            ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-server-${{ hashFiles('server/bun.lock') }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bunx prisma generate
+
+      - name: Run server tests
+        run: bun test
+        env:
+          NODE_ENV: test
+          # Tests must not require live DB access; they should mock prisma.
+          # If a DB is needed, point at a local Postgres service.
+          DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
+          DIRECT_DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
+          JWT_SECRET: 'ci-test-secret-do-not-use-in-prod'

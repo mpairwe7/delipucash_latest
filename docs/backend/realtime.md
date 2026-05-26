@@ -1,5 +1,13 @@
 # Real-Time Events (SSE)
 
+> **Status (2026-05): DISABLED BY DEFAULT.** The mobile client moved to Expo Push +
+> TanStack Query polling (`SSEStore.isEnabled = false`), so SSE and the PostgreSQL
+> `LISTEN/NOTIFY` connection are gated behind `REALTIME_SSE_ENABLED` (default `false`).
+> On Vercel serverless they stay **off** — enabling them opened a dedicated direct DB
+> connection per instance and forced 25s reconnect storms. The architecture below applies
+> only when the flag is enabled on a dedicated long-running instance. See
+> [Serverless Hardening](serverless-hardening.md).
+
 ## Overview
 
 DelipuCash uses Server-Sent Events (SSE) for real-time server-to-client communication. Events are stored in the `SSEEvent` database table and streamed to connected clients.
@@ -131,7 +139,12 @@ The `SSEProvider` component in the app layout manages connection lifecycle, reco
 
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
+| `REALTIME_SSE_ENABLED` | `false` (default) | Master switch — when false, SSE/LISTEN are off and the parameters below do not apply |
 | Poll interval | 3 seconds | How often stream checks for new events |
-| Heartbeat | 10 seconds | Keep-alive for proxies |
-| Connection TTL | 25 seconds | Vercel serverless limit |
+| Heartbeat | 10 seconds (`SSE_HEARTBEAT_MS`) | Keep-alive for proxies |
+| Connection TTL | 25 seconds (`SSE_CONNECTION_TTL_MS`) | Vercel serverless limit |
 | Event TTL | 10 minutes | Auto-cleanup of old events |
+
+When `REALTIME_SSE_ENABLED` is unset/false (the serverless default), `publishEvent` is a
+no-op, the `/api/sse` and `/api/realtime` routes are not mounted, and no `LISTEN`
+connection is opened. Enable it only on a dedicated long-running (non-serverless) instance.

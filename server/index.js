@@ -1,5 +1,11 @@
 import express from 'express';
 import dotenv from 'dotenv';
+
+// dotenv must load BEFORE Sentry so SENTRY_DSN is available at init.
+dotenv.config();
+
+import './lib/sentry.mjs'; // side-effect init — must be imported before any route handlers
+import * as Sentry from '@sentry/node';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import path from 'path';
@@ -8,6 +14,7 @@ import bodyParser from 'body-parser';
 import connectDB from './config/db.mjs';
 import { ensureDefaultAdminExists } from './utils/adminInit.mjs';
 import { initListener, shutdownListener } from './lib/pgNotify.mjs';
+import { REALTIME_ENABLED } from './lib/realtimeFlag.mjs';
 
 // Import routes
 import authRouter from './routes/auth.route.mjs';
@@ -37,10 +44,9 @@ import surveyImportRoutes from './routes/surveyImportRoutes.mjs';
 import configRoutes from './routes/configRoutes.mjs';
 import followRoutes from './routes/followRoutes.mjs';
 import transactionRoutes from './routes/transactionRoutes.mjs';
-import { resetPasswordRedirect, verifyLoginRedirect, appleAppSiteAssociation, androidAssetLinks } from './controllers/deepLinkController.mjs';
+import { resetPasswordRedirect, verifyLoginRedirect, appleAppSiteAssociation, androidAssetLinks, inviteRedirect } from './controllers/deepLinkController.mjs';
 import { videoOgRedirect } from './controllers/ogController.mjs';
-
-dotenv.config();
+import { accountDeletionPage } from './controllers/accountDeletionPageController.mjs';
 
 console.log('Bootstrapping API server...');
 
@@ -52,10 +58,14 @@ connectDB`SELECT 1`.catch((err) =>
   console.warn('[DB] Initial health check failed:', err.message)
 );
 
-// Initialize PostgreSQL LISTEN/NOTIFY for real-time SSE push (non-blocking)
-initListener().catch((err) =>
-  console.warn('[PgNotify] Initial LISTEN setup failed:', err.message)
-);
+// Initialize PostgreSQL LISTEN/NOTIFY for real-time SSE push (non-blocking).
+// Gated behind REALTIME_SSE_ENABLED — disabled on serverless so we never open a
+// dedicated direct Postgres connection per instance (see lib/realtimeFlag.mjs).
+if (REALTIME_ENABLED) {
+  initListener().catch((err) =>
+    console.warn('[PgNotify] Initial LISTEN setup failed:', err.message)
+  );
+}
 
 // Middleware
 app.use(express.json());
@@ -115,8 +125,10 @@ app.use('/public', express.static(path.join(__dirname, 'public'), {
 app.get('/reset-password', resetPasswordRedirect);
 app.get('/verify-login', verifyLoginRedirect);
 app.get('/video/:id', videoOgRedirect); // OG meta + smart redirect for shared videos
+app.get('/invite/:code', inviteRedirect); // Referral landing page → app deep link
 app.get('/.well-known/apple-app-site-association', appleAppSiteAssociation);
 app.get('/.well-known/assetlinks.json', androidAssetLinks);
+app.get('/delete-account', accountDeletionPage); // Play Store policy mandate
 
 // API Routes
 app.use('/api/rewards', rewardRoutes);
@@ -141,8 +153,12 @@ app.use('/api/surveys', surveyWebhookRoutes); // Survey webhook routes
 app.use('/api/surveys', surveyTemplateRoutes); // Survey template routes
 app.use('/api/surveys', surveyCollabRoutes); // Survey collaboration routes
 app.use('/api/surveys', surveyImportRoutes); // Survey import preview & samples
-app.use('/api/sse', sseRoutes); // Server-Sent Events stream (legacy)
-app.use('/api/realtime', realtimeRoutes); // Real-time SSE via LISTEN/NOTIFY (canonical)
+// Real-time SSE routes — only mounted when REALTIME_SSE_ENABLED=true. When
+// disabled, clients receive 404 and fall back to polling (their default).
+if (REALTIME_ENABLED) {
+  app.use('/api/sse', sseRoutes); // Server-Sent Events stream (legacy)
+  app.use('/api/realtime', realtimeRoutes); // Real-time SSE via LISTEN/NOTIFY (canonical)
+}
 app.use('/api/config', configRoutes); // App configuration (reward rates, etc.)
 app.use('/api/follows', followRoutes); // Creator follow graph + user blocks
 app.use('/api/transactions', transactionRoutes); // Unified transaction history
@@ -156,13 +172,17 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Sentry error handler must be registered BEFORE our custom error middleware
+// so it can capture the error and attach request context.
+Sentry.setupExpressErrorHandler(app);
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   const statusCode = err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
-  
+
   console.error('Error:', err);
-  
+
   return res.status(statusCode).json({
     success: false,
     statusCode,
@@ -195,7 +215,9 @@ if (process.env.VERCEL !== '1') {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`Health check: http://localhost:${PORT}/api/health`);
-    console.log(`Real-time SSE: http://localhost:${PORT}/api/realtime/sse`);
+    if (REALTIME_ENABLED) {
+      console.log(`Real-time SSE: http://localhost:${PORT}/api/realtime/sse`);
+    }
 
     // Ensure default admin user exists
     await ensureDefaultAdminExists();

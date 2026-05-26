@@ -68,7 +68,11 @@
       "Bash(git log:*)",
       "Bash(git check-ignore:*)",
       "WebFetch(domain:embed.tawk.to)",
-      "WebFetch(domain:tawk.to)"
+      "WebFetch(domain:tawk.to)",
+      "Bash(bun add:*)",
+      "Read(//tmp/**)",
+      "Bash(command -v pg_ctl)",
+      "Bash(getent hosts:*)"
     ]
   }
 }

@@ -2,6 +2,16 @@ import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+import { getStore, cached, mediaCacheMaxMs } from '../lib/memoryCache.mjs';
+
+// In-process caches for video feeds. Media payloads embed signed R2 URLs (24h
+// expiry), so these short TTLs sit far under the safe ceiling. getAllVideos uses
+// a split cache (global rows cached, per-user like/bookmark flags overlaid live);
+// trending is cached per-user because its filtering is user-specific.
+const videoCache = getStore('videos', 300);
+const trendingCache = getStore('videosTrending', 200);
+const VIDEO_TTL_MS = Math.min(5 * 60 * 1000, mediaCacheMaxMs(URL_EXPIRY.DOWNLOAD_URL_EXPIRY));
+const TRENDING_TTL_MS = Math.min(3 * 60 * 1000, mediaCacheMaxMs(URL_EXPIRY.DOWNLOAD_URL_EXPIRY));
 
 /**
  * Replace public R2 URLs with signed download URLs.
@@ -254,7 +264,12 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
   try {
     const { userId } = req.params;
 
-    // Fetch videos for the specified user
+    // Global: a user's video list is identical for every viewer (no per-user
+    // overlay), so cache by userId. Embeds signed URLs (24h) → short TTL is safe.
+    const cacheKey = `byuser:${userId}`;
+    const cachedPayload = videoCache.get(cacheKey);
+    if (cachedPayload) return res.json(cachedPayload);
+
     const videos = await prisma.video.findMany({
       where: { userId },
       include: {
@@ -270,7 +285,6 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
       orderBy: {
         createdAt: 'desc'
       },
-      // Prisma Accelerate: Long-lived cache for user videos (1 hour TTL, 10 min SWR)
     });
 
     const signedVideos = await Promise.all(videos.map(async (video) => {
@@ -288,10 +302,12 @@ export const getVideosByUser = asyncHandler(async (req, res) => {
       };
     }));
 
-    res.json({
+    const payload = {
       message: 'Videos fetched successfully',
       videos: signedVideos,
-    });
+    };
+    videoCache.set(cacheKey, payload, VIDEO_TTL_MS);
+    res.json(payload);
   } catch (error) {
     console.error('Error fetching user videos:', error);
     res.status(500).json({ message: 'Failed to fetch videos' });
@@ -317,73 +333,77 @@ export const getAllVideos = asyncHandler(async (req, res) => {
     // Optional authenticated user (set by optionalAuth middleware)
     const authUserId = req.user?.id;
 
-    const [videos, total, activeLivestreams, userLikes, userBookmarks] = await Promise.all([
-      prisma.video.findMany({
-        include: {
-          user: {
-            select: {
-              id: true,
-              firstName: true,
-              lastName: true,
-              avatar: true,
+    // --- Global part (cached): video rows + signed URLs + live badges, with
+    // per-user flags left false. This is the expensive part (findMany + N
+    // presigns) and is identical for every viewer of this page. ---
+    const cacheKey = `all:${sortBy}:${page}:${limit}`;
+    const base = await cached(videoCache, cacheKey, VIDEO_TTL_MS, async () => {
+      const [videos, total, activeLivestreams] = await Promise.all([
+        prisma.video.findMany({
+          include: {
+            user: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                avatar: true,
+              },
             },
           },
-        },
-        orderBy,
-        skip,
-        take: limit,
-      }),
-      prisma.video.count(),
-      // Fetch active livestream userIds for live badge
-      prisma.livestream.findMany({
-        where: { status: 'live' },
-        select: { userId: true, sessionId: true },
-      }),
-      // Per-user like status (only if authenticated)
-      authUserId
-        ? prisma.videoLike.findMany({
-            where: { userId: authUserId },
-            select: { videoId: true },
-          })
-        : Promise.resolve([]),
-      // Per-user bookmark status (only if authenticated)
-      authUserId
-        ? prisma.videoBookmark.findMany({
-            where: { userId: authUserId },
-            select: { videoId: true },
-          })
-        : Promise.resolve([]),
-    ]);
+          orderBy,
+          skip,
+          take: limit,
+        }),
+        prisma.video.count(),
+        // Fetch active livestream userIds for live badge
+        prisma.livestream.findMany({
+          where: { status: 'live' },
+          select: { userId: true, sessionId: true },
+        }),
+      ]);
 
-    // Build a map of userId → sessionId for active livestreams
-    const liveUserMap = new Map(
-      activeLivestreams.map((ls) => [ls.userId, ls.sessionId])
-    );
-    const likedSet = new Set(userLikes.map(l => l.videoId));
-    const bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+      const liveUserMap = new Map(
+        activeLivestreams.map((ls) => [ls.userId, ls.sessionId])
+      );
+      const videos_ = await Promise.all(videos.map(async (video) => {
+        const signed = await signVideoUrls(video);
+        return formatVideoResponse(video, signed, {
+          isLive: liveUserMap.has(video.userId),
+          livestreamSessionId: liveUserMap.get(video.userId) || null,
+        });
+      }));
+      return { videos: videos_, total, totalPages: Math.ceil(total / limit) };
+    });
 
-    const formattedVideos = await Promise.all(videos.map(async (video) => {
-      const signed = await signVideoUrls(video);
-      return formatVideoResponse(video, signed, {
-        isLiked: likedSet.has(video.id),
-        isBookmarked: bookmarkedSet.has(video.id),
-        isLive: liveUserMap.has(video.userId),
-        livestreamSessionId: liveUserMap.get(video.userId) || null,
-      });
+    // --- Per-user overlay (always fresh, cheap): like/bookmark flags. Never
+    // mutate the cached objects — spread into new ones. ---
+    let likedSet = new Set();
+    let bookmarkedSet = new Set();
+    if (authUserId) {
+      const [userLikes, userBookmarks] = await Promise.all([
+        prisma.videoLike.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
+        prisma.videoBookmark.findMany({ where: { userId: authUserId }, select: { videoId: true } }),
+      ]);
+      likedSet = new Set(userLikes.map(l => l.videoId));
+      bookmarkedSet = new Set(userBookmarks.map(b => b.videoId));
+    }
+
+    const data = base.videos.map((v) => ({
+      ...v,
+      isLiked: likedSet.has(v.id),
+      isBookmarked: bookmarkedSet.has(v.id),
     }));
-
-    const totalPages = Math.ceil(total / limit);
 
     res.json({
       success: true,
       message: 'All videos fetched successfully',
-      data: formattedVideos,
+      data,
       pagination: {
         page,
         limit,
-        total,
-        totalPages,
-        hasMore: page < totalPages,
+        total: base.total,
+        totalPages: base.totalPages,
+        hasMore: page < base.totalPages,
       },
     });
   } catch (error) {
@@ -470,6 +490,14 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
     const country = req.query.country || null;
     const language = req.query.language || null;
     const authUserId = req.user?.id;
+
+    // Trending filtering is per-user (blocked/hidden creators change which videos
+    // appear) and the scoring/signing over up to 250 rows is expensive, so cache
+    // the full payload keyed by user. 'anon' shares one entry across all
+    // unauthenticated requests. Per-user like/bookmark state may lag by one TTL.
+    const cacheKey = `trending:${country || ''}:${language || ''}:${page}:${limit}:${authUserId || 'anon'}`;
+    const cachedPayload = trendingCache.get(cacheKey);
+    if (cachedPayload) return res.json(cachedPayload);
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
@@ -590,12 +618,14 @@ export const getTrendingVideos = asyncHandler(async (req, res) => {
     // Strip internal scoring field before sending to client
     const cleanPaged = paged.map(({ _trendingScore, ...video }) => video);
 
-    res.json({
+    const payload = {
       success: true,
       message: 'Trending videos fetched successfully',
       data: cleanPaged,
       pagination: { page, limit, total: capped.length, totalPages, hasMore: page < totalPages },
-    });
+    };
+    trendingCache.set(cacheKey, payload, TRENDING_TTL_MS);
+    res.json(payload);
   } catch (error) {
     console.error('VideoController: getTrendingVideos - Error:', error);
     res.status(500).json({ message: 'Failed to fetch trending videos' });

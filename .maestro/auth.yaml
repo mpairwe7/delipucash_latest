@@ -1,0 +1,46 @@
+# Smoke: signup → onboarding → home
+#
+# Run with: maestro test .maestro/auth.yaml
+# Docs:    https://maestro.mobile.dev/
+
+appId: com.arolainc.DelipuCash
+---
+- launchApp:
+    clearState: true
+- assertVisible: 'Earn Real Cash'
+- tapOn: 'Get Started — Free'
+
+# Signup form
+- assertVisible: 'Create your account'
+- tapOn: 'First name'
+- inputText: 'Maestro'
+- tapOn: 'Last name'
+- inputText: 'Smoke'
+- tapOn: 'Phone'
+- inputText: '+256770000001'
+- tapOn: 'Email'
+- inputText: 'maestro+${MAESTRO_RUN_ID:-smoke}@delipucash.test'
+- tapOn: 'Password'
+- inputText: 'TestPass123'
+- tapOn: 'Confirm password'
+- inputText: 'TestPass123'
+- tapOn:
+    text: 'I agree to'
+    optional: true
+- tapOn: 'Create account'
+
+# Welcome / onboarding (3-card swipe; tap through)
+- waitForAnimationToEnd
+- assertVisible:
+    text: 'Welcome'
+    optional: true
+- tapOn:
+    id: 'continue'
+    optional: true
+- tapOn:
+    text: 'Get started'
+    optional: true
+
+# Land on home tab
+- assertVisible: 'Home'
+- assertVisible: 'Wallet'

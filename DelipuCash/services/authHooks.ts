@@ -10,7 +10,7 @@
  * Uses the canonical API_BASE_URL from api.ts — no env drift.
  */
 
-import { useMutation, UseMutationResult, useQueryClient } from '@tanstack/react-query';
+import { useMutation, UseMutationResult, useQuery, useQueryClient } from '@tanstack/react-query';
 import { API_ROUTES } from './api';
 import {
   AuthData,
@@ -182,6 +182,27 @@ interface TwoFactorVerifyLoginResponse {
   token: string;
   refreshToken: string;
   user: AuthData['user'];
+}
+
+interface DeleteAccountResponse {
+  success: boolean;
+  message: string;
+  refundedPoints?: number;
+}
+
+interface ExportDataResponse {
+  success: boolean;
+  message: string;
+  email?: string;
+}
+
+interface ReferralStatsResponse {
+  success: boolean;
+  code: string;
+  shareUrl: string;
+  pending: { count: number; points: number };
+  qualified: { count: number; points: number };
+  paid: { count: number; points: number };
 }
 
 // ============================================================================
@@ -376,6 +397,103 @@ export function useVerify2FALoginMutation(): UseMutationResult<
       }
     },
     retry: false,
+  });
+}
+
+/**
+ * Account deletion (Play Store mandate).
+ * Re-authenticates with password (and 2FA OTP if enabled), then schedules
+ * the user's account for permanent deletion in 30 days. On success the
+ * caller MUST clear local auth state and route to the welcome screen —
+ * this hook does not navigate so callers can show a confirmation toast first.
+ */
+export function useDeleteAccountMutation(): UseMutationResult<
+  DeleteAccountResponse,
+  AuthApiError,
+  { password: string; code?: string; reason?: string }
+> {
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['auth', 'deleteAccount'],
+    mutationFn: (payload: { password: string; code?: string; reason?: string }) => {
+      const token = useAuthStore.getState().auth?.token;
+      return authFetch<DeleteAccountResponse>(API_ROUTES.auth.deleteAccount, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => {
+      // Drop all cached server data and clear auth so the next render
+      // sees a fully signed-out app.
+      queryClient.clear();
+      setAuth(null);
+    },
+    retry: false,
+  });
+}
+
+/**
+ * Request a JSON export of all user data (GDPR / Play Data Safety).
+ * Server replies 202 immediately and emails the link when the export finishes.
+ */
+export function useExportDataMutation(): UseMutationResult<
+  ExportDataResponse,
+  AuthApiError,
+  void
+> {
+  return useMutation({
+    mutationKey: ['user', 'exportData'],
+    mutationFn: () => {
+      const token = useAuthStore.getState().auth?.token;
+      return authFetch<ExportDataResponse>(API_ROUTES.user.exportData, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    },
+    retry: false,
+  });
+}
+
+/**
+ * Register the device's Expo Push token with the server so we can send
+ * push notifications. Idempotent — safe to call on every cold start.
+ */
+export function useRegisterPushTokenMutation(): UseMutationResult<
+  { success: boolean },
+  AuthApiError,
+  { expoPushToken: string }
+> {
+  return useMutation({
+    mutationKey: ['auth', 'pushToken'],
+    mutationFn: ({ expoPushToken }: { expoPushToken: string }) => {
+      const token = useAuthStore.getState().auth?.token;
+      return authFetch<{ success: boolean }>(API_ROUTES.auth.pushToken, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: JSON.stringify({ expoPushToken }),
+      });
+    },
+    retry: 1,
+  });
+}
+
+/**
+ * Referral stats for the current user (code, share URL, counts by status).
+ */
+export function useReferralStats(enabled = true) {
+  return useQuery<ReferralStatsResponse, AuthApiError>({
+    queryKey: ['auth', 'referral'],
+    enabled,
+    queryFn: () => {
+      const token = useAuthStore.getState().auth?.token;
+      return authFetch<ReferralStatsResponse>(API_ROUTES.auth.referral, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 }
 

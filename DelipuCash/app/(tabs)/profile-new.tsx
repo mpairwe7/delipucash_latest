@@ -75,6 +75,8 @@ import {
   Copy,
   Share2,
   CreditCard,
+  Download,
+  Trash2,
 } from 'lucide-react-native';
 
 // Components
@@ -92,6 +94,7 @@ import {
   TransactionsCard,
 } from '@/components/profile';
 import { QuickSettingsSheet } from '@/components/profile/QuickSettingsSheet';
+import { DeleteAccountSheet } from '@/components/profile/DeleteAccountSheet';
 import type { ProfileQuickAction } from '@/components/profile/QuickActionsGrid';
 import type { SettingItem } from '@/components/profile/SettingsSection';
 import type { EditProfileData } from '@/components/profile/EditProfileModal';
@@ -113,6 +116,7 @@ import {
 import { useUnreadNotificationCount } from '@/services/notificationHooks';
 import { uploadAvatarToR2 } from '@/services/r2UploadService';
 import { useSurveyCreatorAccess } from '@/services/purchasesHooks';
+import { useExportDataMutation } from '@/services/authHooks';
 import { useAuth } from '@/utils/auth/useAuth';
 
 import useUser from '@/utils/useUser';
@@ -666,6 +670,8 @@ export default function ProfileScreen(): React.ReactElement {
   const [showRewardSettings, setShowRewardSettings] = useState(false);
   const [showSubscriptionSettings, setShowSubscriptionSettings] = useState(false);
   const [showQuickSettings, setShowQuickSettings] = useState(false);
+  const [showDeleteAccountSheet, setShowDeleteAccountSheet] = useState(false);
+  const exportDataMutation = useExportDataMutation();
   const [enable2FAError, setEnable2FAError] = useState<string | null>(null);
   const [disable2FAError, setDisable2FAError] = useState<string | null>(null);
   const [enableVerificationSucceeded, setEnableVerificationSucceeded] = useState(false);
@@ -1219,6 +1225,24 @@ export default function ProfileScreen(): React.ReactElement {
   // SETTINGS ITEMS
   // ============================================================================
 
+  const handleExportData = useCallback(() => {
+    exportDataMutation.mutate(undefined, {
+      onSuccess: (data) => {
+        showToast({
+          message: data.message || 'We will email your data within a few minutes.',
+          type: 'success',
+        });
+      },
+      onError: (err) => {
+        showToast({ message: err.message || 'Could not start data export', type: 'error' });
+      },
+    });
+  }, [exportDataMutation, showToast]);
+
+  const handleDeleteAccount = useCallback(() => {
+    setShowDeleteAccountSheet(true);
+  }, []);
+
   const securitySettings: SettingItem[] = useMemo(() => [
     {
       type: 'toggle',
@@ -1250,7 +1274,46 @@ export default function ProfileScreen(): React.ReactElement {
       icon: <Smartphone size={ICON_SIZE.base} color={colors.warning} />,
       onPress: handleManageSessions,
     },
-  ], [twoFactorEnabled, handleToggle2FA, handleChangePassword, handleManageSessions, colors, profile.activeSessions, updateTwoFactorMutation.isPending]);
+    {
+      type: 'navigation',
+      id: 'referrals',
+      label: 'Refer & earn',
+      subtitle: 'Invite friends, both get 500 points',
+      icon: <Users size={ICON_SIZE.base} color={colors.success} />,
+      onPress: () => router.push('/referrals' as Href),
+      accessibilityHint: 'Share your referral code and track invites',
+    },
+    {
+      type: 'navigation',
+      id: 'export-data',
+      label: 'Export My Data',
+      subtitle: 'Get a JSON copy of everything we hold',
+      icon: <Download size={ICON_SIZE.base} color={colors.info} />,
+      onPress: handleExportData,
+      disabled: exportDataMutation.isPending,
+      accessibilityHint: 'Request a downloadable copy of all your account data',
+    },
+    {
+      type: 'navigation',
+      id: 'delete-account',
+      label: 'Delete Account',
+      subtitle: 'Permanent deletion in 30 days',
+      icon: <Trash2 size={ICON_SIZE.base} color={colors.error} />,
+      onPress: handleDeleteAccount,
+      accessibilityHint: 'Permanently delete your account after a 30-day cancellation window',
+    },
+  ], [
+    twoFactorEnabled,
+    handleToggle2FA,
+    handleChangePassword,
+    handleManageSessions,
+    handleExportData,
+    handleDeleteAccount,
+    exportDataMutation.isPending,
+    colors,
+    profile.activeSessions,
+    updateTwoFactorMutation.isPending,
+  ]);
 
   const appearanceSettings: SettingItem[] = useMemo(() => [
     {
@@ -1654,6 +1717,14 @@ export default function ProfileScreen(): React.ReactElement {
         visible={showQuickSettings}
         onClose={() => setShowQuickSettings(false)}
         onViewAllSettings={handleScrollToSettings}
+      />
+
+      {/* Permanent account deletion sheet — Play Store policy mandate */}
+      <DeleteAccountSheet
+        visible={showDeleteAccountSheet}
+        onClose={() => setShowDeleteAccountSheet(false)}
+        userEmail={profile.email}
+        twoFactorEnabled={twoFactorEnabled}
       />
     </View>
   );

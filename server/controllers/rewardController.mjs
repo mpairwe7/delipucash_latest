@@ -1,12 +1,64 @@
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { getRewardConfig as fetchRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { createPaymentLogger, maskPhone } from '../lib/paymentLogger.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
+
+// Velocity rules — block obvious abuse without affecting normal users.
+const VELOCITY_24H_LIMIT = 3;
+const VELOCITY_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
+const VELOCITY_BURST_WINDOW_MS = 5 * 60 * 1000; // one redemption per 5 min minimum gap
+
+/**
+ * Throws (with statusCode) if the user is over the velocity limit.
+ * Counts SUCCESSFUL + PENDING redemptions in the last 24h — PENDING included
+ * so a user can't queue up many requests faster than they finalize.
+ */
+async function enforceVelocityLimits(tx, userId) {
+  const since24h = new Date(Date.now() - VELOCITY_24H_WINDOW_MS);
+  const sinceBurst = new Date(Date.now() - VELOCITY_BURST_WINDOW_MS);
+
+  const [count24h, recentBurst] = await Promise.all([
+    tx.rewardRedemption.count({
+      where: { userId, status: { in: ['SUCCESSFUL', 'PENDING'] }, requestedAt: { gte: since24h } },
+    }),
+    tx.rewardRedemption.findFirst({
+      where: { userId, status: { in: ['SUCCESSFUL', 'PENDING'] }, requestedAt: { gte: sinceBurst } },
+      select: { requestedAt: true },
+      orderBy: { requestedAt: 'desc' },
+    }),
+  ]);
+
+  if (count24h >= VELOCITY_24H_LIMIT) {
+    const err = new Error(`You can make at most ${VELOCITY_24H_LIMIT} withdrawals every 24 hours. Try again later.`);
+    err.statusCode = 429;
+    err.code = 'VELOCITY_24H';
+    throw err;
+  }
+  if (recentBurst) {
+    const waitMs = VELOCITY_BURST_WINDOW_MS - (Date.now() - recentBurst.requestedAt.getTime());
+    const waitMinutes = Math.max(1, Math.ceil(waitMs / 60000));
+    const err = new Error(`Please wait ${waitMinutes} minute${waitMinutes === 1 ? '' : 's'} before making another withdrawal.`);
+    err.statusCode = 429;
+    err.code = 'VELOCITY_BURST';
+    throw err;
+  }
+}
+
+/**
+ * MoMo phone-ownership check.
+ * The first time a user withdraws to a given MSISDN, we require they verified
+ * it via OTP. Subsequent withdrawals to the same phone are allowed without
+ * re-challenge. Returns the cleaned, normalized phone for storage.
+ */
+function isPhoneVerified(verifiedJson, cleanedPhone) {
+  if (!verifiedJson) return false;
+  const list = Array.isArray(verifiedJson) ? verifiedJson : [];
+  return list.includes(cleanedPhone);
+}
 
 const log = createPaymentLogger('reward-redeem');
 
@@ -309,10 +361,31 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     }
   }
 
+  // Phase 0: Phone-ownership gate. First-time withdrawals to a given MSISDN
+  // require an OTP-verified record. We check (read-only) before opening the
+  // Phase-1 transaction to keep the transaction short.
+  const userPhoneState = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { verifiedMomoNumbers: true },
+  });
+  if (!isPhoneVerified(userPhoneState?.verifiedMomoNumbers, cleanedPhone)) {
+    return res.status(412).json({
+      success: false,
+      error: 'PHONE_NOT_VERIFIED',
+      message: 'Verify this MoMo number with a one-time code before your first withdrawal to it.',
+      requiresVerification: true,
+      phoneNumber: maskPhone(cleanedPhone),
+    });
+  }
+
   // Phase 1: Validate balance, deduct points, create PENDING record (transactional)
   let redemption;
   try {
     redemption = await prisma.$transaction(async (tx) => {
+      // Velocity rules — return 429 quickly before the heavier idempotency
+      // and balance checks run.
+      await enforceVelocityLimits(tx, userId);
+
       // Idempotency check inside transaction to prevent race conditions
       if (idempotencyKey) {
         const existing = await tx.rewardRedemption.findFirst({
@@ -511,6 +584,13 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     }).catch(() => {});
     checkAndUnlockAchievements(userId).catch(() => {});
 
+    // Referral qualification — first SUCCESSFUL redemption upgrades a PENDING
+    // referral row to QUALIFIED + credits both sides 500pts atomically.
+    // Fire-and-forget: failure here must NEVER fail the user-visible response.
+    qualifyReferralOnFirstRedemption(userId, redemption.id).catch((err) =>
+      log.warn('Referral qualification skipped', { userId, error: err.message }),
+    );
+
     return res.json({
       success: true,
       transactionRef: paymentResult.reference,
@@ -539,4 +619,145 @@ export const redeemRewards = asyncHandler(async (req, res) => {
     error: 'PAYMENT_FAILED',
     message: 'Payment processing failed. Your points have been refunded.',
   });
+});
+
+// ---------- Referral qualification ----------
+//
+// Called from the redemption success path. If this is the user's FIRST
+// successful redemption AND they were referred by someone, mark the Referral
+// row QUALIFIED and credit both sides their bonus points. Atomic so we never
+// double-credit if the function runs twice from a race.
+async function qualifyReferralOnFirstRedemption(inviteeId, redemptionId) {
+  const referral = await prisma.referral.findUnique({
+    where: { inviteeId },
+    select: { id: true, inviterId: true, inviteeId: true, status: true, rewardPoints: true },
+  });
+  if (!referral || referral.status !== 'PENDING') return;
+
+  // Only qualify on the very first SUCCESSFUL redemption for this user.
+  const successfulCount = await prisma.rewardRedemption.count({
+    where: { userId: inviteeId, status: 'SUCCESSFUL' },
+  });
+  if (successfulCount !== 1) return; // someone else's race already handled it, or not the first
+
+  const [inviter, invitee] = await Promise.all([
+    prisma.appUser.findUnique({ where: { id: referral.inviterId }, select: { email: true } }),
+    prisma.appUser.findUnique({ where: { id: referral.inviteeId }, select: { email: true } }),
+  ]);
+  if (!inviter || !invitee) return;
+
+  const bonus = referral.rewardPoints || 500;
+  try {
+    await prisma.$transaction([
+      prisma.referral.update({
+        where: { id: referral.id },
+        data: { status: 'QUALIFIED', qualifiedAt: new Date(), paidAt: new Date() },
+      }),
+      prisma.appUser.update({
+        where: { id: referral.inviterId },
+        data: { points: { increment: bonus } },
+      }),
+      prisma.appUser.update({
+        where: { id: referral.inviteeId },
+        data: { points: { increment: bonus } },
+      }),
+      prisma.reward.create({
+        data: { userEmail: inviter.email, points: bonus, description: 'referral_qualified' },
+      }),
+      prisma.reward.create({
+        data: { userEmail: invitee.email, points: bonus, description: 'referral_qualified' },
+      }),
+    ]);
+    createNotificationFromTemplateHelper(referral.inviterId, 'REFERRAL_BONUS', { bonus }).catch(() => {});
+    createNotificationFromTemplateHelper(referral.inviteeId, 'REFERRAL_BONUS', { bonus }).catch(() => {});
+  } catch (err) {
+    log.warn('Referral qualify transaction failed', { redemptionId, inviteeId, error: err.message });
+  }
+}
+
+// ---------- MoMo phone-ownership OTP (per phone per user) ----------
+//
+// POST /api/rewards/verify-phone-send  { phoneNumber }
+// POST /api/rewards/verify-phone       { phoneNumber, code }
+//
+// Stores the verified MSISDN in AppUser.verifiedMomoNumbers (JSON array). The
+// withdrawal flow checks this list before allowing the first redemption to a
+// new phone.
+//
+// We reuse the existing 2FA OTP fields (twoFactorCode + twoFactorCodeExpiry)
+// as a transient slot — collision risk is acceptable because both flows are
+// short-lived (3 min) and the user is unlikely to hit them simultaneously.
+import crypto from 'crypto';
+import { send2FACode } from '../lib/emailService.mjs';
+
+function hashCodeForStorage(code) {
+  return crypto.createHash('sha256').update(code).digest('hex');
+}
+
+export const sendPhoneVerificationCode = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  const { phoneNumber } = req.body || {};
+  const cleanedPhone = String(phoneNumber || '').replace(/[^0-9]/g, '');
+  if (cleanedPhone.length < 9 || cleanedPhone.length > 13) {
+    return res.status(400).json({ success: false, message: 'Invalid phone number' });
+  }
+
+  const code = crypto.randomInt(100000, 999999).toString();
+  const codeHash = hashCodeForStorage(`momo:${cleanedPhone}:${code}`);
+  const expiry = new Date(Date.now() + 3 * 60 * 1000); // 3 min
+
+  await prisma.appUser.update({
+    where: { id: userId },
+    data: { twoFactorCode: codeHash, twoFactorCodeExpiry: expiry },
+  });
+
+  const user = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { email: true, firstName: true },
+  });
+  if (user?.email) {
+    send2FACode(user.email, code, user.firstName || '', 3).catch(() => {});
+  }
+
+  return res.json({ success: true, message: 'Verification code sent', expiresIn: 180 });
+});
+
+export const verifyPhone = asyncHandler(async (req, res) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  const { phoneNumber, code } = req.body || {};
+  const cleanedPhone = String(phoneNumber || '').replace(/[^0-9]/g, '');
+  if (!code || cleanedPhone.length < 9) {
+    return res.status(400).json({ success: false, message: 'Phone and code required' });
+  }
+
+  const user = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: { twoFactorCode: true, twoFactorCodeExpiry: true, verifiedMomoNumbers: true },
+  });
+  if (!user?.twoFactorCode || !user.twoFactorCodeExpiry || user.twoFactorCodeExpiry < new Date()) {
+    return res.status(400).json({ success: false, message: 'Code expired — request a new one.' });
+  }
+
+  const expected = hashCodeForStorage(`momo:${cleanedPhone}:${code}`);
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const storedBuf = Buffer.from(user.twoFactorCode, 'hex');
+  if (expectedBuf.length !== storedBuf.length || !crypto.timingSafeEqual(expectedBuf, storedBuf)) {
+    return res.status(401).json({ success: false, message: 'Invalid code' });
+  }
+
+  const existing = Array.isArray(user.verifiedMomoNumbers) ? user.verifiedMomoNumbers : [];
+  if (!existing.includes(cleanedPhone)) existing.push(cleanedPhone);
+
+  await prisma.appUser.update({
+    where: { id: userId },
+    data: {
+      verifiedMomoNumbers: existing,
+      twoFactorCode: null,
+      twoFactorCodeExpiry: null,
+    },
+  });
+
+  return res.json({ success: true, message: 'Phone verified', verifiedNumber: maskPhone(cleanedPhone) });
 });

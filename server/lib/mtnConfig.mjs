@@ -17,6 +17,7 @@
 import axios from 'axios';
 import { createPaymentLogger } from './paymentLogger.mjs';
 import { getBreaker } from './circuitBreaker.mjs';
+import { redisEnabled, rGet, rSet, rDel, sharedTokenRefresh } from './redis.mjs';
 
 const log = createPaymentLogger('mtn');
 const breaker = getBreaker('mtn');
@@ -80,7 +81,16 @@ export const getMtnToken = async (product = 'collection') => {
     return cached.token;
   }
 
-  // Coalesce concurrent refresh requests (thundering herd guard)
+  // L2: a sibling instance may already hold a fresh token in shared Redis.
+  if (redisEnabled) {
+    const shared = await rGet(`tok:${cacheKey}`, 800);
+    if (shared && shared.token && Date.now() < shared.expiresAt) {
+      tokenCache[cacheKey] = shared; // hydrate L1
+      return shared.token;
+    }
+  }
+
+  // Coalesce concurrent refresh requests within this instance (herd guard)
   if (inflightRequests[cacheKey]) {
     return inflightRequests[cacheKey];
   }
@@ -116,6 +126,12 @@ export const getMtnToken = async (product = 'collection') => {
       const expiresAt = Date.now() + (expires_in * 1000) - EXPIRY_BUFFER_MS;
 
       tokenCache[cacheKey] = { token: access_token, expiresAt };
+      // Share across instances (best-effort, fire-and-forget). TTL = buffered
+      // remaining lifetime so readers never receive a near-expired token.
+      if (redisEnabled) {
+        const ttlSec = Math.max(30, Math.floor((expiresAt - Date.now()) / 1000));
+        void rSet(`tok:${cacheKey}`, { token: access_token, expiresAt }, { ex: ttlSec });
+      }
       log.info(`Fresh ${product} token acquired`, { expiresIn: expires_in });
       return access_token;
     } catch (error) {
@@ -131,7 +147,19 @@ export const getMtnToken = async (product = 'collection') => {
     }
   };
 
-  inflightRequests[cacheKey] = fetchToken().finally(() => {
+  // Cross-instance lock so only one instance refreshes at a time, with a
+  // poll-or-proceed fallback that never blocks a payment.
+  inflightRequests[cacheKey] = sharedTokenRefresh(
+    cacheKey,
+    fetchToken,
+    (shared) => {
+      if (shared && shared.token && Date.now() < shared.expiresAt) {
+        tokenCache[cacheKey] = shared;
+        return shared.token;
+      }
+      return null;
+    },
+  ).finally(() => {
     delete inflightRequests[cacheKey];
   });
 
@@ -142,6 +170,10 @@ export const getMtnToken = async (product = 'collection') => {
 export const invalidateTokenCache = () => {
   for (const key of Object.keys(tokenCache)) {
     delete tokenCache[key];
+  }
+  // Best-effort clear of the shared Redis copies for all known token keys.
+  if (redisEnabled) {
+    void rDel(['tok:mtn:collection', 'tok:mtn:disbursement', 'tok:airtel']);
   }
   console.log('[mtnConfig] Token cache cleared');
 };

@@ -24,6 +24,7 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
 import { ToastProvider } from '@/components/ui/Toast';
+import { initSentry, identifyUser, Sentry } from '@/utils/sentry';
 import { QueryClient, focusManager, onlineManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
@@ -42,6 +43,9 @@ import { telemetry } from '@/services/telemetryApi';
 
 // Suppress Reanimated false-positive warning (all .value reads are inside useAnimatedStyle)
 LogBox.ignoreLogs(['Reading from `value` during component render']);
+
+// Initialize Sentry BEFORE any component renders so early-boot errors are captured.
+initSentry();
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -277,7 +281,7 @@ function GlobalSystemBars({ isDark }: { isDark: boolean }) {
   );
 }
 
-export default function RootLayout() {
+function RootLayoutInner() {
   // Read isReady directly from Zustand — no TanStack dependency
   const isReady = useAuthStore(s => s.isReady);
   // Get theme state from custom theme store for StatusBar
@@ -371,6 +375,11 @@ export default function RootLayout() {
     }
   }, [auth, isReady]);
 
+  // Sync Sentry user identity on every auth change so crash reports are attributable.
+  useEffect(() => {
+    identifyUser(auth?.user?.id ? { id: auth.user.id } : null);
+  }, [auth?.user?.id]);
+
   // Initialize RevenueCat Purchases SDK
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -461,6 +470,7 @@ export default function RootLayout() {
               <Stack.Screen name="survey-payment" options={{ headerShown: false }} />
               <Stack.Screen name="notifications" options={{ headerShown: false }} />
               <Stack.Screen name="leaderboard" options={{ headerShown: false }} />
+              <Stack.Screen name="referrals" options={{ headerShown: false }} />
               <Stack.Screen name="video/[id]" options={{ headerShown: false }} />
               <Stack.Screen name="verify-login" options={{ headerShown: false }} />
             </Stack>
@@ -473,3 +483,5 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayoutInner);

@@ -26,7 +26,7 @@
 | Database | PostgreSQL + Prisma 7.4 ORM |
 | File Storage | Cloudflare R2 (S3-compatible) |
 | Payments | MTN MoMo + Airtel Money APIs |
-| Real-time | Server-Sent Events (SSE) |
+| Real-time | Expo Push + TanStack polling (SSE optional, off by default) |
 | Auth | JWT (access + refresh tokens) with email-based 2FA (CSPRNG OTP, timing-safe comparison) |
 | Backend Deploy | Vercel Serverless Functions |
 | Mobile Deploy | EAS Build (iOS + Android) |
@@ -73,6 +73,7 @@ delipucash_latest/
 - [Real-time (SSE)](backend/realtime.md) — Event streaming architecture
 - [File Storage (R2)](backend/storage.md) — Cloudflare R2 upload system
 - [Database](backend/database.md) — Prisma setup, caching, migrations
+- [Serverless Hardening](backend/serverless-hardening.md) — connection/state/caching fixes + production roadmap
 
 ### Frontend
 
@@ -98,6 +99,10 @@ delipucash_latest/
 - [Testing](contributing/testing.md) — Test setup and conventions
 
 ## Recent Changes
+
+### May 2026
+
+- **Serverless Hardening** — Resolved six robustness/correctness/performance issues for Vercel serverless. Gated SSE + PostgreSQL `LISTEN/NOTIFY` behind `REALTIME_SSE_ENABLED` (off by default) to stop per-instance direct DB connections and 25s reconnect storms; added **Upstash Redis** (fail-open) for shared circuit-breaker state, MTN/Airtel token cache + refresh locks, and Play Integrity nonce replay-protection; added an in-process TTL cache (`lib/memoryCache.mjs`) for video/ad/survey read endpoints (the old Accelerate `cacheStrategy` was a no-op under the pg driver adapter); replaced a high-precision `groupBy` with DB-side `DATE_TRUNC` in survey analytics; and wrapped survey response + reward crediting in a single transaction so a failed award no longer permanently blocks the user. See [Serverless Hardening](backend/serverless-hardening.md).
 
 ### February 2026
 

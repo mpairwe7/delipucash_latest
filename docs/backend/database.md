@@ -54,33 +54,27 @@ process.on('beforeExit', async () => {
 
 Prisma migrations require a direct connection because PgBouncer transaction mode doesn't support DDL statements.
 
-## Cache Strategies
+## Caching
 
-**File:** `server/lib/cacheStrategies.mjs`
+> **Important:** `cacheStrategy` (Prisma Accelerate) is **not** in use. The runtime uses the
+> `@prisma/adapter-pg` driver adapter, which silently ignores `cacheStrategy`. The legacy
+> `server/lib/cacheStrategies.mjs` tiers were never applied and are slated for removal.
 
-Five cache tiers for different data freshness requirements:
+Read caching is done **in-process** via `server/lib/memoryCache.mjs` (a TTL + approximate-LRU
+cache, per serverless instance) on the heavy read endpoints:
 
-| Strategy | TTL | SWR | Use Cases |
-|----------|-----|-----|-----------|
-| `none` | 0 | 0 | Payments, instant rewards |
-| `shortLived` | 30s | 10s | Notifications, feeds, responses |
-| `standard` | 5m | 1m | User profiles, questions, surveys |
-| `longLived` | 1h | 10m | Videos, ads, static content |
-| `aggressive` | 24h | 1h | Leaderboards, public stats |
+| Endpoint | Scope | TTL |
+|----------|-------|-----|
+| `getAllAds` | global | 5 min |
+| `getAllSurveys`, `getSurveysByStatus` | global | 90 s |
+| `getVideosByUser` | global | 5 min |
+| `getAllVideos` | split — global rows cached, per-user like/bookmark flags overlaid live | 5 min |
+| `getTrendingVideos` | per-user (`anon` shared) | 3 min |
 
-**SWR (Stale-While-Revalidate):** Serves cached data immediately while fetching fresh data in the background.
-
-### Per-Model Recommendations
-
-| Model | Strategy |
-|-------|----------|
-| AppUser | standard |
-| Question, RewardQuestion | shortLived |
-| Response, Attempt | shortLived |
-| Payment, InstantRewardWinner | none |
-| Video, Ad | longLived |
-| Notification | shortLived |
-| Survey, UploadSurvey | standard |
+Caches are TTL-only (no cross-instance invalidation yet). Media payloads embed 24h signed R2
+URLs, so the short TTLs stay well within validity. `getVideoById` is never cached — it mints
+fresh signed URLs on playback error. See [Serverless Hardening](serverless-hardening.md) for
+rationale and the cross-instance caching roadmap.
 
 ## Query Optimization
 

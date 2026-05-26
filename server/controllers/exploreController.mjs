@@ -1,5 +1,4 @@
 import prisma from '../lib/prisma.mjs';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 
 export const getExploreItems = async (req, res) => {
   try {

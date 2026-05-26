@@ -12,6 +12,10 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 import { useAppSettingsStore } from "@/store/AppSettingsStore";
+import { useAuthStore } from "@/utils/auth/store";
+import { useRegisterPushTokenMutation } from "@/services/authHooks";
+import { onlineManager, useQueryClient } from "@tanstack/react-query";
+import { router } from "expo-router";
 
 const isExpoGo =
   Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
@@ -270,6 +274,62 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
     requestPermissions();
   }, [requestPermissions]);
 
+  // Once we have an Expo push token AND the user is signed in, send the
+  // token to our backend so server-side notifications can target this device.
+  // Idempotent: re-sends if the token rotates, but no-ops on repeats with the
+  // same token because the server only updates pushTokenUpdatedAt.
+  //
+  // Offline resilience: the registration mutation has retry: 1 in the hook,
+  // but if the device boots offline that retry can also fail. We additionally
+  // listen to `onlineManager` so the token is re-attempted whenever the
+  // network comes back, and we only mark a token as "registered" after the
+  // server confirms (mutation success), not before.
+  const auth = useAuthStore((s) => s.auth);
+  const registerPushToken = useRegisterPushTokenMutation();
+  const registeredTokenRef = useRef<string | null>(null);
+  const pendingRegistrationRef = useRef<{ token: string } | null>(null);
+
+  const tryRegisterToken = useCallback((token: string, jwt: string | undefined) => {
+    if (!token || !jwt) return;
+    if (registeredTokenRef.current === token) return;
+    pendingRegistrationRef.current = { token };
+    registerPushToken.mutate(
+      { expoPushToken: token },
+      {
+        onSuccess: () => {
+          registeredTokenRef.current = token;
+          pendingRegistrationRef.current = null;
+        },
+        // onError leaves pendingRegistrationRef set; the onlineManager
+        // subscription below will retry on the next reconnect.
+      },
+    );
+  }, [registerPushToken]);
+
+  useEffect(() => {
+    if (!expoPushToken || !auth?.token) return;
+    tryRegisterToken(expoPushToken, auth.token);
+  }, [expoPushToken, auth?.token, tryRegisterToken]);
+
+  // Re-attempt registration when the device comes back online with a pending
+  // token. Mirrors the offline reward-submission queue pattern.
+  useEffect(() => {
+    const unsubscribe = onlineManager.subscribe((isOnline) => {
+      if (!isOnline) return;
+      const pending = pendingRegistrationRef.current;
+      if (!pending) return;
+      const jwt = useAuthStore.getState().auth?.token;
+      if (!jwt) return;
+      tryRegisterToken(pending.token, jwt);
+    });
+    return unsubscribe;
+  }, [tryRegisterToken]);
+
+  // Cross-cutting refresh: when ANY push lands, invalidate notifications +
+  // wallet/redemption queries so the UI snaps to fresh data without polling.
+  // Replaces the old long-lived SSE channel.
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     if (isAndroidExpoGo) {
       return undefined;
@@ -286,6 +346,19 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
         (notification) => {
           setLastNotification(notification);
           setHasNewNotification(true);
+          // Refresh notification-shaped queries on push receipt.
+          queryClient.invalidateQueries({ queryKey: ['notifications'] });
+          queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
+          queryClient.invalidateQueries({ queryKey: ['user', 'profile'] });
+          // Routing data hint (redemption result, reward earned) — invalidate
+          // the relevant feature query so the screen surfaces it instantly.
+          const data = notification.request?.content?.data as
+            | { type?: string; queryKey?: unknown }
+            | undefined;
+          if (data?.type === 'reward.earned') {
+            queryClient.invalidateQueries({ queryKey: ['rewards'] });
+            queryClient.invalidateQueries({ queryKey: ['rewardRedemptions'] });
+          }
         },
       );
 
@@ -293,6 +366,17 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
         (response) => {
           setLastResponse(response);
           setHasNewNotification(true);
+          // Deep-link from the push payload's `actionUrl` if present.
+          const data = response.notification?.request?.content?.data as
+            | { actionUrl?: string }
+            | undefined;
+          if (data?.actionUrl && typeof data.actionUrl === 'string') {
+            try {
+              router.push(data.actionUrl as never);
+            } catch {
+              // Invalid route — ignore; the in-app notification list still has it.
+            }
+          }
         },
       );
     });
@@ -302,7 +386,7 @@ export function NotificationProvider({ children }: NotificationProviderProps): R
       notificationListener.current?.remove();
       responseListener.current?.remove();
     };
-  }, []);
+  }, [queryClient]);
 
   const value = useMemo<NotificationContextValue>(() => ({
     expoPushToken,

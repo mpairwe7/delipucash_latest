@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { buildOptimizedQuery } from '../lib/queryStrategies.mjs';
 import { publishEvent } from '../lib/eventBus.mjs';
 import { getRewardConfig, ugxToPoints } from '../lib/rewardConfig.mjs';

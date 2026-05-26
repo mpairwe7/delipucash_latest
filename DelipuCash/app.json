@@ -71,6 +71,11 @@
               "scheme": "https",
               "host": "delipucash-latest.vercel.app",
               "pathPrefix": "/video"
+            },
+            {
+              "scheme": "https",
+              "host": "delipucash-latest.vercel.app",
+              "pathPrefix": "/invite"
             }
           ],
           "category": [
@@ -87,6 +92,15 @@
     "plugins": [
       "expo-router",
       "./plugins/withDisableLint.js",
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "delipucash",
+          "project": "delipucash-mobile",
+          "url": "https://sentry.io/",
+          "note": "Set SENTRY_AUTH_TOKEN in EAS build secrets for source-map upload."
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -173,6 +187,15 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/3d907cc1-a01f-435d-b9f4-7cfd7d9ef7c5",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD",
+      "enabled": true
     },
     "extra": {
       "router": {},

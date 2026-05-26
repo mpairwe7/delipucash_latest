@@ -18,6 +18,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { ArrowLeft, Lock, Mail, User, Users } from "lucide-react-native";
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
     KeyboardAvoidingView,
     Linking,
@@ -121,6 +122,30 @@ export default function SignupScreen(): React.ReactElement {
     if (deepLinkRef && typeof deepLinkRef === 'string') {
       setFormData((prev) => ({ ...prev, referralCode: deepLinkRef.trim().toUpperCase() }));
     }
+  }, [deepLinkRef]);
+
+  // Fresh-install fallback: when the user installed the app via /invite/:code
+  // (no deep link parameters in the route, but the invite handler stashed the
+  // code in AsyncStorage), pull it in here. Deep-link param above wins if both
+  // exist. We clear the storage key after read so it doesn't apply twice.
+  useEffect(() => {
+    if (deepLinkRef) return; // route param already supplied
+    let cancelled = false;
+    (async () => {
+      try {
+        const stashed = await AsyncStorage.getItem('pendingReferralCode');
+        if (cancelled || !stashed) return;
+        setFormData((prev) =>
+          prev.referralCode ? prev : { ...prev, referralCode: stashed.trim().toUpperCase() },
+        );
+        AsyncStorage.removeItem('pendingReferralCode').catch(() => {});
+      } catch {
+        // Ignore — referral codes are best-effort UX.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [deepLinkRef]);
   const [errors, setErrors] = useState<FormErrors>({});
   const [touched, setTouched] = useState<TouchedFields>({});

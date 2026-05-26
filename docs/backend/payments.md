@@ -54,7 +54,7 @@ server/controllers/
 
 ### Shared Token Cache
 
-Both providers share a single in-memory token cache exported from `mtnConfig.mjs`:
+Both providers share an in-memory token cache (L1) exported from `mtnConfig.mjs`:
 
 ```javascript
 // mtnConfig.mjs — shared exports
@@ -65,6 +65,11 @@ export const isSandbox = MTN_TARGET_ENV === 'sandbox';
 // airtelConfig.mjs — reuses the same cache
 import { isSandbox, tokenCache, EXPIRY_BUFFER_MS } from './mtnConfig.mjs';
 ```
+
+> **Shared across instances (2026-05):** when Upstash Redis is configured, tokens are also
+> cached in Redis (`tok:{key}`) behind a `SET-NX` refresh lock, so sibling serverless
+> instances reuse one token instead of each minting their own. The in-memory cache above is
+> the L1 / fail-open fallback. See [Serverless Hardening](serverless-hardening.md).
 
 ## MTN Mobile Money
 
@@ -446,6 +451,19 @@ export const getMtnToken = async (product = 'collection') => {
 ```
 
 Both `getMtnToken` and `getAirtelToken` use this pattern.
+
+### Cross-Instance Coordination (Upstash Redis)
+
+When `UPSTASH_*` is configured, token caching and the **payment circuit breaker** coordinate
+across serverless instances (fail-open — a payment is never blocked if Redis is down):
+
+- **Token cache + lock:** a shared `tok:{key}` entry plus a `SET-NX` refresh lock (with a
+  poll-or-proceed fallback) prevents every instance from minting its own token.
+- **Circuit breaker** (`lib/circuitBreaker.mjs`, wraps all MTN/Airtel calls): fleet-wide OPEN
+  state in Redis (`cb:{provider}:*`) so failure counts no longer fragment across containers,
+  and a single instance probes recovery. The in-memory breaker remains the L1 / fallback.
+
+See [Serverless Hardening](serverless-hardening.md) for the full design and rollout steps.
 
 ### Cache Invalidation
 

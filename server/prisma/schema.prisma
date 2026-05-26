@@ -74,6 +74,55 @@ model AppUser {
   // Referral system
   referralCode             String?          @unique
   referredBy               String?          @db.Uuid
+  // Outgoing referrals (where this user is the inviter)
+  referralsMade            Referral[]       @relation("ReferralInviter")
+  // Incoming referral (where this user is the invitee — only one)
+  referralReceived         Referral?        @relation("ReferralInvitee")
+
+  // Account lifecycle (Play Store mandate: in-app account deletion)
+  deletedAt                DateTime?
+  deletedReason            String?
+
+  // Push notifications (Expo Push Service)
+  expoPushToken            String?
+  pushTokenUpdatedAt       DateTime?
+
+  // Verified MoMo MSISDNs (one-time per phone per user). JSON array of E.164 strings.
+  verifiedMomoNumbers      Json?
+
+  // Last-known device fingerprint for fraud signals
+  lastDeviceId             String?
+
+  @@index([deletedAt])
+  @@index([expoPushToken])
+}
+
+// Referral — viral-loop record. One row per (inviter, invitee) pair.
+// Status flow: PENDING (signup) → QUALIFIED (first successful redemption) → PAID (points credited).
+// Currently PAID is set in the same transaction as QUALIFIED, so the two
+// states will collapse in practice; PAID is reserved for future async payouts.
+model Referral {
+  id            String           @id @default(uuid()) @db.Uuid
+  inviterId     String           @db.Uuid
+  inviteeId     String           @db.Uuid @unique
+  status        ReferralStatus   @default(PENDING)
+  rewardPoints  Int              @default(500)
+  qualifiedAt   DateTime?
+  paidAt        DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  inviter       AppUser          @relation("ReferralInviter", fields: [inviterId], references: [id])
+  invitee       AppUser          @relation("ReferralInvitee", fields: [inviteeId], references: [id])
+
+  @@index([inviterId, status])
+  @@index([status, createdAt])
+}
+
+enum ReferralStatus {
+  PENDING
+  QUALIFIED
+  PAID
 }
 
 model Video {

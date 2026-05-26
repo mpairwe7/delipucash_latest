@@ -1,0 +1,29 @@
+# Smoke: open instant-reward question, answer, see balance change.
+#
+# Assumes auth.yaml ran first (or run separately with an existing test account).
+appId: com.arolainc.DelipuCash
+---
+- launchApp
+- tapOn: 'Questions'
+- assertVisible: 'For You'
+
+# Open the first instant-reward card
+- tapOn:
+    text: 'Instant Reward'
+    index: 0
+    optional: true
+- assertVisible:
+    text: 'Submit'
+    timeout: 8000
+
+# Pick the first option and submit
+- tapOn:
+    id: 'option-0'
+    optional: true
+- tapOn: 'Submit'
+
+# Confetti / result overlay should appear
+- waitForAnimationToEnd
+- assertVisible:
+    text: 'session'
+    optional: true

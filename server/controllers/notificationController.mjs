@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import prisma from '../lib/prisma.mjs';
 import { errorHandler } from "../utils/error.mjs";
 import { publishEvent } from '../lib/eventBus.mjs';
+import pushService from '../lib/push.mjs';
 
 // Notification templates inspired by fintech apps
 const NOTIFICATION_TEMPLATES = {
@@ -131,7 +132,8 @@ const createNotificationFromTemplateHelper = async (userId, templateKey, data = 
     }
   });
 
-  // SSE: Notify user of new notification in real-time
+  // SSE: keep publishing for any clients still subscribed during the
+  // gradual cutover. New canonical delivery path is Expo Push below.
   publishEvent(userId, 'notification.new', {
     notificationId: notification.id,
     title,
@@ -139,6 +141,18 @@ const createNotificationFromTemplateHelper = async (userId, templateKey, data = 
     priority: template.priority,
     category: template.category,
   }).catch(() => {});
+
+  // Expo Push — wakes up killed apps, surfaces in the system tray. Fire-and-forget.
+  pushService
+    .send(userId, {
+      title,
+      body,
+      type: templateKey,
+      priority: template.priority,
+      actionUrl: data.actionUrl,
+      data: { notificationId: notification.id, category: template.category },
+    })
+    .catch((err) => console.warn('[notifications] push send failed:', err.message));
 
   return notification;
 };
@@ -317,7 +331,7 @@ export const createNotification = asyncHandler(async (req, res) => {
       }
     });
 
-    // SSE: Notify user of new notification in real-time
+    // SSE: keep publishing during gradual cutover; canonical delivery is push.
     publishEvent(userId, 'notification.new', {
       notificationId: notification.id,
       title,
@@ -325,6 +339,17 @@ export const createNotification = asyncHandler(async (req, res) => {
       priority,
       category,
     }).catch(() => {});
+
+    pushService
+      .send(userId, {
+        title,
+        body,
+        type,
+        priority,
+        actionUrl,
+        data: { notificationId: notification.id, category },
+      })
+      .catch((err) => console.warn('[notifications] push send failed:', err.message));
 
     res.status(201).json({
       success: true,

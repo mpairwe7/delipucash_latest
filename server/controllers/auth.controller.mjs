@@ -3,7 +3,6 @@ import prisma from '../lib/prisma.mjs';
 import bcrypt from 'bcryptjs';
 import { errorHandler } from "../utils/error.mjs";
 import jwt from 'jsonwebtoken';
-import { cacheStrategies } from '../lib/cacheStrategies.mjs';
 import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/emailService.mjs';
 import crypto from 'crypto';
 
@@ -232,6 +231,16 @@ export const signup = asyncHandler(async (req, res, next) => {
               description: 'referral_bonus',
             },
           }),
+          // Track the referral so we can later upgrade it to QUALIFIED
+          // when the invitee completes their first successful redemption.
+          prisma.referral.create({
+            data: {
+              inviterId: referrer.id,
+              inviteeId: newUser.id,
+              status: 'PENDING',
+              rewardPoints: 500,
+            },
+          }),
         ]);
 
         // Notify both parties about the bonus
@@ -246,6 +255,191 @@ export const signup = asyncHandler(async (req, res, next) => {
       }
     })();
   }
+});
+
+// ===========================================
+// Account Deletion (Play Store policy mandate)
+// ===========================================
+//
+// Soft-delete with 30-day grace period before hard-delete.
+// Re-auth required (password + OTP) to prevent hijacked-session abuse.
+// Cancels PENDING redemptions and refunds points so no money is lost in flight.
+// Revokes ALL sessions to immediately log the user out everywhere.
+//
+// Mandate: https://support.google.com/googleplay/android-developer/answer/13327826
+export const requestAccountDeletion = asyncHandler(async (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const { password, code, reason } = req.body || {};
+
+  const user = await prisma.appUser.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      email: true,
+      password: true,
+      twoFactorEnabled: true,
+      twoFactorCode: true,
+      twoFactorCodeExpiry: true,
+      twoFactorLockedUntil: true,
+      twoFactorAttempts: true,
+      points: true,
+      deletedAt: true,
+    },
+  });
+  if (!user) return res.status(404).json({ success: false, message: 'Account not found' });
+  if (user.deletedAt) {
+    return res.status(409).json({ success: false, message: 'Account already scheduled for deletion' });
+  }
+
+  // 1. Verify password (always required, even for 2FA users)
+  if (!password || typeof password !== 'string') {
+    return res.status(400).json({ success: false, message: 'Password is required to delete your account' });
+  }
+  const passwordMatch = await bcrypt.compare(password, user.password);
+  if (!passwordMatch) {
+    return res.status(401).json({ success: false, message: 'Incorrect password' });
+  }
+
+  // 2. If 2FA enabled, verify OTP
+  if (user.twoFactorEnabled) {
+    const lockout = check2FALockout(user);
+    if (lockout.locked) {
+      return res.status(429).json({
+        success: false,
+        message: `Too many attempts. Try again in ${lockout.waitSeconds} seconds.`,
+      });
+    }
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code required',
+        code: 'OTP_REQUIRED',
+      });
+    }
+    if (!user.twoFactorCode || !user.twoFactorCodeExpiry || user.twoFactorCodeExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: 'Verification code expired. Request a new one.' });
+    }
+    if (!verifyOTPCode(code, user.twoFactorCode)) {
+      await record2FAFailure(userId);
+      return res.status(401).json({ success: false, message: 'Invalid verification code' });
+    }
+  }
+
+  // 3. Refund any PENDING redemptions, mark them cancelled
+  const pending = await prisma.rewardRedemption.findMany({
+    where: { userId, status: 'PENDING' },
+    select: { id: true, cashValue: true },
+  });
+  const refundPoints = pending.reduce((sum, r) => sum + Math.ceil(r.cashValue / 50), 0); // matches AppConfig 50pts→2000UGX baseline
+
+  // 4. Soft-delete + revoke sessions + refund points + clear PII (atomic)
+  await prisma.$transaction([
+    prisma.appUser.update({
+      where: { id: userId },
+      data: {
+        deletedAt: new Date(),
+        deletedReason: typeof reason === 'string' ? reason.slice(0, 500) : null,
+        // Wipe direct PII immediately; keep id+email-hash for audit/legal trail.
+        firstName: 'deleted',
+        lastName: 'user',
+        phone: '',
+        avatar: null,
+        twoFactorEnabled: false,
+        twoFactorCode: null,
+        twoFactorCodeExpiry: null,
+        magicLinkToken: null,
+        magicLinkExpiry: null,
+        passwordResetToken: null,
+        passwordResetExpiry: null,
+        expoPushToken: null,
+        verifiedMomoNumbers: null,
+        privacySettings: null,
+        // Refund points so they're available to the user up until hard-delete
+        // (also makes downstream "no money lost" easy to audit)
+        ...(refundPoints > 0 ? { points: { increment: refundPoints } } : {}),
+      },
+    }),
+    prisma.rewardRedemption.updateMany({
+      where: { userId, status: 'PENDING' },
+      data: { status: 'FAILED', errorMessage: 'Account deleted by user', completedAt: new Date() },
+    }),
+    prisma.loginSession.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false, logoutTime: new Date() },
+    }),
+  ]);
+
+  return res.status(200).json({
+    success: true,
+    message: 'Your account is scheduled for permanent deletion in 30 days. You can cancel by signing in before then.',
+    refundedPoints: refundPoints,
+  });
+});
+
+// ===========================================
+// Push Token Registration (Expo Push Service)
+// ===========================================
+export const registerPushToken = asyncHandler(async (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+  const { expoPushToken } = req.body || {};
+  if (!expoPushToken || typeof expoPushToken !== 'string') {
+    return res.status(400).json({ success: false, message: 'expoPushToken required' });
+  }
+  // Basic shape check — Expo tokens look like ExponentPushToken[xxx]
+  if (!/^Expo(nent)?PushToken\[/.test(expoPushToken)) {
+    return res.status(400).json({ success: false, message: 'Invalid Expo push token format' });
+  }
+  await prisma.appUser.update({
+    where: { id: userId },
+    data: { expoPushToken, pushTokenUpdatedAt: new Date() },
+  });
+  return res.status(200).json({ success: true });
+});
+
+// ===========================================
+// Referral Stats (current user)
+// ===========================================
+export const getReferralStats = asyncHandler(async (req, res, next) => {
+  const userId = req.user?.id;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const [user, counts] = await Promise.all([
+    prisma.appUser.findUnique({
+      where: { id: userId },
+      select: { referralCode: true, points: true },
+    }),
+    prisma.referral.groupBy({
+      by: ['status'],
+      where: { inviterId: userId },
+      _count: { _all: true },
+      _sum: { rewardPoints: true },
+    }),
+  ]);
+
+  if (!user?.referralCode) {
+    return res.status(404).json({ success: false, message: 'Referral code not yet generated' });
+  }
+
+  const byStatus = counts.reduce((acc, row) => {
+    acc[row.status.toLowerCase()] = {
+      count: row._count._all,
+      points: row._sum.rewardPoints || 0,
+    };
+    return acc;
+  }, {});
+
+  const baseUrl = process.env.PUBLIC_SHARE_BASE_URL || 'https://delipucash-latest.vercel.app';
+  return res.status(200).json({
+    success: true,
+    code: user.referralCode,
+    shareUrl: `${baseUrl}/invite/${user.referralCode}`,
+    pending: byStatus.pending || { count: 0, points: 0 },
+    qualified: byStatus.qualified || { count: 0, points: 0 },
+    paid: byStatus.paid || { count: 0, points: 0 },
+  });
 });
 
 

@@ -9,7 +9,8 @@ import {
     updateUserProfile,
     getUserStats,
     getReferralStats,
-    revokeSession
+    revokeSession,
+    requestUserDataExport,
 } from '../controllers/userController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
 
@@ -37,4 +38,7 @@ router.post("/login-session", verifyToken, createLoginSession);
 // Individual session management (protected route)
 router.post("/sessions/:sessionId/revoke", verifyToken, revokeSession);
 
-export default router; 
+// GDPR / Play Data Safety: user requests a copy of their data
+router.post("/export-data", verifyToken, requestUserDataExport);
+
+export default router;

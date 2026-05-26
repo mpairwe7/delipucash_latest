@@ -6,6 +6,14 @@ import { processMtnPayment, processAirtelPayment } from './paymentController.mjs
 import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
+import { getStore } from '../lib/memoryCache.mjs';
+
+// In-process cache for public survey lists. These responses carry no per-user
+// fields and no signed URLs, so they are safe to cache by query params. 90s TTL
+// keeps lists fresh-ish; date-bucket boundaries (running/upcoming/completed) may
+// lag by up to one TTL, which is acceptable for a list view.
+const surveyListCache = getStore('surveyList', 200);
+const SURVEY_LIST_TTL_MS = 90 * 1000;
 
 // ---------------------------------------------------------------------------
 // Reactive survey-expiring notification (fire-and-forget, deduplicated)
@@ -599,32 +607,37 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       });
     }
 
-    // Save the responses
-    const surveyResponse = await prisma.surveyResponse.create({
-      data: {
-        userId,
-        surveyId,
-        responses: JSON.stringify(responseData),
-        completedAt: new Date(),
-      },
-    });
-
-    // Award fixed points from global config (replaces per-survey rewardAmount)
+    // Award fixed points from global config (computed before the transaction)
     const rewardConfig = await getRewardConfig();
     const pointsAwarded = rewardConfig.surveyCompletionPoints;
     const cashEquivalent = pointsToUgx(pointsAwarded, rewardConfig);
 
-    if (pointsAwarded > 0) {
-      try {
-        await prisma.appUser.update({
+    // Atomically persist the response AND credit points in a single transaction.
+    // If the points increment fails, the response create rolls back too — so the
+    // user can simply retry instead of being permanently locked out by the
+    // @@unique([userId, surveyId]) constraint with their points never granted.
+    const surveyResponse = await prisma.$transaction(async (tx) => {
+      const created = await tx.surveyResponse.create({
+        data: {
+          userId,
+          surveyId,
+          responses: JSON.stringify(responseData),
+          completedAt: new Date(),
+        },
+      });
+
+      if (pointsAwarded > 0) {
+        await tx.appUser.update({
           where: { id: userId },
           data: { points: { increment: pointsAwarded } },
         });
-        console.log(`Awarded ${pointsAwarded} points to user ${userId}`);
-      } catch (rewardError) {
-        console.error('Error awarding reward points:', rewardError);
-        // Don't fail the submission if reward fails
       }
+
+      return created;
+    });
+
+    if (pointsAwarded > 0) {
+      console.log(`Awarded ${pointsAwarded} points to user ${userId}`);
     }
 
     console.log('Survey response submitted successfully:', surveyResponse.id);
@@ -784,6 +797,16 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
   const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 20, 100));
   const skip = (page - 1) * limit;
 
+  // Fire-and-forget notification check runs regardless of cache hit/miss so it
+  // is never skipped when the list payload is served from cache.
+  if (status === 'running' && req.user?.id) {
+    checkSurveyExpiringNotifications(req.user.id).catch(() => {});
+  }
+
+  const cacheKey = `byStatus:${status}:${page}:${limit}`;
+  const cachedPayload = surveyListCache.get(cacheKey);
+  if (cachedPayload) return res.json(cachedPayload);
+
   try {
     const [surveys, total] = await Promise.all([
       prisma.survey.findMany({
@@ -800,7 +823,7 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
     ]);
 
     console.log(`Surveys fetched: ${surveys.length} of ${total}`);
-    res.json({
+    const payload = {
       success: true,
       data: surveys.map(s => ({
         ...s,
@@ -814,11 +837,9 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
         total,
         totalPages: Math.ceil(total / Number(limit)),
       },
-    });
-    // Fire-and-forget: check for expiring surveys when authenticated user fetches running surveys
-    if (status === 'running' && req.user?.id) {
-      checkSurveyExpiringNotifications(req.user.id).catch(() => {});
-    }
+    };
+    surveyListCache.set(cacheKey, payload, SURVEY_LIST_TTL_MS);
+    res.json(payload);
   } catch (error) {
     console.error('Error retrieving surveys:', error);
     res.status(500).json({ message: 'Error retrieving surveys' });
@@ -852,6 +873,10 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
   }
   // If no status, return all surveys
   
+  const cacheKey = `all:${status || ''}:${page}:${limit}`;
+  const cachedPayload = surveyListCache.get(cacheKey);
+  if (cachedPayload) return res.json(cachedPayload);
+
   try {
     const [surveys, total] = await Promise.all([
       prisma.survey.findMany({
@@ -876,7 +901,7 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
 
     console.log(`Surveys fetched: ${surveys.length} of ${total}`);
 
-    res.json({
+    const payload = {
       success: true,
       data: surveys.map(s => ({
         ...s,
@@ -890,7 +915,9 @@ export const getAllSurveys = asyncHandler(async (req, res) => {
         total,
         totalPages: Math.ceil(total / parseInt(limit)),
       },
-    });
+    };
+    surveyListCache.set(cacheKey, payload, SURVEY_LIST_TTL_MS);
+    res.json(payload);
   } catch (error) {
     console.error('Error retrieving all surveys:', error);
     res.status(500).json({
@@ -949,23 +976,24 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
         )
       : 0;
 
-    // Responses grouped by day (last 30 days) — use DB groupBy
+    // Responses grouped by day (last 30 days). Truncate to day IN POSTGRES so the
+    // DB returns at most ~30 rows. Grouping by the raw createdAt timestamp would
+    // return one group per response (millisecond precision) and push the rollup
+    // into JS memory. to_char(...) returns a plain 'YYYY-MM-DD' string, avoiding
+    // any Date/timezone parsing ambiguity from the pg ::date type.
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const dailyGroups = await prisma.surveyResponse.groupBy({
-      by: ['createdAt'],
-      where: { surveyId, createdAt: { gte: thirtyDaysAgo } },
-      _count: true,
-    });
-    // Aggregate by date string
-    const dayMap = {};
-    dailyGroups.forEach(g => {
-      const day = new Date(g.createdAt).toISOString().split('T')[0];
-      dayMap[day] = (dayMap[day] || 0) + g._count;
-    });
-    const responsesByDay = Object.entries(dayMap)
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    const dailyRows = await prisma.$queryRaw`
+      SELECT to_char(DATE_TRUNC('day', "createdAt"), 'YYYY-MM-DD') AS day, COUNT(*)::int AS count
+      FROM survey_responses
+      WHERE "surveyId" = ${surveyId}::uuid AND "createdAt" >= ${thirtyDaysAgo}
+      GROUP BY day
+      ORDER BY day
+    `;
+    const responsesByDay = dailyRows.map((r) => ({
+      date: r.day,
+      count: Number(r.count),
+    }));
 
     // Sample responses for per-question distribution (max 500)
     const SAMPLE_SIZE = 500;

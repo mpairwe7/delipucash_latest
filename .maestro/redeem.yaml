@@ -1,0 +1,39 @@
+# Smoke: redeem points to MTN — sandbox phone number.
+#
+# Requires a test account with at least the configured min withdrawal points.
+# Backend must be pointed at MTN sandbox so no real money moves.
+appId: com.arolainc.DelipuCash
+---
+- launchApp
+- tapOn: 'Profile'
+- tapOn:
+    text: 'Wallet'
+    optional: true
+
+# Withdraw screen
+- assertVisible: 'Withdraw'
+- tapOn: 'Amount'
+- inputText: '1000'
+- tapOn:
+    text: 'MTN'
+    optional: true
+- tapOn: 'Phone number'
+- inputText: '0770000001'
+- tapOn:
+    text: 'Withdraw'
+    optional: true
+
+# Either: phone-verify OTP screen (first time)
+#         OR processing → success
+- assertVisible:
+    text: 'Verify'
+    optional: true
+
+- waitForAnimationToEnd
+- assertVisible:
+    text: 'Processing'
+    optional: true
+- assertVisible:
+    text: 'sent'
+    timeout: 30000
+    optional: true

@@ -102,6 +102,27 @@ Config module: `server/lib/airtelConfig.mjs`
 
 > **Security:** In production, always set `CALLBACK_SECRET`. Without it, callback signature verification is skipped (a warning is logged). The callback endpoint uses HMAC-SHA256 with replay protection (5-minute window) instead of JWT auth.
 
+### Real-time (SSE / LISTEN-NOTIFY)
+
+Flag module: `server/lib/realtimeFlag.mjs`
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `REALTIME_SSE_ENABLED` | No | `false` | Master switch for SSE + PostgreSQL `LISTEN/NOTIFY`. Leave **off** on Vercel serverless — enabling it opens a dedicated direct DB connection per instance and forces 25s client reconnects. Set `true` only on a dedicated long-running instance. |
+
+> The mobile client uses Expo Push + polling, so real-time SSE is off by default. See [Serverless Hardening](../backend/serverless-hardening.md) and [Real-time](../backend/realtime.md).
+
+### Shared State (Upstash Redis)
+
+Wrapper module: `server/lib/redis.mjs`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `UPSTASH_REDIS_REST_URL` | Recommended (prod) | `https://xxx.upstash.io` | Upstash Redis REST endpoint. Enables cluster-wide circuit-breaker state, MTN/Airtel token cache + refresh locks, and Play Integrity nonce replay-protection. |
+| `UPSTASH_REDIS_REST_TOKEN` | Recommended (prod) | `AX...` | Paired auth token. Provision both via the Vercel Upstash Marketplace integration. |
+
+> **Fail-open:** if unset (or Redis is unreachable), the server falls back to per-instance in-memory state — payments are never blocked, nonce protection degrades to per-instance. Setting both upgrades to shared coordination with no code change.
+
 ## Frontend Variables
 
 **File:** `DelipuCash/.env` (local) or EAS Secrets (production builds)
