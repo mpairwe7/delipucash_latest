@@ -859,7 +859,7 @@ export default function InstantRewardQuestionsScreen(): React.ReactElement {
         <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <CheckCircle2 size={ICON_SIZE['2xl']} color={colors.success} strokeWidth={1.5} />
           <Text style={[styles.emptyTitle, { color: colors.text }]}>All caught up!</Text>
-          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>You've answered all available questions. Check back soon for new ones!</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textMuted }]}>You&apos;ve answered all available questions. Check back soon for new ones!</Text>
           <PrimaryButton title="Refresh" onPress={handleRefresh} loading={isFetching} style={{ marginTop: SPACING.md }} />
         </View>
       );

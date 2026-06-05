@@ -1492,7 +1492,7 @@ export default function AdRegistrationScreen(): React.ReactElement {
                   <View style={themedStyles.switchLabel}>
                     <Text style={[themedStyles.label, { color: colors.text, marginBottom: 0 }]}>Sponsored Label</Text>
                     <Text style={[themedStyles.switchHint, { color: colors.textMuted }]}>
-                      Shows "Sponsored" badge on ad
+                      Shows &quot;Sponsored&quot; badge on ad
                     </Text>
                   </View>
                   <Switch

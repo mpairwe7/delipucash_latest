@@ -134,11 +134,11 @@ function NotFoundScreen() {
           </View>
 
           <View style={styles.mainContent}>
-            <Text style={[styles.title, { color: colors.text }]}>Uh-oh! This screen doesn't exist (yet).</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Uh-oh! This screen doesn&apos;t exist (yet).</Text>
 
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-              Looks like "<Text style={styles.boldText}>/{missingPath}</Text>" isn't part of your
-              project. But no worries, you've got options!
+              Looks like &quot;<Text style={styles.boldText}>/{missingPath}</Text>&quot; isn&apos;t part of your
+              project. But no worries, you&apos;ve got options!
             </Text>
 
             {typeof window !== 'undefined' && window.parent && window.parent !== window && (
@@ -147,7 +147,7 @@ function NotFoundScreen() {
                   <View style={styles.createPageTextContainer}>
                     <Text style={[styles.createPageTitle, { color: colors.text }]}>Build it from scratch</Text>
                     <Text style={[styles.createPageDescription, { color: colors.textSecondary }]}>
-                      Create a new screen to live at "/{missingPath}"
+                      Create a new screen to live at &quot;/{missingPath}&quot;
                     </Text>
                   </View>
                   <View style={styles.createPageButtonContainer}>
@@ -162,7 +162,7 @@ function NotFoundScreen() {
               </View>
             )}
 
-            <Text style={[styles.routesLabel, { color: colors.textSecondary }]}>Check out all your project's routes here ↓</Text>
+            <Text style={[styles.routesLabel, { color: colors.textSecondary }]}>Check out all your project&apos;s routes here ↓</Text>
             {!isExpoSitemap && sitemap ? (
               <View style={styles.pagesContainer}>
                 <View style={styles.pagesListContainer}>

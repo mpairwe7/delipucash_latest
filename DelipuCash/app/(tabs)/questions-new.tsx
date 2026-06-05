@@ -864,7 +864,7 @@ export default function QuestionsScreen(): React.ReactElement {
         instantRewardAmount={rewardConfig?.defaultInstantRewardAmount ?? 500}
       />
     ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps — ad arrays tracked via stable ID keys
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ad arrays tracked via stable ID keys
     [
       isStatsLoading,
       isFeedLoading,
