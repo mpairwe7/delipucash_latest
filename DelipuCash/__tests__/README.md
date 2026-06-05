@@ -68,9 +68,14 @@ maestro test .maestro/questions-smoke.yaml
   `.storybook/stubs/native-stub.tsx` aliases native-only modules (RevenueCat, maps, video,
   camera, webview, **expo-router/status-bar/haptics** — which ship CJS) so the web build
   works. **Pixel baselines are OS-/font-specific**: regenerate them in the same environment
-  as CI (the pinned `mcr.microsoft.com/playwright` container — see `.github/workflows/test.yml`)
-  with `bun run test:visual:update`, then commit. The CI `visual` job is advisory
-  (`continue-on-error`) until in-container baselines are committed.
+  as CI (the pinned `mcr.microsoft.com/playwright` container — see the repo-root
+  `.github/workflows/visual.yml`) with `bun run test:visual:update`, then commit. That CI
+  `visual` job is advisory (`continue-on-error`) until in-container baselines are committed.
+
+> CI note: this is a monorepo. Mobile tests are gated by the repo-root
+> `.github/workflows/ci.yml` (`mobile-typecheck-lint` + `mobile-test`, which runs Jest —
+> including the snapshot and Profiler perf tests); visual regression runs in
+> `.github/workflows/visual.yml`.
 
 ## UI-consistency & performance findings
 
@@ -99,4 +104,4 @@ Observed while building the suite; the tests now lock each so they can't silentl
 `instantRewardStore.test.ts`'s `selectAttemptedCount` test was **already failing on `main`**
 (unrelated to this work): it passed `attemptHistory` as a `{q1,q2,q3}` map, but the current
 selector reads `attemptHistory.totalQuestionsAttempted`. Fixed to match the current store
-contract so the baseline (and the new CI gate) start green.
+contract so the baseline (and CI) start green.
