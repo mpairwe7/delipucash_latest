@@ -10,11 +10,32 @@
  *  - FeedQuestion & { responses } → useQuestionDetail data
  *  - Response             → types/index.ts (transformResponses input)
  */
-import type { Response } from '@/types';
+import type { AppUser, Response } from '@/types';
 import type { FeedQuestion } from '@/components/feed/QuestionFeedItem';
 import type { QuestionsFeedResult } from '@/services/questionHooks';
 
 const FIXED_CREATED_AT = '2026-06-01T09:00:00.000Z';
+
+/** A full AppUser (all required fields) — for fixtures that embed a user/author. */
+export function makeUser(overrides: Partial<AppUser> = {}): AppUser {
+  return {
+    id: 'u-1',
+    email: 'ada@example.com',
+    firstName: 'Ada',
+    lastName: 'Lovelace',
+    phone: '+256700000000',
+    points: 0,
+    avatar: null,
+    role: 'USER' as AppUser['role'],
+    subscriptionStatus: 'INACTIVE' as AppUser['subscriptionStatus'],
+    surveysubscriptionStatus: 'INACTIVE' as AppUser['surveysubscriptionStatus'],
+    currentSubscriptionId: null,
+    privacySettings: null,
+    createdAt: FIXED_CREATED_AT,
+    updatedAt: FIXED_CREATED_AT,
+    ...overrides,
+  };
+}
 
 /** A single answer/response (input to transformResponses). */
 export function makeResponse(overrides: Partial<Response> = {}): Response {
@@ -23,11 +44,7 @@ export function makeResponse(overrides: Partial<Response> = {}): Response {
     id,
     responseText: 'Use React Native Testing Library with the jest-expo preset.',
     userId: 'u-1',
-    user: {
-      id: 'u-1',
-      firstName: 'Ada',
-      lastName: 'Lovelace',
-    },
+    user: makeUser({ id: 'u-1', firstName: 'Ada', lastName: 'Lovelace' }),
     questionId: 'q-1',
     createdAt: FIXED_CREATED_AT,
     updatedAt: FIXED_CREATED_AT,
@@ -81,7 +98,7 @@ export function makeQuestionDetail(
           id: 'r-2',
           likeCount: 1,
           responseText: 'Snapshot only deterministic presentational subtrees.',
-          user: { id: 'u-3', firstName: 'Alan', lastName: 'Turing' },
+          user: makeUser({ id: 'u-3', firstName: 'Alan', lastName: 'Turing' }),
         }),
       ],
   };

@@ -17,7 +17,7 @@ import {
   transformResponses,
 } from '@/components/question/QuestionDetailLayout';
 import { useTheme } from '@/utils/theme';
-import { makeResponse, makeFeedQuestion } from '@/__tests__/fixtures/question.factory';
+import { makeResponse, makeFeedQuestion, makeUser } from '@/__tests__/fixtures/question.factory';
 import type { Response } from '@/types';
 
 // Pin date/currency formatting so snapshots are deterministic regardless of the clock
@@ -60,7 +60,7 @@ describe('transformResponses', () => {
 
   it('derives userName from the author and falls back to Anonymous', () => {
     const [named, anon] = transformResponses([
-      makeResponse({ id: 'a', user: { id: 'u', firstName: 'Ada', lastName: 'Lovelace' } }),
+      makeResponse({ id: 'a', user: makeUser({ id: 'u', firstName: 'Ada', lastName: 'Lovelace' }) }),
       makeResponse({ id: 'b', user: undefined }),
     ]);
     expect(named.userName).toBe('Ada Lovelace');
