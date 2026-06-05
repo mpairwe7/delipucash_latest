@@ -27,11 +27,14 @@ describe('InstantRewardStore selectors', () => {
     expect(selectWalletBalance(state)).toBe(1234);
   });
 
-  it('selectAttemptedCount counts entries', () => {
-    const state: any = {
-      attemptHistory: { q1: { attemptedAt: 1 }, q2: { attemptedAt: 2 }, q3: { attemptedAt: 3 } },
-    };
+  it('selectAttemptedCount returns the attempted total from history', () => {
+    // attemptHistory is a structured object carrying totals (not a per-question map).
+    const state: any = { attemptHistory: { totalQuestionsAttempted: 3 } };
     expect(selectAttemptedCount(state)).toBe(3);
+  });
+
+  it('selectAttemptedCount defaults to 0 without history', () => {
+    expect(selectAttemptedCount({ attemptHistory: null } as any)).toBe(0);
   });
 
   it('selectIsSessionActive false when sessionState is IDLE', () => {

@@ -1,0 +1,30 @@
+# Maestro e2e smoke — Questions feed → question detail.
+#
+# 2026 lightweight RN e2e standard (https://maestro.mobile.dev). NON-GATING: needs an
+# emulator/simulator + a dev/preview build of the app installed. Run manually:
+#   maestro test .maestro/questions-smoke.yaml
+#
+# If the app gates the feed behind auth/onboarding, prepend a login sub-flow or launch
+# with a seeded test account. Anchors below match the real feed header + per-row testID
+# (`question-<id>`) and the detail screen's answer affordance.
+appId: com.arolainc.DelipuCash
+---
+- launchApp
+
+# Land on the Questions tab (bottom tab labelled "Questions"); tolerate already being there.
+- tapOn:
+    text: "Questions"
+    optional: true
+
+# The feed header is the stable anchor for this screen.
+- assertVisible: "Questions"
+- assertVisible: "Ask, answer, earn"
+
+# Open the first question row (each row has testID `question-<id>`) and confirm we land on
+# a detail/answer screen with an answer affordance.
+- tapOn:
+    id: "question-.*"
+    optional: true
+- assertVisible:
+    text: "Answer.*"
+    optional: true

@@ -49,3 +49,12 @@ app-example
 .expo/
 node_modules/
 *.log
+
+# Storybook / Playwright visual-regression artifacts (baselines under
+# e2e-visual/__screenshots__/ ARE committed; everything below is generated).
+storybook-static/
+test-results/
+playwright-report/
+blob-report/
+e2e-visual/**/*-actual.png
+e2e-visual/**/*-diff.png

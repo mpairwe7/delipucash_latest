@@ -1,0 +1,60 @@
+name: Tests
+
+# Regression gate for the question-screen suite (and any other Jest tests).
+# Runs UI-consistency, accessibility, narrow-snapshot, and Profiler commit-count
+# performance tests. The performance tests are commit-count assertions (not wall-clock),
+# so they're deterministic and safe to gate on.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Unit / UI / a11y / snapshot / perf
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run tests
+        run: bun run test:ci
+
+  visual:
+    name: Visual regression (Storybook + Playwright)
+    runs-on: ubuntu-latest
+    # Pinned Playwright container so browser + font rasterisation match the committed
+    # baselines. NOTE: the committed baselines under e2e-visual/__screenshots__/ were
+    # generated on a dev machine; on first CI setup regenerate them inside THIS container
+    # (`bun run test:visual:update`) and commit, then flip continue-on-error to false.
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Storybook + run visual diff
+        run: bun run test:visual
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
