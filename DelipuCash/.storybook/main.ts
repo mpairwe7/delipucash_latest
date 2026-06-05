@@ -34,6 +34,9 @@ const config: StorybookConfig = {
       { find: 'expo-router', replacement: nativeOnlyStub },
       { find: 'expo-status-bar', replacement: nativeOnlyStub },
       { find: 'expo-haptics', replacement: nativeOnlyStub },
+      // The bare `@/services` barrel pulls ad/purchases/SSE hooks — stub it (SurveyCard
+      // only needs formatCurrency). Must precede the general `@/` alias.
+      { find: /^@\/services$/, replacement: path.resolve(root, '.storybook/stubs/services-stub.ts') },
       // `@/` path alias (regex so it doesn't swallow @storybook/* etc.).
       { find: /^@\/(.*)$/, replacement: `${root}/$1` },
     ];

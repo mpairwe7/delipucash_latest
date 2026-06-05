@@ -1,8 +1,8 @@
-# Question-screen regression suite
+# Question & survey screen regression suite
 
-UI-consistency, accessibility, and performance regression tests for the **Core Q&A
-screens**, using 2026 React Native testing standards. Before this suite the app had no
-UI/perf test coverage — only two pure-logic store tests.
+UI-consistency, accessibility, performance, and visual regression tests for the **Core Q&A
+screens** and the **survey screens**, using 2026 React Native testing standards. Before this
+suite the app had no UI/perf test coverage — only two pure-logic store tests.
 
 ## What's covered
 
@@ -12,8 +12,10 @@ UI/perf test coverage — only two pure-logic store tests.
 | `question-detail.tsx` (Discussion) | `ui/question-detail.ui.test.tsx` | loading / error+retry / loaded / empty states, responses list a11y, answer submission |
 | `question-answer/[id].tsx` (Quora-style) | `ui/question-answer.ui.test.tsx` | states, count-labelled responses list, draft-store validity gating + submit |
 | `(tabs)/questions-new.tsx` (feed) | `ui/questions-new.ui.test.tsx` | header/search/FAB a11y, loaded/loading/empty/error, 5 tabs, tab switch refetch |
-| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, feed initial + tab switch, detail initial + typing |
-| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/*.spec.ts` | pixel screenshots of the presentational components diffed against committed baselines |
+| `(tabs)/surveys-new.tsx` (feed) | `ui/surveys-new.ui.test.tsx` | header/search a11y, loading/empty/loaded, 5 tabs, tab switch |
+| `SurveyCard` (survey feed item) | `ui/survey-components.ui.test.tsx` | structure, `Survey:` a11y label, owner "view responses" action, + snapshots (fake-clock pinned) |
+| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, questions/surveys feed initial + tab switch, detail typing |
+| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/component-stories.spec.ts` | pixel screenshots of the presentational components (question + survey) diffed against committed baselines |
 
 ## Running
 
