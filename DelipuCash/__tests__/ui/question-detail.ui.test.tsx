@@ -13,6 +13,7 @@ import {
   useQuestionDetail,
   useSubmitQuestionResponse,
 } from '@/services/questionHooks';
+import { useLikeResponse, useDislikeResponse } from '@/services/hooks';
 import { makeQuestionDetail } from '@/__tests__/fixtures/question.factory';
 
 jest.mock('expo-router', () => ({
@@ -26,6 +27,11 @@ jest.mock('@/services/questionHooks', () => ({
   useQuestionDetail: jest.fn(),
   useSubmitQuestionResponse: jest.fn(),
 }));
+jest.mock('@/services/hooks', () => ({
+  ...jest.requireActual('@/services/hooks'),
+  useLikeResponse: jest.fn(),
+  useDislikeResponse: jest.fn(),
+}));
 
 // Imported after jest.mock so the default export wiring resolves to the mocked module.
 import QuestionCommentsScreen from '@/app/question-detail';
@@ -35,6 +41,8 @@ const mockUseSubmit = useSubmitQuestionResponse as jest.Mock;
 
 const QUESTION_TEXT = 'How do I write UI regression tests for a React Native screen?';
 const submitMutate = jest.fn();
+const likeMutate = jest.fn();
+const dislikeMutate = jest.fn();
 
 function setDetail(overrides: Record<string, unknown> = {}) {
   mockUseQuestionDetail.mockReturnValue({
@@ -49,7 +57,11 @@ function setDetail(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   submitMutate.mockClear();
+  likeMutate.mockClear();
+  dislikeMutate.mockClear();
   mockUseSubmit.mockReturnValue({ mutate: submitMutate, isPending: false });
+  (useLikeResponse as jest.Mock).mockReturnValue({ mutate: likeMutate });
+  (useDislikeResponse as jest.Mock).mockReturnValue({ mutate: dislikeMutate });
 });
 
 describe('QuestionCommentsScreen — states', () => {
@@ -104,5 +116,24 @@ describe('QuestionCommentsScreen — answer submission', () => {
       questionId: 'q-1',
       responseText: 'My considered answer',
     });
+  });
+});
+
+describe('QuestionCommentsScreen — like persistence', () => {
+  it('sends isLiked:true on the first like and isLiked:false when toggled off', () => {
+    setDetail({ data: makeQuestionDetail() });
+    renderWithProviders(<QuestionCommentsScreen />);
+
+    // First response's like control. The label embeds the count, so match by prefix and
+    // re-query after each press (the count — and thus the label — changes).
+    fireEvent.press(screen.getAllByLabelText(/^Like\./)[0]);
+    expect(likeMutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ questionId: 'q-1', isLiked: true })
+    );
+
+    fireEvent.press(screen.getAllByLabelText(/^Like\./)[0]);
+    expect(likeMutate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ questionId: 'q-1', isLiked: false })
+    );
   });
 });

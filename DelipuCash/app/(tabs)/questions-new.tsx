@@ -26,6 +26,7 @@ import React, {
   memo,
 } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -546,7 +547,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Mutations — extract .mutate/.mutateAsync for stable useCallback deps
   const voteMutate = useVoteQuestion().mutate;
-  const createMutateAsync = useCreateQuestion().mutateAsync;
+  const createQuestion = useCreateQuestion();
 
   // User permissions
   const isAdmin =
@@ -703,10 +704,17 @@ export default function QuestionsScreen(): React.ReactElement {
 
   const handleVoteById = useCallback(
     (questionId: string, type: "up" | "down") => {
+      // Voting hits an auth-gated endpoint — guard like the other feed actions instead of
+      // firing an anonymous mutation that the server rejects.
+      if (!authReady) return;
+      if (!isAuthenticated) {
+        router.push("/(auth)/login" as Href);
+        return;
+      }
       triggerHaptic("light");
       voteMutate({ questionId, type });
     },
-    [voteMutate]
+    [authReady, isAuthenticated, voteMutate]
   );
 
   const handleSearchSubmit = useCallback(
@@ -754,20 +762,27 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleQuestionSubmit = useCallback(
     async (data: QuestionFormData) => {
       try {
-        await createMutateAsync({
+        // Respect the user's reward choice instead of hard-coding a non-reward question.
+        // (Body/tags aren't persisted yet — the server's create endpoint only accepts
+        // text/category/rewardAmount/isInstantReward.)
+        await createQuestion.mutateAsync({
           text: data.title,
           category: data.category,
-          rewardAmount: 0,
-          isInstantReward: false,
+          rewardAmount: data.isRewardQuestion ? data.rewardAmount : 0,
+          isInstantReward: data.isRewardQuestion,
         });
         setShowCreateWizard(false);
         triggerHaptic("success");
       } catch (error) {
-        console.error("Failed to create question:", error);
+        // Surface the failure instead of swallowing it; keep the wizard open to retry.
         triggerHaptic("error");
+        Alert.alert(
+          "Couldn't create question",
+          error instanceof Error ? error.message : "Please try again."
+        );
       }
     },
-    [createMutateAsync]
+    [createQuestion]
   );
 
   const handleClearSearch = useCallback(
@@ -1177,6 +1192,7 @@ export default function QuestionsScreen(): React.ReactElement {
         visible={showCreateWizard}
         onClose={() => setShowCreateWizard(false)}
         onSubmit={handleQuestionSubmit}
+        isSubmitting={createQuestion.isPending}
       />
     </View>
   );
