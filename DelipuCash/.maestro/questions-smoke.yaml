@@ -21,10 +21,10 @@ appId: com.arolainc.DelipuCash
 - assertVisible: "Ask, answer, earn"
 
 # Open the first question row (each row has testID `question-<id>`) and confirm we land on
-# a detail/answer screen with an answer affordance.
+# a detail/answer screen with an answer affordance. These steps are intentionally NOT optional:
+# the smoke test must exercise the feed → detail → answer flow, so it fails on an empty feed.
+# Seed a known question (see the header note) before running against a fresh build.
 - tapOn:
     id: "question-.*"
-    optional: true
 - assertVisible:
     text: "Answer.*"
-    optional: true

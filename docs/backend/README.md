@@ -93,7 +93,7 @@ bun run dev  # Starts on http://localhost:3000
 | `dev` | `bun --watch index.js` | Development server with hot reload |
 | `start` | `bun index.js` | Production start |
 | `build` | `prisma generate` | Generate Prisma client |
-| `vercel-build` | `prisma generate && prisma migrate deploy` | Vercel build step |
+| `vercel-build` | `prisma generate` | Vercel build step (migrations applied out-of-band) |
 | `db:push` | `bun prisma db push` | Push schema without migration |
 | `db:studio` | `bun prisma studio` | Open Prisma Studio GUI |
 | `db:reset` | `bun prisma migrate reset` | Reset database |
