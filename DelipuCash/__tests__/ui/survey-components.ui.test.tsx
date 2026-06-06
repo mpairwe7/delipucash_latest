@@ -49,7 +49,9 @@ describe('SurveyCard', () => {
     );
     const viewBtn = screen.getByLabelText('View 7 responses for Q3 NPS');
     // The handler calls e.stopPropagation() to avoid triggering the card's onPress.
-    fireEvent.press(viewBtn, { stopPropagation: jest.fn() });
+    const stopProp = jest.fn();
+    fireEvent.press(viewBtn, { stopPropagation: stopProp });
+    expect(stopProp).toHaveBeenCalledTimes(1);
     expect(onViewResponses).toHaveBeenCalledTimes(1);
   });
 });

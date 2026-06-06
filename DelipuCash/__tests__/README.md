@@ -105,10 +105,10 @@ Observed while building the suite; the tests now lock each so they can't silentl
    Same three states, three structures.
 3. **Per-screen FlatList tuning differs** with no documented rationale (feed
    `maxToRenderPerBatch=3, updateCellsBatchingPeriod=300`; detail `maxToRenderPerBatch=8`).
-   The Reassure baseline makes future changes measurable.
+   The Profiler commit-count baseline makes future changes measurable.
 4. **Top-level draft state re-renders the whole detail list per keystroke** —
    `question-detail.tsx` keeps `text` in screen-level `useState`, so each character
-   re-renders the `FlatList`. Guarded by `perf/question-detail.perf-test.tsx`. *Consider
+   re-renders the `FlatList`. Guarded by `perf/question-detail.perf.test.tsx`. *Consider
    isolating the input (the shared `AnswerInput` is already memoized — the answer screen
    uses a draft store, the discussion screen does not).*
 5. **Accessibility is strong but worth locking** — labelled search/FAB/list/inputs; the
