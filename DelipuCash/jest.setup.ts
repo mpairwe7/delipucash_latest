@@ -192,6 +192,28 @@ jest.mock('expo-image', () => {
   };
 });
 
+// @react-native-community/datetimepicker — the survey-taking screen (app/survey/[id].tsx)
+// imports this at module top for date/time questions. It's native-backed; stub it to an
+// inert host node so the screen renders without the native picker.
+jest.mock('@react-native-community/datetimepicker', () => {
+  const React = require('react');
+  const DateTimePicker = (props: object) => React.createElement('DateTimePicker', props);
+  return { __esModule: true, default: DateTimePicker };
+});
+
+// expo-print / expo-sharing — the owner responses screen (app/survey-responses/[id].tsx)
+// uses these for PDF export/share. No-op so importing the screen doesn't pull native bindings.
+jest.mock('expo-print', () => ({
+  __esModule: true,
+  printToFileAsync: jest.fn(() => Promise.resolve({ uri: 'file:///mock.pdf' })),
+  printAsync: jest.fn(() => Promise.resolve()),
+}));
+jest.mock('expo-sharing', () => ({
+  __esModule: true,
+  isAvailableAsync: jest.fn(() => Promise.resolve(false)),
+  shareAsync: jest.fn(() => Promise.resolve()),
+}));
+
 // lucide-react-native — every icon becomes a lightweight host stub so SVG cost and
 // non-deterministic paths stay out of render/snapshot output.
 jest.mock('lucide-react-native', () => {

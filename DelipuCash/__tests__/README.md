@@ -14,8 +14,11 @@ suite the app had no UI/perf test coverage — only two pure-logic store tests.
 | `(tabs)/questions-new.tsx` (feed) | `ui/questions-new.ui.test.tsx` | header/search/FAB a11y, loaded/loading/empty/error, 5 tabs, tab switch refetch |
 | `(tabs)/surveys-new.tsx` (feed) | `ui/surveys-new.ui.test.tsx` | header/search a11y, loading/empty/loaded, 5 tabs, tab switch |
 | `SurveyCard` (survey feed item) | `ui/survey-components.ui.test.tsx` | structure, `Survey:` a11y label, owner "view responses" action, + snapshots (fake-clock pinned) |
-| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, questions/surveys feed initial + tab switch, detail typing |
-| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/component-stories.spec.ts` | pixel screenshots of the presentational components (question + survey) diffed against committed baselines |
+| `survey/[id].tsx` (take screen) | `ui/survey-take.ui.test.tsx` | loading / already-attempted / unavailable / loaded states, required-field gating, step navigation, **conditional-logic question hiding**, review→submit→success overlay |
+| `survey-responses/[id].tsx` (owner) | `ui/survey-responses.ui.test.tsx` | loading / access-denied / loaded states, response-count a11y label, export action, the three Summary/Questions/Individual view tabs |
+| Survey conditional-logic engine | `utils/conditionalLogic.test.ts` | pure unit tests for `evaluateCondition`/`evaluateConditions`/`isQuestionVisible`/`getVisibleQuestions`/`validateConditionalLogic` across every operator (AND/OR, equals, contains, numeric, empty) |
+| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, questions/surveys feed initial + tab switch, question-detail typing, survey-take initial + advance + per-keystroke |
+| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/component-stories.spec.ts` | pixel screenshots of the presentational components (question + survey card + survey charts) diffed against committed baselines; animated stories (skeletons) are tagged `dynamic` → mounted as a render smoke-test, not pixel-diffed |
 
 ## Running
 
@@ -47,6 +50,10 @@ maestro test .maestro/questions-smoke.yaml
   Reassure `wrapper`), `createTestQueryClient`.
 - **`__tests__/fixtures/question.factory.ts`** — deterministic `Question` / `Response` /
   feed-page / infinite-feed builders (fixed ids + dates so snapshots stay stable).
+- **`__tests__/fixtures/survey.factory.ts`** — deterministic `Survey` builders: feed cards,
+  `makeSurveyWithQuestions` (a survey whose `uploads` are the take-screen questions),
+  `makeUploadSurvey`, the `useSurvey` / `useCheckSurveyAttempt` query mocks, and `makeResponseData`
+  (the owner screen's `useSurveyResponseData` aggregate).
 - Per-screen tests mock only the data-hook surface (`@/services/questionHooks` etc.) and
   `expo-router`; everything else renders for real.
 
@@ -100,6 +107,27 @@ Observed while building the suite; the tests now lock each so they can't silentl
    uses a draft store, the discussion screen does not).*
 5. **Accessibility is strong but worth locking** — labelled search/FAB/list/inputs; the
    `ResponseCard` like/dislike row renders only when handlers are passed. All asserted.
+
+## Survey coverage notes
+
+- **Conditional logic is locked at two levels.** The pure engine (`utils/conditionalLogic.ts`) is
+  unit-tested operator-by-operator; the take screen test then asserts the *integration* — a gated
+  question is absent until its source answer satisfies the rule, at which point the visible-question
+  count and step chips update. Same behaviour, two safety nets.
+- **Single-attempt enforcement** (`useCheckSurveyAttempt`) is its own state — "Already Completed"
+  is asserted so the gate can't silently regress.
+- **The completion overlay is intentionally not an isolated Storybook story.** It is service-coupled
+  (`useRunningSurveys`, `configHooks`, `useUser`, a `QueryClient`, confetti/reanimated), so an
+  isolated web story would need ~7 stubs and risk the visual build. Its success branch is instead
+  exercised by the take-screen submit flow (the overlay is stubbed to a props renderer that surfaces
+  the awarded points).
+- **Native deps stubbed for surveys** (added to `jest.setup.ts`): `@react-native-community/datetimepicker`
+  (date/time questions on the take screen), `expo-print` + `expo-sharing` (owner export). The owner
+  screen's `SurveyCharts` are stubbed in jest, but rendered for real in Storybook.
+- **Visual layer.** `SurveyCharts` (StatCard / Bar / Pie / Rating / Boolean / WordCloud) are pure
+  View/Text — no SVG, no animation — so they make deterministic pixel baselines (the survey analog of
+  the question presentational baselines). Loading skeletons use a looping shimmer, so their stories
+  carry a `dynamic` tag and are mounted as a render smoke-test only (no flaky pixel baseline).
 
 ## Note: pre-existing test fix
 
