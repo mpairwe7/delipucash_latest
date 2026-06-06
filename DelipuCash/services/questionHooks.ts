@@ -258,51 +258,38 @@ function transformToFeedQuestion(
 }
 
 /**
- * Sort questions based on tab selection
+ * Rank a server-returned page for the active tab.
+ *
+ * The server now does all FILTERING (unanswered / rewards / my-activity) and base ordering, so
+ * applying filters here would silently drop items from a fetched page and break pagination. This
+ * only re-orders the page returned for the tab.
  */
 function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQuestion[] {
   const sorted = [...questions];
 
   switch (tab) {
     case 'for-you':
-      // AI/personalized - mix of trending, rewards, and recent
+      // Server returns the page; rank it locally by engagement/reward signals.
       return sorted.sort((a, b) => {
-        const scoreA =
-          (a.isHot ? 10 : 0) +
-          (a.isTrending ? 8 : 0) +
-          (a.isInstantReward ? 15 : 0) +
-          (a.rewardAmount || 0) * 2;
-        const scoreB =
-          (b.isHot ? 10 : 0) +
-          (b.isTrending ? 8 : 0) +
-          (b.isInstantReward ? 15 : 0) +
-          (b.rewardAmount || 0) * 2;
-        return scoreB - scoreA;
+        const score = (q: FeedQuestion) =>
+          (q.isHot ? 10 : 0) +
+          (q.isTrending ? 8 : 0) +
+          (q.isInstantReward ? 15 : 0) +
+          (q.rewardAmount || 0) * 2;
+        return score(b) - score(a);
       });
 
+    case 'rewards':
+      // Server already filters to reward questions; just order by amount.
+      return sorted.sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0));
+
     case 'latest':
+    case 'unanswered':
+    case 'my-activity':
+      // Server filters these tabs; keep newest-first ordering on the page.
       return sorted.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
-
-    case 'unanswered':
-      return sorted.filter((q) => (q.totalAnswers || 0) === 0);
-
-    case 'rewards':
-      return sorted
-        .filter((q) => q.isInstantReward && q.rewardAmount)
-        .sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0));
-
-    case 'my-activity': {
-      // Filter to questions the user authored or answered
-      const userId = getCurrentUserId();
-      if (!userId) return [];
-      return sorted.filter(
-        (q) => q.userId === userId || q.author?.id === userId
-      ).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    }
 
     default:
       return sorted;

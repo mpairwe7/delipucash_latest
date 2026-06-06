@@ -177,6 +177,31 @@ export const getQuestions = asyncHandler(async (req, res) => {
       whereClause = { responses: { none: {} } };
     } else if (tab === 'rewards') {
       whereClause = { isInstantReward: true, rewardAmount: { gt: 0 } };
+    } else if (tab === 'my-activity' && userId) {
+      // Questions the user authored OR answered (server-side, so pagination is correct).
+      whereClause = { OR: [{ userId }, { responses: { some: { userId } } }] };
+    }
+
+    // Optional server-side search (text or category) and category filter — applied across the
+    // whole table, not just a loaded page. Combine with the tab clause via AND.
+    const andFilters = [];
+    const search = req.query.search ? String(req.query.search).trim() : '';
+    if (search) {
+      andFilters.push({
+        OR: [
+          { text: { contains: search, mode: 'insensitive' } },
+          { category: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    const category = req.query.category ? String(req.query.category).trim() : '';
+    if (category && category.toLowerCase() !== 'all') {
+      andFilters.push({ category });
+    }
+    if (andFilters.length > 0) {
+      whereClause = Object.keys(whereClause).length
+        ? { AND: [whereClause, ...andFilters] }
+        : { AND: andFilters };
     }
 
     // Build order based on tab
