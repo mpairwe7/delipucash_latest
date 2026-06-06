@@ -36,6 +36,8 @@ const QUESTION_EXTENDED_SELECT = {
   rewardAmount: true,
   isInstantReward: true,
   viewCount: true,
+  description: true,
+  tags: true,
 };
 
 /**
@@ -94,6 +96,8 @@ export const createQuestion = asyncHandler(async (req, res) => {
     category = 'General',
     rewardAmount = 0,
     isInstantReward = false,
+    description = null,
+    tags = [],
   } = req.body;
 
   console.log('Incoming request to create question:', { text, userId });
@@ -122,6 +126,13 @@ export const createQuestion = asyncHandler(async (req, res) => {
     const question = await prisma.question.create({
       data: {
         text,
+        description:
+          typeof description === 'string' && description.trim()
+            ? description.trim()
+            : null,
+        tags: Array.isArray(tags)
+          ? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
+          : [],
         category: category || 'General',
         rewardAmount: Number.isFinite(Number(rewardAmount))
           ? Number(rewardAmount)

@@ -762,11 +762,13 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleQuestionSubmit = useCallback(
     async (data: QuestionFormData) => {
       try {
-        // Respect the user's reward choice instead of hard-coding a non-reward question.
-        // (Body/tags aren't persisted yet — the server's create endpoint only accepts
-        // text/category/rewardAmount/isInstantReward.)
+        // Send everything the wizard collected: body + tags now persist (server stores
+        // Question.description / Question.tags), and the reward choice is honored instead of
+        // being hard-coded to a non-reward question.
         await createQuestion.mutateAsync({
           text: data.title,
+          description: data.body,
+          tags: data.tags,
           category: data.category,
           rewardAmount: data.isRewardQuestion ? data.rewardAmount : 0,
           isInstantReward: data.isRewardQuestion,

@@ -65,6 +65,10 @@ export interface VoteParams {
 
 export interface CreateQuestionParams {
   text: string;
+  /** Optional rich body/details for the question. */
+  description?: string;
+  /** Optional topic tags. */
+  tags?: string[];
   category?: string;
   rewardAmount?: number;
   isInstantReward?: boolean;

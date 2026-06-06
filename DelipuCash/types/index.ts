@@ -340,6 +340,10 @@ export interface InstantRewardWinner {
 export interface Question {
   id: string;
   text: string;
+  /** Optional rich body/details (server: Question.description). */
+  description?: string | null;
+  /** Optional topic tags (server: Question.tags). */
+  tags?: string[];
   userId: string | null;
   user?: AppUser;
   createdAt: string;

@@ -547,6 +547,8 @@ model InstantRewardWinner {
 model Question {
   id              String            @id @default(uuid()) @db.Uuid
   text            String
+  description     String?
+  tags            String[]          @default([])
   userId          String?           @db.Uuid
   category        String            @default("General")
   rewardAmount    Float             @default(0)
