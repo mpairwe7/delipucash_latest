@@ -29,6 +29,7 @@ const config: StorybookConfig = {
       { find: '@teovilla/react-native-web-maps', replacement: nativeOnlyStub },
       { find: 'react-native-webview', replacement: nativeOnlyStub },
       { find: 'expo-video', replacement: nativeOnlyStub },
+      { find: 'expo-video-thumbnails', replacement: nativeOnlyStub },
       { find: 'expo-camera', replacement: nativeOnlyStub },
       // expo-router ships CJS and leaks `exports` into the web bundle — stub it.
       { find: 'expo-router', replacement: nativeOnlyStub },

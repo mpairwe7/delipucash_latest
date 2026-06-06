@@ -1,8 +1,8 @@
-# Question & survey screen regression suite
+# Question, survey & video screen regression suite
 
 UI-consistency, accessibility, performance, and visual regression tests for the **Core Q&A
-screens** and the **survey screens**, using 2026 React Native testing standards. Before this
-suite the app had no UI/perf test coverage — only two pure-logic store tests.
+screens**, the **survey screens**, and the **video screens**, using 2026 React Native testing
+standards. Before this suite the app had no UI/perf test coverage — only two pure-logic store tests.
 
 ## What's covered
 
@@ -17,8 +17,11 @@ suite the app had no UI/perf test coverage — only two pure-logic store tests.
 | `survey/[id].tsx` (take screen) | `ui/survey-take.ui.test.tsx` | loading / already-attempted / unavailable / loaded states, required-field gating, step navigation, **conditional-logic question hiding**, review→submit→success overlay |
 | `survey-responses/[id].tsx` (owner) | `ui/survey-responses.ui.test.tsx` | loading / access-denied / loaded states, response-count a11y label, export action, the three Summary/Questions/Individual view tabs |
 | Survey conditional-logic engine | `utils/conditionalLogic.test.ts` | pure unit tests for `evaluateCondition`/`evaluateConditions`/`isQuestionVisible`/`getVisibleQuestions`/`validateConditionalLogic` across every operator (AND/OR, equals, contains, numeric, empty) |
-| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, questions/surveys feed initial + tab switch, question-detail typing, survey-take initial + advance + per-keystroke |
-| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/component-stories.spec.ts` | pixel screenshots of the presentational components (question + survey card + survey charts) diffed against committed baselines; animated stories (skeletons) are tagged `dynamic` → mounted as a render smoke-test, not pixel-diffed |
+| `(tabs)/videos-new.tsx` (feed) | `ui/videos-new.ui.test.tsx` | **smoke**: the three For You / Following / Trending tabs render, default tab, tab switch updates the feed store (the full-screen gesture/expo-video pager can't run in jsdom — see notes) |
+| `video/[id].tsx` (deep-link player) | `ui/video-detail.ui.test.tsx` | loading / not-found+recovery / loaded (full-screen player) states |
+| `VideoCard` (video feed tile) | `ui/video-card.ui.test.tsx` | structure, `Video:` a11y label, press, compact/horizontal variants, compact count formatting, + snapshot |
+| Performance (Profiler) | `perf/*.perf.test.tsx` | commit-count baselines: AnswerInput typing, questions/surveys/videos feed initial + tab switch, question-detail typing, survey-take initial + advance + per-keystroke |
+| Visual (Storybook + Playwright) | `stories/*.stories.tsx`, `e2e-visual/component-stories.spec.ts` | pixel screenshots of the presentational components (question + survey card + survey charts + video card) diffed against committed baselines; animated stories (skeletons) are tagged `dynamic` → mounted as a render smoke-test, not pixel-diffed |
 
 ## Running
 
@@ -54,6 +57,9 @@ maestro test .maestro/questions-smoke.yaml
   `makeSurveyWithQuestions` (a survey whose `uploads` are the take-screen questions),
   `makeUploadSurvey`, the `useSurvey` / `useCheckSurveyAttempt` query mocks, and `makeResponseData`
   (the owner screen's `useSurveyResponseData` aggregate).
+- **`__tests__/fixtures/video.factory.ts`** — deterministic `Video` builders (with a thumbnail so
+  VideoCard's async loader is a no-op), the `useVideoDetails` query mock, and `makeInfiniteVideoResult`
+  (the feed tabs' TanStack infinite-query `{ pages: [{ videos }] }` shape).
 - Per-screen tests mock only the data-hook surface (`@/services/questionHooks` etc.) and
   `expo-router`; everything else renders for real.
 
@@ -128,6 +134,22 @@ Observed while building the suite; the tests now lock each so they can't silentl
   View/Text — no SVG, no animation — so they make deterministic pixel baselines (the survey analog of
   the question presentational baselines). Loading skeletons use a looping shimmer, so their stories
   carry a `dynamic` tag and are mounted as a render smoke-test only (no flaky pixel baseline).
+
+## Video coverage notes
+
+- **The feed is a smoke test by design.** `videos-new.tsx` is a full-screen, gesture-driven
+  `VerticalVideoFeed` (expo-video player per item) plus ~15 data hooks. Playback, autoplay-on-scroll,
+  and gesture interactions can't run in jsdom, so the test stubs the heavy children + all hooks and
+  asserts only the durable chrome: the three feed tabs render and switching one updates the feed
+  store. Per-item behaviour belongs in component tests / the Maestro flow, not here.
+- **`video/[id].tsx`** (the deep-link target) is fully state-tested (loading / not-found / loaded)
+  with the heavy `VideoPlayer` stubbed to a marker.
+- **Visual layer.** `VideoCard` is static once it has a thumbnail (it only animates on press), so
+  its stories use a 1×1 data-URI thumbnail + fixed counts for deterministic pixel baselines.
+  `VideoFeedSkeleton` shimmers, so it's tagged `dynamic` (render smoke only).
+- **Web-build stub.** `VideoCard` → `thumbnail-utils` imports `expo-video-thumbnails` (native), so
+  Storybook aliases it to the native stub (`.storybook/main.ts`); it's only called when a video has
+  no thumbnail, which the fixtures always provide.
 
 ## Note: pre-existing test fix
 

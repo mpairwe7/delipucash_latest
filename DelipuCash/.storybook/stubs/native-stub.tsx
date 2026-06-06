@@ -86,6 +86,9 @@ export const setStatusBarStyle = noop;
 export const setStatusBarBackgroundColor = noop;
 export const setStatusBarHidden = noop;
 
+// expo-video-thumbnails (VideoCard → thumbnail-utils imports it; only called when no thumbnail)
+export const getThumbnailAsync = async () => ({ uri: '', width: 0, height: 0 });
+
 // expo-haptics
 export const impactAsync = async () => undefined;
 export const notificationAsync = async () => undefined;
