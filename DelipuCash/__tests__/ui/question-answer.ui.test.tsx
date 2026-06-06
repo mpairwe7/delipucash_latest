@@ -127,4 +127,19 @@ describe('QuestionAnswerScreen — draft + submission', () => {
       responseText: 'This is a sufficiently detailed answer.',
     });
   });
+
+  it('marks the question submitted when the server reports it was already answered', () => {
+    setDetail({ data: makeQuestionDetail() });
+    // Drive the mutation's onError with the server's "already responded" message.
+    submitMutate.mockImplementation((_args: unknown, opts?: { onError?: (e: Error) => void }) =>
+      opts?.onError?.(new Error('You have already responded to this question'))
+    );
+    renderWithProviders(<QuestionAnswerScreen />);
+
+    fireEvent.changeText(screen.getByLabelText('Answer text input'), 'My answer attempt.');
+    fireEvent.press(screen.getByLabelText('Submit answer'));
+
+    // The screen reflects the server's source of truth instead of inviting a retry.
+    expect(useQuestionAnswerStore.getState().submittedQuestionIds.has('q-1')).toBe(true);
+  });
 });

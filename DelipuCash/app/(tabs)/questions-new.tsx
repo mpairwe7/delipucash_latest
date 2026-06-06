@@ -160,13 +160,14 @@ interface MemoizedInFeedAdProps {
 
 const MemoizedInFeedAd = memo<MemoizedInFeedAdProps>(
   function MemoizedInFeedAd({ ad, index, onAdClick, onAdImpression, style }) {
-    const handleLoad = useCallback(() => onAdImpression(ad), [ad, onAdImpression]);
+    // Record the impression on viewability (IAB: 50% visible for 1s), not on image load.
     return (
       <InFeedAd
         ad={ad}
         index={index}
         onAdClick={onAdClick}
-        onAdLoad={handleLoad}
+        onImpression={onAdImpression}
+        trackViewability
         style={style}
       />
     );
@@ -484,7 +485,6 @@ export default function QuestionsScreen(): React.ReactElement {
     rewards: 0,
     "my-activity": 0,
   });
-  const impressedAdIds = useRef(new Set<string>());
   const lastScrollY = useRef(0);
 
   // Persisted tab from Zustand (survives navigations)
@@ -647,7 +647,6 @@ export default function QuestionsScreen(): React.ReactElement {
     (tabId: string) => {
       setSelectedTab(tabId as FeedTabId);
       triggerHaptic("light");
-      impressedAdIds.current.clear();
       // Restore scroll position after RN completes the layout pass
       InteractionManager.runAfterInteractions(() => {
         flatListRef.current?.scrollToOffset({

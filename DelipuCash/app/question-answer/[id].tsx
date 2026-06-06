@@ -333,12 +333,20 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         },
         onError: (err) => {
           submitDebounceRef.current = false;
-          const message =
-            err?.message === "You have already responded to this question"
+          const alreadyResponded =
+            err?.message === "You have already responded to this question";
+          if (alreadyResponded) {
+            // Server is the source of truth: mark this question submitted (also clears the
+            // draft) so the UI reflects the answered state instead of inviting a retry.
+            markSubmitted(question.id);
+          }
+          triggerHaptic(alreadyResponded ? 'success' : 'error');
+          showToast({
+            message: alreadyResponded
               ? "You've already answered this question."
-              : "Could not submit your answer. Please try again.";
-          triggerHaptic('error');
-          showToast({ message, type: 'error' });
+              : "Could not submit your answer. Please try again.",
+            type: alreadyResponded ? 'info' : 'error',
+          });
         },
       }
     );
