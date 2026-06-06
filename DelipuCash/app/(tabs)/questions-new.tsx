@@ -502,6 +502,9 @@ export default function QuestionsScreen(): React.ReactElement {
   const fabTranslateY = useSharedValue(0);
 
   // ========== DATA FETCHING ==========
+  // Debounced search term — drives server-side search via the feed hook below.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   // Essential: infinite feed + user stats load immediately
   const {
     data: infiniteData,
@@ -512,7 +515,7 @@ export default function QuestionsScreen(): React.ReactElement {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteQuestionsFeed(selectedTab);
+  } = useInfiniteQuestionsFeed(selectedTab, 20, debouncedSearch);
 
   const {
     data: userStats,
@@ -576,32 +579,31 @@ export default function QuestionsScreen(): React.ReactElement {
     if (!isFeedLoading) prefetch();
   }, [isFeedLoading, prefetch]);
 
-  // Search
+  // Search — query state + history live in useSearch; the actual filtering is server-backed
+  // (the debounced term feeds useInfiniteQuestionsFeed above, which searches the whole table,
+  // not just the loaded pages).
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
-    filteredResults: searchResults,
-    isSearching,
     recentSearches,
     removeFromHistory,
     clearHistory,
     submitSearch,
-    hasNoResults,
   } = useSearch({
     data: allQuestions,
     searchFields: ["text", "category"],
     storageKey: "@questions_search_history",
     debounceMs: 250,
-    customFilter: (question: Question, query: string) => {
-      const lower = query.toLowerCase();
-      return (
-        (question.text || "").toLowerCase().includes(lower) ||
-        (question.category || "").toLowerCase().includes(lower)
-      );
-    },
   });
 
-  const displayQuestions = isSearching ? searchResults : allQuestions;
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const isSearching = debouncedSearch.length > 0;
+  const hasNoResults = isSearching && !isFeedLoading && allQuestions.length === 0;
+  const displayQuestions = allQuestions;
 
   // Build feed items with ad insertion
   const feedItems = useMemo((): FeedItem[] => {
@@ -867,7 +869,7 @@ export default function QuestionsScreen(): React.ReactElement {
         featuredAds={featuredAds}
         isSearching={isSearching}
         searchQuery={searchQuery}
-        searchResultsCount={searchResults.length}
+        searchResultsCount={allQuestions.length}
         hasNoResults={hasNoResults}
         onTabChange={handleTabChange}
         onInstantRewardPress={handleInstantRewardPress}
@@ -898,7 +900,7 @@ export default function QuestionsScreen(): React.ReactElement {
       featuredAdIds,
       isSearching,
       searchQuery,
-      searchResults.length,
+      allQuestions.length,
       hasNoResults,
       handleTabChange,
       handleInstantRewardPress,

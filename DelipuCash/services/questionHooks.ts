@@ -186,8 +186,8 @@ async function fetchJson<T>(
 export const questionQueryKeys = {
   all: ['questions'] as const,
   feeds: () => [...questionQueryKeys.all, 'feed'] as const,
-  feed: (tab: FeedTabId, limit: number) =>
-    [...questionQueryKeys.feeds(), tab, limit] as const,
+  feed: (tab: FeedTabId, limit: number, search = '') =>
+    [...questionQueryKeys.feeds(), tab, limit, search] as const,
   details: () => [...questionQueryKeys.all, 'detail'] as const,
   detail: (id: string) => [...questionQueryKeys.details(), id] as const,
   responses: (id: string) => [...questionQueryKeys.all, 'responses', id] as const,
@@ -310,14 +310,19 @@ function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQues
  */
 export function useInfiniteQuestionsFeed(
   tab: FeedTabId,
-  limit: number = 20
+  limit: number = 20,
+  search: string = ''
 ) {
   return useInfiniteQuery({
-    queryKey: questionQueryKeys.feed(tab, limit),
+    queryKey: questionQueryKeys.feed(tab, limit, search),
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      // Pass the current user so the server can seed each question's `userHasVoted`.
+      // Pass the current user (server seeds `userHasVoted`) and the search term (server-side
+      // full-table search, not just the loaded page).
       const userId = getCurrentUserId();
-      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
+      const queryStr =
+        `?tab=${tab}&page=${pageParam}&limit=${limit}` +
+        `${userId ? `&userId=${encodeURIComponent(userId)}` : ''}` +
+        `${search ? `&search=${encodeURIComponent(search)}` : ''}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
       if (!response.success) {
