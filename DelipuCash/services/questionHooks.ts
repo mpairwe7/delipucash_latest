@@ -207,7 +207,12 @@ export const questionQueryKeys = {
  * Engagement flags are derived from real data — no synthetic values.
  */
 function transformToFeedQuestion(
-  question: Question & { user?: Partial<AppUser>; upvotes?: number; downvotes?: number },
+  question: Question & {
+    user?: Partial<AppUser>;
+    upvotes?: number;
+    downvotes?: number;
+    userHasVoted?: 'up' | 'down' | null;
+  },
   _index?: number
 ): FeedQuestion {
   // Generate author from user data or fallback
@@ -246,7 +251,9 @@ function transformToFeedQuestion(
     // hasAcceptedAnswer requires a dedicated API field; default false to avoid false green checkmarks.
     hasExpertAnswer: false,
     hasAcceptedAnswer: false,
-    userHasVoted: null,
+    // Seeded from the server (the requesting user's QuestionVote) so optimistic vote
+    // toggling can correctly undo/switch after a refetch instead of always starting null.
+    userHasVoted: question.userHasVoted ?? null,
   };
 }
 
@@ -321,7 +328,9 @@ export function useInfiniteQuestionsFeed(
   return useInfiniteQuery({
     queryKey: questionQueryKeys.feed(tab, limit),
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      // Pass the current user so the server can seed each question's `userHasVoted`.
+      const userId = getCurrentUserId();
+      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
       if (!response.success) {
@@ -779,7 +788,8 @@ export function usePrefetchQuestions() {
       queryClient.prefetchInfiniteQuery({
         queryKey: questionQueryKeys.feed(tab, limit),
         queryFn: async (): Promise<QuestionsFeedResult> => {
-          const queryStr = `?tab=${tab}&page=1&limit=${limit}`;
+          const userId = getCurrentUserId();
+          const queryStr = `?tab=${tab}&page=1&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
           const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
           if (!response.success) {
@@ -864,7 +874,9 @@ export function useSuspenseQuestionsFeed(tab: FeedTabId, limit: number = 20) {
   return useSuspenseInfiniteQuery({
     queryKey: questionQueryKeys.feed(tab, limit),
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      // Pass the current user so the server can seed each question's `userHasVoted`.
+      const userId = getCurrentUserId();
+      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
       if (!response.success) {

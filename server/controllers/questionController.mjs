@@ -169,6 +169,7 @@ export const getQuestions = asyncHandler(async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
     const tab = req.query.tab || 'for-you';
+    const userId = req.query.userId ? String(req.query.userId) : null;
 
     // Build where clause based on tab
     let whereClause = {};
@@ -221,10 +222,22 @@ export const getQuestions = asyncHandler(async (req, res) => {
       else if (vc.type === 'down') downvoteMap.set(vc.questionId, vc._count.id);
     }
 
+    // Seed the requesting user's own vote per question so the client can render/toggle it.
+    const userVoteMap = new Map();
+    if (userId && questionIds.length > 0) {
+      const userVotes = await prisma.questionVote.findMany({
+        where: { questionId: { in: questionIds }, userId },
+        select: { questionId: true, type: true },
+      });
+      for (const v of userVotes) userVoteMap.set(v.questionId, v.type);
+    }
+
     const formattedQuestions = questions.map(q => {
       const formatted = formatQuestion(q);
       formatted.upvotes = upvoteMap.get(q.id) || 0;
       formatted.downvotes = downvoteMap.get(q.id) || 0;
+      // 'up' | 'down' | null — matches the client's userHasVoted contract.
+      formatted.userHasVoted = userVoteMap.get(q.id) || null;
       return formatted;
     });
 
