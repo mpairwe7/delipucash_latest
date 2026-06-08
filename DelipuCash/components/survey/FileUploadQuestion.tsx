@@ -9,7 +9,7 @@
  * - Haptic feedback on complete
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -42,9 +42,14 @@ interface FileUploadQuestionProps {
   onFileUploaded: (fileId: string) => void;
   /** Called when file is deleted */
   onFileDeleted?: () => void;
+  /** Called whenever an upload starts/finishes so the parent can block navigation */
+  onUploadingChange?: (uploading: boolean) => void;
   /** Currently uploaded file ID (if resuming) */
   currentFileId?: string | null;
 }
+
+/** Maximum accepted file size (must match the "Max 25MB" copy and the server cap). */
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
 // ============================================================================
 // HELPERS
@@ -72,6 +77,7 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
   questionId,
   onFileUploaded,
   onFileDeleted,
+  onUploadingChange,
   currentFileId,
 }) => {
   const { colors } = useTheme();
@@ -86,6 +92,16 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
   } = useUploadSurveyFile();
 
   const { mutate: deleteFile, isPending: isDeleting } = useDeleteSurveyFile();
+
+  // Surface the in-flight upload state to the parent so it can prevent the user
+  // navigating to the next question (and losing the answer) mid-upload. Always
+  // signal "not uploading" on unmount so a stranded flag can't block the survey.
+  useEffect(() => {
+    onUploadingChange?.(isUploading);
+  }, [isUploading, onUploadingChange]);
+  useEffect(() => {
+    return () => onUploadingChange?.(false);
+  }, [onUploadingChange]);
 
   const handlePickFile = useCallback(async () => {
     setError(null);
@@ -112,6 +128,15 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
       if (result.canceled || !result.assets?.length) return;
 
       const file = result.assets[0];
+
+      // Enforce the 25MB cap client-side — otherwise an oversized file uploads
+      // fully before the server rejects it, wasting the respondent's bandwidth.
+      if (typeof file.size === 'number' && file.size > MAX_FILE_BYTES) {
+        setError(`File is too large (${formatFileSize(file.size)}). Maximum size is 25MB.`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        return;
+      }
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
       uploadFile(
@@ -149,10 +174,13 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
   }, [surveyId, questionId, uploadFile, onFileUploaded]);
 
   const handleDelete = useCallback(() => {
-    if (!uploadedFile) return;
+    // Fall back to currentFileId so a file restored from a draft (where
+    // uploadedFile is null but currentFileId is set) is still deletable.
+    const fileId = uploadedFile?.id ?? currentFileId;
+    if (!fileId) return;
 
     deleteFile(
-      { surveyId, fileId: uploadedFile.id },
+      { surveyId, fileId },
       {
         onSuccess: () => {
           setUploadedFile(null);
@@ -164,7 +192,7 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
         },
       },
     );
-  }, [uploadedFile, surveyId, deleteFile, onFileDeleted]);
+  }, [uploadedFile, currentFileId, surveyId, deleteFile, onFileDeleted]);
 
   const handleRetry = useCallback(() => {
     setError(null);
