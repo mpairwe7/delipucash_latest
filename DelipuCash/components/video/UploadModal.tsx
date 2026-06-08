@@ -247,7 +247,23 @@ function UploadModalComponent({
   // Effective thumbnail: manual pick takes priority over auto-generated
   const effectiveThumbnail = selectedThumbnail || autoThumbnail;
 
+  // Controls the in-flight upload XHR so cancel/close actually aborts the network
+  // request instead of only mutating store state (which left the upload running
+  // and able to finalize server-side after the user "cancelled").
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Abort any in-flight upload if the modal unmounts.
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const resetForm = useCallback(() => {
+    // Abort the in-flight XHR before clearing local/store state so the request
+    // stops consuming bandwidth and cannot finalize after cancellation.
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setTitle('');
     setDescription('');
     setSelectedFile(null);
@@ -423,6 +439,11 @@ function UploadModalComponent({
     }
     const fileId = upload.fileId;
 
+    // Fresh abort controller for this attempt — abort() is called from resetForm
+    // (cancel/close) and on unmount.
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       useVideoStore.getState().updateUploadProgress(fileId, {
         status: 'uploading',
@@ -442,6 +463,7 @@ function UploadModalComponent({
             thumbnailUri: effectiveThumbnail.uri,
             thumbnailFileName: effectiveThumbnail.name,
             thumbnailMimeType: effectiveThumbnail.type,
+            signal: abortController.signal,
           })
         : await uploadVideoOnly({
             videoUri: selectedFile.uri,
@@ -450,9 +472,11 @@ function UploadModalComponent({
             description: description.trim(),
             fileName: selectedFile.name,
             mimeType: selectedFile.type,
+            signal: abortController.signal,
           });
 
       // Success — sync store, reset form, notify parent
+      abortControllerRef.current = null;
       if (fileId) completeUpload(fileId, result.data?.videoUrl || '');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       const videoId = result.data?.id || '';
@@ -466,6 +490,16 @@ function UploadModalComponent({
       onClose();
     } catch (err) {
       const error = err instanceof Error ? err : new Error('Upload failed');
+
+      // User-initiated cancel (resetForm/unmount aborted the XHR) — clean up
+      // quietly without an "Upload Failed" alert.
+      const wasCancelled = abortController.signal.aborted || /cancel/i.test(error.message);
+      abortControllerRef.current = null;
+      if (wasCancelled) {
+        setUploadPhase('idle');
+        if (fileId) failUpload(fileId, 'Cancelled by user');
+        return;
+      }
 
       setUploadPhase('idle');
       if (fileId) failUpload(fileId, error.message);
