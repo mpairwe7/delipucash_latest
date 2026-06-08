@@ -74,6 +74,7 @@ export interface SurveyAttemptActions {
 
   // Navigation
   setCurrentIndex: (index: number) => void;
+  setTotalQuestions: (total: number) => void;
   goNext: () => void;
   goPrevious: () => void;
 
@@ -324,6 +325,24 @@ export const useSurveyAttemptStore = create<
             }));
           }
         }
+      },
+
+      /**
+       * Sync the active question count to the *visible* set (conditional logic
+       * hides/shows questions). Navigation clamps against this, so it must track
+       * what the user can actually reach — not the full upload count. Clamps the
+       * current index down if it now points past the last visible question.
+       */
+      setTotalQuestions: (total) => {
+        const state = get();
+        const clampedIndex =
+          total > 0 && state.currentQuestionIndex > total - 1
+            ? total - 1
+            : state.currentQuestionIndex;
+        if (total === state.totalQuestions && clampedIndex === state.currentQuestionIndex) {
+          return; // no-op — avoid spurious re-renders
+        }
+        set({ totalQuestions: total, currentQuestionIndex: clampedIndex });
       },
 
       goNext: () => {

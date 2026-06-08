@@ -73,10 +73,9 @@ const submitMutate = jest.fn((_args: unknown, opts?: { onSuccess?: (d: unknown) 
   opts?.onSuccess?.({ pointsAwarded: 500 });
 });
 
-const RADIO_OPTS = JSON.stringify([
-  { id: 'yes', text: 'Yes' },
-  { id: 'no', text: 'No' },
-]);
+// The builder serializes choice options as plain text strings (not {id,text}); the
+// respondent submits the option TEXT as the answer, so fixtures use the real shape.
+const RADIO_OPTS = JSON.stringify(['Yes', 'No']);
 
 const radio = (overrides = {}) => makeUploadSurvey({ type: 'radio', options: RADIO_OPTS, ...overrides });
 
@@ -180,7 +179,7 @@ describe('SurveyAttemptScreen — conditional logic (question hiding)', () => {
             type: 'text',
             conditionalLogic: {
               logicType: 'all',
-              rules: [{ sourceQuestionId: 'q1', operator: 'equals', value: 'yes', action: 'show' }],
+              rules: [{ sourceQuestionId: 'q1', operator: 'equals', value: 'Yes', action: 'show' }],
             },
           }),
         ])
@@ -195,6 +194,32 @@ describe('SurveyAttemptScreen — conditional logic (question hiding)', () => {
     fireEvent.press(screen.getByRole('radio', { name: 'Yes' }));
     expect(screen.getByText('Questions: 2')).toBeOnTheScreen();
     expect(screen.getByLabelText('Go to question 2')).toBeOnTheScreen();
+  });
+
+  it('keeps the store question count in sync with the visible set (navigation bound)', async () => {
+    await render(
+      makeSurveyDetailQuery(
+        makeSurveyWithQuestions([
+          radio({ id: 'q1', text: 'Add detail?' }),
+          makeUploadSurvey({
+            id: 'q2',
+            text: 'Tell us more',
+            type: 'text',
+            conditionalLogic: {
+              logicType: 'all',
+              rules: [{ sourceQuestionId: 'q1', operator: 'equals', value: 'Yes', action: 'show' }],
+            },
+          }),
+        ])
+      )
+    );
+
+    // q2 hidden → store tracks the visible count (1), not the full upload count (2),
+    // so goNext/setCurrentIndex cannot overshoot into the hidden question.
+    expect(useSurveyAttemptStore.getState().totalQuestions).toBe(1);
+
+    fireEvent.press(screen.getByRole('radio', { name: 'Yes' }));
+    expect(useSurveyAttemptStore.getState().totalQuestions).toBe(2);
   });
 });
 
@@ -213,8 +238,40 @@ describe('SurveyAttemptScreen — review & submit', () => {
     });
 
     expect(submitMutate).toHaveBeenCalledTimes(1);
-    expect(submitMutate.mock.calls[0][0]).toEqual({ surveyId: 's-1', responses: { q1: 'yes' } });
+    // The answer is the option TEXT ("Yes") — not a synthetic "opt_0" id — so it
+    // matches conditional-logic rule values and analytics buckets server-side.
+    expect(submitMutate.mock.calls[0][0]).toEqual({ surveyId: 's-1', responses: { q1: 'Yes' } });
     // onSuccess → success overlay (stubbed) receives the awarded points.
     expect(screen.getByText('Completed: 500 pts')).toBeOnTheScreen();
+  });
+});
+
+describe('SurveyAttemptScreen — answer encoding', () => {
+  it('submits checkbox answers as an array of option TEXT (not opt_N ids)', async () => {
+    await render(
+      makeSurveyDetailQuery(
+        makeSurveyWithQuestions([
+          makeUploadSurvey({
+            id: 'q1',
+            text: 'Pick colors',
+            type: 'checkbox',
+            options: JSON.stringify(['Red', 'Green', 'Blue']),
+          }),
+        ])
+      )
+    );
+
+    fireEvent.press(screen.getByRole('checkbox', { name: 'Red' }));
+    fireEvent.press(screen.getByRole('checkbox', { name: 'Blue' }));
+    fireEvent.press(screen.getByRole('button', { name: 'Review & Submit' }));
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Submit survey responses' }));
+    });
+
+    expect(submitMutate.mock.calls[0][0]).toEqual({
+      surveyId: 's-1',
+      responses: { q1: ['Red', 'Blue'] },
+    });
   });
 });
