@@ -1,0 +1,24 @@
+# =============================================================================
+# Netlify is intentionally disabled for this repository.
+#
+# DelipuCash is an Expo (React Native mobile) app + a Node/Express server. There
+# is no web front-end for Netlify to build, and the connected Netlify sites were
+# posting failing/irrelevant "deploy-preview" + Header/Pages/Redirect checks on
+# every PR. The `ignore` command exits 0, which tells Netlify to CANCEL the build
+# before it runs — so no deploy is produced and no deploy-preview check is posted.
+#
+# This applies to every Netlify site connected to this repo via the Netlify
+# GitHub App. To fully detach Netlify (so the app stops watching the repo at all),
+# disconnect the repo from each site under Netlify dashboard → Site settings →
+# Build & deploy → "Manage repository", or remove the repo from the Netlify
+# GitHub App at github.com/settings/installations. That step requires Netlify/
+# GitHub-App admin access and cannot be done from repo code.
+# =============================================================================
+
+[build]
+  # Exit 0 → Netlify cancels the build (documented "skip build" behavior).
+  ignore = "/bin/true"
+  # Belt-and-suspenders: if a site ignores the cancel and still builds, publish an
+  # empty directory and run a no-op so nothing is deployed.
+  command = "true"
+  publish = "."

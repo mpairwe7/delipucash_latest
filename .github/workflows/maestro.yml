@@ -23,11 +23,12 @@ jobs:
   smoke:
     name: Android emulator
     runs-on: macos-latest # macOS gets HW-accelerated emulator
-    # Raised from 30m: the cold Gradle build (~18m) plus emulator boot + Maestro
-    # flows (~10m) sat right on the old limit, so the job was guillotined mid-run
-    # every time (status "cancelled", no signal). 50m gives the emulator step room
-    # to finish; with Gradle caching below, warm runs land well under it.
-    timeout-minutes: 50
+    # Raised from 30m: the cold Gradle build plus emulator boot + Maestro flows sat
+    # right on the old limit, so the job was guillotined mid-run every time (status
+    # "cancelled", no signal). The macOS native build is highly variable (~18m to
+    # 30m+ cold), so 60m gives both the build and the emulator step real headroom;
+    # with Gradle caching below, warm runs land well under it.
+    timeout-minutes: 60
     steps:
       # v5 + setup-java v5 run on Node 24 (v4 are deprecated; forced to Node 24
       # on 2026-06-16). setup-gradle is the actively-maintained, Node-24 action.
@@ -67,11 +68,13 @@ jobs:
 
       # Build the development APK once and reuse for all flows.
       # If you have a pre-built APK in EAS, switch to `eas build:download` instead.
-      # Step-level timeout fails the build fast if it hangs, instead of silently
-      # consuming the whole job budget and starving the emulator step.
+      # Step timeout catches a genuine hang but must clear a cold native build,
+      # which on macOS runs ~18-30m+; 45m leaves the job's 60m budget room for the
+      # emulator + Maestro flows afterward. (A 30m cap here was too tight and the
+      # build kept timing out before the emulator step ran.)
       - name: Build dev APK
         working-directory: DelipuCash
-        timeout-minutes: 30
+        timeout-minutes: 45
         run: |
           npx expo prebuild --platform android --no-install
           cd android && ./gradlew assembleDebug
