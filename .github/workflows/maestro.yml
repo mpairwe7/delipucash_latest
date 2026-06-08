@@ -81,8 +81,13 @@ jobs:
         with:
           api-level: 34
           target: google_apis
-          arch: x86_64
+          # macos-latest runners are Apple Silicon (arm64); an x86_64 system image
+          # never boots there ("device emulator-5554 not found" → boot timeout), so
+          # use the arm64-v8a image which runs HW-accelerated on Apple Silicon. The
+          # debug APK includes arm64-v8a (Expo's default reactNativeArchitectures).
+          arch: arm64-v8a
           profile: pixel_6
+          emulator-boot-timeout: 600
           script: |
             adb install -r DelipuCash/android/app/build/outputs/apk/debug/app-debug.apk
             maestro test .maestro/auth.yaml || echo "auth flow had issues"
