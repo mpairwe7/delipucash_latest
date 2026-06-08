@@ -138,6 +138,11 @@ export interface VideoFeedState {
   isScreenFocused: boolean;
   isAppActive: boolean;
   previousPlayerStatus: PlayerStatus | null; // Store status before pause for resume
+
+  // True while a full-screen overlay that owns its own audio/video is shown
+  // (livestream, interstitial ad, upload modal, search overlay). When set, the
+  // feed must not play so only one player produces audio at a time.
+  isExternalOverlayVisible: boolean;
 }
 
 export interface VideoFeedActions {
@@ -195,6 +200,7 @@ export interface VideoFeedActions {
   resumePlayback: () => void; // Called when screen regains focus or app foregrounds
   setScreenFocused: (focused: boolean) => void; // Track screen focus state
   setAppActive: (active: boolean) => void; // Track app foreground/background state
+  setExternalOverlayVisible: (visible: boolean) => void; // Gate feed when a full-screen overlay owns playback
 
   // Seen video tracking (for personalized feed dedupe)
   markSeen: (videoIds: string[]) => void;
@@ -277,6 +283,7 @@ const initialState: VideoFeedState = {
   isScreenFocused: true,
   isAppActive: true,
   previousPlayerStatus: null,
+  isExternalOverlayVisible: false,
   watchedVideoIds: [],
   seenVideoIds: new Set<string>(),
 };
@@ -315,10 +322,20 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
 
     setVideos: (videos) => {
       const videoMap = new Map(videos.map((v) => [v.id, v]));
+      // Preserve preload bookkeeping for videos still present, only pruning ids
+      // that left the feed. Previously this reset preload on EVERY call, and the
+      // blended For-You list changes identity often (watch count, ad spacing),
+      // which effectively disabled preloading by clearing it each re-render.
+      const { preload } = get();
+      const keep = (id: string) => videoMap.has(id);
       set({
         videos,
         videoMap,
-        preload: initialPreload,
+        preload: {
+          preloadedIds: preload.preloadedIds.filter(keep),
+          loadingIds: preload.loadingIds.filter(keep),
+          failedIds: preload.failedIds.filter(keep),
+        },
       });
     },
 
@@ -801,19 +818,20 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     resumePlayback: () => {
-      const { activeVideo, previousPlayerStatus, isScreenFocused, isAppActive, feedMode, ui } = get();
+      const { activeVideo, previousPlayerStatus, isScreenFocused, isAppActive, feedMode, ui, isExternalOverlayVisible } = get();
 
-      // Only resume if:
-      // 1. Screen is focused
-      // 2. App is active (in foreground)
-      // 3. Not in grid mode
-      // 4. Not showing overlays (comments, full player handles its own state)
-      // 5. We have a previous status to resume from
+      // Only resume if every gate that blocks playback is clear:
+      // screen focused, app active, vertical feed, and no overlay (comments,
+      // full player, mini player, or external full-screen overlay) is owning
+      // playback — and we have a previous status to resume from.
       if (
         isScreenFocused &&
         isAppActive &&
         feedMode !== 'grid' &&
         !ui.showComments &&
+        !ui.showFullPlayer &&
+        !ui.showMiniPlayer &&
+        !isExternalOverlayVisible &&
         previousPlayerStatus &&
         activeVideo.videoId
       ) {
@@ -857,6 +875,19 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
         get().pauseAllPlayback();
       } else if (active && currentState.isScreenFocused) {
         // App came to foreground and screen is focused - resume playback
+        get().resumePlayback();
+      }
+    },
+
+    setExternalOverlayVisible: (visible) => {
+      if (get().isExternalOverlayVisible === visible) return;
+      set({ isExternalOverlayVisible: visible });
+
+      // Mirror the lifecycle pause/resume mechanism so previousPlayerStatus
+      // bookkeeping stays consistent with focus/app-state transitions.
+      if (visible) {
+        get().pauseAllPlayback();
+      } else {
         get().resumePlayback();
       }
     },
@@ -913,22 +944,28 @@ export const useVideoFeedStore = create<VideoFeedState & VideoFeedActions>()(
     },
 
     shouldVideoPlay: (videoId) => {
-      const { activeVideo, feedMode, ui, isScreenFocused, isAppActive } = get();
+      const { activeVideo, feedMode, ui, isScreenFocused, isAppActive, isExternalOverlayVisible } = get();
       // Industry standard: Only play if screen focused AND app active
       if (!isScreenFocused || !isAppActive) return false;
       if (feedMode === 'grid') return false;
-      if (ui.showFullPlayer || ui.showComments) return false;
+      // Any overlay that owns its own player blocks the feed (single-audio rule)
+      if (ui.showFullPlayer || ui.showMiniPlayer || ui.showComments) return false;
+      if (isExternalOverlayVisible) return false;
       return activeVideo.videoId === videoId && activeVideo.status === 'playing';
     },
 
     isPlaybackAllowed: () => {
-      const { isScreenFocused, isAppActive, feedMode, ui } = get();
-      // Check all conditions that would prevent playback
+      const { isScreenFocused, isAppActive, feedMode, ui, isExternalOverlayVisible } = get();
+      // Check all conditions that would prevent feed playback
       if (!isScreenFocused) return false;
       if (!isAppActive) return false;
       if (feedMode === 'grid') return false;
       if (ui.showComments) return false;
-      // Note: showFullPlayer has its own player, so don't block for that
+      // Overlays that own their own player must silence the feed to avoid
+      // overlapping audio (full player, mini player, livestream/interstitial).
+      if (ui.showFullPlayer) return false;
+      if (ui.showMiniPlayer) return false;
+      if (isExternalOverlayVisible) return false;
       return true;
     },
 
@@ -980,15 +1017,24 @@ export const selectShouldVideoPlay = (videoId: string) => (state: VideoFeedState
   // Industry standard: Only play if screen focused AND app active
   if (!state.isScreenFocused || !state.isAppActive) return false;
   if (state.feedMode === 'grid') return false;
-  if (state.ui.showFullPlayer || state.ui.showComments) return false;
+  if (state.ui.showFullPlayer || state.ui.showMiniPlayer || state.ui.showComments) return false;
+  if (state.isExternalOverlayVisible) return false;
   return state.activeVideo.videoId === videoId;
 };
 
 // Lifecycle selectors
 export const selectIsScreenFocused = (state: VideoFeedState) => state.isScreenFocused;
 export const selectIsAppActive = (state: VideoFeedState) => state.isAppActive;
+// Single source of truth for whether the vertical feed may play. Mirrors the
+// isPlaybackAllowed() action — keep both in sync.
 export const selectIsPlaybackAllowed = (state: VideoFeedState) =>
-  state.isScreenFocused && state.isAppActive && state.feedMode !== 'grid' && !state.ui.showComments;
+  state.isScreenFocused &&
+  state.isAppActive &&
+  state.feedMode !== 'grid' &&
+  !state.ui.showComments &&
+  !state.ui.showFullPlayer &&
+  !state.ui.showMiniPlayer &&
+  !state.isExternalOverlayVisible;
 
 // ============================================================================
 // Convenience Hooks — pre-wrapped with useShallow (re-render safe)

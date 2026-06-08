@@ -67,9 +67,10 @@ function FollowButtonComponent({
   const { colors } = useTheme();
   const isAuthenticated = useAuthStore((s) => !!s.auth?.token);
 
-  // Only fetch status if no override provided
+  // Only fetch status if no override provided (pass undefined to keep the query
+  // disabled and avoid creating a stray followStatus('') cache entry).
   const { data: followStatus } = useFollowStatus(
-    isFollowingOverride === undefined ? creatorId : '',
+    isFollowingOverride === undefined ? creatorId : undefined,
   );
   const isFollowing = isFollowingOverride ?? followStatus?.isFollowing ?? false;
 

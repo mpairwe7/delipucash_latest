@@ -126,22 +126,60 @@ async function fetchJson<T>(
       headers,
     });
 
-    const json = await response.json();
+    // Parse defensively: 204 No Content, empty bodies, and non-JSON error pages
+    // (e.g. gateway 502/504 HTML) would otherwise throw inside response.json()
+    // and report a successful request (like a 204 DELETE) as a failure.
+    const rawText = await response.text();
+    let json: any = null;
+    if (rawText) {
+      try {
+        json = JSON.parse(rawText);
+      } catch {
+        json = null; // non-JSON body (HTML error page, plain text, etc.)
+      }
+    }
+
     if (!response.ok) {
       return {
         success: false,
-        data: json as T,
-        error: json?.message || "Request failed",
+        data: (json ?? {}) as T,
+        error: json?.message || `Request failed (${response.status})`,
       };
     }
 
-    return { success: true, data: json as T };
+    return { success: true, data: (json ?? {}) as T };
   } catch (error) {
     return {
       success: false,
       data: {} as T,
       error: error instanceof Error ? error.message : "Network error",
     };
+  }
+}
+
+/**
+ * Safe wrapper for the absolute-URL follow/block endpoints. Catches network
+ * errors (so a dropped connection returns ok:false instead of rejecting) and
+ * parses the body defensively (non-JSON / empty responses don't throw).
+ */
+async function safeFollowFetch(
+  url: string,
+  init?: RequestInit,
+): Promise<{ ok: boolean; json: any; error?: string }> {
+  try {
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let json: any = null;
+    if (text) {
+      try {
+        json = JSON.parse(text);
+      } catch {
+        json = null;
+      }
+    }
+    return { ok: res.ok, json, error: res.ok ? undefined : json?.message || `Request failed (${res.status})` };
+  } catch (error) {
+    return { ok: false, json: null, error: error instanceof Error ? error.message : 'Network error' };
   }
 }
 
@@ -448,7 +486,9 @@ export const videoApi = {
    * Get recommended videos — uses /all (no dedicated backend route)
    */
   async getRecommended(limit: number = 10): Promise<ApiResponse<Video[]>> {
-    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=${limit}`);
+    // Pass the auth token so the server can personalize and seed per-user state
+    // (isLiked / isBookmarked / already-voted) instead of returning anonymous data.
+    const response = await fetchJson<{ data: Video[] }>(`${VIDEO_ROUTES.list}?limit=${limit}`, undefined, getAuthToken());
     return {
       success: response.success,
       data: getPlayableVideos(extractVideos(response.data)),
@@ -476,12 +516,25 @@ export const videoApi = {
   async getByUser(userId: string, page: number = 1, limit: number = 10): Promise<PaginatedResponse<Video>> {
     const response = await fetchJson<{
       videos: Video[];
-    }>(`${VIDEO_ROUTES.byUser(userId)}?page=${page}&limit=${limit}`);
+      pagination?: { page: number; limit: number; total: number; totalPages: number };
+    }>(`${VIDEO_ROUTES.byUser(userId)}?page=${page}&limit=${limit}`, undefined, getAuthToken());
+
+    const rawVideos = response.data?.videos || [];
+    const data = getPlayableVideos(rawVideos);
+    // Use server pagination when provided; otherwise derive a usable value instead
+    // of the hardcoded total:0/totalPages:0 that made every paginated consumer
+    // immediately conclude there were no more pages.
+    const pagination = response.data?.pagination ?? {
+      page,
+      limit,
+      total: rawVideos.length,
+      totalPages: rawVideos.length < limit ? page : page + 1,
+    };
 
     return {
       success: response.success,
-      data: getPlayableVideos(response.data?.videos || []),
-      pagination: { page, limit, total: 0, totalPages: 0 },
+      data,
+      pagination,
       error: response.error,
     };
   },
@@ -498,7 +551,7 @@ export const videoApi = {
     const response = await fetchJson<{
       data: Video[];
       pagination: any;
-    }>(`${VIDEO_ROUTES.list}?${params.toString()}`);
+    }>(`${VIDEO_ROUTES.list}?${params.toString()}`, undefined, getAuthToken());
 
     return {
       success: response.success,
@@ -600,10 +653,19 @@ export const videoApi = {
    * Increment view count
    */
   async incrementView(videoId: string): Promise<ApiResponse<{ views: number }>> {
-    const response = await fetchJson<{ video: Video }>(VIDEO_ROUTES.incrementView(videoId), {
+    const response = await fetchJson<any>(VIDEO_ROUTES.incrementView(videoId), {
       method: "POST",
     });
-    return { success: response.success, data: { views: response.data?.video?.views ?? 0 }, error: response.error };
+    // Tolerate multiple response shapes ({video:{views}} | {data:{views}} | {views}).
+    const d = response.data;
+    const views = d?.video?.views ?? d?.data?.views ?? d?.views;
+    return {
+      success: response.success,
+      // Only surface a numeric count; undefined avoids the view-count cache being
+      // optimistically zeroed when the server omits the field.
+      data: { views: typeof views === 'number' ? views : 0 },
+      error: response.error,
+    };
   },
 
   /**
@@ -624,7 +686,7 @@ export const videoApi = {
     const response = await fetchJson<{
       comments?: Comment[];
       data?: { comments?: Comment[]; pagination?: { page: number; limit: number; total: number; totalPages: number } };
-    }>(`${VIDEO_ROUTES.comments(videoId)}?page=${page}&limit=${limit}`);
+    }>(`${VIDEO_ROUTES.comments(videoId)}?page=${page}&limit=${limit}`, undefined, getAuthToken());
 
     const payload = response.data as any;
     const comments = payload?.data?.comments ?? payload?.comments ?? [];
@@ -915,61 +977,57 @@ export const videoApi = {
   async followCreator(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean; followId?: string }>> {
     const token = getAuthToken();
     if (!token) return { success: false, data: { isFollowing: false }, error: 'Authentication required' };
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.follow(creatorId)), {
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.follow(creatorId)), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false }, error: json.message };
+    return { success: json?.success ?? ok, data: json?.data || { isFollowing: false }, error: json?.message || error };
   },
 
   async unfollowCreator(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean }>> {
     const token = getAuthToken();
     if (!token) return { success: false, data: { isFollowing: false }, error: 'Authentication required' };
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.unfollow(creatorId)), {
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.unfollow(creatorId)), {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false }, error: json.message };
+    return { success: json?.success ?? ok, data: json?.data || { isFollowing: false }, error: json?.message || error };
   },
 
   async getFollowStatus(creatorId: string): Promise<ApiResponse<{ isFollowing: boolean; notificationsEnabled: boolean }>> {
     const token = getAuthToken();
     if (!token) return { success: false, data: { isFollowing: false, notificationsEnabled: false }, error: 'Authentication required' };
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.status(creatorId)), {
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.status(creatorId)), {
       headers: { Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: json.data || { isFollowing: false, notificationsEnabled: false }, error: json.message };
+    return { success: json?.success ?? ok, data: json?.data || { isFollowing: false, notificationsEnabled: false }, error: json?.message || error };
   },
 
   async getFollowCounts(userId: string): Promise<ApiResponse<{ followersCount: number; followingCount: number }>> {
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.counts(userId)));
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: json.data || { followersCount: 0, followingCount: 0 }, error: json.message };
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.counts(userId)));
+    return { success: json?.success ?? ok, data: json?.data || { followersCount: 0, followingCount: 0 }, error: json?.message || error };
   },
 
   async blockUser(userId: string): Promise<ApiResponse<{ success: boolean }>> {
     const token = getAuthToken();
     if (!token) return { success: false, data: { success: false }, error: 'Authentication required' };
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.block(userId)), {
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.block(userId)), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: { success: json.success ?? res.ok }, error: json.message };
+    const success = json?.success ?? ok;
+    return { success, data: { success }, error: json?.message || error };
   },
 
   async unblockUser(userId: string): Promise<ApiResponse<{ success: boolean }>> {
     const token = getAuthToken();
     if (!token) return { success: false, data: { success: false }, error: 'Authentication required' };
-    const res = await fetch(toAbsoluteUrl(FOLLOW_ROUTES.unblock(userId)), {
+    const { ok, json, error } = await safeFollowFetch(toAbsoluteUrl(FOLLOW_ROUTES.unblock(userId)), {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     });
-    const json = await res.json();
-    return { success: json.success ?? res.ok, data: { success: json.success ?? res.ok }, error: json.message };
+    const success = json?.success ?? ok;
+    return { success, data: { success }, error: json?.message || error };
   },
 };
 

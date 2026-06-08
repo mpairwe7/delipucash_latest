@@ -69,6 +69,8 @@ export interface UseUploadVideoParams {
   duration?: number;
   fileName?: string;
   mimeType?: string;
+  /** Abort the in-flight upload (e.g. when the upload modal is closed/cancelled). */
+  signal?: AbortSignal;
 }
 
 export interface UseUploadMediaParams extends UseUploadVideoParams {
@@ -181,6 +183,7 @@ export function useUploadVideoToR2(): UseMutationResult<
               setIsProcessing(false);
               setIsUploading(false);
             },
+            signal: params.signal,
           }
         );
 
@@ -236,7 +239,8 @@ export function useUploadMediaToR2(): UseMutationResult<
             params.thumbnailUri,
             params.userId,
             params.thumbnailFileName || 'thumbnail.jpg',
-            params.thumbnailMimeType || 'image/jpeg'
+            params.thumbnailMimeType || 'image/jpeg',
+            params.signal
           );
         }
 
@@ -268,6 +272,7 @@ export function useUploadMediaToR2(): UseMutationResult<
               setIsProcessing(false);
               setIsUploading(false);
             },
+            signal: params.signal,
           },
           thumbnailData
         );

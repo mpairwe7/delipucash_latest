@@ -408,8 +408,7 @@ export default function VideosScreen(): React.ReactElement {
   // Lifecycle management - Industry Standard: TikTok/YouTube/Instagram pattern
   const setScreenFocused = useVideoFeedStore(s => s.setScreenFocused);
   const setAppActive = useVideoFeedStore(s => s.setAppActive);
-  const pauseAllPlayback = useVideoFeedStore(s => s.pauseAllPlayback);
-  const resumePlayback = useVideoFeedStore(s => s.resumePlayback);
+  const setExternalOverlayVisible = useVideoFeedStore(s => s.setExternalOverlayVisible);
 
   // ============================================================================
   // LOCAL STATE - 2026 Enhanced
@@ -604,12 +603,21 @@ export default function VideosScreen(): React.ReactElement {
     }, [setScreenFocused])
   );
 
-  // Pause videos when LiveStream is visible (modal overlay)
+  // Single-audio rule: any full-screen overlay that owns its own player (or
+  // simply covers the feed) must silence the feed underneath. The store gates
+  // feed playback on isExternalOverlayVisible, so we drive it from the union of
+  // all such overlays. The interstitial ad in particular plays its own audio —
+  // without this the feed video and the ad would play simultaneously.
+  const externalOverlayVisible =
+    liveStreamVisible ||
+    showInterstitialAd ||
+    uploadModalVisible ||
+    searchOverlayVisible ||
+    showAdFeedback;
+
   useEffect(() => {
-    if (liveStreamVisible) {
-      pauseAllPlayback();
-    }
-  }, [liveStreamVisible, pauseAllPlayback]);
+    setExternalOverlayVisible(externalOverlayVisible);
+  }, [externalOverlayVisible, setExternalOverlayVisible]);
 
   // ============================================================================
   // COMPUTED DATA — Per-tab data isolation
@@ -736,6 +744,17 @@ export default function VideosScreen(): React.ReactElement {
     baseVideos = baseVideos.filter((v) => {
       if (hiddenVidSet.has(v.id)) return false;
       if (v.userId && hiddenCreatorSet.has(v.userId)) return false;
+      return true;
+    });
+
+    // Dedupe by id — the For-You blend merges personalized + explore + trending,
+    // and the same video can appear in more than one source. FlatList keyExtractor
+    // uses item.id, so duplicates cause key collisions and mis-rendered/mis-playing
+    // items. Keep the first occurrence (preserves blend ordering).
+    const seenFeedIds = new Set<string>();
+    baseVideos = baseVideos.filter((v) => {
+      if (seenFeedIds.has(v.id)) return false;
+      seenFeedIds.add(v.id);
       return true;
     });
 
@@ -1146,9 +1165,10 @@ export default function VideosScreen(): React.ReactElement {
   }, []);
 
   const closeLiveStream = useCallback(() => {
+    // Feed playback resumes automatically via the external-overlay effect once
+    // liveStreamVisible flips false (store.setExternalOverlayVisible → resume).
     setLiveStreamVisible(false);
-    resumePlayback();
-  }, [resumePlayback]);
+  }, []);
 
   // Search handlers
   const handleSearchSubmit = useCallback((query: string) => {

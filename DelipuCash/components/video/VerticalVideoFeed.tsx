@@ -42,6 +42,7 @@ import {
   AccessibilityInfo,
   Text,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -84,7 +85,11 @@ const LIST_OPTIMIZATION = {
   maxToRenderPerBatch: 2, // Render 2 items per batch
   updateCellsBatchingPeriod: 100, // Batch updates every 100ms
   initialNumToRender: 2, // Start with 2 items for faster initial render with less jank
-  removeClippedSubviews: true, // Enable on both platforms - prevents off-screen items from consuming resources
+  // removeClippedSubviews is disabled on Android: with live expo-video players it
+  // detaches native views mid-playback there — producing black frames and audio
+  // that continues without video. iOS handles clipping safely and benefits from
+  // the memory savings. windowSize already bounds the number of mounted players.
+  removeClippedSubviews: Platform.OS === 'ios',
 };
 
 // ============================================================================

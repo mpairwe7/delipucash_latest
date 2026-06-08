@@ -347,6 +347,15 @@ function VideoPlayerComponent({
   // EFFECTS
   // ============================================================================
 
+  // Mirror playbackState into a ref so the player-event effect can read the
+  // latest value WITHOUT listing playbackState in its deps (which previously
+  // tore down and rebuilt the listeners + 250ms interval on every state change
+  // and left `playingChange` reading a stale playbackState).
+  const playbackStateRef = useRef(playbackState);
+  useEffect(() => {
+    playbackStateRef.current = playbackState;
+  }, [playbackState]);
+
   // Subscribe to player events — 2026: Event-driven instead of polling
   useEffect(() => {
     if (!player) return;
@@ -369,7 +378,10 @@ function VideoPlayerComponent({
     const playingSub = player.addListener('playingChange', (event) => {
       if (event.isPlaying) {
         setPlaybackState(PlaybackState.Playing);
-      } else if (playbackState !== PlaybackState.Ended && playbackState !== PlaybackState.Error) {
+      } else if (
+        playbackStateRef.current !== PlaybackState.Ended &&
+        playbackStateRef.current !== PlaybackState.Error
+      ) {
         setPlaybackState(PlaybackState.Paused);
       }
     });
@@ -406,7 +418,7 @@ function VideoPlayerComponent({
         // Listeners may already be removed
       }
     };
-  }, [player, autoPlay, loop, onVideoEnd, playbackState]);
+  }, [player, autoPlay, loop, onVideoEnd]);
 
   // Apply playback speed when it changes
   useEffect(() => {

@@ -75,12 +75,15 @@ export const MAX_LIVESTREAM_DURATION_PREMIUM = 7200; // 2 hours for premium user
 export const MAX_UPLOAD_SIZE_FREE = 40 * 1024 * 1024; // 40MB
 export const MAX_UPLOAD_SIZE_PREMIUM = 500 * 1024 * 1024; // 500MB
 
-// Helper to format file size
+// Helper to format file size — guards against NaN/negative inputs (e.g. a
+// remaining-bytes calc where uploadedBytes briefly exceeds fileSize) so the UI
+// never shows "NaN B" or "-3.0 KB".
 export const formatFileSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  const b = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  if (b < 1024) return `${Math.round(b)} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(b / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 };
 
 // ============================================================================

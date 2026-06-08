@@ -49,13 +49,15 @@ export default function VideoDeepLinkScreen() {
 
   const handleLike = useCallback(() => {
     if (!video) return;
-    const isCurrentlyLiked = likedVideoIds.has(video.id);
+    // Read liked state fresh from the store so rapid double-taps can't act on a
+    // stale closure value (which would desync the heart from the like count).
+    const isCurrentlyLiked = useVideoFeedStore.getState().likedVideoIds.has(video.id);
     toggleLike(video.id);
     likeVideoMutate(
       { videoId: video.id, isLiked: isCurrentlyLiked },
       { onError: () => toggleLike(video.id) },
     );
-  }, [video, likedVideoIds, toggleLike, likeVideoMutate]);
+  }, [video, toggleLike, likeVideoMutate]);
 
   // Loading state
   if (isLoading) {
