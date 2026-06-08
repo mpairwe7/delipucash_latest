@@ -654,6 +654,10 @@ function VideoFeedItemComponent({
   // Track whether onVideoEnd has fired for this play session (prevents repeat triggers)
   const hasEndedRef = useRef(false);
 
+  // Tracks explicit user pause intent so a late `readyToPlay` event (e.g. after a
+  // buffering stall or replaceAsync recovery) does not override a manual pause.
+  const userPausedRef = useRef(false);
+
   // 2026: Guard against empty/null sources — expo-video errors on empty string
   const videoSource = useMemo(() => {
     const url = (video.videoUrl || '').trim();
@@ -677,11 +681,27 @@ function VideoFeedItemComponent({
   const isActiveRef = useRef(isActive);
   useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
 
+  // Tracks one-shot UI timeouts (heart burst, seek indicator, deferred tap) so
+  // they can be cleared on unmount — prevents setState-after-unmount when the
+  // feed recycles this item shortly after an interaction.
+  const pendingTimeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const scheduleTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimeoutsRef.current.delete(id);
+      if (isMountedRef.current) fn();
+    }, ms);
+    pendingTimeoutsRef.current.add(id);
+    return id;
+  }, []);
+
   // Track mounted state
   useEffect(() => {
     isMountedRef.current = true;
+    const timeouts = pendingTimeoutsRef.current;
     return () => {
       isMountedRef.current = false;
+      timeouts.forEach((id) => clearTimeout(id));
+      timeouts.clear();
     };
   }, []);
 
@@ -730,6 +750,8 @@ function VideoFeedItemComponent({
     if (isActive) {
       // Reset end-guard so onVideoEnd can fire once per play session
       hasEndedRef.current = false;
+      // Fresh play session — clear any prior manual-pause intent
+      userPausedRef.current = false;
 
       // Telemetry: track impression + reset milestones
       const t = telemetryRef.current;
@@ -820,9 +842,11 @@ function VideoFeedItemComponent({
           } catch {
             // Player may be released
           }
-          // 2026: Auto-play when player becomes ready and this item is active
-          // Data saver: skip auto-play — user must tap play manually
-          if (isActiveRef.current && !isDataSaver) {
+          // 2026: Auto-play when player becomes ready and this item is active.
+          // Data saver: skip auto-play — user must tap play manually.
+          // userPausedRef guard: don't override an explicit user pause when a
+          // late readyToPlay arrives after a buffering stall / URL recovery.
+          if (isActiveRef.current && !isDataSaver && !userPausedRef.current) {
             safePlayerCall(() => player.play());
             setIsPlaying(true);
             setPlayerStatus('playing');
@@ -969,8 +993,10 @@ function VideoFeedItemComponent({
             telemetry.track({ videoId: video.id, eventType: 'play_100pct', videoIndex: index, payload: { duration } });
           }
 
-          // Check if video ended — fire once per play session
-          if (currentTime >= duration - 0.5 && !hasEndedRef.current) {
+          // Check if video ended — fire once per play session. Require some
+          // elapsed playback (currentTime > 0) so a tiny or mis-reported duration
+          // can't satisfy `currentTime >= duration - 0.5` on the very first tick.
+          if (currentTime > 0 && currentTime >= duration - 0.5 && !hasEndedRef.current) {
             hasEndedRef.current = true;
             onVideoEnd?.(video);
           }
@@ -1044,12 +1070,14 @@ function VideoFeedItemComponent({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     if (isPlaying) {
+      userPausedRef.current = true;
       safePlayerCall(() => player.pause());
       setIsPlaying(false);
       playButtonScale.value = withSpring(1.1, { damping: 10 }, () => {
         playButtonScale.value = withSpring(1);
       });
     } else {
+      userPausedRef.current = false;
       safePlayerCall(() => player.play());
       setIsPlaying(true);
     }
@@ -1065,7 +1093,7 @@ function VideoFeedItemComponent({
     // Show heart burst animation
     setHeartPosition({ x, y });
     setShowHeartBurst(true);
-    setTimeout(() => setShowHeartBurst(false), 1000);
+    scheduleTimeout(() => setShowHeartBurst(false), 1000);
 
     // Trigger like with video object
     onLike(video);
@@ -1075,7 +1103,7 @@ function VideoFeedItemComponent({
       withSpring(1.4, { damping: 8 }),
       withSpring(1, { damping: 12 })
     );
-  }, [onLike, likeScale, video]);
+  }, [onLike, likeScale, video, scheduleTimeout]);
 
   const handleDoubleTapSeek = useCallback((side: 'left' | 'right') => {
     if (!player || !duration || !isMountedRef.current) return;
@@ -1097,11 +1125,11 @@ function VideoFeedItemComponent({
     setShowSeekIndicator(true);
 
     // Reset after delay
-    setTimeout(() => {
+    scheduleTimeout(() => {
       accumulatedSeekRef.current = 0;
       setShowSeekIndicator(false);
     }, 600);
-  }, [player, duration, currentTime, safePlayerCall]);
+  }, [player, duration, currentTime, safePlayerCall, scheduleTimeout]);
 
   const handleLongPress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -1163,7 +1191,7 @@ function VideoFeedItemComponent({
   }, [handleDoubleTapSeek, handleDoubleTapLike]);
 
   const handleTapEnd = useCallback(() => {
-    setTimeout(() => {
+    scheduleTimeout(() => {
       if (buttonTappedRef.current) {
         buttonTappedRef.current = false;
         return;
@@ -1173,7 +1201,7 @@ function VideoFeedItemComponent({
         handlePlayPause();
       }
     }, DOUBLE_TAP_DELAY);
-  }, [handlePlayPause]);
+  }, [handlePlayPause, scheduleTimeout]);
 
   // ============================================================================
   // GESTURES

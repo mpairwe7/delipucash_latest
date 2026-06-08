@@ -102,19 +102,23 @@ const formatDuration = (seconds: number): string => {
 /**
  * Format views count to human readable string
  */
-const formatViews = (views: number): string => {
-  if (views >= 1000000) return `${(views / 1000000).toFixed(1)}M`;
-  if (views >= 1000) return `${(views / 1000).toFixed(1)}K`;
-  return views.toString();
+const formatViews = (views: number | undefined | null): string => {
+  const n = typeof views === 'number' && Number.isFinite(views) ? views : 0;
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toString();
 };
 
 /**
  * Format date to relative time string
  */
-const formatTimeAgo = (dateString: string): string => {
+const formatTimeAgo = (dateString: string | undefined | null): string => {
+  if (!dateString) return '';
   const date = new Date(dateString);
+  const time = date.getTime();
+  if (Number.isNaN(time)) return ''; // guard invalid/missing dates → no "NaN mo ago"
   const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  const seconds = Math.floor((now.getTime() - time) / 1000);
 
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;

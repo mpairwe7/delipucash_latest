@@ -198,15 +198,20 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [canSkip, setCanSkip] = useState(false);
-  const [skipCountdown, setSkipCountdown] = useState(skipAfterSeconds);
   const [isScreenReaderEnabled, setIsScreenReaderEnabled] = useState(false);
 
   // ========== REFS ==========
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipTimeoutRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const completionFiredRef = useRef(false);
+  const isMountedRef = useRef(true);
+
+  // Skip availability is DERIVED from the video's own clock (currentTime) rather
+  // than a separate wall-clock interval. This removes the timer-churn bug where
+  // the countdown was torn down/rebuilt on every isPlaying toggle (dropping ticks),
+  // and makes the countdown pause naturally whenever the video pauses/buffers.
+  const canSkip = showSkipButton ? currentTime >= skipAfterSeconds : true;
+  const skipCountdown = Math.max(0, Math.ceil(skipAfterSeconds - currentTime));
 
   // ========== ANIMATIONS ==========
   const controlsOpacity = useSharedValue(1);
@@ -232,9 +237,19 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
 
   // ========== EFFECTS ==========
 
+  // Track mounted state — guards async setState (thumbnail/screen-reader resolves)
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   // Check for screen reader
   useEffect(() => {
-    AccessibilityInfo.isScreenReaderEnabled().then(setIsScreenReaderEnabled);
+    AccessibilityInfo.isScreenReaderEnabled().then((enabled) => {
+      if (isMountedRef.current) setIsScreenReaderEnabled(enabled);
+    });
     const subscription = AccessibilityInfo.addEventListener(
       'screenReaderChanged',
       setIsScreenReaderEnabled
@@ -267,12 +282,14 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
             imageUrl: ad.imageUrl ?? undefined,
           };
           const generated = await getBestThumbnailUrl(adWithMedia);
-          setThumbnailUrl(generated);
+          if (isMountedRef.current) setThumbnailUrl(generated);
         } catch (err) {
           console.error('Error generating thumbnail:', err);
-          setThumbnailUrl('https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&h=300&fit=crop');
+          if (isMountedRef.current) {
+            setThumbnailUrl('https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&h=300&fit=crop');
+          }
         } finally {
-          setIsLoadingThumbnail(false);
+          if (isMountedRef.current) setIsLoadingThumbnail(false);
         }
       }
     };
@@ -380,29 +397,7 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
     };
   }, [isPlaying, videoPlayer, ad, onVideoProgress, onVideoComplete, progressWidth, isValidAd]);
 
-  // Skip countdown
-  useEffect(() => {
-    if (isPlaying && showSkipButton && !canSkip) {
-      skipTimeoutRef.current = setInterval(() => {
-        setSkipCountdown((prev) => {
-          if (prev <= 1) {
-            setCanSkip(true);
-            if (skipTimeoutRef.current) {
-              clearInterval(skipTimeoutRef.current);
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
-
-    return () => {
-      if (skipTimeoutRef.current) {
-        clearInterval(skipTimeoutRef.current);
-      }
-    };
-  }, [isPlaying, showSkipButton, canSkip]);
+  // (Skip countdown is derived from currentTime — see canSkip/skipCountdown above.)
 
   // Auto-hide controls
   useEffect(() => {
@@ -462,12 +457,14 @@ const VideoAdComponent: React.FC<VideoAdComponentProps> = ({
       videoPlayer.play();
     }
     completionFiredRef.current = false; // Allow re-fire on replay
-    setCanSkip(false);
-    setSkipCountdown(skipAfterSeconds);
-  }, [videoPlayer, skipAfterSeconds]);
+    setCurrentTime(0); // Resets derived canSkip/skipCountdown immediately
+  }, [videoPlayer]);
 
   const handleSkip = useCallback(() => {
-    if (canSkip) {
+    if (canSkip && !completionFiredRef.current) {
+      // Mark completion as fired so a near-simultaneous natural end can't
+      // double-fire onVideoComplete (skip and end-of-video both resolve the ad).
+      completionFiredRef.current = true;
       videoPlayer?.pause();
       onVideoComplete?.(ad);
     }

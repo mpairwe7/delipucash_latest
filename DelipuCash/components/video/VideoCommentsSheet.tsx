@@ -160,6 +160,11 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
   const { colors } = useTheme();
   const likeScale = useSharedValue(1);
 
+  // `likedComments` is a session-local toggle seeded empty, so the displayed
+  // count must layer the local like over the server base to stay consistent with
+  // the filled/outline heart (otherwise the heart fills but the number never moves).
+  const displayLikes = (comment.likes || 0) + (isLiked ? 1 : 0);
+
   const handleLike = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     likeScale.value = withSpring(1.3, { damping: 6, stiffness: 400 }, () => {
@@ -220,7 +225,7 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
             onPress={handleLike}
             style={styles.commentAction}
             accessibilityRole="button"
-            accessibilityLabel={`${isLiked ? 'Unlike' : 'Like'} comment. ${comment.likes || 0} likes`}
+            accessibilityLabel={`${isLiked ? 'Unlike' : 'Like'} comment. ${displayLikes} likes`}
             accessibilityState={{ selected: isLiked }}
           >
             <Animated.View style={likeStyle}>
@@ -231,7 +236,7 @@ const CommentItem = memo(({ comment, onLike, onReply, isLiked }: CommentItemProp
               />
             </Animated.View>
             <Text style={[styles.commentActionText, { color: colors.textMuted }]}>
-              {comment.likes || 0}
+              {displayLikes}
             </Text>
           </Pressable>
 

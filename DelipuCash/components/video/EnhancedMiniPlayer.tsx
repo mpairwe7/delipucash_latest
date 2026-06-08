@@ -27,7 +27,7 @@
  * ```
  */
 
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -48,6 +48,7 @@ import Animated, {
   Extrapolation,
   withRepeat,
   withSequence,
+  cancelAnimation,
 } from 'react-native-reanimated';
 import {
   Gesture,
@@ -146,9 +147,31 @@ function EnhancedMiniPlayerComponent({
   const waveBar2 = useSharedValue(0.6);
   const waveBar3 = useSharedValue(0.4);
 
+  // Lifecycle refs — guard async setState and deferred close/expand timers
+  const isMountedRef = useRef(true);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ============================================================================
   // EFFECTS
   // ============================================================================
+
+  // Cancel running animations + clear deferred timers on unmount. The waveform
+  // uses infinite withRepeat loops, so they must be explicitly cancelled.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      cancelAnimation(translateY);
+      cancelAnimation(translateX);
+      cancelAnimation(scale);
+      cancelAnimation(opacity);
+      cancelAnimation(progressWidth);
+      cancelAnimation(waveBar1);
+      cancelAnimation(waveBar2);
+      cancelAnimation(waveBar3);
+    };
+  }, [translateY, translateX, scale, opacity, progressWidth, waveBar1, waveBar2, waveBar3]);
 
   // Load thumbnail
   useEffect(() => {
@@ -165,11 +188,11 @@ function EnhancedMiniPlayerComponent({
             thumbnailUrl: video.thumbnail,
             videoUrl: video.videoUrl,
           });
-          setThumbnailUrl(generated || getPlaceholderImage('video'));
+          if (isMountedRef.current) setThumbnailUrl(generated || getPlaceholderImage('video'));
         } catch {
-          setThumbnailUrl(getPlaceholderImage('video'));
+          if (isMountedRef.current) setThumbnailUrl(getPlaceholderImage('video'));
         } finally {
-          setIsLoadingThumbnail(false);
+          if (isMountedRef.current) setIsLoadingThumbnail(false);
         }
       }
     };
@@ -229,23 +252,36 @@ function EnhancedMiniPlayerComponent({
   // HANDLERS
   // ============================================================================
 
+  // Defer onClose until the exit animation finishes (tracked + mount-guarded so
+  // it never fires after unmount and is cleared if the component goes away first).
+  const deferredClose = useCallback(() => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      if (isMountedRef.current) onClose();
+    }, 200);
+  }, [onClose]);
+
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
-    
+
     // Animate out before closing
     translateY.value = withTiming(MINI_PLAYER_HEIGHT + 100, { duration: 200 });
     opacity.value = withTiming(0, { duration: 200 });
-    
-    setTimeout(onClose, 200);
-  }, [translateY, opacity, onClose]);
+
+    deferredClose();
+  }, [translateY, opacity, deferredClose]);
 
   const handleExpand = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     // Animate scale up before expanding
     scale.value = withTiming(1.02, { duration: 100 });
-    
-    setTimeout(() => {
+
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = null;
+      if (!isMountedRef.current) return;
       scale.value = withTiming(1, { duration: 50 });
       onExpand();
     }, 100);
@@ -292,10 +328,10 @@ function EnhancedMiniPlayerComponent({
     .onEnd((event) => {
       // Check for vertical swipe gestures
       if (event.translationY > SWIPE_THRESHOLD || event.velocityY > DISMISS_VELOCITY) {
-        // Swipe down - dismiss
+        // Swipe down - dismiss (let the exit animation finish before unmount)
         translateY.value = withTiming(MINI_PLAYER_HEIGHT + 100, { duration: 200 });
         opacity.value = withTiming(0, { duration: 200 });
-        runOnJS(onClose)();
+        runOnJS(deferredClose)();
       } else if (event.translationY < -SWIPE_THRESHOLD || event.velocityY < -DISMISS_VELOCITY) {
         // Swipe up - expand
         translateY.value = withSpring(0);
@@ -305,11 +341,11 @@ function EnhancedMiniPlayerComponent({
         Math.abs(event.translationX) > SWIPE_THRESHOLD * 1.5 ||
         Math.abs(event.velocityX) > DISMISS_VELOCITY
       ) {
-        // Horizontal swipe - dismiss
+        // Horizontal swipe - dismiss (let the exit animation finish before unmount)
         const direction = event.translationX > 0 ? 1 : -1;
         translateX.value = withTiming(SCREEN_WIDTH * direction, { duration: 200 });
         opacity.value = withTiming(0, { duration: 200 });
-        runOnJS(onClose)();
+        runOnJS(deferredClose)();
       } else {
         // Spring back to position
         translateY.value = withSpring(0, { damping: 20 });
