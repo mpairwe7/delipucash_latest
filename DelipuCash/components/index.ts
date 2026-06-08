@@ -142,7 +142,9 @@ export type {
 } from './livestream';
 
 // Support Components
-export * from './support';
+// SearchBar is intentionally omitted here — the cards SearchBar above already owns that
+// name at the barrel level; import the support one from '@/components/support' if needed.
+export { FAQItemComponent, ContactCard, QuickActionCard, TutorialCard } from './support';
 
 // Notification Components (detailed)
 export * from './notifications';

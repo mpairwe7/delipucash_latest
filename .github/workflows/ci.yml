@@ -99,6 +99,14 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # Available to ALL steps. The `postinstall` runs `prisma generate`, which loads
+    # prisma.config.ts and resolves env('DIRECT_DATABASE_URL') at INSTALL time (Prisma 7's
+    # env() throws on a missing var, so the `?? DATABASE_URL` fallback never applies).
+    # Dummy values are fine: generate doesn't connect, and the tests mock prisma.
+    env:
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
+      DIRECT_DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
+      JWT_SECRET: 'ci-test-secret-do-not-use-in-prod'
     steps:
       - uses: actions/checkout@v4
 
@@ -125,8 +133,3 @@ jobs:
         run: bun test
         env:
           NODE_ENV: test
-          # Tests must not require live DB access; they should mock prisma.
-          # If a DB is needed, point at a local Postgres service.
-          DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
-          DIRECT_DATABASE_URL: 'postgresql://test:test@localhost:5432/test_db'
-          JWT_SECRET: 'ci-test-secret-do-not-use-in-prod'

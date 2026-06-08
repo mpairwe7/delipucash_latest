@@ -42,7 +42,7 @@ The Express.js backend deploys as a single Vercel Serverless Function, with Pris
 | Setting | Value | Purpose |
 |---------|-------|---------|
 | `installCommand` | `bun install` | Uses Bun for fast dependency installation |
-| `buildCommand` | `bun run vercel-build` | Runs Prisma migrate + generate |
+| `buildCommand` | `bun run vercel-build` | Runs Prisma generate (no migrate) |
 | `maxDuration` | 60s | Maximum function execution time |
 | `routes` | `/(.*) → api/index.js` | All requests routed to single entry point |
 
@@ -53,7 +53,7 @@ The `vercel-build` script in `server/package.json`:
 ```json
 {
   "scripts": {
-    "vercel-build": "bunx prisma migrate deploy && bunx prisma generate"
+    "vercel-build": "prisma generate"
   }
 }
 ```
@@ -61,9 +61,12 @@ The `vercel-build` script in `server/package.json`:
 ### Build Steps
 
 1. **Install** — `bun install` installs all dependencies
-2. **Migrate** — `prisma migrate deploy` applies pending migrations to the production database
-3. **Generate** — `prisma generate` generates the Prisma Client for the deployed environment
-4. **Deploy** — Vercel bundles `api/index.js` as a serverless function
+2. **Generate** — `prisma generate` generates the Prisma Client for the deployed environment
+3. **Deploy** — Vercel bundles `api/index.js` as a serverless function
+
+> **Migrations are not run during `vercel-build`.** Prisma 7's `env()` throws when
+> `DATABASE_URL` is absent on the build host, and running `migrate deploy` inside a serverless
+> build is an anti-pattern. Apply migrations out-of-band — see *Database Migrations* below.
 
 ### Entry Point
 
@@ -98,7 +101,8 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 ### Deploying Migrations
 
-Migrations run automatically during `vercel-build`. For manual deployment:
+Migrations are **not** applied during `vercel-build` — run them out-of-band (manually, or from a
+dedicated deploy step) against the production database:
 
 ```bash
 # From server/ directory

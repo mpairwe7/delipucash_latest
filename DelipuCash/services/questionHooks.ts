@@ -65,6 +65,10 @@ export interface VoteParams {
 
 export interface CreateQuestionParams {
   text: string;
+  /** Optional rich body/details for the question. */
+  description?: string;
+  /** Optional topic tags. */
+  tags?: string[];
   category?: string;
   rewardAmount?: number;
   isInstantReward?: boolean;
@@ -182,8 +186,8 @@ async function fetchJson<T>(
 export const questionQueryKeys = {
   all: ['questions'] as const,
   feeds: () => [...questionQueryKeys.all, 'feed'] as const,
-  feed: (tab: FeedTabId, limit: number) =>
-    [...questionQueryKeys.feeds(), tab, limit] as const,
+  feed: (tab: FeedTabId, limit: number, search = '') =>
+    [...questionQueryKeys.feeds(), tab, limit, search] as const,
   details: () => [...questionQueryKeys.all, 'detail'] as const,
   detail: (id: string) => [...questionQueryKeys.details(), id] as const,
   responses: (id: string) => [...questionQueryKeys.all, 'responses', id] as const,
@@ -203,7 +207,12 @@ export const questionQueryKeys = {
  * Engagement flags are derived from real data — no synthetic values.
  */
 function transformToFeedQuestion(
-  question: Question & { user?: Partial<AppUser>; upvotes?: number; downvotes?: number },
+  question: Question & {
+    user?: Partial<AppUser>;
+    upvotes?: number;
+    downvotes?: number;
+    userHasVoted?: 'up' | 'down' | null;
+  },
   _index?: number
 ): FeedQuestion {
   // Generate author from user data or fallback
@@ -242,56 +251,45 @@ function transformToFeedQuestion(
     // hasAcceptedAnswer requires a dedicated API field; default false to avoid false green checkmarks.
     hasExpertAnswer: false,
     hasAcceptedAnswer: false,
-    userHasVoted: null,
+    // Seeded from the server (the requesting user's QuestionVote) so optimistic vote
+    // toggling can correctly undo/switch after a refetch instead of always starting null.
+    userHasVoted: question.userHasVoted ?? null,
   };
 }
 
 /**
- * Sort questions based on tab selection
+ * Rank a server-returned page for the active tab.
+ *
+ * The server now does all FILTERING (unanswered / rewards / my-activity) and base ordering, so
+ * applying filters here would silently drop items from a fetched page and break pagination. This
+ * only re-orders the page returned for the tab.
  */
 function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQuestion[] {
   const sorted = [...questions];
 
   switch (tab) {
     case 'for-you':
-      // AI/personalized - mix of trending, rewards, and recent
+      // Server returns the page; rank it locally by engagement/reward signals.
       return sorted.sort((a, b) => {
-        const scoreA =
-          (a.isHot ? 10 : 0) +
-          (a.isTrending ? 8 : 0) +
-          (a.isInstantReward ? 15 : 0) +
-          (a.rewardAmount || 0) * 2;
-        const scoreB =
-          (b.isHot ? 10 : 0) +
-          (b.isTrending ? 8 : 0) +
-          (b.isInstantReward ? 15 : 0) +
-          (b.rewardAmount || 0) * 2;
-        return scoreB - scoreA;
+        const score = (q: FeedQuestion) =>
+          (q.isHot ? 10 : 0) +
+          (q.isTrending ? 8 : 0) +
+          (q.isInstantReward ? 15 : 0) +
+          (q.rewardAmount || 0) * 2;
+        return score(b) - score(a);
       });
 
+    case 'rewards':
+      // Server already filters to reward questions; just order by amount.
+      return sorted.sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0));
+
     case 'latest':
+    case 'unanswered':
+    case 'my-activity':
+      // Server filters these tabs; keep newest-first ordering on the page.
       return sorted.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
-
-    case 'unanswered':
-      return sorted.filter((q) => (q.totalAnswers || 0) === 0);
-
-    case 'rewards':
-      return sorted
-        .filter((q) => q.isInstantReward && q.rewardAmount)
-        .sort((a, b) => (b.rewardAmount || 0) - (a.rewardAmount || 0));
-
-    case 'my-activity': {
-      // Filter to questions the user authored or answered
-      const userId = getCurrentUserId();
-      if (!userId) return [];
-      return sorted.filter(
-        (q) => q.userId === userId || q.author?.id === userId
-      ).sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      );
-    }
 
     default:
       return sorted;
@@ -312,12 +310,19 @@ function sortQuestionsByTab(questions: FeedQuestion[], tab: FeedTabId): FeedQues
  */
 export function useInfiniteQuestionsFeed(
   tab: FeedTabId,
-  limit: number = 20
+  limit: number = 20,
+  search: string = ''
 ) {
   return useInfiniteQuery({
-    queryKey: questionQueryKeys.feed(tab, limit),
+    queryKey: questionQueryKeys.feed(tab, limit, search),
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      // Pass the current user (server seeds `userHasVoted`) and the search term (server-side
+      // full-table search, not just the loaded page).
+      const userId = getCurrentUserId();
+      const queryStr =
+        `?tab=${tab}&page=${pageParam}&limit=${limit}` +
+        `${userId ? `&userId=${encodeURIComponent(userId)}` : ''}` +
+        `${search ? `&search=${encodeURIComponent(search)}` : ''}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
       if (!response.success) {
@@ -775,7 +780,8 @@ export function usePrefetchQuestions() {
       queryClient.prefetchInfiniteQuery({
         queryKey: questionQueryKeys.feed(tab, limit),
         queryFn: async (): Promise<QuestionsFeedResult> => {
-          const queryStr = `?tab=${tab}&page=1&limit=${limit}`;
+          const userId = getCurrentUserId();
+          const queryStr = `?tab=${tab}&page=1&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
           const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
           if (!response.success) {
@@ -860,7 +866,9 @@ export function useSuspenseQuestionsFeed(tab: FeedTabId, limit: number = 20) {
   return useSuspenseInfiniteQuery({
     queryKey: questionQueryKeys.feed(tab, limit),
     queryFn: async ({ pageParam = 1 }): Promise<QuestionsFeedResult> => {
-      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}`;
+      // Pass the current user so the server can seed each question's `userHasVoted`.
+      const userId = getCurrentUserId();
+      const queryStr = `?tab=${tab}&page=${pageParam}&limit=${limit}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`;
       const response = await fetchJson<any>(`/api/questions/all${queryStr}`);
 
       if (!response.success) {

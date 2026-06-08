@@ -157,6 +157,12 @@ function VideoActionsComponent({
   // Use Zustand store as single source of truth — matches VideoFeedItem's state source
   const isLiked = useVideoFeedStore(state => state.likedVideoIds.has(video.id));
   const isBookmarked = useVideoFeedStore(state => state.bookmarkedVideoIds.has(video.id));
+  // Like count must come from the SAME source as `isLiked` to avoid drift: the
+  // store keeps an optimistic count in its videoMap (updated by toggleLike).
+  // Fall back to the prop only when this video isn't tracked by the feed store.
+  const storeLikes = useVideoFeedStore(state => state.videoMap.get(video.id)?.likes);
+  const likeCount = storeLikes ?? video.likes ?? 0;
+  const commentCount = Array.isArray(video.comments) ? video.comments.length : (video.comments || 0);
 
   return (
     <View
@@ -171,10 +177,10 @@ function VideoActionsComponent({
       <ActionButton
         icon={<Heart size={iconSize} color={colors.textMuted} strokeWidth={1.5} />}
         activeIcon={<Heart size={iconSize} color={colors.error} fill={colors.error} />}
-        count={video.likes}
+        count={likeCount}
         onPress={handleLike}
         isActive={isLiked}
-        label={`Like video. ${video.likes} likes`}
+        label={`Like video. ${likeCount} likes`}
         showCount={showCounts}
         textColor={colors.textMuted}
         activeColor={colors.error}
@@ -182,9 +188,9 @@ function VideoActionsComponent({
 
       <ActionButton
         icon={<MessageCircle size={iconSize} color={colors.textMuted} strokeWidth={1.5} />}
-        count={Array.isArray(video.comments) ? video.comments.length : (video.comments || 0)}
+        count={commentCount}
         onPress={handleComment}
-        label={`Comment on video. ${video.comments || 0} comments`}
+        label={`Comment on video. ${commentCount} comments`}
         showCount={showCounts}
         textColor={colors.textMuted}
         activeColor={colors.primary}

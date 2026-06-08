@@ -55,12 +55,12 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -209,7 +209,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const questionId = id || "";
   const { colors, statusBarStyle } = useTheme();
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<FlatList>(null);
   const submitDebounceRef = useRef(false);
   const { data: user, loading: userLoading } = useUser();
   const isAuthenticated = !!user;
@@ -255,6 +255,22 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     [question?.responses]
   );
   const responseCount = responses.length;
+
+  // Stable FlatList callbacks — keep item identity across keystroke re-renders so the
+  // (memoized) ResponseItem rows aren't re-rendered while typing in the answer input.
+  const renderResponse = useCallback(
+    ({ item }: { item: (typeof responses)[number] }) => (
+      <View style={{ marginBottom: SPACING.md }}>
+        <ResponseItem
+          item={item}
+          colors={colors}
+          isOptimistic={item.id?.startsWith("optimistic_")}
+        />
+      </View>
+    ),
+    [colors]
+  );
+  const keyExtractor = useCallback((item: (typeof responses)[number]) => item.id, []);
 
   // ── Effects ──
   useEffect(() => {
@@ -333,12 +349,20 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         },
         onError: (err) => {
           submitDebounceRef.current = false;
-          const message =
-            err?.message === "You have already responded to this question"
+          const alreadyResponded =
+            err?.message === "You have already responded to this question";
+          if (alreadyResponded) {
+            // Server is the source of truth: mark this question submitted (also clears the
+            // draft) so the UI reflects the answered state instead of inviting a retry.
+            markSubmitted(question.id);
+          }
+          triggerHaptic(alreadyResponded ? 'success' : 'error');
+          showToast({
+            message: alreadyResponded
               ? "You've already answered this question."
-              : "Could not submit your answer. Please try again.";
-          triggerHaptic('error');
-          showToast({ message, type: 'error' });
+              : "Could not submit your answer. Please try again.",
+            type: alreadyResponded ? 'info' : 'error',
+          });
         },
       }
     );
@@ -485,16 +509,25 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         )}
       </View>
 
-      {/* ── Content ───────────────────────────────────────────────────── */}
-      <ScrollView
+      {/* ── Content (virtualized: responses are FlatList items; hero/footer are header/footer) ── */}
+      <FlatList
         ref={scrollRef}
         style={styles.scroll}
+        data={responses}
+        keyExtractor={keyExtractor}
+        renderItem={renderResponse}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           padding: SPACING.lg,
           paddingBottom: SPACING.lg,
         }}
+        accessibilityRole="list"
+        accessibilityLabel={`${responseCount} responses`}
+        removeClippedSubviews
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        initialNumToRender={6}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -503,7 +536,16 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             colors={[colors.primary]}
           />
         }
-      >
+        ListEmptyComponent={
+          <View style={styles.emptyResponseState}>
+            <MessageSquare size={ICON_SIZE.lg} color={colors.textMuted} strokeWidth={1} />
+            <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+              No answers yet. Be the first to share your knowledge!
+            </Text>
+          </View>
+        }
+        ListHeaderComponent={
+          <>
         {/* Submission confirmation banner */}
         {wasSubmitted && (
           <SubmittedBanner colors={colors} />
@@ -569,46 +611,19 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           </View>
         </View>
 
-        {/* Responses */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-          accessibilityRole="list"
-          accessibilityLabel={`${responseCount} responses`}
-        >
-          <View style={styles.responsesHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>
-              Responses
-            </Text>
-            <Text style={[styles.sectionMeta, { color: colors.textMuted }]}>
-              {responseCount} total
-            </Text>
-          </View>
-          {responseCount === 0 && (
-            <View style={styles.emptyResponseState}>
-              <MessageSquare
-                size={ICON_SIZE.lg}
-                color={colors.textMuted}
-                strokeWidth={1}
-              />
-              <Text style={[styles.emptyText, { color: colors.textMuted }]}>
-                No answers yet. Be the first to share your knowledge!
-              </Text>
-            </View>
-          )}
-          {responses.map((item) => (
-            <View key={item.id} style={{ marginBottom: SPACING.md }}>
-              <ResponseItem
-                item={item}
-                colors={colors}
-                isOptimistic={item.id?.startsWith("optimistic_")}
-              />
-            </View>
-          ))}
+        {/* Responses section header */}
+        <View style={styles.responsesHeader}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Responses
+          </Text>
+          <Text style={[styles.sectionMeta, { color: colors.textMuted }]}>
+            {responseCount} total
+          </Text>
         </View>
-
+          </>
+        }
+        ListFooterComponent={
+          <>
         {/* Post-Submission Ad — shown after user submits their answer */}
         {wasSubmitted && shouldShowPostAnswerAd && (
           <PostQuestionAdSlot
@@ -635,7 +650,9 @@ export default function QuestionAnswerScreen(): React.ReactElement {
             View full discussion ({responseCount})
           </Text>
         </Pressable>
-      </ScrollView>
+          </>
+        }
+      />
 
       {/* ── Bottom Input Bar ────────────────────────────────────────── */}
       <View

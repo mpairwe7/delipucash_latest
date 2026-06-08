@@ -36,6 +36,8 @@ const QUESTION_EXTENDED_SELECT = {
   rewardAmount: true,
   isInstantReward: true,
   viewCount: true,
+  description: true,
+  tags: true,
 };
 
 /**
@@ -94,6 +96,8 @@ export const createQuestion = asyncHandler(async (req, res) => {
     category = 'General',
     rewardAmount = 0,
     isInstantReward = false,
+    description = null,
+    tags = [],
   } = req.body;
 
   console.log('Incoming request to create question:', { text, userId });
@@ -122,6 +126,13 @@ export const createQuestion = asyncHandler(async (req, res) => {
     const question = await prisma.question.create({
       data: {
         text,
+        description:
+          typeof description === 'string' && description.trim()
+            ? description.trim()
+            : null,
+        tags: Array.isArray(tags)
+          ? tags.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim())
+          : [],
         category: category || 'General',
         rewardAmount: Number.isFinite(Number(rewardAmount))
           ? Number(rewardAmount)
@@ -158,6 +169,7 @@ export const getQuestions = asyncHandler(async (req, res) => {
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 20));
     const skip = (page - 1) * limit;
     const tab = req.query.tab || 'for-you';
+    const userId = req.query.userId ? String(req.query.userId) : null;
 
     // Build where clause based on tab
     let whereClause = {};
@@ -165,6 +177,31 @@ export const getQuestions = asyncHandler(async (req, res) => {
       whereClause = { responses: { none: {} } };
     } else if (tab === 'rewards') {
       whereClause = { isInstantReward: true, rewardAmount: { gt: 0 } };
+    } else if (tab === 'my-activity' && userId) {
+      // Questions the user authored OR answered (server-side, so pagination is correct).
+      whereClause = { OR: [{ userId }, { responses: { some: { userId } } }] };
+    }
+
+    // Optional server-side search (text or category) and category filter — applied across the
+    // whole table, not just a loaded page. Combine with the tab clause via AND.
+    const andFilters = [];
+    const search = req.query.search ? String(req.query.search).trim() : '';
+    if (search) {
+      andFilters.push({
+        OR: [
+          { text: { contains: search, mode: 'insensitive' } },
+          { category: { contains: search, mode: 'insensitive' } },
+        ],
+      });
+    }
+    const category = req.query.category ? String(req.query.category).trim() : '';
+    if (category && category.toLowerCase() !== 'all') {
+      andFilters.push({ category });
+    }
+    if (andFilters.length > 0) {
+      whereClause = Object.keys(whereClause).length
+        ? { AND: [whereClause, ...andFilters] }
+        : { AND: andFilters };
     }
 
     // Build order based on tab
@@ -210,10 +247,22 @@ export const getQuestions = asyncHandler(async (req, res) => {
       else if (vc.type === 'down') downvoteMap.set(vc.questionId, vc._count.id);
     }
 
+    // Seed the requesting user's own vote per question so the client can render/toggle it.
+    const userVoteMap = new Map();
+    if (userId && questionIds.length > 0) {
+      const userVotes = await prisma.questionVote.findMany({
+        where: { questionId: { in: questionIds }, userId },
+        select: { questionId: true, type: true },
+      });
+      for (const v of userVotes) userVoteMap.set(v.questionId, v.type);
+    }
+
     const formattedQuestions = questions.map(q => {
       const formatted = formatQuestion(q);
       formatted.upvotes = upvoteMap.get(q.id) || 0;
       formatted.downvotes = downvoteMap.get(q.id) || 0;
+      // 'up' | 'down' | null — matches the client's userHasVoted contract.
+      formatted.userHasVoted = userVoteMap.get(q.id) || null;
       return formatted;
     });
 

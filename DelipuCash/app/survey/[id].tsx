@@ -116,29 +116,41 @@ interface SurveyDisplay {
   questions: SurveyQuestion[];
 }
 
+// The option `id` IS the option text. That text is exactly what gets stored and
+// submitted as the answer, and what conditional-logic rules and analytics compare
+// against. The survey builder serializes options as plain text strings
+// (SurveyForm.tsx) and authors branching rule values as that same text
+// (ConditionalLogicEditor.tsx), and the server stores responses verbatim. Emitting a
+// synthetic `opt_N` index here would make every text-based rule.value fail to match
+// (utils/conditionalLogic.ts compares String(answer) === String(rule.value)) and make
+// analytics charts/exports show "opt_0" instead of the option label.
+const toParsedOption = (opt: unknown): ParsedOption => {
+  const text =
+    typeof opt === "string"
+      ? opt
+      : String(
+          (opt as { text?: string; label?: string; value?: string }).text ??
+            (opt as { label?: string }).label ??
+            (opt as { value?: string }).value ??
+            opt
+        );
+  return { id: text, text };
+};
+
 const parseQuestionOptions = (question: UploadSurvey): ParsedOption[] => {
   try {
     const parsed = JSON.parse(question.options || "[]");
     if (Array.isArray(parsed)) {
-      return parsed.map((opt, index) => ({
-        id: typeof opt === "string" ? `opt_${index}` : (opt as { id?: string }).id || `opt_${index}`,
-        text: typeof opt === "string" ? opt : String((opt as { text?: string; label?: string; value?: string }).text ?? (opt as { label?: string }).label ?? (opt as { value?: string }).value ?? opt),
-      }));
+      return parsed.map(toParsedOption);
     }
 
     if (parsed && typeof parsed === "object") {
       if (Array.isArray((parsed as { options?: unknown[] }).options)) {
-        return (parsed as { options: unknown[] }).options.map((opt, index) => ({
-          id: typeof opt === "string" ? `opt_${index}` : (opt as { id?: string }).id || `opt_${index}`,
-          text: typeof opt === "string" ? opt : String((opt as { label?: string; text?: string; value?: string }).label ?? (opt as { text?: string }).text ?? (opt as { value?: string }).value ?? opt),
-        }));
+        return (parsed as { options: unknown[] }).options.map(toParsedOption);
       }
 
       if (Array.isArray((parsed as { labels?: string[] }).labels)) {
-        return (parsed as { labels: string[] }).labels.map((label, index) => ({
-          id: `opt_${index}`,
-          text: label,
-        }));
+        return (parsed as { labels: string[] }).labels.map(toParsedOption);
       }
     }
 
@@ -235,6 +247,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const storeResetSubmission = useSurveyAttemptStore((s) => s.resetSubmission);
   const storeReset = useSurveyAttemptStore((s) => s.reset);
   const storeSetCurrentIndex = useSurveyAttemptStore((s) => s.setCurrentIndex);
+  const storeSetTotalQuestions = useSurveyAttemptStore((s) => s.setTotalQuestions);
 
   // Local UI state
   const [showReview, setShowReview] = useState(false);
@@ -244,6 +257,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [isReducedMotion, setIsReducedMotion] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [isFileUploading, setIsFileUploading] = useState(false);
   
   // Refs for keyboard handling and scroll
   const scrollViewRef = useRef<ScrollView>(null);
@@ -342,12 +356,14 @@ const SurveyAttemptScreen = (): React.ReactElement => {
     });
   }, [survey, answers]);
 
-  // Clamp currentQuestionIndex if visible questions shrink (conditional logic hides a question)
+  // Keep the store's question count in sync with the *visible* set so navigation
+  // (goNext / setCurrentIndex) clamps against questions the user can actually
+  // reach. Conditional logic hides/shows questions, so the full upload count
+  // would let navigation overshoot into undefined questions. This also re-clamps
+  // currentQuestionIndex when the visible set shrinks.
   useEffect(() => {
-    if (visibleQuestions.length > 0 && currentQuestionIndex >= visibleQuestions.length) {
-      storeSetCurrentIndex(visibleQuestions.length - 1);
-    }
-  }, [visibleQuestions.length, currentQuestionIndex, storeSetCurrentIndex]);
+    storeSetTotalQuestions(visibleQuestions.length);
+  }, [visibleQuestions.length, storeSetTotalQuestions]);
 
   const question = visibleQuestions[currentQuestionIndex];
   const isLastQuestion = visibleQuestions.length > 0 ? currentQuestionIndex === visibleQuestions.length - 1 : false;
@@ -417,6 +433,9 @@ const SurveyAttemptScreen = (): React.ReactElement => {
 
   const handleNext = (): void => {
     if (!question || (question.required && !isQuestionAnswered())) return;
+    // Don't advance while a file is still uploading — the answer is only recorded
+    // on upload success, so leaving the question now would discard it.
+    if (isFileUploading) return;
 
     // Haptic feedback on navigation
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
@@ -1086,6 +1105,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
             currentFileId={typeof currentAnswer === "string" ? currentAnswer : null}
             onFileUploaded={(fileId) => setAnswer(fileId)}
             onFileDeleted={() => setAnswer("")}
+            onUploadingChange={setIsFileUploading}
           />
         );
 
@@ -1315,7 +1335,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
         <PrimaryButton
           title={isLastQuestion ? "Review & Submit" : "Next"}
           onPress={handleNext}
-          disabled={(question?.required && !isQuestionAnswered()) || submissionStatus === 'submitting'}
+          disabled={(question?.required && !isQuestionAnswered()) || submissionStatus === 'submitting' || isFileUploading}
           loading={submissionStatus === 'submitting' && isLastQuestion}
           style={styles.navButton}
           rightIcon={!isLastQuestion ? <ChevronRight size={16} color={colors.primaryText} strokeWidth={1.5} /> : <CheckCircle2 size={16} color={colors.primaryText} strokeWidth={1.5} />}

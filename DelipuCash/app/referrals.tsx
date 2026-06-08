@@ -41,14 +41,14 @@ export default function ReferralsScreen() {
 
   const handleCopy = useCallback(async () => {
     if (!data?.shareUrl) return;
-    Haptics.selection();
+    Haptics.selectionAsync();
     await Clipboard.setStringAsync(data.shareUrl);
     showToast({ message: 'Invite link copied', type: 'success' });
   }, [data?.shareUrl, showToast]);
 
   const handleShare = useCallback(async () => {
     if (!data?.shareUrl) return;
-    Haptics.selection();
+    Haptics.selectionAsync();
     try {
       await Share.share({
         message: `Earn real cash on DelipuCash — answer questions, watch videos, and cash out to MTN/Airtel. Sign up with my code ${data.code} to start with a head-start: ${data.shareUrl}`,

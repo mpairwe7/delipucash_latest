@@ -98,6 +98,8 @@ export interface UploadOptions {
   onStart?: () => void;
   onComplete?: () => void;
   onError?: (error: Error) => void;
+  /** Abort the in-flight XHR when this signal fires (modal close / cancel). */
+  signal?: AbortSignal;
 }
 
 // ============================================================================
@@ -151,7 +153,20 @@ function createProgressRequest(
   options: UploadOptions = {}
 ): Promise<Response> {
   return new Promise((resolve, reject) => {
+    // Abort the in-flight request when the caller's signal fires (modal close /
+    // cancel). Reject immediately if already aborted before send.
+    const { signal } = options;
+    if (signal?.aborted) {
+      reject(new Error('Upload was cancelled'));
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
+    const onAbort = () => {
+      try { xhr.abort(); } catch { /* already done */ }
+    };
+    signal?.addEventListener('abort', onAbort);
+    const cleanupSignal = () => signal?.removeEventListener('abort', onAbort);
 
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable && options.onProgress) {
@@ -168,6 +183,7 @@ function createProgressRequest(
     });
 
     xhr.addEventListener('load', () => {
+      cleanupSignal();
       const response = new Response(xhr.responseText, {
         status: xhr.status,
         statusText: xhr.statusText,
@@ -179,14 +195,17 @@ function createProgressRequest(
     });
 
     xhr.addEventListener('error', () => {
+      cleanupSignal();
       reject(new Error('Network error during upload. Please check your connection.'));
     });
 
     xhr.addEventListener('abort', () => {
+      cleanupSignal();
       reject(new Error('Upload was cancelled'));
     });
 
     xhr.addEventListener('timeout', () => {
+      cleanupSignal();
       reject(new Error('Upload timed out. Please try again.'));
     });
 
@@ -589,7 +608,19 @@ export async function uploadToPresignedUrl(
   options: UploadOptions = {}
 ): Promise<boolean> {
   return new Promise((resolve, reject) => {
+    // Abort the in-flight upload when the caller's signal fires.
+    const { signal } = options;
+    if (signal?.aborted) {
+      reject(new Error('Direct upload was cancelled'));
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
+    const onAbort = () => {
+      try { xhr.abort(); } catch { /* already done */ }
+    };
+    signal?.addEventListener('abort', onAbort);
+    const cleanupSignal = () => signal?.removeEventListener('abort', onAbort);
 
     xhr.upload.addEventListener('progress', (event) => {
       if (event.lengthComputable && options.onProgress) {
@@ -603,6 +634,7 @@ export async function uploadToPresignedUrl(
     });
 
     xhr.addEventListener('load', () => {
+      cleanupSignal();
       if (xhr.status >= 200 && xhr.status < 300) {
         options.onComplete?.();
         resolve(true);
@@ -614,16 +646,19 @@ export async function uploadToPresignedUrl(
     });
 
     xhr.addEventListener('error', () => {
+      cleanupSignal();
       const err = new Error('Network error during direct upload. Please check your connection.');
       options.onError?.(err);
       reject(err);
     });
 
     xhr.addEventListener('abort', () => {
+      cleanupSignal();
       reject(new Error('Direct upload was cancelled'));
     });
 
     xhr.addEventListener('timeout', () => {
+      cleanupSignal();
       const err = new Error('Direct upload timed out. Please try again.');
       options.onError?.(err);
       reject(err);
@@ -652,7 +687,8 @@ export async function uploadThumbnailViaPresignedUrl(
   thumbnailUri: string,
   userId: string,
   fileName: string,
-  mimeType: string
+  mimeType: string,
+  signal?: AbortSignal
 ): Promise<{ key: string; publicUrl: string; mimeType: string }> {
   const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, 'thumbnail');
   if (!presignResult.success) {
@@ -662,7 +698,8 @@ export async function uploadThumbnailViaPresignedUrl(
   const success = await uploadToPresignedUrl(
     presignResult.data.uploadUrl,
     thumbnailUri,
-    mimeType
+    mimeType,
+    { signal }
   );
   if (!success) {
     throw new Error('Thumbnail upload failed');
@@ -712,6 +749,7 @@ export async function uploadVideoViaPresignedUrl(
     onProgress: options.onProgress,
     onStart: options.onStart,
     onError: options.onError,
+    signal: options.signal,
   });
   if (!uploadSuccess) {
     throw new Error('Direct upload to storage failed');
@@ -723,6 +761,7 @@ export async function uploadVideoViaPresignedUrl(
     finalizeResponse = await fetch(`${API_BASE_URL}/api/r2/upload/finalize-video`, {
       method: 'POST',
       headers: authHeaders(),
+      signal: options.signal,
       body: JSON.stringify({
         r2VideoKey,
         videoUrl: videoPublicUrl,

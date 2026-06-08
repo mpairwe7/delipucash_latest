@@ -41,11 +41,9 @@ export function initSentry() {
       }
       return event;
     },
-    integrations: [
-      Sentry.reactNativeTracingIntegration({
-        enableNativeFramesTracking: Platform.OS !== 'web',
-      }),
-    ],
+    // Native frames tracking is a top-level init option (not a tracing-integration option).
+    enableNativeFramesTracking: Platform.OS !== 'web',
+    integrations: [Sentry.reactNativeTracingIntegration()],
   });
 
   initialized = true;

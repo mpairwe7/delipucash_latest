@@ -1,0 +1,63 @@
+# Visual regression for the Expo app's presentational question components.
+# Storybook (react-native-web) renders the stories; Playwright pixel-diffs them against
+# committed baselines (DelipuCash/e2e-visual/__screenshots__/).
+#
+# ADVISORY (continue-on-error): pixel baselines are OS-/font-specific. The committed
+# baselines were generated on a dev machine; regenerate them inside THIS Playwright
+# container (`bun run test:visual:update` in DelipuCash) and commit before treating this as
+# a required check. See DelipuCash/__tests__/README.md.
+
+name: Visual regression
+
+on:
+  pull_request:
+    branches: [main, develop, staging]
+    paths:
+      - 'DelipuCash/**'
+      - '.github/workflows/visual.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: visual-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  visual:
+    name: Storybook + Playwright pixel diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+    defaults:
+      run:
+        working-directory: DelipuCash
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      # The Playwright image doesn't ship `unzip`, which oven-sh/setup-bun needs.
+      - name: Install unzip
+        run: apt-get update && apt-get install -y --no-install-recommends unzip
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: '1.3.10'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Storybook + run visual diff
+        run: bun run test:visual
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: DelipuCash/playwright-report/
+          retention-days: 7

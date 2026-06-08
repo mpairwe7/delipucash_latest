@@ -89,7 +89,6 @@ function CreatorAvatarButtonComponent({
   // Local badge visibility — decoupled from props to allow exit animation
   // ---------------------------------------------------------------------------
   const [showBadge, setShowBadge] = useState(!isFollowing);
-  const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevIsFollowingRef = useRef(isFollowing);
 
   // Sync badge with isFollowing prop changes — guarded to prevent no-op setState
@@ -105,13 +104,6 @@ function CreatorAvatarButtonComponent({
       setShowBadge(true);
     }
   }, [isFollowing]);
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (followTimerRef.current) clearTimeout(followTimerRef.current);
-    };
-  }, []);
 
   // Avatar image error fallback
   const [imageError, setImageError] = useState(false);
@@ -184,11 +176,11 @@ function CreatorAvatarButtonComponent({
       withDelay(300, withTiming(0, { duration: 300 })),
     );
 
-    // Delegate to parent after animation settles
-    if (followTimerRef.current) clearTimeout(followTimerRef.current);
-    followTimerRef.current = setTimeout(() => {
-      onFollow(creatorId);
-    }, 600);
+    // Fire the mutation immediately. The parent's optimistic update flips
+    // isFollowing right away; the exit animation above runs independently.
+    // (Previously this was deferred 600ms — if the feed recycled the item within
+    // that window the timer was cleared on unmount and the follow was lost.)
+    onFollow(creatorId);
   }, [isAuthenticated, isFollowLoading, creatorId, onFollow, hideBadge, badgeScale, badgeOpacity, borderColorProgress]);
 
   // Unfollow — long-press avatar

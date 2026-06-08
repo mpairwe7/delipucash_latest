@@ -851,7 +851,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
                   { backgroundColor: isHighConfidence(m.confidence) ? colors.success : colors.warning },
                 ]} />
                 <Text style={[styles.mappingText, { color: colors.text }]}>
-                  "{m.headerText}" → {m.targetField}
+                  &quot;{m.headerText}&quot; → {m.targetField}
                 </Text>
                 <Text style={[styles.mappingConfidence, { color: isHighConfidence(m.confidence) ? colors.success : colors.warning }]}>
                   {getConfidenceLabel(m.confidence)}

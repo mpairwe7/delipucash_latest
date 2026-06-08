@@ -86,6 +86,118 @@ export const videoQueryKeys = {
 } as const;
 
 // ============================================================================
+// OPTIMISTIC CACHE HELPERS
+// ============================================================================
+
+/** Snapshot type returned from getQueriesData — [queryKey, data] tuples. */
+type QueriesSnapshot = [readonly unknown[], unknown][];
+
+/**
+ * Build an updater that applies a per-video transform to EVERY cached video
+ * shape under the `['videos']` namespace:
+ *  - infinite feeds:   `{ pages: [{ videos: Video[] }] }`
+ *  - flat list caches: `Video[]` (trending, recommended, search, bookmarked, explore)
+ *  - single detail:    `VideoWithDetails` (matched by id)
+ *
+ * Unrelated shapes (comments `{comments,pagination}`, status `{isLiked,isBookmarked}`)
+ * carry no matching `id`/`pages`/array, so they pass through untouched. This closes
+ * the gap where optimistic like/bookmark only updated infinite feeds and silently
+ * skipped the bare-array lists.
+ */
+export function makeVideoCacheUpdater(videoId: string, transform: (v: Video) => Video) {
+  return (old: any): any => {
+    if (!old || typeof old !== 'object') return old;
+
+    // Infinite feed shape
+    if (Array.isArray(old.pages)) {
+      return {
+        ...old,
+        pages: old.pages.map((page: any) => ({
+          ...page,
+          videos: Array.isArray(page?.videos)
+            ? page.videos.map((v: Video) => (v?.id === videoId ? transform(v) : v))
+            : page?.videos,
+        })),
+      };
+    }
+
+    // Flat list shape
+    if (Array.isArray(old)) {
+      return old.map((v: Video) => (v?.id === videoId ? transform(v) : v));
+    }
+
+    // Single detail object (matched by id)
+    if ((old as Video).id === videoId) {
+      return transform(old as Video);
+    }
+
+    return old;
+  };
+}
+
+/** Restore a previously captured queries snapshot (true rollback, no refetch needed). */
+function restoreQueriesSnapshot(
+  queryClient: ReturnType<typeof useQueryClient>,
+  snapshot: QueriesSnapshot | undefined,
+) {
+  if (!snapshot) return;
+  for (const [key, data] of snapshot) {
+    queryClient.setQueryData(key, data);
+  }
+}
+
+/**
+ * Build an updater for comment caches that is safe across BOTH shapes that share
+ * the `comments(videoId)` key prefix (fuzzy-matched by setQueriesData):
+ *  - flat / suspense: `{ comments: Comment[], pagination }`
+ *  - infinite:        `{ pages: [{ comments: Comment[], nextPage }] }`
+ *
+ * Previously the optimistic updater assumed only the flat shape, which corrupted
+ * the infinite cache (replacing `{ pages }` with a bogus `{ comments, pagination }`).
+ */
+export function makeCommentCacheUpdater(op: { add?: Comment; removeId?: string }) {
+  return (old: any): any => {
+    if (!old || typeof old !== 'object') return old;
+
+    // Infinite shape — add to the first page; remove from every page.
+    if (Array.isArray(old.pages)) {
+      return {
+        ...old,
+        pages: old.pages.map((page: any, idx: number) => {
+          if (!Array.isArray(page?.comments)) return page;
+          if (op.add) {
+            return idx === 0 ? { ...page, comments: [op.add, ...page.comments] } : page;
+          }
+          if (op.removeId) {
+            return { ...page, comments: page.comments.filter((c: Comment) => c.id !== op.removeId) };
+          }
+          return page;
+        }),
+      };
+    }
+
+    // Flat / suspense shape — { comments, pagination }
+    if (Array.isArray(old.comments)) {
+      const comments = op.add
+        ? [op.add, ...old.comments]
+        : op.removeId
+          ? old.comments.filter((c: Comment) => c.id !== op.removeId)
+          : old.comments;
+      const delta = op.add ? 1 : op.removeId ? -1 : 0;
+      return {
+        ...old,
+        comments,
+        pagination: old.pagination
+          ? { ...old.pagination, total: Math.max(0, (old.pagination.total || 0) + delta) }
+          : old.pagination,
+      };
+    }
+
+    return old;
+  };
+}
+
+// ============================================================================
 // VIDEO LIST HOOKS
 // ============================================================================
 
@@ -222,7 +334,7 @@ export function useLikeVideo(): UseMutationResult<
   Video,
   Error,
   { videoId: string; isLiked: boolean },
-  { previousVideo: VideoWithDetails | undefined }
+  { previousData: QueriesSnapshot }
 > {
   const queryClient = useQueryClient();
 
@@ -235,53 +347,27 @@ export function useLikeVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    // Optimistic update — detail + ALL infinite feed caches
+    // Optimistic update across EVERY cached video shape (detail, infinite feeds,
+    // and bare-array lists). We snapshot all matching queries so onError performs
+    // a true rollback rather than relying on invalidation (which won't refetch
+    // inactive/unmounted queries and would leave stale optimistic values on screen).
     onMutate: async ({ videoId, isLiked }) => {
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
       await queryClient.cancelQueries({ queryKey: videoQueryKeys.all });
 
-      // Snapshot detail
-      const previousVideo = queryClient.getQueryData<VideoWithDetails>(
-        videoQueryKeys.detail(videoId)
-      );
+      const previousData = queryClient.getQueriesData({ queryKey: videoQueryKeys.all });
 
-      // Optimistically update detail cache
-      if (previousVideo) {
-        queryClient.setQueryData<VideoWithDetails>(
-          videoQueryKeys.detail(videoId),
-          {
-            ...previousVideo,
-            likes: isLiked ? previousVideo.likes - 1 : previousVideo.likes + 1,
-            isLiked: !isLiked,
-          }
-        );
-      }
+      const applyLike = makeVideoCacheUpdater(videoId, (v) => ({
+        ...v,
+        // Guard against negative counts on rapid/duplicate toggles
+        likes: Math.max(0, (v.likes ?? 0) + (isLiked ? -1 : 1)),
+        isLiked: !isLiked,
+      }));
+      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, applyLike);
 
-      // Optimistically update ALL infinite feed caches (personalized, trending, following, lists)
-      const updateVideoInPages = (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            videos: (page.videos || []).map((v: Video) =>
-              v.id === videoId
-                ? { ...v, likes: isLiked ? v.likes - 1 : v.likes + 1, isLiked: !isLiked }
-                : v
-            ),
-          })),
-        };
-      };
-      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, updateVideoInPages);
-
-      return { previousVideo };
+      return { previousData };
     },
-    onError: (_, { videoId }, context) => {
-      if (context?.previousVideo) {
-        queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
-      }
-      // Rollback all feeds by refetching
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+    onError: (_, __, context) => {
+      restoreQueriesSnapshot(queryClient, context?.previousData);
     },
     onSettled: (_, __, { videoId }) => {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
@@ -303,7 +389,7 @@ export function useBookmarkVideo(): UseMutationResult<
   Video,
   Error,
   { videoId: string; isBookmarked: boolean },
-  { previousVideo: VideoWithDetails | undefined }
+  { previousData: QueriesSnapshot }
 > {
   const queryClient = useQueryClient();
 
@@ -314,45 +400,22 @@ export function useBookmarkVideo(): UseMutationResult<
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    // Optimistic update — detail + ALL infinite feed caches
+    // Optimistic update across EVERY cached video shape, with snapshot rollback.
     onMutate: async ({ videoId, isBookmarked }) => {
-      await queryClient.cancelQueries({ queryKey: videoQueryKeys.detail(videoId) });
       await queryClient.cancelQueries({ queryKey: videoQueryKeys.all });
 
-      const previousVideo = queryClient.getQueryData<VideoWithDetails>(
-        videoQueryKeys.detail(videoId)
-      );
+      const previousData = queryClient.getQueriesData({ queryKey: videoQueryKeys.all });
 
-      // Optimistically update detail cache
-      if (previousVideo) {
-        queryClient.setQueryData<VideoWithDetails>(
-          videoQueryKeys.detail(videoId),
-          { ...previousVideo, isBookmarked: !isBookmarked }
-        );
-      }
+      const applyBookmark = makeVideoCacheUpdater(videoId, (v) => ({
+        ...v,
+        isBookmarked: !isBookmarked,
+      }));
+      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, applyBookmark);
 
-      // Optimistically update ALL infinite feed caches
-      const updateVideoInPages = (old: any) => {
-        if (!old?.pages) return old;
-        return {
-          ...old,
-          pages: old.pages.map((page: any) => ({
-            ...page,
-            videos: (page.videos || []).map((v: Video) =>
-              v.id === videoId ? { ...v, isBookmarked: !isBookmarked } : v
-            ),
-          })),
-        };
-      };
-      queryClient.setQueriesData({ queryKey: videoQueryKeys.all }, updateVideoInPages);
-
-      return { previousVideo };
+      return { previousData };
     },
-    onError: (_, { videoId }, context) => {
-      if (context?.previousVideo) {
-        queryClient.setQueryData(videoQueryKeys.detail(videoId), context.previousVideo);
-      }
-      queryClient.invalidateQueries({ queryKey: videoQueryKeys.all });
+    onError: (_, __, context) => {
+      restoreQueriesSnapshot(queryClient, context?.previousData);
     },
     onSettled: (_, __, { videoId }) => {
       queryClient.invalidateQueries({ queryKey: videoQueryKeys.detail(videoId) });
@@ -522,16 +585,11 @@ export function useAddVideoComment(): UseMutationResult<
         } as any : undefined,
       };
 
-      // Update ALL matching comment queries (fuzzy match)
-      queryClient.setQueriesData<CommentsData>(
+      // Update ALL matching comment queries (fuzzy match), shape-safe for both
+      // the flat `{comments,pagination}` and infinite `{pages}` caches.
+      queryClient.setQueriesData(
         { queryKey: baseKey },
-        (old) => old ? {
-          comments: [optimisticComment, ...(old.comments || [])],
-          pagination: {
-            ...old.pagination,
-            total: (old.pagination?.total || 0) + 1,
-          },
-        } : undefined,
+        makeCommentCacheUpdater({ add: optimisticComment }),
       );
 
       return { previousQueries };
@@ -581,16 +639,11 @@ export function useDeleteVideoComment(): UseMutationResult<
       // Snapshot ALL matching comment queries (fuzzy match)
       const previousQueries = queryClient.getQueriesData<CommentsData>({ queryKey: baseKey });
 
-      // Optimistically remove comment from ALL matching queries
-      queryClient.setQueriesData<CommentsData>(
+      // Optimistically remove comment from ALL matching queries, shape-safe for
+      // both the flat `{comments,pagination}` and infinite `{pages}` caches.
+      queryClient.setQueriesData(
         { queryKey: baseKey },
-        (old) => old ? {
-          comments: old.comments.filter((c) => c.id !== commentId),
-          pagination: {
-            ...old.pagination,
-            total: Math.max(0, (old.pagination?.total || 0) - 1),
-          },
-        } : undefined,
+        makeCommentCacheUpdater({ removeId: commentId }),
       );
 
       return { previousQueries };
@@ -878,16 +931,23 @@ export function useVideoState(videoId: string) {
   const video = videoQuery.data;
   const comments = commentsQuery.data?.comments || [];
 
-  // Actions
+  // Actions — derive the like/unlike intent from the real current state so the
+  // mutation always flips correctly (no "assuming not liked" guesswork) and
+  // redundant calls are no-ops.
   const actions = useMemo(() => ({
     like: () => {
-      if (video) {
-        likeMutation.mutate({ videoId, isLiked: false }); // Assuming not liked
+      if (video && !video.isLiked) {
+        likeMutation.mutate({ videoId, isLiked: false });
       }
     },
     unlike: () => {
-      if (video) {
+      if (video && video.isLiked) {
         likeMutation.mutate({ videoId, isLiked: true });
+      }
+    },
+    toggleLike: () => {
+      if (video) {
+        likeMutation.mutate({ videoId, isLiked: video.isLiked ?? false });
       }
     },
     bookmark: () => {

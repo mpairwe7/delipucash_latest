@@ -880,8 +880,11 @@ export function useSubmitSurvey(): UseMutationResult<
         queryKey: ["surveyResponses", "list", variables.surveyId]
       });
     },
-    retry: 1,
-    retryDelay: 2000,
+    // Submitting a survey response is non-idempotent and the server enforces a
+    // single attempt per user (unique (userId, surveyId) → 409). Auto-retrying a
+    // POST whose success response was merely lost would re-submit and surface a
+    // confusing "already completed" error, so never retry — let the caller decide.
+    retry: 0,
   });
 }
 

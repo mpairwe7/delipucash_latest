@@ -106,7 +106,10 @@ export default function QuestionCommentsScreen(): React.ReactElement {
 
   const toggleLike = useCallback((responseId: string) => {
     triggerHaptic('light');
-    setLiked((prev) => ({ ...prev, [responseId]: !prev[responseId] }));
+    // Send the INTENDED next state so an unlike (toggle off) actually persists — the mutation
+    // defaults isLiked=true, so omitting it made every toggle read as a like server-side.
+    const nextLiked = !liked[responseId];
+    setLiked((prev) => ({ ...prev, [responseId]: nextLiked }));
     setDisliked((prev) => {
       const next = { ...prev };
       if (next[responseId]) delete next[responseId];
@@ -114,13 +117,14 @@ export default function QuestionCommentsScreen(): React.ReactElement {
     });
     // Fire real API mutation
     if (question) {
-      likeResponse.mutate({ responseId, questionId: question.id });
+      likeResponse.mutate({ responseId, questionId: question.id, isLiked: nextLiked });
     }
-  }, [question, likeResponse]);
+  }, [liked, question, likeResponse]);
 
   const toggleDislike = useCallback((responseId: string) => {
     triggerHaptic('light');
-    setDisliked((prev) => ({ ...prev, [responseId]: !prev[responseId] }));
+    const nextDisliked = !disliked[responseId];
+    setDisliked((prev) => ({ ...prev, [responseId]: nextDisliked }));
     setLiked((prev) => {
       const next = { ...prev };
       if (next[responseId]) delete next[responseId];
@@ -128,9 +132,9 @@ export default function QuestionCommentsScreen(): React.ReactElement {
     });
     // Fire real API mutation
     if (question) {
-      dislikeResponse.mutate({ responseId, questionId: question.id });
+      dislikeResponse.mutate({ responseId, questionId: question.id, isDisliked: nextDisliked });
     }
-  }, [question, dislikeResponse]);
+  }, [disliked, question, dislikeResponse]);
 
   // Memoized renderItem — stable reference for FlatList
   const renderResponse = useCallback(({ item }: { item: ReturnType<typeof transformResponses>[number] }) => (

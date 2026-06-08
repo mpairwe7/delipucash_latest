@@ -26,6 +26,7 @@ import React, {
   memo,
 } from "react";
 import {
+  Alert,
   View,
   Text,
   StyleSheet,
@@ -159,13 +160,14 @@ interface MemoizedInFeedAdProps {
 
 const MemoizedInFeedAd = memo<MemoizedInFeedAdProps>(
   function MemoizedInFeedAd({ ad, index, onAdClick, onAdImpression, style }) {
-    const handleLoad = useCallback(() => onAdImpression(ad), [ad, onAdImpression]);
+    // Record the impression on viewability (IAB: 50% visible for 1s), not on image load.
     return (
       <InFeedAd
         ad={ad}
         index={index}
         onAdClick={onAdClick}
-        onAdLoad={handleLoad}
+        onImpression={onAdImpression}
+        trackViewability
         style={style}
       />
     );
@@ -483,7 +485,6 @@ export default function QuestionsScreen(): React.ReactElement {
     rewards: 0,
     "my-activity": 0,
   });
-  const impressedAdIds = useRef(new Set<string>());
   const lastScrollY = useRef(0);
 
   // Persisted tab from Zustand (survives navigations)
@@ -501,6 +502,9 @@ export default function QuestionsScreen(): React.ReactElement {
   const fabTranslateY = useSharedValue(0);
 
   // ========== DATA FETCHING ==========
+  // Debounced search term — drives server-side search via the feed hook below.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   // Essential: infinite feed + user stats load immediately
   const {
     data: infiniteData,
@@ -511,7 +515,7 @@ export default function QuestionsScreen(): React.ReactElement {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-  } = useInfiniteQuestionsFeed(selectedTab);
+  } = useInfiniteQuestionsFeed(selectedTab, 20, debouncedSearch);
 
   const {
     data: userStats,
@@ -546,7 +550,7 @@ export default function QuestionsScreen(): React.ReactElement {
 
   // Mutations — extract .mutate/.mutateAsync for stable useCallback deps
   const voteMutate = useVoteQuestion().mutate;
-  const createMutateAsync = useCreateQuestion().mutateAsync;
+  const createQuestion = useCreateQuestion();
 
   // User permissions
   const isAdmin =
@@ -575,32 +579,31 @@ export default function QuestionsScreen(): React.ReactElement {
     if (!isFeedLoading) prefetch();
   }, [isFeedLoading, prefetch]);
 
-  // Search
+  // Search — query state + history live in useSearch; the actual filtering is server-backed
+  // (the debounced term feeds useInfiniteQuestionsFeed above, which searches the whole table,
+  // not just the loaded pages).
   const {
     query: searchQuery,
     setQuery: setSearchQuery,
-    filteredResults: searchResults,
-    isSearching,
     recentSearches,
     removeFromHistory,
     clearHistory,
     submitSearch,
-    hasNoResults,
   } = useSearch({
     data: allQuestions,
     searchFields: ["text", "category"],
     storageKey: "@questions_search_history",
     debounceMs: 250,
-    customFilter: (question: Question, query: string) => {
-      const lower = query.toLowerCase();
-      return (
-        (question.text || "").toLowerCase().includes(lower) ||
-        (question.category || "").toLowerCase().includes(lower)
-      );
-    },
   });
 
-  const displayQuestions = isSearching ? searchResults : allQuestions;
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const isSearching = debouncedSearch.length > 0;
+  const hasNoResults = isSearching && !isFeedLoading && allQuestions.length === 0;
+  const displayQuestions = allQuestions;
 
   // Build feed items with ad insertion
   const feedItems = useMemo((): FeedItem[] => {
@@ -646,7 +649,6 @@ export default function QuestionsScreen(): React.ReactElement {
     (tabId: string) => {
       setSelectedTab(tabId as FeedTabId);
       triggerHaptic("light");
-      impressedAdIds.current.clear();
       // Restore scroll position after RN completes the layout pass
       InteractionManager.runAfterInteractions(() => {
         flatListRef.current?.scrollToOffset({
@@ -703,10 +705,17 @@ export default function QuestionsScreen(): React.ReactElement {
 
   const handleVoteById = useCallback(
     (questionId: string, type: "up" | "down") => {
+      // Voting hits an auth-gated endpoint — guard like the other feed actions instead of
+      // firing an anonymous mutation that the server rejects.
+      if (!authReady) return;
+      if (!isAuthenticated) {
+        router.push("/(auth)/login" as Href);
+        return;
+      }
       triggerHaptic("light");
       voteMutate({ questionId, type });
     },
-    [voteMutate]
+    [authReady, isAuthenticated, voteMutate]
   );
 
   const handleSearchSubmit = useCallback(
@@ -754,20 +763,29 @@ export default function QuestionsScreen(): React.ReactElement {
   const handleQuestionSubmit = useCallback(
     async (data: QuestionFormData) => {
       try {
-        await createMutateAsync({
+        // Send everything the wizard collected: body + tags now persist (server stores
+        // Question.description / Question.tags), and the reward choice is honored instead of
+        // being hard-coded to a non-reward question.
+        await createQuestion.mutateAsync({
           text: data.title,
+          description: data.body,
+          tags: data.tags,
           category: data.category,
-          rewardAmount: 0,
-          isInstantReward: false,
+          rewardAmount: data.isRewardQuestion ? data.rewardAmount : 0,
+          isInstantReward: data.isRewardQuestion,
         });
         setShowCreateWizard(false);
         triggerHaptic("success");
       } catch (error) {
-        console.error("Failed to create question:", error);
+        // Surface the failure instead of swallowing it; keep the wizard open to retry.
         triggerHaptic("error");
+        Alert.alert(
+          "Couldn't create question",
+          error instanceof Error ? error.message : "Please try again."
+        );
       }
     },
-    [createMutateAsync]
+    [createQuestion]
   );
 
   const handleClearSearch = useCallback(
@@ -851,7 +869,7 @@ export default function QuestionsScreen(): React.ReactElement {
         featuredAds={featuredAds}
         isSearching={isSearching}
         searchQuery={searchQuery}
-        searchResultsCount={searchResults.length}
+        searchResultsCount={allQuestions.length}
         hasNoResults={hasNoResults}
         onTabChange={handleTabChange}
         onInstantRewardPress={handleInstantRewardPress}
@@ -864,7 +882,7 @@ export default function QuestionsScreen(): React.ReactElement {
         instantRewardAmount={rewardConfig?.defaultInstantRewardAmount ?? 500}
       />
     ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps — ad arrays tracked via stable ID keys
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ad arrays tracked via stable ID keys
     [
       isStatsLoading,
       isFeedLoading,
@@ -882,7 +900,7 @@ export default function QuestionsScreen(): React.ReactElement {
       featuredAdIds,
       isSearching,
       searchQuery,
-      searchResults.length,
+      allQuestions.length,
       hasNoResults,
       handleTabChange,
       handleInstantRewardPress,
@@ -1177,6 +1195,7 @@ export default function QuestionsScreen(): React.ReactElement {
         visible={showCreateWizard}
         onClose={() => setShowCreateWizard(false)}
         onSubmit={handleQuestionSubmit}
+        isSubmitting={createQuestion.isPending}
       />
     </View>
   );

@@ -46,7 +46,7 @@ graph LR
 git push origin main
   → Vercel detects push
   → Runs: bun install
-  → Runs: bun run vercel-build (prisma migrate deploy + prisma generate)
+  → Runs: bun run vercel-build (prisma generate; migrations applied out-of-band)
   → Deploys api/index.js as serverless function
   → Live at https://delipucash-latest.vercel.app
 ```

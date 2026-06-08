@@ -1,0 +1,347 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`VideoCard — snapshots matches the default-variant snapshot 1`] = `
+<RNCSafeAreaProvider
+  onInsetsChange={[Function]}
+  style={
+    [
+      {
+        "flex": 1,
+      },
+      undefined,
+    ]
+  }
+>
+  <View
+    entering={BaseAnimationMock {}}
+  >
+    <View
+      accessibilityLabel="Video: Snapshot clip"
+      accessibilityRole="button"
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onBlur={[Function]}
+      onClick={[Function]}
+      onFocus={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        [
+          {
+            "transform": [
+              {
+                "scale": 1,
+              },
+            ],
+          },
+          {
+            "borderRadius": 16,
+            "elevation": 1,
+            "marginBottom": 12,
+            "overflow": "hidden",
+            "shadowColor": "#000000",
+            "shadowOffset": {
+              "height": 1,
+              "width": 0,
+            },
+            "shadowOpacity": 0.05,
+            "shadowRadius": 2,
+          },
+          false,
+          {
+            "backgroundColor": "#1A1A1A",
+          },
+          undefined,
+        ]
+      }
+      testID="video"
+    >
+      <View
+        style={
+          {
+            "aspectRatio": 1.7777777777777777,
+            "width": "100%",
+          }
+        }
+      >
+        <View
+          accessibilityIgnoresInvertColors={true}
+          style={
+            [
+              {
+                "alignItems": "center",
+                "height": "100%",
+                "justifyContent": "center",
+                "width": "100%",
+              },
+              false,
+            ]
+          }
+        >
+          <Image
+            source={
+              {
+                "uri": "https://cdn.example.com/v/thumb-1.jpg",
+              }
+            }
+            style={
+              [
+                {
+                  "bottom": 0,
+                  "left": 0,
+                  "position": "absolute",
+                  "right": 0,
+                  "top": 0,
+                },
+                {
+                  "height": "100%",
+                  "width": "100%",
+                },
+                {
+                  "borderRadius": 8,
+                },
+              ]
+            }
+          />
+          <View
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "backgroundColor": "rgba(0, 0, 0, 0.3)",
+                  "borderRadius": 8,
+                  "bottom": 0,
+                  "justifyContent": "center",
+                  "left": 0,
+                  "position": "absolute",
+                  "right": 0,
+                  "top": 0,
+                },
+                {
+                  "opacity": undefined,
+                },
+              ]
+            }
+          >
+            <View
+              style={
+                [
+                  {
+                    "alignItems": "center",
+                    "backgroundColor": "rgba(255, 255, 255, 0.25)",
+                    "borderColor": "rgba(255, 255, 255, 0.4)",
+                    "borderRadius": 26,
+                    "borderWidth": 2,
+                    "height": 52,
+                    "justifyContent": "center",
+                    "width": 52,
+                  },
+                  {
+                    "transform": [
+                      {
+                        "scale": undefined,
+                      },
+                    ],
+                  },
+                ]
+              }
+            >
+              <Icon
+                color="#FFFFFF"
+                fill="#FFFFFF"
+                size={24}
+              />
+            </View>
+          </View>
+          <View
+            style={
+              [
+                {
+                  "alignItems": "center",
+                  "borderRadius": 6,
+                  "bottom": 8,
+                  "flexDirection": "row",
+                  "gap": 3,
+                  "paddingHorizontal": 8,
+                  "paddingVertical": 4,
+                  "position": "absolute",
+                  "right": 8,
+                },
+                {
+                  "backgroundColor": "rgba(0, 0, 0, 0.7)",
+                },
+              ]
+            }
+          >
+            <Icon
+              color="#FFFFFF"
+              size={10}
+              strokeWidth={2}
+            />
+            <Text
+              style={
+                {
+                  "color": "#FFFFFF",
+                  "fontFamily": "Roboto_500Medium",
+                  "fontSize": 10,
+                }
+              }
+            >
+              3:00
+            </Text>
+          </View>
+        </View>
+      </View>
+      <View
+        style={
+          {
+            "padding": 12,
+          }
+        }
+      >
+        <Text
+          numberOfLines={2}
+          style={
+            [
+              {
+                "fontFamily": "Roboto_700Bold",
+                "fontSize": 14,
+                "lineHeight": 19.599999999999998,
+                "marginBottom": 8,
+              },
+              false,
+              {
+                "color": "#FFFFFF",
+              },
+            ]
+          }
+        >
+          Snapshot clip
+        </Text>
+        <View
+          style={
+            {
+              "alignItems": "center",
+              "flexDirection": "row",
+              "gap": 16,
+            }
+          }
+        >
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 4,
+              }
+            }
+          >
+            <Icon
+              color="#6B6B6B"
+              size={14}
+              strokeWidth={1.5}
+            />
+            <Text
+              style={
+                [
+                  {
+                    "fontFamily": "Roboto_400Regular",
+                    "fontSize": 12,
+                  },
+                  {
+                    "color": "#6B6B6B",
+                  },
+                ]
+              }
+            >
+              12.0K
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 4,
+              }
+            }
+          >
+            <Icon
+              color="#FF3B30"
+              size={14}
+              strokeWidth={1.5}
+            />
+            <Text
+              style={
+                [
+                  {
+                    "fontFamily": "Roboto_400Regular",
+                    "fontSize": 12,
+                  },
+                  {
+                    "color": "#6B6B6B",
+                  },
+                ]
+              }
+            >
+              340
+            </Text>
+          </View>
+          <View
+            style={
+              {
+                "alignItems": "center",
+                "flexDirection": "row",
+                "gap": 4,
+              }
+            }
+          >
+            <Icon
+              color="#2196F3"
+              size={14}
+              strokeWidth={1.5}
+            />
+            <Text
+              style={
+                [
+                  {
+                    "fontFamily": "Roboto_400Regular",
+                    "fontSize": 12,
+                  },
+                  {
+                    "color": "#6B6B6B",
+                  },
+                ]
+              }
+            >
+              12
+            </Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  </View>
+</RNCSafeAreaProvider>
+`;
