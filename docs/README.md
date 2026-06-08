@@ -12,6 +12,7 @@
 | [Frontend](frontend/README.md) | React Native screens, components, state |
 | [Deployment](deployment/README.md) | Vercel, EAS Build, environment config |
 | [Contributing](contributing/README.md) | Code style, PR workflow, testing |
+| [Change & Audit Log](changelog.md) | Dated record of substantive changes (what/why/invariants/PRs) |
 
 ## Tech Stack
 
