@@ -6,6 +6,31 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Question screen UX, Phase 2: timed-reward fairness (PR #8)
+
+Highest-trust-stakes fixes for the timed reward flow.
+
+- **Wall-clock timer.** `QuestionTimer` (used by the instant-reward screen) was a
+  `setInterval`-on-state countdown that silently paused when the app was backgrounded
+  or the JS thread was starved — handing the user free time and disagreeing with the
+  server's real expiry. It now derives `timeLeft` from a fixed **deadline** each tick,
+  re-syncs on `AppState` foreground, and fires its expiry/warning haptics **once** even
+  if ticks were skipped. Same fix applied to `CompactQuestionTimer`.
+- **Timer a11y.** Dropped the per-second `accessibilityLiveRegion="polite"` that made
+  screen readers announce "59s, 58s…" every second; the `timer` role + label remain.
+- **Option role consistency.** The instant-reward option used
+  `accessibilityRole="button"`; switched to `"radio"` (+ `checked` state) to match the
+  regular reward screen and the shared component, so single-select semantics are announced.
+
+> **Invariant:** timed countdowns must be deadline-based (wall-clock), never a
+> decrement-on-tick, so elapsed real time always counts. Tests:
+> `__tests__/ui/question-timer.ui.test.tsx`.
+
+Still pending in this area (deferred for careful, isolated work on the ~1700-line live
+payment screens): grace auto-submit at expiry + pause-timer-during-submit, offline-queue
+parity on the regular reward screen, wiring the built-but-unused `SpotsStatus`, and
+clarifying "earned points" vs "won the cash prize" copy.
+
 ## 2026-06-09 — Question screen UX, Phase 1: community Q&A answer screen (PR #8)
 
 First of a four-phase plan to close UX gaps on the question screens. This phase
