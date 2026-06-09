@@ -79,6 +79,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 interface OptionItemProps {
   optionKey: string;
   label: string;
+  index: number;
   isSelected: boolean;
   isCorrect: boolean;
   wasSelectedPreviously: boolean;
@@ -90,6 +91,7 @@ interface OptionItemProps {
 const OptionItem = memo(function OptionItem({
   optionKey,
   label,
+  index,
   isSelected,
   isCorrect,
   wasSelectedPreviously,
@@ -101,6 +103,8 @@ const OptionItem = memo(function OptionItem({
 
   return (
     <Pressable
+      // Stable testID for E2E (Maestro taps `option-<n>`).
+      testID={`option-${index}`}
       style={[
         styles.option,
         {
@@ -1230,11 +1234,12 @@ export default function InstantRewardAnswerScreen(): React.ReactElement {
             />
           ) : (
             <View style={styles.optionsList} accessibilityRole="radiogroup" accessibilityLabel="Answer options">
-              {optionDisplayProps.map((op) => (
+              {optionDisplayProps.map((op, index) => (
                 <OptionItem
                   key={op.key}
                   optionKey={op.key}
                   label={op.label}
+                  index={index}
                   isSelected={op.isSelected}
                   isCorrect={op.isCorrectOption}
                   wasSelectedPreviously={op.wasSelectedPreviously}

@@ -6,6 +6,29 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Question screen UX: test coverage + e2e wiring
+
+Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow into CI.
+
+- **Phase 3/4 unit assertions added** — `questions-new.ui.test.tsx`: "My Activity" auth
+  gating (routes to login when logged out), the "You're all caught up" end-of-list
+  marker, K/M count abbreviation + the "Answered" chip from `userHasResponded`. New
+  `skeleton-reduced-motion.ui.test.tsx`: the feed skeleton renders in both reduce-motion
+  states (the branch that previously had no test).
+- **E2E wiring** — moved `questions-smoke.yaml` (feed → detail → answer) into the CI
+  `.maestro/` dir. Added a stable `testID="option-<n>"` to the instant-reward option so
+  `instant-reward.yaml`'s `option-0` tap actually selects an answer instead of being a
+  silent no-op.
+- **Switched the Maestro job to Maestro Cloud.** The GitHub-Actions Android emulator
+  never booted on the Apple-Silicon macOS runner ("Timeout waiting for emulator to
+  boot") — the build itself now completes (timeout fix), but the emulator is a dead end.
+  `maestro.yml` now builds the debug APK on cheap `ubuntu-latest` and uploads it + the
+  `.maestro` flows to **Maestro Cloud** (hosted real devices) via
+  `mobile-dev-inc/action-maestro-cloud`, keyed by the `MAESTRO_API_TOKEN` secret.
+
+> Verification: `tsc` 0 errors; full `jest` green (incl. 5 new assertions); `bun test`
+> server green; Playwright visual pixel-diff green (question presentational components).
+
 ## 2026-06-09 — Question screen UX, Phases 3 & 4: feed polish + a11y (PR #8)
 
 Contained, low-risk items from the feed and accessibility phases.

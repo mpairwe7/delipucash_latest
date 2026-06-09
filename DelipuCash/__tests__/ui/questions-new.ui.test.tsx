@@ -8,10 +8,12 @@
  * and question rows are asserted against the genuine components.
  */
 import React from 'react';
+import { router } from 'expo-router';
 import { renderWithProviders, screen, fireEvent } from '@/test-utils';
 import { useInfiniteQuestionsFeed } from '@/services/questionHooks';
+import { useAuth } from '@/utils/auth/useAuth';
 import { useQuestionUIStore } from '@/store';
-import { makeInfiniteFeedResult, makeFeedPage } from '@/__tests__/fixtures/question.factory';
+import { makeInfiniteFeedResult, makeFeedPage, makeFeedQuestion } from '@/__tests__/fixtures/question.factory';
 
 jest.mock('expo-router', () => ({
   __esModule: true,
@@ -67,7 +69,7 @@ jest.mock('@/utils/useUser', () => ({
 }));
 jest.mock('@/utils/auth/useAuth', () => ({
   __esModule: true,
-  useAuth: () => ({ isReady: true, isAuthenticated: true }),
+  useAuth: jest.fn(() => ({ isReady: true, isAuthenticated: true })),
 }));
 
 // Header gamification/CTA children + ads are out of scope — stub to null.
@@ -91,8 +93,12 @@ import QuestionsScreen from '@/app/(tabs)/questions-new';
 
 const mockFeed = useInfiniteQuestionsFeed as jest.Mock;
 
+const mockUseAuth = useAuth as jest.Mock;
+
 beforeEach(() => {
   mockFeed.mockReset();
+  (router.push as jest.Mock).mockClear();
+  mockUseAuth.mockReturnValue({ isReady: true, isAuthenticated: true });
   // Reset the persisted tab selection so each test starts on "For You".
   useQuestionUIStore.setState({ selectedTab: 'for-you' });
 });
@@ -165,5 +171,47 @@ describe('QuestionsScreen — tabs', () => {
     expect(useQuestionUIStore.getState().selectedTab).toBe('latest');
     // The feed hook is re-invoked with the new tab id on re-render.
     expect(mockFeed.mock.calls.some((call) => call[0] === 'latest')).toBe(true);
+  });
+
+  it('gates the "My Activity" tab behind auth for logged-out users', () => {
+    mockUseAuth.mockReturnValue({ isReady: true, isAuthenticated: false });
+    mockFeed.mockReturnValue(makeInfiniteFeedResult());
+    renderWithProviders(<QuestionsScreen />);
+
+    fireEvent.press(screen.getByText('My Activity'));
+
+    // Routes to login and does NOT switch into the user-scoped tab.
+    expect(router.push).toHaveBeenCalledWith('/(auth)/login');
+    expect(useQuestionUIStore.getState().selectedTab).toBe('for-you');
+  });
+});
+
+describe('QuestionsScreen — Phase 3 feed polish', () => {
+  it('shows the "You\'re all caught up" end-of-list marker when there are no more pages', () => {
+    // makeInfiniteFeedResult defaults hasNextPage:false with a populated page.
+    mockFeed.mockReturnValue(makeInfiniteFeedResult());
+    renderWithProviders(<QuestionsScreen />);
+    expect(screen.getByText(/all caught up/i)).toBeOnTheScreen();
+  });
+
+  it('abbreviates large counts and shows an "Answered" chip from userHasResponded', () => {
+    const answered = makeFeedQuestion({
+      id: 'q-1',
+      upvotes: 1500,
+      totalAnswers: 2000,
+      userHasResponded: true,
+    });
+    mockFeed.mockReturnValue(
+      makeInfiniteFeedResult({
+        data: { pages: [makeFeedPage(1, { questions: [answered] })], pageParams: [1] },
+      })
+    );
+    renderWithProviders(<QuestionsScreen />);
+
+    // K/M abbreviation on the vote count + answers count (raw 1500/2000 would be "1500"/"2000").
+    expect(screen.getAllByText('1.5K').length).toBeGreaterThan(0);
+    expect(screen.getByText(/2\.0K\s+answers/)).toBeOnTheScreen();
+    // Already-answered affordance (queried by its unique chip label).
+    expect(screen.getByLabelText('You answered this')).toBeOnTheScreen();
   });
 });
