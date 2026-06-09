@@ -647,6 +647,13 @@ export default function QuestionsScreen(): React.ReactElement {
 
   const handleTabChange = useCallback(
     (tabId: string) => {
+      // "My Activity" is user-scoped — gate it behind auth like vote/answer actions,
+      // instead of silently showing an empty/errored anonymous result.
+      if (tabId === "my-activity" && authReady && !isAuthenticated) {
+        triggerHaptic("light");
+        router.push("/(auth)/login" as Href);
+        return;
+      }
       setSelectedTab(tabId as FeedTabId);
       triggerHaptic("light");
       // Restore scroll position after RN completes the layout pass
@@ -657,7 +664,7 @@ export default function QuestionsScreen(): React.ReactElement {
         });
       });
     },
-    [setSelectedTab]
+    [setSelectedTab, authReady, isAuthenticated]
   );
 
   // Infinite scroll — load next page when end is reached
@@ -1011,8 +1018,18 @@ export default function QuestionsScreen(): React.ReactElement {
         </View>
       );
     }
+    // End-of-list marker so the feed doesn't just stop (reads as a load hiccup otherwise).
+    if (!hasNextPage && allQuestions.length > 0) {
+      return (
+        <View style={styles.footerLoader}>
+          <Text style={[styles.footerEndText, { color: colors.textMuted }]}>
+            You&apos;re all caught up
+          </Text>
+        </View>
+      );
+    }
     return null;
-  }, [isFetchingNextPage, colors.primary]);
+  }, [isFetchingNextPage, hasNextPage, allQuestions.length, colors.primary, colors.textMuted]);
 
   const keyExtractor = useCallback((item: FeedItem) => item.id, []);
 
@@ -1388,5 +1405,9 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: SPACING.lg,
     alignItems: "center",
+  },
+  footerEndText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
   },
 });

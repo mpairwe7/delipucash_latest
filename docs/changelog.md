@@ -6,6 +6,82 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Question screen UX, Phases 3 & 4: feed polish + a11y (PR #8)
+
+Contained, low-risk items from the feed and accessibility phases.
+
+**Feed (`questions-new.tsx`, `QuestionFeedItem.tsx`):**
+- **Abbreviated counts** — vote/answer/follower counts now use the K/M formatter
+  (`formatReputation`) so popular questions don't break the layout.
+- **Answered badge** — cards show a "✓ Answered" chip from the `userHasResponded`
+  seed (Phase 1), so users don't tap into questions they've already answered.
+- **"My Activity" gating** — selecting the user-scoped tab while logged out routes to
+  login instead of showing an empty/errored anonymous result.
+- **End-of-list marker** — "You're all caught up" when there are no more pages, so the
+  feed doesn't just stop (which reads as a load hiccup).
+
+**Accessibility (`SkeletonLoaders.tsx`):**
+- The production feed skeleton's shimmer now respects the OS **reduce-motion** setting
+  (WCAG 2.3.3) — it holds a static skeleton instead of looping. (The timer's
+  per-second live-region spam was fixed in the Phase 2 entry above.)
+
+> Deferred (need dedicated work): header declutter (subjective reorder of many ad/CTA
+> slots), instant-reward card → specific-question routing (needs a `rewardQuestionId`
+> backend field), and the deeper reward-screen cash-flow items listed under Phase 2.
+
+## 2026-06-09 — Question screen UX, Phase 2: timed-reward fairness (PR #8)
+
+Highest-trust-stakes fixes for the timed reward flow.
+
+- **Wall-clock timer.** `QuestionTimer` (used by the instant-reward screen) was a
+  `setInterval`-on-state countdown that silently paused when the app was backgrounded
+  or the JS thread was starved — handing the user free time and disagreeing with the
+  server's real expiry. It now derives `timeLeft` from a fixed **deadline** each tick,
+  re-syncs on `AppState` foreground, and fires its expiry/warning haptics **once** even
+  if ticks were skipped. Same fix applied to `CompactQuestionTimer`.
+- **Timer a11y.** Dropped the per-second `accessibilityLiveRegion="polite"` that made
+  screen readers announce "59s, 58s…" every second; the `timer` role + label remain.
+- **Option role consistency.** The instant-reward option used
+  `accessibilityRole="button"`; switched to `"radio"` (+ `checked` state) to match the
+  regular reward screen and the shared component, so single-select semantics are announced.
+
+> **Invariant:** timed countdowns must be deadline-based (wall-clock), never a
+> decrement-on-tick, so elapsed real time always counts. Tests:
+> `__tests__/ui/question-timer.ui.test.tsx`.
+
+Still pending in this area (deferred for careful, isolated work on the ~1700-line live
+payment screens): grace auto-submit at expiry + pause-timer-during-submit, offline-queue
+parity on the regular reward screen, wiring the built-but-unused `SpotsStatus`, and
+clarifying "earned points" vs "won the cash prize" copy.
+
+## 2026-06-09 — Question screen UX, Phase 1: community Q&A answer screen (PR #8)
+
+First of a four-phase plan to close UX gaps on the question screens. This phase
+targets `app/question-answer/[id].tsx` (the community Q&A answer screen) and a small,
+contained backend seed.
+
+- **Reward is now communicated.** The submit response already returned `rewardEarned`
+  but the screen ignored it; success now surfaces "You earned X points" (banner +
+  toast + `announceForAccessibility`).
+- **Already-answered shows on load, not just after a failed submit.** Seeded from the
+  server's new `userHasResponded` and derived client-side from the user's own response
+  in the list. Detection switched from the brittle exact-match error string to a stable
+  `code: 'ALREADY_RESPONDED'` (message kept as fallback).
+- **No more dead end after submitting** — a "Browse more questions" CTA continues the
+  answer-and-earn loop.
+- **Load failure vs missing question** are now distinct error states (a flaky-network
+  user isn't told the question doesn't exist).
+- **A11y:** submitted banner is a polite live region.
+
+> **Invariant:** already-answered detection relies on the server `code`
+> (`ALREADY_RESPONDED`) and the seeded `userHasResponded`, not message text. The feed
+> seed mirrors the existing `userHasVoted` seeding in `getQuestions`.
+
+Backend: `server/controllers/questionController.mjs` seeds `userHasResponded` in
+`getQuestions` and returns the `code` on the 409.
+Tests: `__tests__/ui/question-answer.ui.test.tsx` (reward ack, code-based detection,
+answered-on-load, next-step) + `server/test/questionResponseCode.test.js`.
+
 ## 2026-06-08 — Video screen hardening, survey fixes, CI/CD cleanup
 
 Branch base for this batch: `test/question-screens-regression` → merged to `main`

@@ -116,8 +116,10 @@ const OptionItem = memo(function OptionItem({
       onPress={handlePress}
       disabled={isDisabled}
       hitSlop={8}
-      accessibilityRole="button"
-      accessibilityState={{ selected: isSelected, disabled: isDisabled }}
+      // "radio" (not "button") so screen readers announce single-select semantics,
+      // matching the regular reward screen + the shared OptionItem.
+      accessibilityRole="radio"
+      accessibilityState={{ selected: isSelected, disabled: isDisabled, checked: isSelected }}
     >
       <View style={styles.optionLeft}>
         <View

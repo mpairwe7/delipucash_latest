@@ -9,11 +9,12 @@
  * - Accessibility support
  */
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  AppState,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -22,7 +23,6 @@ import Animated, {
   withTiming,
   withSpring,
   Easing,
-  runOnJS,
 } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { AlertCircle, Clock } from 'lucide-react-native';
@@ -67,7 +67,16 @@ export const QuestionTimer: React.FC<QuestionTimerProps> = ({
   reset = false,
 }) => {
   const { colors } = useTheme();
-  const [timeLeft, setTimeLeft] = React.useState(timeLimit);
+  const [timeLeft, setTimeLeft] = useState(timeLimit);
+
+  // Wall-clock deadline so the countdown is immune to app backgrounding and
+  // JS-thread starvation (a setInterval-on-state countdown silently pauses when
+  // the app is backgrounded, handing the user free time in a timed cash game).
+  const deadlineRef = useRef(Date.now() + timeLimit * 1000);
+  const expiredFiredRef = useRef(false);
+  const warnedRef = useRef(false);
+  const onTimeExpiredRef = useRef(onTimeExpired);
+  useEffect(() => { onTimeExpiredRef.current = onTimeExpired; }, [onTimeExpired]);
 
   // Reanimated shared values
   const progress = useSharedValue(1);
@@ -111,41 +120,47 @@ export const QuestionTimer: React.FC<QuestionTimerProps> = ({
     }
   }, [timerState, colors]);
 
-  // Countdown effect
+  // (Re)start the countdown on mount and whenever reset/timeLimit changes:
+  // set a fresh wall-clock deadline and clear the one-shot guards. (The ring/pulse
+  // effect below re-derives progress from timeLeft, so we don't reset shared values
+  // here — listing them as deps would re-run this and reset the deadline every render.)
   useEffect(() => {
-    if (reset) {
-      setTimeLeft(timeLimit);
-      progress.value = 1;
-      scaleValue.value = 1;
-      return;
-    }
+    deadlineRef.current = Date.now() + timeLimit * 1000;
+    expiredFiredRef.current = false;
+    warnedRef.current = false;
+    setTimeLeft(timeLimit);
+  }, [reset, timeLimit]);
 
-    if (timeLeft <= 0) {
-      onTimeExpired?.();
-      return;
-    }
+  // Tick from the wall clock (not by decrementing state) and re-sync immediately
+  // when the app returns to the foreground, so elapsed background time counts.
+  useEffect(() => {
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+      setTimeLeft(remaining);
 
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        const newTime = prev - 1;
+      // One-shot haptics — fire once even if ticks were skipped while backgrounded.
+      if (remaining > 0 && remaining <= CRITICAL_TIME_THRESHOLD && !warnedRef.current) {
+        warnedRef.current = true;
+        triggerHaptic('warning');
+      }
+      if (remaining <= 0 && !expiredFiredRef.current) {
+        expiredFiredRef.current = true;
+        triggerHaptic('error');
+        onTimeExpiredRef.current?.();
+      }
+    };
 
-        // Haptic feedback at thresholds
-        if (newTime === CRITICAL_TIME_THRESHOLD) {
-          runOnJS(triggerHaptic)('warning');
-        }
-        if (newTime === 0) {
-          runOnJS(triggerHaptic)('error');
-          if (onTimeExpired) {
-            runOnJS(onTimeExpired)();
-          }
-        }
+    tick(); // sync immediately on mount
+    const interval = setInterval(tick, 1000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') tick();
+    });
 
-        return newTime;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [timeLeft, reset, timeLimit, onTimeExpired, progress, scaleValue]);
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, []);
 
   // Animate progress ring
   useEffect(() => {
@@ -233,7 +248,8 @@ export const QuestionTimer: React.FC<QuestionTimerProps> = ({
         <Text
           style={[styles.timeText, { color: timerColors.text }]}
           accessibilityRole="timer"
-          accessibilityLiveRegion="polite"
+          // No continuous live region — a polite region here announced every second
+          // ("59s, 58s…"), flooding screen readers. The timer role + label suffice.
           accessibilityLabel={`${displayTime} remaining`}
         >
           {displayTime}
@@ -263,7 +279,14 @@ export const CompactQuestionTimer: React.FC<Omit<QuestionTimerProps, 'reset'>> =
   onTimeExpired,
 }) => {
   const { colors } = useTheme();
-  const [timeLeft, setTimeLeft] = React.useState(timeLimit);
+  const [timeLeft, setTimeLeft] = useState(timeLimit);
+
+  // Wall-clock deadline (see QuestionTimer) — immune to background pause.
+  const deadlineRef = useRef(Date.now() + timeLimit * 1000);
+  const expiredFiredRef = useRef(false);
+  const warnedRef = useRef(false);
+  const onTimeExpiredRef = useRef(onTimeExpired);
+  useEffect(() => { onTimeExpiredRef.current = onTimeExpired; }, [onTimeExpired]);
 
   const timerState = useMemo(() => {
     if (timeLeft <= 0) return 'expired';
@@ -285,27 +308,36 @@ export const CompactQuestionTimer: React.FC<Omit<QuestionTimerProps, 'reset'>> =
   }, [timerState, colors]);
 
   useEffect(() => {
-    if (timeLeft <= 0) {
-      onTimeExpired?.();
-      return;
-    }
+    deadlineRef.current = Date.now() + timeLimit * 1000;
+    expiredFiredRef.current = false;
+    warnedRef.current = false;
+    setTimeLeft(timeLimit);
+  }, [timeLimit]);
 
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        const newTime = prev - 1;
-        if (newTime === CRITICAL_TIME_THRESHOLD) {
-          triggerHaptic('warning');
-        }
-        if (newTime === 0) {
-          triggerHaptic('error');
-          onTimeExpired?.();
-        }
-        return newTime;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [timeLeft, onTimeExpired]);
+  useEffect(() => {
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((deadlineRef.current - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining > 0 && remaining <= CRITICAL_TIME_THRESHOLD && !warnedRef.current) {
+        warnedRef.current = true;
+        triggerHaptic('warning');
+      }
+      if (remaining <= 0 && !expiredFiredRef.current) {
+        expiredFiredRef.current = true;
+        triggerHaptic('error');
+        onTimeExpiredRef.current?.();
+      }
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') tick();
+    });
+    return () => {
+      clearInterval(interval);
+      sub.remove();
+    };
+  }, []);
 
   const displayTime = `${Math.max(0, timeLeft)}s`;
 
