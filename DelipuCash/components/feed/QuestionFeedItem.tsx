@@ -275,7 +275,7 @@ const VoteButton = memo(function VoteButton({
       />
       {count > 0 && (
         <Text style={[styles.voteCount, { color: displayColor }]}>
-          {count}
+          {formatReputation(count)}
         </Text>
       )}
     </Pressable>
@@ -657,15 +657,24 @@ function QuestionFeedItemComponent({
             >
               <MessageCircle size={ICON_SIZE.sm} color={colors.info} strokeWidth={1.5} />
             </View>
-            <Text 
+            <Text
               style={[styles.statText, { color: colors.textMuted }]}
               accessibilityLabel={`${question.totalAnswers || 0} answers`}
             >
-              {question.totalAnswers || 0}{" "}
+              {formatReputation(question.totalAnswers || 0)}{" "}
               {(question.totalAnswers || 0) === 1 ? "answer" : "answers"}
             </Text>
             {question.hasAcceptedAnswer && (
               <CheckCircle2 size={ICON_SIZE.xs} color={colors.success} style={styles.acceptedIcon} />
+            )}
+            {question.userHasResponded && (
+              <View
+                style={[styles.answeredChip, { backgroundColor: withAlpha(colors.success, 0.12) }]}
+                accessibilityLabel="You answered this"
+              >
+                <CheckCircle2 size={ICON_SIZE.xs} color={colors.success} strokeWidth={2} />
+                <Text style={[styles.answeredChipText, { color: colors.success }]}>Answered</Text>
+              </View>
             )}
           </View>
 
@@ -680,11 +689,11 @@ function QuestionFeedItemComponent({
               >
                 <Users size={ICON_SIZE.sm} color={colors.primary} strokeWidth={1.5} />
               </View>
-              <Text 
+              <Text
                 style={[styles.statText, { color: colors.textMuted }]}
                 accessibilityLabel={`${question.followersCount} people following`}
               >
-                {question.followersCount} following
+                {formatReputation(question.followersCount)} following
               </Text>
             </View>
           )}
@@ -970,6 +979,19 @@ const styles = StyleSheet.create({
   },
   acceptedIcon: {
     marginLeft: SPACING.xxs,
+  },
+  answeredChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    marginLeft: SPACING.xs,
+    paddingHorizontal: SPACING.xs,
+    paddingVertical: 2,
+    borderRadius: RADIUS.sm,
+  },
+  answeredChipText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.xs,
   },
   arrowContainer: {
     marginLeft: "auto",

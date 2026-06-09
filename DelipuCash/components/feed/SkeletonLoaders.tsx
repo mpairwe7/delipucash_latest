@@ -29,6 +29,7 @@ import Animated, {
   withTiming,
   Easing,
   interpolate,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 import {
@@ -38,6 +39,7 @@ import {
   SHADOWS,
   withAlpha,
 } from "@/utils/theme";
+import { useReducedMotion } from "@/utils/accessibility";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -59,9 +61,17 @@ const Shimmer = memo(function Shimmer({
   style,
 }: ShimmerProps) {
   const { colors } = useTheme();
+  const reduceMotion = useReducedMotion();
   const shimmerPosition = useSharedValue(-1);
 
   useEffect(() => {
+    // Respect the OS "reduce motion" setting (WCAG 2.3.3): hold a static skeleton
+    // instead of running the continuous shimmer loop.
+    if (reduceMotion) {
+      cancelAnimation(shimmerPosition);
+      shimmerPosition.value = 0;
+      return;
+    }
     shimmerPosition.value = withRepeat(
       withTiming(1, {
         duration: 1500,
@@ -70,7 +80,8 @@ const Shimmer = memo(function Shimmer({
       -1,
       false
     );
-  }, []);
+    return () => cancelAnimation(shimmerPosition);
+  }, [reduceMotion, shimmerPosition]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [

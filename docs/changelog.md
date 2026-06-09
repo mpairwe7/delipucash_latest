@@ -6,6 +6,29 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Question screen UX, Phases 3 & 4: feed polish + a11y (PR #8)
+
+Contained, low-risk items from the feed and accessibility phases.
+
+**Feed (`questions-new.tsx`, `QuestionFeedItem.tsx`):**
+- **Abbreviated counts** — vote/answer/follower counts now use the K/M formatter
+  (`formatReputation`) so popular questions don't break the layout.
+- **Answered badge** — cards show a "✓ Answered" chip from the `userHasResponded`
+  seed (Phase 1), so users don't tap into questions they've already answered.
+- **"My Activity" gating** — selecting the user-scoped tab while logged out routes to
+  login instead of showing an empty/errored anonymous result.
+- **End-of-list marker** — "You're all caught up" when there are no more pages, so the
+  feed doesn't just stop (which reads as a load hiccup).
+
+**Accessibility (`SkeletonLoaders.tsx`):**
+- The production feed skeleton's shimmer now respects the OS **reduce-motion** setting
+  (WCAG 2.3.3) — it holds a static skeleton instead of looping. (The timer's
+  per-second live-region spam was fixed in the Phase 2 entry above.)
+
+> Deferred (need dedicated work): header declutter (subjective reorder of many ad/CTA
+> slots), instant-reward card → specific-question routing (needs a `rewardQuestionId`
+> backend field), and the deeper reward-screen cash-flow items listed under Phase 2.
+
 ## 2026-06-09 — Question screen UX, Phase 2: timed-reward fairness (PR #8)
 
 Highest-trust-stakes fixes for the timed reward flow.
