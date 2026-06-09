@@ -74,5 +74,8 @@ jobs:
         uses: mobile-dev-inc/action-maestro-cloud@892c9dd6e50cff4f8c9046f6263047dc5bf419d5 # v1
         with:
           api-key: ${{ secrets.MAESTRO_API_TOKEN }}
+          # Robin/Maestro Cloud project the upload targets (a public identifier, not a
+          # secret — the api-key is the secret). Stored as a repo variable.
+          project-id: ${{ vars.MAESTRO_PROJECT_ID }}
           app-file: DelipuCash/android/app/build/outputs/apk/debug/app-debug.apk
           workspace: .maestro

@@ -6,6 +6,14 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Maestro Cloud: supply required `project-id`
+
+Follow-up to the Cloud switch. The first Cloud run got through the APK build + the
+upload action but failed with `Input required and not supplied: project-id` — the
+current `action-maestro-cloud` (Robin platform) requires the target project id. Added
+`project-id: ${{ vars.MAESTRO_PROJECT_ID }}` to the upload step; the id is stored as a
+repo **variable** (public identifier, not a secret — the api-key remains the secret).
+
 ## 2026-06-09 — Question screen UX: test coverage + e2e wiring
 
 Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow into CI.
