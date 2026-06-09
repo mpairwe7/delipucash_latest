@@ -16,9 +16,15 @@ Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow
   `skeleton-reduced-motion.ui.test.tsx`: the feed skeleton renders in both reduce-motion
   states (the branch that previously had no test).
 - **E2E wiring** — moved `questions-smoke.yaml` (feed → detail → answer) into the CI
-  `.maestro/` dir and added it to `maestro.yml` (runs after auth, non-gating). Added a
-  stable `testID="option-<n>"` to the instant-reward option so `instant-reward.yaml`'s
-  `option-0` tap actually selects an answer instead of being a silent no-op.
+  `.maestro/` dir. Added a stable `testID="option-<n>"` to the instant-reward option so
+  `instant-reward.yaml`'s `option-0` tap actually selects an answer instead of being a
+  silent no-op.
+- **Switched the Maestro job to Maestro Cloud.** The GitHub-Actions Android emulator
+  never booted on the Apple-Silicon macOS runner ("Timeout waiting for emulator to
+  boot") — the build itself now completes (timeout fix), but the emulator is a dead end.
+  `maestro.yml` now builds the debug APK on cheap `ubuntu-latest` and uploads it + the
+  `.maestro` flows to **Maestro Cloud** (hosted real devices) via
+  `mobile-dev-inc/action-maestro-cloud`, keyed by the `MAESTRO_API_TOKEN` secret.
 
 > Verification: `tsc` 0 errors; full `jest` green (incl. 5 new assertions); `bun test`
 > server green; Playwright visual pixel-diff green (question presentational components).
