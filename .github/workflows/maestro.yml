@@ -94,6 +94,9 @@ jobs:
           script: |
             adb install -r DelipuCash/android/app/build/outputs/apk/debug/app-debug.apk
             maestro test .maestro/auth.yaml || echo "auth flow had issues"
+            # questions-smoke runs after auth so the feed → detail → answer path has a
+            # logged-in session. Non-gating (|| echo) like the others.
+            maestro test .maestro/questions-smoke.yaml || echo "questions-smoke flow had issues"
             maestro test .maestro/instant-reward.yaml || echo "instant-reward flow had issues"
             maestro test .maestro/redeem.yaml || echo "redeem flow had issues"
         env:
