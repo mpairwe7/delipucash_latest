@@ -102,6 +102,8 @@ export interface FeedQuestion extends Question {
   isTrending?: boolean;
   followersCount?: number;
   userHasVoted?: "up" | "down" | null;
+  /** Whether the requesting user has already responded (seeded by the server). */
+  userHasResponded?: boolean;
   timeRemaining?: number; // seconds remaining for reward questions
 }
 

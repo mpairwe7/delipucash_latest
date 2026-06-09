@@ -257,12 +257,26 @@ export const getQuestions = asyncHandler(async (req, res) => {
       for (const v of userVotes) userVoteMap.set(v.questionId, v.type);
     }
 
+    // Seed whether the requesting user has already responded to each question, so the
+    // feed can show an "answered" state up front (mirrors userHasVoted seeding) instead
+    // of the client only discovering it via a 409 after submitting.
+    const userRespondedSet = new Set();
+    if (userId && questionIds.length > 0) {
+      const userResponses = await prisma.response.findMany({
+        where: { questionId: { in: questionIds }, userId },
+        select: { questionId: true },
+        distinct: ['questionId'],
+      });
+      for (const r of userResponses) userRespondedSet.add(r.questionId);
+    }
+
     const formattedQuestions = questions.map(q => {
       const formatted = formatQuestion(q);
       formatted.upvotes = upvoteMap.get(q.id) || 0;
       formatted.downvotes = downvoteMap.get(q.id) || 0;
       // 'up' | 'down' | null — matches the client's userHasVoted contract.
       formatted.userHasVoted = userVoteMap.get(q.id) || null;
+      formatted.userHasResponded = userRespondedSet.has(q.id);
       return formatted;
     });
 
@@ -377,6 +391,9 @@ export const createResponse = asyncHandler(async (req, res) => {
       return res.status(409).json({
         success: false,
         message: 'You have already responded to this question',
+        // Stable code so the client detects already-answered without matching the
+        // human-readable message (which may be reworded/localized).
+        code: 'ALREADY_RESPONDED',
       });
     }
 

@@ -212,6 +212,7 @@ function transformToFeedQuestion(
     upvotes?: number;
     downvotes?: number;
     userHasVoted?: 'up' | 'down' | null;
+    userHasResponded?: boolean;
   },
   _index?: number
 ): FeedQuestion {
@@ -254,6 +255,8 @@ function transformToFeedQuestion(
     // Seeded from the server (the requesting user's QuestionVote) so optimistic vote
     // toggling can correctly undo/switch after a refetch instead of always starting null.
     userHasVoted: question.userHasVoted ?? null,
+    // Seeded from the server so the feed/detail can show an "answered" state up front.
+    userHasResponded: question.userHasResponded ?? false,
   };
 }
 
@@ -593,7 +596,7 @@ export function useSubmitQuestionResponse(): UseMutationResult<
     mutationKey: ['questions', 'submitResponse'],
     mutationFn: async ({ questionId, responseText }) => {
       const userId = getCurrentUserId();
-      const response = await fetchJson<{ response: Response; rewardEarned?: number }>(
+      const response = await fetchJson<{ response: Response; rewardEarned?: number; code?: string }>(
         `/api/questions/${questionId}/responses`,
         {
           method: 'POST',
@@ -603,7 +606,11 @@ export function useSubmitQuestionResponse(): UseMutationResult<
         true,
       );
       if (!response.success) {
-        throw new Error(response.error || 'Failed to submit response');
+        // Surface the server's stable error code (e.g. ALREADY_RESPONDED) on the thrown
+        // error so callers can branch on it instead of matching the message text.
+        const err = new Error(response.error || 'Failed to submit response') as Error & { code?: string };
+        err.code = (response.data as { code?: string } | undefined)?.code;
+        throw err;
       }
       return { ...response.data.response, rewardEarned: response.data.rewardEarned };
     },

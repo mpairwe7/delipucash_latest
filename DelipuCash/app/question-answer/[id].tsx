@@ -55,6 +55,7 @@ import {
 } from "lucide-react-native";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -131,39 +132,37 @@ const ResponseItem = memo(function ResponseItem({
 
 interface SubmittedBannerProps {
   colors: ThemeColors;
+  /** Points the user earned for this answer (0 when the question carries no reward). */
+  rewardEarned?: number;
 }
 
 const SubmittedBanner = memo(function SubmittedBanner({
   colors,
+  rewardEarned = 0,
 }: SubmittedBannerProps) {
+  const success = colors.success || "#22c55e";
+  const earned = rewardEarned > 0;
+  const a11yLabel = earned
+    ? `Answer submitted. You earned ${rewardEarned} points.`
+    : "Answer submitted. Thanks for contributing.";
+
   return (
     <View
-      style={[
-        styles.rewardBanner,
-        { backgroundColor: withAlpha(colors.success || "#22c55e", 0.12) },
-      ]}
+      style={[styles.rewardBanner, { backgroundColor: withAlpha(success, 0.12) }]}
+      accessible
+      accessibilityRole="summary"
+      accessibilityLiveRegion="polite"
+      accessibilityLabel={a11yLabel}
     >
-      <CheckCircle
-        size={ICON_SIZE.md}
-        color={colors.success || "#22c55e"}
-        strokeWidth={1.5}
-      />
+      <CheckCircle size={ICON_SIZE.md} color={success} strokeWidth={1.5} />
       <View style={styles.rewardBannerContent}>
-        <Text
-          style={[
-            styles.rewardBannerTitle,
-            { color: colors.success || "#22c55e" },
-          ]}
-        >
-          Answer submitted!
+        <Text style={[styles.rewardBannerTitle, { color: success }]}>
+          {earned ? `You earned ${rewardEarned} points!` : "Answer submitted!"}
         </Text>
-        <Text
-          style={[
-            styles.rewardBannerAmount,
-            { color: colors.success || "#22c55e" },
-          ]}
-        >
-          Thanks for contributing to the community
+        <Text style={[styles.rewardBannerAmount, { color: success }]}>
+          {earned
+            ? "Reward added to your points balance"
+            : "Thanks for contributing to the community"}
         </Text>
       </View>
     </View>
@@ -215,6 +214,8 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const isAuthenticated = !!user;
   const { showToast } = useToast();
   const [refreshing, setRefreshing] = useState(false);
+  // Points earned for this answer — drives the reward acknowledgment banner.
+  const [rewardEarned, setRewardEarned] = useState(0);
 
   // ── Zustand selectors (granular — avoid full-store re-renders) ──
   const draftText = useQuestionAnswerStore(
@@ -277,6 +278,25 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     if (questionId) setActiveQuestion(questionId);
   }, [questionId, setActiveQuestion]);
 
+  // Reflect "already answered" on load (not only after a failed submit). The server
+  // seeds userHasResponded; we also derive it from the user's own response in the list
+  // so the screen opens in submitted state for returning/cross-device users.
+  useEffect(() => {
+    if (!question || wasSubmitted) return;
+    const myId = user?.id;
+    const respondedOnServer = question.userHasResponded === true;
+    const respondedInList =
+      !!myId &&
+      responses.some(
+        (r) =>
+          !r.id?.startsWith("optimistic_") &&
+          ((r as { userId?: string }).userId ?? r.user?.id) === myId
+      );
+    if (respondedOnServer || respondedInList) {
+      markSubmitted(questionId);
+    }
+  }, [question, wasSubmitted, responses, user?.id, questionId, markSubmitted]);
+
   // Redirect unauthenticated users
   useEffect(() => {
     if (!userLoading && !isAuthenticated) {
@@ -288,6 +308,13 @@ export default function QuestionAnswerScreen(): React.ReactElement {
   const handleBack = useCallback((): void => {
     triggerHaptic('light');
     router.back();
+  }, []);
+
+  // Post-submit "next" path — keep the answer-and-earn loop going instead of dead-ending.
+  const handleBrowseMore = useCallback((): void => {
+    triggerHaptic('light');
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/questions-new" as Href);
   }, []);
 
   const handleDiscussion = useCallback((): void => {
@@ -325,19 +352,28 @@ export default function QuestionAnswerScreen(): React.ReactElement {
     submitResponse.mutate(
       { questionId: question.id, responseText: trimmed },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
           markSubmitted(question.id);
           submitDebounceRef.current = false;
 
           // Track question answered for ad frequency capping
           recordQuestionAnswered();
 
+          // Surface the reward the answer actually earned (server credits points).
+          const earned = data?.rewardEarned ?? 0;
+          setRewardEarned(earned);
+
           // Scroll to bottom to see the new response
           scrollRef.current?.scrollToEnd({ animated: true });
 
           triggerHaptic('success');
+          const message =
+            earned > 0
+              ? `Answer submitted — you earned ${earned} points!`
+              : 'Answer submitted! Thanks for contributing your knowledge.';
+          AccessibilityInfo.announceForAccessibility(message);
           showToast({
-            message: 'Answer submitted! Thanks for contributing your knowledge.',
+            message,
             type: 'success',
             action: 'View discussion',
             onAction: () =>
@@ -349,18 +385,24 @@ export default function QuestionAnswerScreen(): React.ReactElement {
         },
         onError: (err) => {
           submitDebounceRef.current = false;
+          // Detect already-answered via the stable server code, not the message text
+          // (kept as a fallback for older server builds).
+          const code = (err as Error & { code?: string })?.code;
           const alreadyResponded =
+            code === "ALREADY_RESPONDED" ||
             err?.message === "You have already responded to this question";
           if (alreadyResponded) {
             // Server is the source of truth: mark this question submitted (also clears the
             // draft) so the UI reflects the answered state instead of inviting a retry.
             markSubmitted(question.id);
           }
-          triggerHaptic(alreadyResponded ? 'success' : 'error');
+          triggerHaptic(alreadyResponded ? 'warning' : 'error');
+          const message = alreadyResponded
+            ? "You've already answered this question."
+            : "Could not submit your answer. Please try again.";
+          AccessibilityInfo.announceForAccessibility(message);
           showToast({
-            message: alreadyResponded
-              ? "You've already answered this question."
-              : "Could not submit your answer. Please try again.",
+            message,
             type: alreadyResponded ? 'info' : 'error',
           });
         },
@@ -430,9 +472,23 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           strokeWidth={1.5}
           style={{ marginBottom: SPACING.md }}
         />
-        <Text style={[styles.errorText, { color: colors.error }]}>
-          {error?.message || "Question not found"}
-        </Text>
+        {(() => {
+          // Distinguish a genuinely missing question from a load failure (offline /
+          // server error) so a flaky-network user isn't told the question doesn't exist.
+          const notFound = !error || /not\s*found/i.test(error.message || "");
+          return (
+            <>
+              <Text style={[styles.errorText, { color: colors.error }]}>
+                {notFound ? "Question not found" : "Couldn't load this question"}
+              </Text>
+              <Text style={[styles.errorSubtext, { color: colors.textMuted }]}>
+                {notFound
+                  ? "It may have been removed or is no longer available."
+                  : "Check your connection and try again."}
+              </Text>
+            </>
+          );
+        })()}
         <View style={styles.errorActions}>
           <Pressable
             style={[styles.retryButton, { backgroundColor: colors.primary }]}
@@ -548,7 +604,7 @@ export default function QuestionAnswerScreen(): React.ReactElement {
           <>
         {/* Submission confirmation banner */}
         {wasSubmitted && (
-          <SubmittedBanner colors={colors} />
+          <SubmittedBanner colors={colors} rewardEarned={rewardEarned} />
         )}
 
         {/* Hero card */}
@@ -667,19 +723,33 @@ export default function QuestionAnswerScreen(): React.ReactElement {
       >
         {wasSubmitted ? (
           <View style={styles.submittedBar}>
-            <CheckCircle
-              size={ICON_SIZE.sm}
-              color={colors.success || "#22c55e"}
-              strokeWidth={1.5}
-            />
-            <Text
-              style={[
-                styles.submittedBarText,
-                { color: colors.success || "#22c55e" },
-              ]}
+            <View style={styles.submittedBarStatus}>
+              <CheckCircle
+                size={ICON_SIZE.sm}
+                color={colors.success || "#22c55e"}
+                strokeWidth={1.5}
+              />
+              <Text
+                style={[
+                  styles.submittedBarText,
+                  { color: colors.success || "#22c55e" },
+                ]}
+              >
+                Answer submitted
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.browseMoreButton, { backgroundColor: colors.primary }]}
+              onPress={handleBrowseMore}
+              accessibilityRole="button"
+              accessibilityLabel="Browse more questions"
+              accessibilityHint="Returns to the questions feed to answer another"
+              hitSlop={8}
             >
-              Answer submitted
-            </Text>
+              <Text style={[styles.browseMoreText, { color: colors.primaryText }]}>
+                Browse more questions
+              </Text>
+            </Pressable>
           </View>
         ) : (
           <View style={styles.bottomBarContent}>
@@ -1047,12 +1117,37 @@ const styles = StyleSheet.create({
   submittedBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     gap: SPACING.sm,
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
+  },
+  submittedBarStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
   },
   submittedBarText: {
     fontFamily: TYPOGRAPHY.fontFamily.bold,
     fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  browseMoreButton: {
+    paddingHorizontal: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    borderRadius: RADIUS.md,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  browseMoreText: {
+    fontFamily: TYPOGRAPHY.fontFamily.bold,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  errorSubtext: {
+    marginTop: SPACING.xs,
+    marginBottom: SPACING.md,
+    fontFamily: TYPOGRAPHY.fontFamily.regular,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    textAlign: "center",
+    paddingHorizontal: SPACING.xl,
   },
 });

@@ -28,7 +28,9 @@ jest.mock('@/services/questionHooks', () => ({
 }));
 jest.mock('@/utils/useUser', () => ({
   __esModule: true,
-  default: () => ({ data: { id: 'u-1', firstName: 'Test', lastName: 'User' }, loading: false }),
+  // Distinct from the fixture's response authors (u-1/u-2/u-3) so the default loaded
+  // state isn't treated as "already answered by the viewer".
+  default: () => ({ data: { id: 'viewer-1', firstName: 'Test', lastName: 'User' }, loading: false }),
 }));
 jest.mock('@/hooks/useQuizAdPlacement', () => ({
   __esModule: true,
@@ -140,6 +142,47 @@ describe('QuestionAnswerScreen — draft + submission', () => {
     fireEvent.press(screen.getByLabelText('Submit answer'));
 
     // The screen reflects the server's source of truth instead of inviting a retry.
+    expect(useQuestionAnswerStore.getState().submittedQuestionIds.has('q-1')).toBe(true);
+  });
+
+  it('detects already-answered via the stable error code (not the message text)', () => {
+    setDetail({ data: makeQuestionDetail() });
+    // A reworded message + the ALREADY_RESPONDED code — detection must rely on the code.
+    submitMutate.mockImplementation((_args: unknown, opts?: { onError?: (e: Error) => void }) =>
+      opts?.onError?.(Object.assign(new Error('Totally different wording'), { code: 'ALREADY_RESPONDED' }))
+    );
+    renderWithProviders(<QuestionAnswerScreen />);
+
+    fireEvent.changeText(screen.getByLabelText('Answer text input'), 'My answer attempt.');
+    fireEvent.press(screen.getByLabelText('Submit answer'));
+
+    expect(useQuestionAnswerStore.getState().submittedQuestionIds.has('q-1')).toBe(true);
+  });
+
+  it('acknowledges the reward earned and offers a path to the next question on success', () => {
+    setDetail({ data: makeQuestionDetail() });
+    submitMutate.mockImplementation((_args: unknown, opts?: { onSuccess?: (d: unknown) => void }) =>
+      opts?.onSuccess?.({ id: 'r-new', rewardEarned: 50 })
+    );
+    renderWithProviders(<QuestionAnswerScreen />);
+
+    fireEvent.changeText(screen.getByLabelText('Answer text input'), 'A detailed, helpful answer.');
+    fireEvent.press(screen.getByLabelText('Submit answer'));
+
+    // Reward is surfaced, and the loop continues instead of dead-ending.
+    expect(screen.getByText('You earned 50 points!')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Browse more questions')).toBeOnTheScreen();
+  });
+});
+
+describe('QuestionAnswerScreen — already-answered on load', () => {
+  it('opens in submitted state when the server seeds userHasResponded', () => {
+    setDetail({ data: makeQuestionDetail({ userHasResponded: true }) });
+    renderWithProviders(<QuestionAnswerScreen />);
+
+    // No input invitation; the submitted affordance + next-step CTA are shown instead.
+    expect(screen.queryByLabelText('Answer text input')).toBeNull();
+    expect(screen.getByLabelText('Browse more questions')).toBeOnTheScreen();
     expect(useQuestionAnswerStore.getState().submittedQuestionIds.has('q-1')).toBe(true);
   });
 });
