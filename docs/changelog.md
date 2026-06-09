@@ -6,6 +6,34 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-09 — Question screen UX, Phase 1: community Q&A answer screen (PR #8)
+
+First of a four-phase plan to close UX gaps on the question screens. This phase
+targets `app/question-answer/[id].tsx` (the community Q&A answer screen) and a small,
+contained backend seed.
+
+- **Reward is now communicated.** The submit response already returned `rewardEarned`
+  but the screen ignored it; success now surfaces "You earned X points" (banner +
+  toast + `announceForAccessibility`).
+- **Already-answered shows on load, not just after a failed submit.** Seeded from the
+  server's new `userHasResponded` and derived client-side from the user's own response
+  in the list. Detection switched from the brittle exact-match error string to a stable
+  `code: 'ALREADY_RESPONDED'` (message kept as fallback).
+- **No more dead end after submitting** — a "Browse more questions" CTA continues the
+  answer-and-earn loop.
+- **Load failure vs missing question** are now distinct error states (a flaky-network
+  user isn't told the question doesn't exist).
+- **A11y:** submitted banner is a polite live region.
+
+> **Invariant:** already-answered detection relies on the server `code`
+> (`ALREADY_RESPONDED`) and the seeded `userHasResponded`, not message text. The feed
+> seed mirrors the existing `userHasVoted` seeding in `getQuestions`.
+
+Backend: `server/controllers/questionController.mjs` seeds `userHasResponded` in
+`getQuestions` and returns the `code` on the 409.
+Tests: `__tests__/ui/question-answer.ui.test.tsx` (reward ack, code-based detection,
+answered-on-load, next-step) + `server/test/questionResponseCode.test.js`.
+
 ## 2026-06-08 — Video screen hardening, survey fixes, CI/CD cleanup
 
 Branch base for this batch: `test/question-screens-regression` → merged to `main`
