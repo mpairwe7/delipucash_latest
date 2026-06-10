@@ -60,6 +60,22 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
+      # Apply pending Prisma migrations to the production DB BEFORE promoting the new build,
+      # so the schema is ready when the new code serves traffic. The DB URL comes from the
+      # Vercel production env pulled above — DIRECT_DATABASE_URL is the direct/session
+      # connection the migration engine needs (the pooled transaction URL on :6543 cannot
+      # run migrations). We extract just those two keys instead of sourcing the file (so its
+      # contents are never executed) and never echo the value. Fails the deploy if the DB is
+      # unreachable or a migration fails — by design: don't ship code against an unmigrated schema.
+      - name: Apply database migrations
+        run: |
+          ENV_FILE=.vercel/.env.production.local
+          if [ ! -f "$ENV_FILE" ]; then echo "::error::Vercel env file not found — cannot read the DB URL"; exit 1; fi
+          export DIRECT_DATABASE_URL="$(grep -E '^DIRECT_DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')"
+          export DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')"
+          if [ -z "$DIRECT_DATABASE_URL" ] && [ -z "$DATABASE_URL" ]; then echo "::error::No DATABASE_URL/DIRECT_DATABASE_URL in the Vercel production env"; exit 1; fi
+          bunx prisma migrate deploy
+
       - name: Build prebuilt artifact
         run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
         env:
