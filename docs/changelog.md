@@ -6,6 +6,31 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Ads remediation, Phases 3–4: client tracking integrity + transparency
+
+Client half of the ads remediation (complements the server security/integrity PR).
+
+- **Impression double-fire fixed.** `useAdImpressionTracker` fired in BOTH the invisible
+  branch and the effect cleanup, so scrolling an ad out of view **double-counted** it (and
+  the cleanup re-ran on every dependency change, risking mid-view fires). It now records
+  **exactly one** impression per view (visible→invisible, or unmount-while-visible) via a
+  `firedRef` guard + a separate unmount-only effect.
+- **Idempotency keys.** Impression/click payloads now carry an `eventId` (generated per
+  event); the server dedups duplicate `eventId`s, so a retry / offline re-send counts at
+  most once.
+- **Measured viewability.** `useAdImpressionTracker` accepts a `viewportPercentage`
+  (defaults to 100 when not measured) instead of always hardcoding 100.
+- **Transparency.** `AdComponent` no longer falls back to an unrelated Unsplash stock photo
+  when an ad has no usable media — it clears the thumbnail so the card shows its real
+  "Image unavailable" placeholder. (The `SponsoredBadge` already labels ads for a11y.)
+
+> **Invariant:** one server impression per ad view; impression/click are idempotent by
+> `eventId`. Tests: `__tests__/ui/adImpressionTracker.test.tsx`. tsc + lint clean.
+
+Deferred follow-up: a **persisted offline queue** that re-sends failed impression/click
+events on reconnect (the `eventId` foundation for safe retries is now in place; tracking is
+still fire-and-forget, so events can be lost while offline).
+
 ## 2026-06-10 — Ads remediation, Phase 2: revenue integrity (events, dedup, date-window)
 
 Builds on Phase 1. Restores trustworthy billing and an audit trail.

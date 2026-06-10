@@ -52,6 +52,8 @@ export interface AdFilters {
 
 export interface AdClickPayload {
   adId: string;
+  /** Idempotency key — lets the server dedup retries/offline re-sends of the same event. */
+  eventId?: string;
   timestamp: string;
   placement: AdPlacement;
   userId?: string;
@@ -63,6 +65,8 @@ export interface AdClickPayload {
 
 export interface AdImpressionPayload {
   adId: string;
+  /** Idempotency key — lets the server dedup retries/offline re-sends of the same event. */
+  eventId?: string;
   timestamp: string;
   placement: AdPlacement;
   duration: number;

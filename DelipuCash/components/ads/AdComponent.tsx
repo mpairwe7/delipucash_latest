@@ -276,12 +276,15 @@ const useThumbnail = (ad: Ad | null) => {
           setThumbnailUrl(generatedThumbnail);
         } catch (error) {
           console.error('useThumbnail: Error generating thumbnail:', error);
-          setThumbnailUrl('https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&h=300&fit=crop');
+          // No usable media — clear it so the card shows its "Image unavailable"
+          // placeholder instead of an unrelated stock photo.
+          setThumbnailUrl(null);
         } finally {
           setIsLoadingThumbnail(false);
         }
       } else {
-        setThumbnailUrl('https://images.unsplash.com/photo-1574717024653-61fd2cf4d44d?w=400&h=300&fit=crop');
+        // No media of any kind — show the placeholder, not a stock photo.
+        setThumbnailUrl(null);
       }
     };
 
