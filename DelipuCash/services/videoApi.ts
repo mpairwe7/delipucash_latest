@@ -13,6 +13,7 @@ import {
 } from "@/types";
 
 import { useAuthStore } from '@/utils/auth/store';
+import { telemetry } from './telemetryApi';
 
 const rawApiUrl = process.env.EXPO_PUBLIC_API_URL || "https://delipucash-latest.vercel.app";
 // Normalize to host-only base so `/api/*` routes are never doubled.
@@ -653,9 +654,13 @@ export const videoApi = {
    * Increment view count
    */
   async incrementView(videoId: string): Promise<ApiResponse<{ views: number }>> {
+    // Carries the telemetry session id + auth token so the server dedup key
+    // prefers the verified user and falls back to this session — at most one
+    // counted view per viewer per video per UTC day.
     const response = await fetchJson<any>(VIDEO_ROUTES.incrementView(videoId), {
       method: "POST",
-    });
+      body: JSON.stringify({ sessionId: telemetry.getSessionId() }),
+    }, getAuthToken());
     // Tolerate multiple response shapes ({video:{views}} | {data:{views}} | {views}).
     const d = response.data;
     const views = d?.video?.views ?? d?.data?.views ?? d?.views;
@@ -874,9 +879,12 @@ export const videoApi = {
    * Record video completion — increments completionsCount
    */
   async recordCompletion(videoId: string): Promise<ApiResponse<{ completionsCount: number }>> {
+    // Same dedup carrier as incrementView — the feed fires this on every loop
+    // end, and the server counts at most one completion per viewer per UTC day.
     const response = await fetchJson<{ completionsCount: number }>(
       VIDEO_ROUTES.completion(videoId),
-      { method: 'POST' },
+      { method: 'POST', body: JSON.stringify({ sessionId: telemetry.getSessionId() }) },
+      getAuthToken(),
     );
     return {
       success: response.success,

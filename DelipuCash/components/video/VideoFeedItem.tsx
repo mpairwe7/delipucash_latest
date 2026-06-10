@@ -96,6 +96,7 @@ import { useToast } from '@/components/ui/Toast';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
 import { telemetry } from '@/services/telemetryApi';
 import { videoApi } from '@/services/videoApi';
+import { recordView } from '@/services/viewTracker';
 
 // ============================================================================
 // CONSTANTS
@@ -975,6 +976,10 @@ function VideoFeedItemComponent({
           if (currentTime >= 3 && !t.milestones['3s']) {
             t.milestones['3s'] = true;
             telemetry.track({ videoId: video.id, eventType: 'play_3s', videoIndex: index, payload: { duration } });
+            // Organic view — the single watch path for all feed tabs. Sponsored
+            // items are synthetic (ad-*) entries with their own impression
+            // tracking; they are not Video rows, so don't count them here.
+            if (!video.isSponsored) recordView(video.id);
           }
           if (pct >= 25 && !t.milestones['25pct']) {
             t.milestones['25pct'] = true;

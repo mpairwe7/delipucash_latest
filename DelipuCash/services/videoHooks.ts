@@ -451,6 +451,12 @@ export function useShareVideo(): UseMutationResult<
 /**
  * Hook to increment video view count
  *
+ * The underlying `videoApi.incrementView` carries the telemetry sessionId +
+ * auth token, and the server counts at most one view per viewer per video per
+ * UTC day. Feed playback records views via `services/viewTracker.ts` (which
+ * adds a per-app-session dedup); use this hook for imperative one-off paths
+ * (e.g. a future deep-linked detail screen).
+ *
  * @example
  * ```tsx
  * const { mutate: recordView } = useRecordVideoView();
