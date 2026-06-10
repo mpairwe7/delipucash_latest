@@ -1,7 +1,8 @@
+import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { publishEvent } from '../lib/eventBus.mjs';
-import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
+import { getSignedDownloadUrl, deleteFile, URL_EXPIRY } from '../lib/r2.mjs';
 import { getStore, cached, mediaCacheMaxMs } from '../lib/memoryCache.mjs';
 
 // In-process caches for video feeds. Media payloads embed signed R2 URLs (24h
@@ -89,6 +90,85 @@ function formatVideoResponse(video, signed, opts = {}) {
   };
 }
 
+/**
+ * Load the video named by req.params.id and authorize the caller as its owner OR an
+ * ADMIN/MODERATOR. Sends the 404/403 response and returns null on failure; returns the
+ * video on success. Callers must `if (!video) return;` after invoking.
+ */
+async function loadOwnedVideo(req, res) {
+  const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+  if (!video) {
+    res.status(404).json({ message: 'Video not found' });
+    return null;
+  }
+  if (video.userId !== req.user?.id) {
+    const user = await prisma.appUser.findUnique({
+      where: { id: req.user?.id },
+      select: { role: true },
+    });
+    const role = user?.role || 'USER';
+    if (role !== 'ADMIN' && role !== 'MODERATOR') {
+      res.status(403).json({ message: 'Forbidden: you do not own this video' });
+      return null;
+    }
+  }
+  return video;
+}
+
+const startOfUtcDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+/**
+ * Dedup identity for a view/completion event. Prefers the verified token user, then
+ * the client session id, then an ip+ua hash — NEVER a client-supplied user id (a
+ * client must not be able to attribute views to other users).
+ */
+function viewerContext(req) {
+  const str = (v, n) => (typeof v === 'string' && v ? v.slice(0, n) : null);
+  const userId = req.user?.id || null;
+  const sessionId = str(req.body?.sessionId, 128);
+  const ipAddress = (req.ip || '').slice(0, 64) || null;
+  const userAgent = str(req.headers?.['user-agent'], 256);
+  const viewerKey =
+    userId ||
+    (sessionId
+      ? `s:${sessionId}`
+      : `a:${crypto.createHash('sha256').update(`${ipAddress}|${userAgent}`).digest('hex').slice(0, 32)}`);
+  return { userId, sessionId, ipAddress, userAgent, viewerKey };
+}
+
+/**
+ * Record one deduped view/completion event and bump the matching Video counter in the
+ * SAME transaction. Returns true when this was the first event for
+ * (video, viewer, kind, UTC day); false on a duplicate (P2002) — counter untouched.
+ */
+async function recordViewEventOnce(videoId, kind, ctx) {
+  const counterField = kind === 'completion' ? 'completionsCount' : 'views';
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.videoViewEvent.create({
+        data: {
+          videoId,
+          userId: ctx.userId,
+          viewerKey: ctx.viewerKey,
+          kind,
+          dayBucket: startOfUtcDay(new Date()),
+          sessionId: ctx.sessionId,
+          ipAddress: ctx.ipAddress,
+          userAgent: ctx.userAgent,
+        },
+      });
+      await tx.video.update({
+        where: { id: videoId },
+        data: { [counterField]: { increment: 1 } },
+      });
+    });
+    return true;
+  } catch (error) {
+    if (error?.code === 'P2002') return false; // already counted for this viewer today
+    throw error;
+  }
+}
+
 // Create a Video
 export const createVideo = asyncHandler(async (req, res) => {
   try {
@@ -165,7 +245,6 @@ export const commentPost = asyncHandler(async (req, res) => {
     const { id: videoId } = req.params;
     const { text, media, created_at } = req.body;
     const effectiveUserId = req.user.id;
-    console.log("Received request data for comment:", req.body);
 
     // Validate required fields
     if (!effectiveUserId) {
@@ -174,6 +253,22 @@ export const commentPost = asyncHandler(async (req, res) => {
 
     if (!text && (!media || media.length === 0)) {
       return res.status(400).json({ message: "Comment text or media is required" });
+    }
+
+    // Server-side input hardening — the client caps at 500 chars, but the API must
+    // enforce it too. Media entries must be bounded http(s) URLs.
+    const MAX_COMMENT_LENGTH = 500;
+    const MAX_COMMENT_MEDIA = 4;
+    const MAX_MEDIA_URL_LENGTH = 2048;
+    if (typeof text === 'string' && text.length > MAX_COMMENT_LENGTH) {
+      return res.status(400).json({ message: `Comment must be at most ${MAX_COMMENT_LENGTH} characters` });
+    }
+    if (media !== undefined && media !== null) {
+      const isValidMediaUrl = (u) =>
+        typeof u === 'string' && u.length <= MAX_MEDIA_URL_LENGTH && /^https?:\/\//i.test(u);
+      if (!Array.isArray(media) || media.length > MAX_COMMENT_MEDIA || !media.every(isValidMediaUrl)) {
+        return res.status(400).json({ message: `media must be an array of at most ${MAX_COMMENT_MEDIA} http(s) URLs` });
+      }
     }
 
     // Verify user exists
@@ -252,7 +347,6 @@ export const commentPost = asyncHandler(async (req, res) => {
         }
       },
     });
-    console.log("Comment posted successfully:", comment);
   } catch (error) {
     console.error("Error posting comment:", error);
     res.status(500).json({ message: "Failed to post comment" });
@@ -746,12 +840,19 @@ export const getFollowingVideos = asyncHandler(async (req, res) => {
 // Update Video Information
 export const updateVideo = asyncHandler(async (req, res) => {
   try {
-    const { id } = req.params;
-    const { title, description, videoUrl } = req.body;
+    const video = await loadOwnedVideo(req, res);
+    if (!video) return;
+
+    // Whitelist: title/description only. videoUrl is R2-derived — letting the API
+    // rewrite it would desync r2VideoKey and is an injection vector.
+    const { title, description } = req.body;
+    const data = {};
+    if (typeof title === 'string') data.title = title;
+    if (typeof description === 'string') data.description = description;
 
     const updatedVideo = await prisma.video.update({
-      where: { id },
-      data: { title, description, videoUrl },
+      where: { id: video.id },
+      data,
       include: {
         user: {
           select: {
@@ -788,17 +889,26 @@ export const updateVideo = asyncHandler(async (req, res) => {
 // Delete a Video
 export const deleteVideo = asyncHandler(async (req, res) => {
   try {
-    const { id } = req.params;
+    const video = await loadOwnedVideo(req, res);
+    if (!video) return;
 
-    // First delete all comments associated with the video
-    await prisma.comment.deleteMany({
-      where: { videoId: id },
-    });
+    // Comment has no DB cascade — delete comments + video atomically so a crash
+    // between the two can't leave a half-deleted video. (Likes/bookmarks/shares/
+    // events/feedback/view-events all cascade at the DB.)
+    await prisma.$transaction([
+      prisma.comment.deleteMany({ where: { videoId: video.id } }),
+      prisma.video.delete({ where: { id: video.id } }),
+    ]);
 
-    // Then delete the video
-    await prisma.video.delete({
-      where: { id },
-    });
+    // Best-effort storage cleanup — must never fail the request.
+    for (const key of [video.r2VideoKey, video.r2ThumbnailKey]) {
+      if (!key) continue;
+      try {
+        await deleteFile(key);
+      } catch (cleanupError) {
+        console.error(`Error deleting R2 object "${key}" for video ${video.id}:`, cleanupError.message);
+      }
+    }
 
     res.json({ message: 'Video deleted successfully' });
   } catch (error) {
@@ -940,46 +1050,23 @@ export const incrementVideoViews = asyncHandler(async (req, res) => {
     // Check if video exists
     const video = await prisma.video.findUnique({
       where: { id },
+      select: { id: true, views: true },
     });
 
     if (!video) {
       return res.status(404).json({ message: 'Video not found' });
     }
 
-    // Atomically increment views count
-    const updatedVideo = await prisma.video.update({
-      where: { id },
-      data: {
-        views: {
-          increment: 1,
-        },
-      },
-      include: {
-        user: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            avatar: true
-          }
-        }
-      }
-    });
+    // Deduped: at most one view per viewer per video per UTC day. Attribution comes
+    // from the verified token (optionalAuth) or the client session — never the body.
+    const counted = await recordViewEventOnce(id, 'view', viewerContext(req));
 
-    const signed = await signVideoUrls(updatedVideo);
+    // Slim response — this is a hot fire-and-forget path; no signed URLs / full video.
+    // The client tolerantly parses a top-level { views }.
     res.json({
-      message: 'Video view incremented successfully',
-      video: {
-        ...updatedVideo,
-        videoUrl: signed.videoUrl,
-        thumbnail: signed.thumbnail,
-        user: {
-          id: updatedVideo.user.id,
-          firstName: updatedVideo.user.firstName,
-          lastName: updatedVideo.user.lastName,
-          avatar: updatedVideo.user.avatar
-        }
-      }
+      success: true,
+      message: counted ? 'Video view incremented successfully' : 'View already counted',
+      views: video.views + (counted ? 1 : 0),
     });
   } catch (error) {
     console.error('Error incrementing video views:', error);
@@ -1629,14 +1716,26 @@ export const ingestVideoEvents = asyncHandler(async (req, res) => {
       'play_100pct', 'skip', 'rewatch', 'dwell', 'like', 'bookmark', 'share', 'comment',
     ];
 
+    // Clamp client-controlled fields: bounded session ids, payloads capped at ~2KB
+    // (oversized/odd payloads are dropped to {}, never rejected — telemetry is lossy).
+    const clampSession = (v) => (typeof v === 'string' && v ? v.slice(0, 128) : null);
+    const clampPayload = (p) => {
+      if (!p || typeof p !== 'object' || Array.isArray(p)) return {};
+      try {
+        return JSON.stringify(p).length <= 2048 ? p : {};
+      } catch {
+        return {};
+      }
+    };
+
     const records = capped
       .filter(e => e.videoId && validEventTypes.includes(e.eventType))
       .map(e => ({
         userId,
         videoId: e.videoId,
         eventType: e.eventType,
-        payload: e.payload || {},
-        sessionId: sessionId || e.sessionId || 'unknown',
+        payload: clampPayload(e.payload),
+        sessionId: clampSession(sessionId) || clampSession(e.sessionId) || 'unknown',
         createdAt: e.timestamp ? new Date(e.timestamp) : new Date(),
       }));
 
@@ -2012,15 +2111,18 @@ export const submitVideoFeedback = asyncHandler(async (req, res) => {
 export const recordVideoCompletion = asyncHandler(async (req, res) => {
   try {
     const { id } = req.params;
-    const video = await prisma.video.findUnique({ where: { id } });
+    const video = await prisma.video.findUnique({ where: { id }, select: { id: true } });
     if (!video) return res.status(404).json({ message: 'Video not found' });
 
-    await prisma.video.update({
-      where: { id },
-      data: { completionsCount: { increment: 1 } },
-    });
+    // Deduped: at most one completion per viewer per video per UTC day — the feed
+    // fires this on every loop end, so the dedup absorbs repeats.
+    const counted = await recordViewEventOnce(id, 'completion', viewerContext(req));
 
-    res.json({ success: true, message: 'Completion recorded' });
+    res.json({
+      success: true,
+      message: counted ? 'Completion recorded' : 'Completion already counted',
+      counted,
+    });
   } catch (error) {
     console.error('VideoController: recordVideoCompletion - Error:', error);
     res.status(500).json({ message: 'Failed to record completion' });

@@ -58,6 +58,7 @@ model AppUser {
   videos                   Video[]
   videoLikes               VideoLike[]
   videoBookmarks           VideoBookmark[]
+  videoViewEvents          VideoViewEvent[]
   videoEvents              VideoEvent[]
   videoFeedback            VideoFeedback[]
   videoShares              VideoShare[]
@@ -171,6 +172,7 @@ model Video {
   videoShares    VideoShare[]
   events         VideoEvent[]
   feedback       VideoFeedback[]
+  viewEvents     VideoViewEvent[]
   user           AppUser   @relation(fields: [userId], references: [id])
 
   @@index([userId])
@@ -189,6 +191,30 @@ model VideoLike {
   @@unique([userId, videoId])
   @@index([videoId])
   @@index([userId])
+}
+
+// Per-viewer view/completion event log behind the denormalized Video counters
+// (views / completionsCount). The unique key (videoId, viewerKey, kind, dayBucket)
+// is the dedup guard: a viewer counts at most one view and one completion per video
+// per UTC day. viewerKey is resolved SERVER-side — verified token user, else the
+// client session id, else an ip+ua hash — never a client-supplied user id.
+model VideoViewEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  videoId   String   @db.Uuid
+  userId    String?  @db.Uuid
+  viewerKey String
+  kind      String   // view | completion
+  dayBucket DateTime // UTC midnight of the event day
+  sessionId String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  video Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  user  AppUser? @relation(fields: [userId], references: [id])
+
+  @@unique([videoId, viewerKey, kind, dayBucket])
+  @@index([videoId, createdAt])
 }
 
 model VideoBookmark {
