@@ -58,14 +58,22 @@ jobs:
         working-directory: DelipuCash
         run: bun install --frozen-lockfile
 
-      # Build the debug APK (Expo's default reactNativeArchitectures includes every
-      # ABI, so it runs on Maestro Cloud's real devices). ubuntu-latest ships the
-      # Android SDK, so no emulator/macOS is required.
-      - name: Build dev APK
+      # Build a RELEASE APK — it embeds the JS bundle so it runs standalone on a
+      # Maestro Cloud device. (A debug APK expects a Metro dev server, so on a Cloud
+      # device it shows the red "unable to load script" screen and every flow's first
+      # assertion fails.) Expo's default release buildType signs with the debug
+      # keystore, so no release-keystore secret is needed. ubuntu-latest ships the
+      # Android SDK — no emulator/macOS required.
+      - name: Build release APK
         working-directory: DelipuCash
+        env:
+          # The release build runs @sentry/react-native's source-map upload, which
+          # needs a SENTRY_AUTH_TOKEN and fails the build without one. A CI smoke
+          # build doesn't need Sentry uploads — disable auto-upload (bundle still embeds).
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: |
           npx expo prebuild --platform android --no-install
-          cd android && ./gradlew assembleDebug
+          cd android && ./gradlew assembleRelease
 
       # Upload APK + flows to Maestro Cloud (real hosted devices). The action waits
       # for the run and fails the job if a flow fails. auth.yaml establishes the
@@ -74,5 +82,8 @@ jobs:
         uses: mobile-dev-inc/action-maestro-cloud@892c9dd6e50cff4f8c9046f6263047dc5bf419d5 # v1
         with:
           api-key: ${{ secrets.MAESTRO_API_TOKEN }}
-          app-file: DelipuCash/android/app/build/outputs/apk/debug/app-debug.apk
+          # Robin/Maestro Cloud project the upload targets (a public identifier, not a
+          # secret — the api-key is the secret). Stored as a repo variable.
+          project-id: ${{ vars.MAESTRO_PROJECT_ID }}
+          app-file: DelipuCash/android/app/build/outputs/apk/release/app-release.apk
           workspace: .maestro
