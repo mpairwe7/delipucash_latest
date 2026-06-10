@@ -135,7 +135,9 @@ import {
   useAppSettingsStore,
   selectDataSaverEnabled,
   selectToggleDataSaver,
+  selectAutoDataSaverOnCellular,
 } from '@/store/AppSettingsStore';
+import { useNetInfo } from '@react-native-community/netinfo';
 import { useSearch } from '@/hooks/useSearch';
 import {
   useAdsForPlacement,
@@ -424,6 +426,11 @@ export default function VideosScreen(): React.ReactElement {
   // 2026 Standards: Data saver — global preference from AppSettingsStore (persisted)
   const isDataSaverMode = useAppSettingsStore(selectDataSaverEnabled);
   const toggleDataSaverAction = useAppSettingsStore(selectToggleDataSaver);
+  // Auto data-saver: on cellular, narrow the source-load window (autoplay
+  // unaffected — softer than the manual saver toggle above)
+  const autoDataSaverOnCellular = useAppSettingsStore(selectAutoDataSaverOnCellular);
+  const netInfo = useNetInfo();
+  const cellularTrim = autoDataSaverOnCellular && netInfo.type === 'cellular';
   // Viewer count from store (updated via SSE in Phase 5)
   const liveViewerCount = useVideoStore(
     (state) => state.currentLivestream?.viewerCount ?? 0
@@ -1254,6 +1261,7 @@ export default function VideosScreen(): React.ReactElement {
             onAdFeedback={handleAdFeedback}
             onAdImpression={handleInFeedAdImpression}
             isDataSaver={isDataSaverMode}
+            cellularTrim={cellularTrim}
             headerHeight={headerHeight > 0 ? headerHeight : undefined}
             emptyTitle={emptyState.title}
             emptySubtitle={emptyState.subtitle}

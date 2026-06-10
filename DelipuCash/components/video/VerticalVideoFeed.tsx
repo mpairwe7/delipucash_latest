@@ -60,6 +60,7 @@ import {
   useVideoFeedStore,
   selectIsPlaybackAllowed,
 } from '@/store/VideoFeedStore';
+import { computeShouldLoad } from '@/utils/videoPreload';
 import { VideoFeedItem } from './VideoFeedItem';
 import { VideoFeedSkeleton } from './VideoFeedSkeleton';
 
@@ -135,6 +136,9 @@ export interface VerticalVideoFeedProps {
   onAdImpression?: (video: Video) => void;
   /** 2026: Data saver mode — skip neighbor preloading */
   isDataSaver?: boolean;
+  /** Auto data-saver on cellular — narrows the source-load window (1 ahead /
+   *  0 behind) without touching autoplay. Softer than isDataSaver. */
+  cellularTrim?: boolean;
   /** Height of the absolute-positioned header overlay (search bar + tabs).
    *  When provided, the feed adjusts its top padding and item sizing so
    *  video content starts below the header instead of behind it. */
@@ -173,6 +177,7 @@ function VerticalVideoFeedComponent({
   ListHeaderComponent,
   onAdImpression,
   isDataSaver = false,
+  cellularTrim = false,
   headerHeight,
   emptyTitle,
   emptySubtitle,
@@ -198,8 +203,6 @@ function VerticalVideoFeedComponent({
   const handleViewableItemsChanged = useVideoFeedStore(s => s.handleViewableItemsChanged);
   const setRefreshing = useVideoFeedStore(s => s.setRefreshing);
   const setLoadingMore = useVideoFeedStore(s => s.setLoadingMore);
-  const getPreloadTargets = useVideoFeedStore(s => s.getPreloadTargets);
-  const markPreloaded = useVideoFeedStore(s => s.markPreloaded);
 
   // Local state
   const [isInitialized, setIsInitialized] = useState(false);
@@ -263,15 +266,9 @@ function VerticalVideoFeedComponent({
     return () => listener.remove();
   }, []);
 
-  // Preload videos when active video changes — skip in data saver mode
-  useEffect(() => {
-    if (isDataSaver) return;
-    const preloadTargets = getPreloadTargets();
-    preloadTargets.forEach((videoId) => {
-      // Mark as preloaded (actual preloading handled by VideoFeedItem)
-      markPreloaded(videoId);
-    });
-  }, [activeVideoIndex, getPreloadTargets, markPreloaded, isDataSaver]);
+  // Preloading is no longer "marked" here speculatively — each VideoFeedItem
+  // attaches its source when computeShouldLoad puts it inside the load window,
+  // and reports markPreloaded/markPreloadFailed from real player status events.
 
   // ============================================================================
   // CALLBACKS
@@ -430,6 +427,11 @@ function VerticalVideoFeedComponent({
         index={index}
         itemHeight={itemHeight}
         isActive={activeVideoId === item.id && isPlaybackAllowed}
+        shouldLoad={computeShouldLoad(index, activeVideoIndex, {
+          isActive: activeVideoId === item.id,
+          dataSaver: isDataSaver,
+          cellularTrim,
+        })}
         isMuted={isMuted}
         onLike={handleLike}
         onComment={handleComment}
@@ -449,7 +451,9 @@ function VerticalVideoFeedComponent({
     [
       itemHeight,
       activeVideoId,
+      activeVideoIndex,
       isPlaybackAllowed,
+      cellularTrim,
       isMuted,
       handleLike,
       handleComment,

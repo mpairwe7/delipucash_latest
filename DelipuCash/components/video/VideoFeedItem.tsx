@@ -94,6 +94,7 @@ import { CreatorAvatarButton } from './CreatorAvatarButton';
 import { useFollowStatus, useFollowCreator, useUnfollowCreator } from '@/services/videoHooks';
 import { useToast } from '@/components/ui/Toast';
 import { getBestThumbnailUrl, getPlaceholderImage } from '@/utils/thumbnail-utils';
+import NetInfo from '@react-native-community/netinfo';
 import { telemetry } from '@/services/telemetryApi';
 import { videoApi } from '@/services/videoApi';
 import { recordView } from '@/services/viewTracker';
@@ -121,6 +122,10 @@ export interface VideoFeedItemProps {
   itemHeight: number;
   /** Whether this video is currently active (should play) */
   isActive: boolean;
+  /** Whether this item may attach its video source (load window — see
+   *  utils/videoPreload). Outside the window the player stays sourceless so a
+   *  mounted-but-distant item costs no buffering. Defaults to true. */
+  shouldLoad?: boolean;
   /** Whether video is muted */
   isMuted: boolean;
   /** Like handler - receives video object */
@@ -548,6 +553,7 @@ function VideoFeedItemComponent({
   index,
   itemHeight,
   isActive,
+  shouldLoad = true,
   isMuted,
   onLike,
   onComment,
@@ -570,6 +576,8 @@ function VideoFeedItemComponent({
   const toggleMute = useVideoFeedStore((s) => s.toggleMute);
   const setPlayerStatus = useVideoFeedStore((s) => s.setPlayerStatus);
   const setProgress = useVideoFeedStore((s) => s.setProgress);
+  const markPreloaded = useVideoFeedStore((s) => s.markPreloaded);
+  const markPreloadFailed = useVideoFeedStore((s) => s.markPreloadFailed);
 
   // Per-item store subscriptions — returns primitive boolean, only re-renders
   // this specific item when its liked/bookmarked state actually changes
@@ -665,7 +673,10 @@ function VideoFeedItemComponent({
     return url.length > 0 ? url : null;
   }, [video.videoUrl]);
 
-  const player = useVideoPlayer(videoSource, (playerInstance) => {
+  // Created SOURCELESS — the load-window effect below attaches/detaches the
+  // source. windowSize keeps ~5 items mounted, but only items inside the
+  // computeShouldLoad window may hold a buffering native player.
+  const player = useVideoPlayer(null, (playerInstance) => {
     try {
       playerInstance.loop = false; // No auto-loop — feed controls advancement
       playerInstance.muted = isMuted;
@@ -674,6 +685,15 @@ function VideoFeedItemComponent({
       if (__DEV__) console.warn('[VideoFeedItem] Error configuring player:', error);
     }
   });
+
+  // Tracks shouldLoad inside event listeners/recovery without stale closures
+  const shouldLoadRef = useRef(shouldLoad);
+  useEffect(() => { shouldLoadRef.current = shouldLoad; }, [shouldLoad]);
+
+  // The source we last commanded onto the player via the load window (recovery
+  // may swap in a refreshed signed URL behind this — that's fine, unloading
+  // compares against null and reloading compares against the prop-derived URL).
+  const loadedSourceRef = useRef<string | null>(null);
 
   // Track player readiness — prevents play() calls before player is ready
   const isPlayerReadyRef = useRef(false);
@@ -712,6 +732,28 @@ function VideoFeedItemComponent({
     urlRetryCountRef.current = 0;
     isRecoveryInFlightRef.current = false;
   }, [video.id, videoSource]);
+
+  // Load window: attach the source when this item enters the window, release
+  // it (replaceAsync(null) drops the native buffers) when it leaves. This is
+  // what makes data saver actually prevent source loading for neighbors.
+  useEffect(() => {
+    if (!player) return;
+    const desired = shouldLoad ? videoSource : null;
+    if (loadedSourceRef.current === desired) return;
+    loadedSourceRef.current = desired;
+    if (desired === null) {
+      isPlayerReadyRef.current = false;
+    }
+    (async () => {
+      try {
+        await player.replaceAsync(desired);
+      } catch (error) {
+        // Allow a later window change to retry the load
+        loadedSourceRef.current = null;
+        if (__DEV__) console.warn('[VideoFeedItem] Source load failed:', error);
+      }
+    })();
+  }, [player, shouldLoad, videoSource]);
 
   // Safe player method wrapper to prevent calls on released objects
   const safePlayerCall = useCallback(<T,>(fn: () => T, fallback?: T): T | undefined => {
@@ -836,6 +878,9 @@ function VideoFeedItemComponent({
           timeoutRetryCountRef.current = 0;
           urlRetryCountRef.current = 0;
           isRecoveryInFlightRef.current = false;
+          // Truthful preload bookkeeping — recorded from a real player event,
+          // not speculatively marked by the feed.
+          markPreloaded(video.id);
           try {
             if (player.duration) {
               setDuration(player.duration);
@@ -866,6 +911,13 @@ function VideoFeedItemComponent({
               ? rawError
               : 'Unknown error';
           if (__DEV__) console.warn(`[VideoFeedItem] Player error for video ${video.id}:`, rawError || 'Unknown error');
+          markPreloadFailed(video.id);
+
+          // No recovery for an item outside the load window — its source is
+          // being released anyway; retrying would just re-buffer a hidden item.
+          if (!shouldLoadRef.current) {
+            return;
+          }
 
           // Ignore duplicate error callbacks while one recovery path is active
           if (isRecoveryInFlightRef.current) {
@@ -876,6 +928,17 @@ function VideoFeedItemComponent({
 
           (async () => {
             try {
+              // Offline: don't run the backoff/URL-refresh loop against a dead
+              // network — surface the error UI immediately; the retry button
+              // (and a later load-window change) can recover once online.
+              const net = await NetInfo.fetch();
+              if (net.isConnected === false) {
+                if (isMountedRef.current) {
+                  setHasError(true);
+                }
+                return;
+              }
+
               const normalized = errorMessage.toLowerCase();
               const isTimeoutError =
                 normalized.includes('sockettimeoutexception') ||
@@ -891,7 +954,7 @@ function VideoFeedItemComponent({
                 const backoffMs = attempt === 1 ? 300 : 900;
                 await new Promise((resolve) => setTimeout(resolve, backoffMs));
 
-                if (isMountedRef.current && player) {
+                if (isMountedRef.current && player && shouldLoadRef.current) {
                   if (__DEV__) {
                     console.log(`[VideoFeedItem] Timeout retry ${attempt}/${MAX_TIMEOUT_RETRIES} for video ${video.id}`);
                   }
@@ -906,7 +969,7 @@ function VideoFeedItemComponent({
               if (urlRetryCountRef.current < MAX_URL_RETRIES) {
                 urlRetryCountRef.current += 1;
                 const fresh = await videoApi.refreshVideoUrl(video.id);
-                if (fresh && fresh.videoUrl && isMountedRef.current && player) {
+                if (fresh && fresh.videoUrl && isMountedRef.current && player && shouldLoadRef.current) {
                   if (__DEV__) console.log(`[VideoFeedItem] Retrying video ${video.id} with fresh URL`);
                   setIsBuffering(true);
                   setHasError(false);
@@ -945,7 +1008,7 @@ function VideoFeedItemComponent({
         // Listeners may already be removed
       }
     };
-  }, [player, video.id, videoSource, isDataSaver, safePlayerCall, setPlayerStatus]);
+  }, [player, video.id, videoSource, isDataSaver, safePlayerCall, setPlayerStatus, markPreloaded, markPreloadFailed]);
 
   // Progress tracking
   useEffect(() => {
@@ -2069,6 +2132,7 @@ function arePropsEqual(
     prevProps.video.commentsCount === nextProps.video.commentsCount &&
     prevProps.video.user?.avatar === nextProps.video.user?.avatar &&
     prevProps.isActive === nextProps.isActive &&
+    prevProps.shouldLoad === nextProps.shouldLoad &&
     prevProps.isMuted === nextProps.isMuted &&
     prevProps.itemHeight === nextProps.itemHeight &&
     prevProps.screenReaderEnabled === nextProps.screenReaderEnabled &&

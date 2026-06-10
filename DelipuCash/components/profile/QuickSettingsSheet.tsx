@@ -48,6 +48,7 @@ import {
   Wifi,
   WifiOff,
   Vibrate,
+  Smartphone,
   ChevronRight,
 } from 'lucide-react-native';
 import * as Haptics from '@/utils/haptics';
@@ -68,9 +69,11 @@ import {
   useAppSettingsStore,
   selectPushNotificationsEnabled,
   selectDataSaverEnabled,
+  selectAutoDataSaverOnCellular,
   selectHapticFeedbackEnabled,
   selectTogglePushNotifications,
   selectToggleDataSaver,
+  selectToggleAutoDataSaverOnCellular,
   selectToggleHapticFeedback,
 } from '@/store/AppSettingsStore';
 
@@ -182,9 +185,11 @@ export function QuickSettingsSheet({
   // App settings from store (atomic selectors — no extra re-renders)
   const pushEnabled = useAppSettingsStore(selectPushNotificationsEnabled);
   const dataSaverEnabled = useAppSettingsStore(selectDataSaverEnabled);
+  const autoSaverOnCellular = useAppSettingsStore(selectAutoDataSaverOnCellular);
   const hapticEnabled = useAppSettingsStore(selectHapticFeedbackEnabled);
   const togglePush = useAppSettingsStore(selectTogglePushNotifications);
   const toggleDataSaver = useAppSettingsStore(selectToggleDataSaver);
+  const toggleAutoSaverOnCellular = useAppSettingsStore(selectToggleAutoDataSaverOnCellular);
   const toggleHaptic = useAppSettingsStore(selectToggleHapticFeedback);
 
   // Handlers
@@ -239,6 +244,17 @@ export function QuickSettingsSheet({
         <Wifi size={ICON_SIZE.base} color={colors.success} strokeWidth={1.8} />
       ),
     [dataSaverEnabled, colors.warning, colors.success],
+  );
+
+  const cellularIcon = useMemo(
+    () => (
+      <Smartphone
+        size={ICON_SIZE.base}
+        color={autoSaverOnCellular ? colors.success : colors.textMuted}
+        strokeWidth={1.8}
+      />
+    ),
+    [autoSaverOnCellular, colors.success, colors.textMuted],
   );
 
   const hapticIcon = useMemo(
@@ -353,6 +369,18 @@ export function QuickSettingsSheet({
             value={dataSaverEnabled}
             onToggle={toggleDataSaver}
             accessibilityHint="Toggle data saver mode for reduced bandwidth"
+          />
+          <QuickToggleItem
+            icon={cellularIcon}
+            label="Auto Saver on Cellular"
+            subtitle={
+              autoSaverOnCellular
+                ? 'Less video preloading on mobile data'
+                : 'Full preloading on mobile data'
+            }
+            value={autoSaverOnCellular}
+            onToggle={toggleAutoSaverOnCellular}
+            accessibilityHint="Toggle reduced video preloading when on cellular data"
           />
           <QuickToggleItem
             icon={hapticIcon}
