@@ -1,14 +1,23 @@
 # =============================================================================
-# Deploy server to Vercel.
+# Server schema guard + migrations.
 #
-# Production deploy fires on every push to main. Preview deploys fire on PRs
-# automatically via Vercel's GitHub integration; this workflow only handles
-# the main → production promotion explicitly so we can validate env vars and
-# Prisma schema first.
+# Deployment itself is handled by Vercel's Git integration (every push to main
+# auto-deploys server/ to production; PRs get preview deploys). This workflow
+# does the ONE thing the Git integration doesn't: validate the Prisma schema
+# and apply pending migrations to the production database on every server
+# change. A red run here means the schema/migrations are broken or the DB is
+# unreachable — code may already be serving (Git integration deploys in
+# parallel), so keep migrations ADDITIVE (new tables/columns/indexes) so a
+# minute of old-schema/new-code overlap stays benign.
+#
+# History: this workflow used to also `vercel build` + `vercel deploy --prebuilt`,
+# which (a) raced the Git integration's own production deploy of the same
+# commit and (b) broke under the Bun-installed Vercel CLI (`spawn sh ENOENT`).
+# One deploy path is enough — the explicit promote was dropped.
 #
 # Required GitHub secrets:
-#   VERCEL_TOKEN     — https://vercel.com/account/tokens
-#   VERCEL_ORG_ID    — `vercel link` then read .vercel/project.json
+#   VERCEL_TOKEN      — https://vercel.com/account/tokens (env pull only)
+#   VERCEL_ORG_ID     — `vercel link` then read .vercel/project.json
 #   VERCEL_PROJECT_ID — same
 # =============================================================================
 
@@ -30,8 +39,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Production deploy
+  migrate:
+    name: Validate schema & apply migrations
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -48,10 +57,9 @@ jobs:
       # Dummy DB env for install/validate ONLY (same fix as ci.yml's server-test job):
       # `postinstall` runs `prisma generate`, which loads prisma.config.ts and resolves
       # env('DIRECT_DATABASE_URL') at INSTALL time — Prisma's env() throws on a missing
-      # var, which is what failed every deploy run at "Install dependencies" since the
-      # config landed. Neither generate nor validate connects to a database, so
-      # placeholders are safe. The migrate step below exports the REAL URLs from the
-      # pulled Vercel env, shadowing these.
+      # var. Neither generate nor validate connects to a database, so placeholders are
+      # safe. The migrate step below exports the REAL URLs from the pulled Vercel env,
+      # shadowing these.
       - name: Install dependencies
         run: bun install --frozen-lockfile
         env:
@@ -73,13 +81,12 @@ jobs:
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-      # Apply pending Prisma migrations to the production DB BEFORE promoting the new build,
-      # so the schema is ready when the new code serves traffic. The DB URL comes from the
+      # Apply pending Prisma migrations to the production DB. The DB URL comes from the
       # Vercel production env pulled above — DIRECT_DATABASE_URL is the direct/session
-      # connection the migration engine needs (the pooled transaction URL on :6543 cannot
-      # run migrations). We extract just those two keys instead of sourcing the file (so its
-      # contents are never executed) and never echo the value. Fails the deploy if the DB is
-      # unreachable or a migration fails — by design: don't ship code against an unmigrated schema.
+      # connection the migration engine needs (the pooled transaction URL cannot run
+      # migrations). We extract just those two keys instead of sourcing the file (so its
+      # contents are never executed) and never echo the value. Fails the run if the DB is
+      # unreachable or a migration fails.
       - name: Apply database migrations
         run: |
           ENV_FILE=.vercel/.env.production.local
@@ -89,14 +96,9 @@ jobs:
           if [ -z "$DIRECT_DATABASE_URL" ] && [ -z "$DATABASE_URL" ]; then echo "::error::No DATABASE_URL/DIRECT_DATABASE_URL in the Vercel production env"; exit 1; fi
           bunx prisma migrate deploy
 
-      - name: Build prebuilt artifact
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-
-      - name: Deploy prebuilt to production
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-        env:
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      - name: Migration status (post-apply)
+        run: |
+          ENV_FILE=.vercel/.env.production.local
+          export DIRECT_DATABASE_URL="$(grep -E '^DIRECT_DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')"
+          export DATABASE_URL="$(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -1 | cut -d= -f2- | sed -e 's/^"//' -e 's/"$//')"
+          bunx prisma migrate status
