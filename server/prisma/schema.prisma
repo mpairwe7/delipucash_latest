@@ -35,6 +35,8 @@ model AppUser {
   createdAt                DateTime              @default(now())
   updatedAt                DateTime              @updatedAt
   Ad                       Ad[]
+  adImpressions            AdImpression[]
+  adClicks                 AdClick[]
   Comment                  Comment[]
   instantRewardWinners     InstantRewardWinner[]
   loginSessions            LoginSession[]
@@ -401,6 +403,8 @@ model Ad {
   bidAmount         Float     @default(0)
   dailyBudgetLimit  Float?
   amountSpent       Float     @default(0)
+  dailySpend        Float     @default(0)
+  dailySpendDate    DateTime?
   targetAgeRanges   Json?
   targetGender      String    @default("all")
   targetLocations   Json?
@@ -427,6 +431,8 @@ model Ad {
   storageProvider   String    @default("r2") // Storage provider: r2, supabase, uploadcare, etc.
   
   user              AppUser   @relation(fields: [userId], references: [id])
+  adImpressions     AdImpression[]
+  adClicks          AdClick[]
 
   @@index([userId])
   @@index([type])
@@ -438,6 +444,55 @@ model Ad {
   @@index([pricingModel])
   @@index([r2ImageKey])
   @@index([r2VideoKey])
+  // Hot path: the public feed query (active + approved, by placement, ordered by priority)
+  @@index([isActive, status, placement, priority])
+  // Date-window serving filter
+  @@index([startDate, endDate])
+}
+
+// Per-event impression log — one row per recorded impression. Enables dedup (unique
+// eventId idempotency key), an audit trail, and fraud signals (userId/device/ip/ua),
+// which the denormalized Ad.impressions counter alone cannot provide.
+model AdImpression {
+  id                 String   @id @default(uuid()) @db.Uuid
+  eventId            String   @unique
+  adId               String   @db.Uuid
+  userId             String?  @db.Uuid
+  deviceId           String?
+  sessionId          String?
+  ipAddress          String?
+  userAgent          String?
+  placement          String?
+  viewable           Boolean  @default(false)
+  viewDuration       Int      @default(0)
+  viewportPercentage Int      @default(0)
+  createdAt          DateTime @default(now())
+
+  ad                 Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  user               AppUser? @relation(fields: [userId], references: [id])
+
+  @@index([adId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Per-event click log (see AdImpression).
+model AdClick {
+  id        String   @id @default(uuid()) @db.Uuid
+  eventId   String   @unique
+  adId      String   @db.Uuid
+  userId    String?  @db.Uuid
+  deviceId  String?
+  sessionId String?
+  ipAddress String?
+  userAgent String?
+  placement String?
+  createdAt DateTime @default(now())
+
+  ad        Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  user      AppUser? @relation(fields: [userId], references: [id])
+
+  @@index([adId, createdAt])
+  @@index([userId, createdAt])
 }
 
 model SurveyResponse {

@@ -6,6 +6,32 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Ads remediation, Phase 2: revenue integrity (events, dedup, date-window)
+
+Builds on Phase 1. Restores trustworthy billing and an audit trail.
+
+- **Event tables + idempotency.** New `AdImpression` / `AdClick` models (unique `eventId`
+  + `(adId,createdAt)`/`(userId,createdAt)` indexes). Tracking now logs a **deduped event
+  row AND increments the counter in one transaction** — a duplicate `eventId` (client
+  retry) counts once, and the rows provide an audit trail + fraud signals (userId taken
+  from the **verified token**, never the body; device/session/ip/ua + viewability).
+- **Date-window serving.** `getAllAds` is filtered to active+approved **and within the
+  start/end window**; new composite indexes `(isActive,status,placement,priority)` and
+  `(startDate,endDate)`.
+- **Daily budget.** Added `dailySpend`/`dailySpendDate`; `dailyBudgetLimit` is now enforced
+  (HTTP 429 when the day's spend + cost would exceed it, with a UTC-day reset). Total
+  budget remains the atomic guard from Phase 1.
+- **Bug fix.** `getAllAds` still referenced the Phase-1-removed `status` query var in its
+  cache key — it would have 500'd the public feed on every call. Corrected.
+
+Migration `prisma/migrations/20260610120000_ads_event_tables` was generated **offline**
+(`prisma migrate diff` schema-to-schema — no live DB touched); apply with
+`prisma migrate deploy` in a controlled environment.
+
+> **Invariant:** an impression/click is counted at most once per `eventId` (idempotent),
+> logged with token-derived attribution, and served only within its date window. Tests:
+> `server/test/adIntegrity.test.js`. Full server suite: 58 pass.
+
 ## 2026-06-10 — Ads remediation, Phase 1: P0 server security
 
 An audit of the ads system (custom server-driven; no AdMob) found critical server-side

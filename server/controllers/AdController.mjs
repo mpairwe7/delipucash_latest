@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
@@ -114,45 +115,120 @@ async function loadOwnedAd(req, res) {
   return ad;
 }
 
+const startOfUtcDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
 /**
- * Atomically count an ad event and charge its budget — but ONLY if the ad is currently
- * servable (active/approved/in-window) and the charge keeps it within totalBudget. The
- * budget check and the increment are a single `updateMany`, so concurrent requests can
- * never push amountSpent past totalBudget (the old check-then-update raced). Returns
- * { ok } on success, or { ok:false, status, message } describing why it was not counted.
+ * Attribution context for an ad event, taken from the request. NB: userId comes from the
+ * verified token (softAuth), never from the body — a client must not be able to attribute
+ * events to other users.
  */
-async function recordBillableEvent(adId, { counterField, computeCost }) {
+function adEventContext(req) {
+  const b = req.body || {};
+  const str = (v, n) => (typeof v === 'string' && v ? v.slice(0, n) : null);
+  const int = (v, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.floor(v))) : 0);
+  return {
+    eventId: str(b.eventId, 128),
+    userId: req.user?.id || null,
+    deviceId: str(b.deviceId, 128),
+    sessionId: str(b.sessionId, 128),
+    ipAddress: (req.ip || '').slice(0, 64) || null,
+    userAgent: str(req.headers?.['user-agent'], 256),
+    placement: str(b.placement, 64),
+    viewable: b.wasVisible === true,
+    viewDuration: int(b.duration, 0, 86_400_000),
+    viewportPercentage: int(b.viewportPercentage, 0, 100),
+  };
+}
+
+function eventRowData(eventModel, adId, ctx) {
+  const base = {
+    eventId: ctx.eventId,
+    adId,
+    userId: ctx.userId,
+    deviceId: ctx.deviceId,
+    sessionId: ctx.sessionId,
+    ipAddress: ctx.ipAddress,
+    userAgent: ctx.userAgent,
+    placement: ctx.placement,
+  };
+  if (eventModel === 'adImpression') {
+    return { ...base, viewable: ctx.viewable, viewDuration: ctx.viewDuration, viewportPercentage: ctx.viewportPercentage };
+  }
+  return base;
+}
+
+/** Decide the response when the atomic guard rejected the spend (count === 0). */
+async function notServableOrExhausted(ad, cost) {
+  if ((Number(ad.amountSpent) || 0) + cost > (Number(ad.totalBudget) || 0)) {
+    await prisma.ad.updateMany({
+      where: { id: ad.id, status: 'approved' },
+      data: { status: 'completed', isActive: false },
+    });
+    return { ok: false, status: 200, message: 'Budget exhausted', budgetExhausted: true };
+  }
+  return { ok: false, status: 409, message: 'Ad not servable' };
+}
+
+/**
+ * Atomically count an ad event and charge its budget — only if the ad is servable
+ * (active/approved/in-window) and the charge keeps it within total AND daily budget. The
+ * total-budget check and increment are a single `updateMany` (race-safe). When eventModel +
+ * eventId are supplied, the count and a deduped event row are written in one transaction:
+ * a duplicate eventId (client retry) is idempotent (counts once); the event rows also give
+ * an audit trail + fraud signals. Returns { ok } or { ok:false, status, message }.
+ */
+async function recordBillableEvent(adId, { counterField, computeCost, eventModel = null }, eventCtx = {}) {
   const ad = await prisma.ad.findUnique({ where: { id: adId } });
   if (!ad) return { ok: false, status: 404, message: 'Ad not found' };
 
   const cost = computeCost(ad);
   const now = new Date();
+  const today = startOfUtcDay(now);
 
-  const result = await prisma.ad.updateMany({
-    where: {
-      id: adId,
-      ...servableAdWhere(now),
-      amountSpent: { lte: (Number(ad.totalBudget) || 0) - cost },
-    },
-    data: {
-      [counterField]: { increment: 1 },
-      amountSpent: { increment: cost },
-      lastShown: now,
-    },
-  });
+  // Daily budget (best-effort; total budget is the atomic guard below). A new UTC day
+  // resets the effective daily spend.
+  const sameDay = ad.dailySpendDate && startOfUtcDay(new Date(ad.dailySpendDate)).getTime() === today.getTime();
+  const effectiveDailySpend = sameDay ? (Number(ad.dailySpend) || 0) : 0;
+  if (ad.dailyBudgetLimit != null && effectiveDailySpend + cost > Number(ad.dailyBudgetLimit)) {
+    return { ok: false, status: 429, message: 'Daily budget reached' };
+  }
 
-  if (result.count === 0) {
-    // Either the ad isn't servable, or this charge would exceed its budget.
-    if ((Number(ad.amountSpent) || 0) + cost > (Number(ad.totalBudget) || 0)) {
-      // Best-effort auto-pause once the budget is reached (the guard above already
-      // prevented the overspend regardless).
-      await prisma.ad.updateMany({
-        where: { id: adId, status: 'approved' },
-        data: { status: 'completed', isActive: false },
+  const guardWhere = {
+    id: adId,
+    ...servableAdWhere(now),
+    amountSpent: { lte: (Number(ad.totalBudget) || 0) - cost },
+  };
+  const incrementData = {
+    [counterField]: { increment: 1 },
+    amountSpent: { increment: cost },
+    dailySpend: sameDay ? { increment: cost } : cost,
+    dailySpendDate: today,
+    lastShown: now,
+  };
+
+  // Idempotent path: dedup via the unique eventId, count + log atomically.
+  if (eventModel && eventCtx.eventId) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        await tx[eventModel].create({ data: eventRowData(eventModel, adId, eventCtx) });
+        const r = await tx.ad.updateMany({ where: guardWhere, data: incrementData });
+        if (r.count === 0) { const e = new Error('guard'); e.guardRejected = true; throw e; }
+        return { ok: true };
       });
-      return { ok: false, status: 200, message: 'Budget exhausted', budgetExhausted: true };
+    } catch (e) {
+      if (e?.code === 'P2002') return { ok: true, duplicate: true }; // retry of an already-counted event
+      if (e?.guardRejected) return notServableOrExhausted(ad, cost);
+      throw e;
     }
-    return { ok: false, status: 409, message: 'Ad not servable' };
+  }
+
+  // No idempotency key: count atomically, then best-effort log a (server-keyed) event row.
+  const r = await prisma.ad.updateMany({ where: guardWhere, data: incrementData });
+  if (r.count === 0) return notServableOrExhausted(ad, cost);
+  if (eventModel) {
+    try {
+      await prisma[eventModel].create({ data: eventRowData(eventModel, adId, { ...eventCtx, eventId: randomUUID() }) });
+    } catch { /* logging is best-effort — the counter is the source of truth */ }
   }
   return { ok: true };
 }
@@ -502,16 +578,18 @@ export const getAllAds = asyncHandler(async (req, res) => {
     } = req.query;
 
     // Serve from cache when warm (key on every param that varies the result).
-    const cacheKey = `ads:${type || ''}:${placement || ''}:${status || ''}:${sponsored ?? ''}:${userId || ''}:${limit}:${offset}`;
+    const cacheKey = `ads:${type || ''}:${placement || ''}:${sponsored ?? ''}:${userId || ''}:${limit}:${offset}`;
     const cachedPayload = adsCache.get(cacheKey);
     if (cachedPayload) return res.json(cachedPayload);
 
     // Build where clause — this is a PUBLIC, cached endpoint, so it is hard-locked to
-    // active + approved ads. The `status`/`isActive` client overrides were removed: they
-    // let `?status=pending` leak unapproved ads, and a cached admin response could leak to
-    // anonymous callers (the cache key is param-only, not auth-scoped). Admin/moderator
-    // review uses the authenticated /admin/pending + /user/:userId endpoints instead.
-    const where = { isActive: true, status: 'approved' };
+    // active + approved ads within their (optional) start/end window. The `status`/
+    // `isActive` client overrides were removed: they let `?status=pending` leak unapproved
+    // ads, and a cached admin response could leak to anonymous callers (the cache key is
+    // param-only, not auth-scoped). Admin/moderator review uses the authenticated
+    // /admin/pending + /user/:userId endpoints instead. (Date-window staleness is bounded
+    // by the 5-min cache TTL.)
+    const where = { ...servableAdWhere(new Date()) };
     if (type) where.type = type;
     if (placement) where.placement = placement;
     if (sponsored !== undefined) where.sponsored = sponsored === 'true';
@@ -1052,11 +1130,12 @@ export const trackAdImpression = asyncHandler(async (req, res) => {
     const outcome = await recordBillableEvent(adId, {
       counterField: 'impressions',
       computeCost: (ad) => (ad.pricingModel === 'cpm' ? (Number(ad.bidAmount) || 0) / 1000 : 0),
-    });
+      eventModel: 'adImpression',
+    }, adEventContext(req));
     if (!outcome.ok) {
       return res.status(outcome.status).json({ success: false, message: outcome.message });
     }
-    res.json({ success: true, message: "Impression tracked" });
+    res.json({ success: true, message: "Impression tracked", duplicate: outcome.duplicate ?? false });
   } catch (error) {
     console.error("Error tracking ad impression:", error);
     res.status(500).json({
@@ -1073,11 +1152,12 @@ export const trackAdClick = asyncHandler(async (req, res) => {
     const outcome = await recordBillableEvent(adId, {
       counterField: 'clicks',
       computeCost: (ad) => (ad.pricingModel === 'cpc' ? (Number(ad.bidAmount) || 0) : 0),
-    });
+      eventModel: 'adClick',
+    }, adEventContext(req));
     if (!outcome.ok) {
       return res.status(outcome.status).json({ success: false, message: outcome.message });
     }
-    res.json({ success: true, message: "Click tracked" });
+    res.json({ success: true, message: "Click tracked", duplicate: outcome.duplicate ?? false });
   } catch (error) {
     console.error("Error tracking ad click:", error);
     res.status(500).json({
