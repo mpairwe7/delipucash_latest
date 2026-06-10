@@ -36,6 +36,7 @@ import {
   getExploreVideos,
 } from '../controllers/videoController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
+import { videoTrackingRateLimit } from '../utils/videoRateLimit.mjs';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();
@@ -75,7 +76,7 @@ router.get('/:id', optionalAuth, getVideoById);               // single video wi
 // PROTECTED / PUBLIC MUTATION ROUTES
 // ============================================================================
 
-router.post('/events', optionalAuth, ingestVideoEvents);       // telemetry (public)
+router.post('/events', videoTrackingRateLimit, optionalAuth, ingestVideoEvents); // telemetry (public, rate-limited)
 router.post('/feedback', verifyToken, submitVideoFeedback);     // user controls (auth)
 router.post('/create', verifyToken, createVideo);
 router.post('/:id/like', verifyToken, likeVideo);
@@ -84,8 +85,10 @@ router.post('/:id/comments', verifyToken, commentPost);
 router.post('/:id/share', optionalAuth, shareVideo);
 router.post('/:id/bookmark', verifyToken, bookmarkVideo);
 router.get('/:id/status', verifyToken, getVideoStatus);
-router.post('/:id/views', incrementVideoViews);
-router.post('/:id/completion', recordVideoCompletion);          // completion tracking (public)
+// Public tracking endpoints — rate-limited + deduped per viewer per UTC day; optionalAuth
+// lets the dedup key prefer the verified user over the anonymous session/ip fallback.
+router.post('/:id/views', videoTrackingRateLimit, optionalAuth, incrementVideoViews);
+router.post('/:id/completion', videoTrackingRateLimit, optionalAuth, recordVideoCompletion);
 router.put('/update/:id', verifyToken, updateVideo);
 router.delete('/delete/:id', verifyToken, deleteVideo);
 

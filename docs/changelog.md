@@ -6,6 +6,44 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Video remediation, Phases 1–2: server authz + view-count integrity
+
+Server half of the video-screen remediation (from the video screen + components audit).
+Closes two critical authorization holes and makes the engagement counters trustworthy.
+
+- **Ownership enforced.** `updateVideo` / `deleteVideo` accepted ANY authenticated user
+  (`verifyToken` only — no owner check), so anyone could rewrite or delete anyone's
+  video. Both now authorize via `loadOwnedVideo` (owner or ADMIN/MODERATOR — the
+  `loadOwnedAd` pattern). Update is field-whitelisted to `{ title, description }`;
+  `videoUrl` is R2-derived and no longer rewritable through the API.
+- **Delete is transactional + cleans storage.** `Comment` has no DB cascade, so comments
+  + video now delete in one `$transaction` (a crash between the two can no longer leave
+  a half-deleted video); the video/thumbnail R2 objects are best-effort deleted after
+  commit — storage no longer leaks, and an R2 failure never fails the request.
+- **Views/completions deduped + rate-limited.** `POST /:id/views` and `/:id/completion`
+  were public, unauthenticated, and blindly incremented — bot-inflatable counters that
+  feed the trending score. New `VideoViewEvent` table (migration
+  `20260610150000_video_view_events`) with unique `(videoId, viewerKey, kind, dayBucket)`;
+  the counter increments only when the event row inserts (duplicate → idempotent no-op).
+  `viewerKey` = verified token user, else client sessionId, else an ip+ua hash — never a
+  body-supplied user id. The routes get `optionalAuth` + a 60/min/IP rate limit
+  (`videoTrackingRateLimit`, cloned from the ads limiter); `/events` telemetry is
+  rate-limited too and clamps sessionId (128 chars) / payload (~2KB).
+- The views response is slimmed to `{ success, views }` — it was re-signing R2 URLs and
+  returning the full video object on a fire-and-forget hot path.
+- `commentPost` now enforces the 500-char cap server-side, bounds media to 4 http(s)
+  URLs (≤2048 chars each), and no longer logs request bodies.
+
+> **Invariant:** only the owner (or admin/moderator) can update/delete a video; update is
+> field-whitelisted; delete is atomic and cleans R2; a viewer counts at most one view and
+> one completion per video per UTC day; attribution comes from the verified token, never
+> the body. Tests: `server/test/videoSecurity.test.js`,
+> `server/test/videoIntegrity.test.js`.
+
+Known follow-up (next PR): the client never calls the views endpoint — organic watches
+don't count, so Trending's `views >= 10` gate is unreachable organically. PR 2 wires
+`recordView` into the feed's `play_3s` milestone, carrying the telemetry sessionId.
+
 ## 2026-06-10 — Ads: offline event queue (Phase 3 follow-up)
 
 Closes the deferred follow-up from the client tracking PR. Ad impression/click tracking
