@@ -6,6 +6,39 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Video remediation, Phase 5: UX honesty + polish
+
+Final phase of the video-screen remediation. Removes controls that did nothing and
+closes the remaining consistency gaps.
+
+- **Removed fake controls** (decision with maintainer: remove, not "coming soon").
+  In the full-screen `VideoPlayer`: the quality menu (Auto/1080p/… set local state
+  only — R2 stores a single MP4, no renditions), the auto-captions toggles + CC badge
+  (no captions pipeline or rendering), the silence-skip toggle + badge (state-only),
+  the always-"Auto" adaptive-bitrate badge (never updated), and the gift button (no
+  `onPress` at all). In `VideoFeedItem`: the caption button (no handler). Playback
+  speed stays — it's real (`player.playbackRate`). A header note in `VideoPlayer.tsx`
+  documents the rule: re-add each control only when its backing capability ships.
+- **Options sheet now silences the feed.** The overlay union gained
+  `optionsSheetVisible` — it was the only overlay missing, so feed audio kept playing
+  under the report/block sheet while the comments sheet paused it. The union now
+  lives in a pure helper `utils/videoOverlayGate.ts#computeExternalOverlayVisible`
+  (project rule: every new overlay on the video screen registers there).
+- **Thumbnails via expo-image** (`VideoFeedItem`): `cachePolicy="memory-disk"`,
+  `recyclingKey={video.id}` (no stale-frame flash on FlatList recycling), neutral
+  near-black blurhash placeholder + 150ms transition. Per-video blurhashes deferred
+  (needs an upload-pipeline field).
+- **Single source of truth for likes.** Removed `VideoStore`'s duplicate persisted
+  `likedVideoIds`/`toggleLikeVideo`/`isVideoLiked` (zero render consumers — verified;
+  `VideoFeedStore` is canonical and is what `videos-new` and `video/[id]` use). The
+  orphaned persisted copy is simply dropped on next rehydrate.
+
+> **Invariant:** every control on the video screen does what it claims; any overlay
+> covering the feed silences it (union unit-tested); liked-video state has exactly one
+> store. Tests: `__tests__/videoOverlayGate.test.ts` (each overlay gates the feed,
+> incl. the previously-missing options sheet); full suite + tsc green; lint warnings
+> reduced (removed dead imports).
+
 ## 2026-06-10 — Video remediation, Phase 4: real source-load window + network awareness
 
 Playback/perf phase. The audit found the feed's "preloading" was **bookkeeping-only**
