@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
 import { getSignedDownloadUrl, URL_EXPIRY } from '../lib/r2.mjs';
@@ -59,6 +60,178 @@ const VALID_CTA_TYPES = [
 const VALID_GENDERS = ['all', 'male', 'female', 'other'];
 const VALID_AGE_RANGES = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
 const VALID_STATUSES = ['pending', 'approved', 'rejected', 'paused', 'completed'];
+
+// Campaign fields a user may set via updateAd. Excludes status/isActive/amountSpent/
+// counters/approval/ownership so an owner can't self-approve (bypassing moderation),
+// reset their spend, or hijack another account's ad. Status changes go through the
+// approve/reject/pause/resume endpoints only.
+const UPDATABLE_AD_FIELDS = new Set([
+  'title', 'description', 'headline', 'imageUrl', 'videoUrl', 'thumbnailUrl', 'targetUrl',
+  'type', 'placement', 'sponsored', 'startDate', 'endDate', 'priority', 'frequency',
+  'callToAction', 'pricingModel', 'totalBudget', 'bidAmount', 'dailyBudgetLimit',
+  'targetAgeRanges', 'targetGender', 'targetLocations', 'targetInterests', 'enableRetargeting',
+  // R2 media metadata (set when media is replaced)
+  'r2ImageKey', 'r2VideoKey', 'r2ThumbnailKey', 'r2ImageEtag', 'r2VideoEtag', 'r2ThumbnailEtag',
+  'imageMimeType', 'videoMimeType', 'thumbnailMimeType', 'imageSizeBytes', 'videoSizeBytes',
+  'thumbnailSizeBytes', 'storageProvider',
+]);
+
+/**
+ * Prisma `where` fragment for an ad that may legitimately be served/charged right now:
+ * active, approved, and within its (optional) start/end window. Used by the atomic
+ * tracking guards so budget is never spent on a paused/expired/unapproved ad.
+ */
+const servableAdWhere = (now) => ({
+  isActive: true,
+  status: 'approved',
+  AND: [
+    { OR: [{ startDate: null }, { startDate: { lte: now } }] },
+    { OR: [{ endDate: null }, { endDate: { gte: now } }] },
+  ],
+});
+
+/**
+ * Load the ad named by req.params.adId and authorize the caller as its owner OR an
+ * ADMIN/MODERATOR. Sends the 404/403 response and returns null on failure; returns the
+ * ad on success. Callers must `if (!ad) return;` after invoking.
+ */
+async function loadOwnedAd(req, res) {
+  const ad = await prisma.ad.findUnique({ where: { id: req.params.adId } });
+  if (!ad) {
+    res.status(404).json({ success: false, message: 'Ad not found' });
+    return null;
+  }
+  if (ad.userId !== req.user?.id) {
+    const user = await prisma.appUser.findUnique({
+      where: { id: req.user?.id },
+      select: { role: true },
+    });
+    const role = user?.role || 'USER';
+    if (role !== 'ADMIN' && role !== 'MODERATOR') {
+      res.status(403).json({ success: false, message: 'Forbidden: you do not own this ad' });
+      return null;
+    }
+  }
+  return ad;
+}
+
+const startOfUtcDay = (d) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+
+/**
+ * Attribution context for an ad event, taken from the request. NB: userId comes from the
+ * verified token (softAuth), never from the body — a client must not be able to attribute
+ * events to other users.
+ */
+function adEventContext(req) {
+  const b = req.body || {};
+  const str = (v, n) => (typeof v === 'string' && v ? v.slice(0, n) : null);
+  const int = (v, lo, hi) => (Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.floor(v))) : 0);
+  return {
+    eventId: str(b.eventId, 128),
+    userId: req.user?.id || null,
+    deviceId: str(b.deviceId, 128),
+    sessionId: str(b.sessionId, 128),
+    ipAddress: (req.ip || '').slice(0, 64) || null,
+    userAgent: str(req.headers?.['user-agent'], 256),
+    placement: str(b.placement, 64),
+    viewable: b.wasVisible === true,
+    viewDuration: int(b.duration, 0, 86_400_000),
+    viewportPercentage: int(b.viewportPercentage, 0, 100),
+  };
+}
+
+function eventRowData(eventModel, adId, ctx) {
+  const base = {
+    eventId: ctx.eventId,
+    adId,
+    userId: ctx.userId,
+    deviceId: ctx.deviceId,
+    sessionId: ctx.sessionId,
+    ipAddress: ctx.ipAddress,
+    userAgent: ctx.userAgent,
+    placement: ctx.placement,
+  };
+  if (eventModel === 'adImpression') {
+    return { ...base, viewable: ctx.viewable, viewDuration: ctx.viewDuration, viewportPercentage: ctx.viewportPercentage };
+  }
+  return base;
+}
+
+/** Decide the response when the atomic guard rejected the spend (count === 0). */
+async function notServableOrExhausted(ad, cost) {
+  if ((Number(ad.amountSpent) || 0) + cost > (Number(ad.totalBudget) || 0)) {
+    await prisma.ad.updateMany({
+      where: { id: ad.id, status: 'approved' },
+      data: { status: 'completed', isActive: false },
+    });
+    return { ok: false, status: 200, message: 'Budget exhausted', budgetExhausted: true };
+  }
+  return { ok: false, status: 409, message: 'Ad not servable' };
+}
+
+/**
+ * Atomically count an ad event and charge its budget — only if the ad is servable
+ * (active/approved/in-window) and the charge keeps it within total AND daily budget. The
+ * total-budget check and increment are a single `updateMany` (race-safe). When eventModel +
+ * eventId are supplied, the count and a deduped event row are written in one transaction:
+ * a duplicate eventId (client retry) is idempotent (counts once); the event rows also give
+ * an audit trail + fraud signals. Returns { ok } or { ok:false, status, message }.
+ */
+async function recordBillableEvent(adId, { counterField, computeCost, eventModel = null }, eventCtx = {}) {
+  const ad = await prisma.ad.findUnique({ where: { id: adId } });
+  if (!ad) return { ok: false, status: 404, message: 'Ad not found' };
+
+  const cost = computeCost(ad);
+  const now = new Date();
+  const today = startOfUtcDay(now);
+
+  // Daily budget (best-effort; total budget is the atomic guard below). A new UTC day
+  // resets the effective daily spend.
+  const sameDay = ad.dailySpendDate && startOfUtcDay(new Date(ad.dailySpendDate)).getTime() === today.getTime();
+  const effectiveDailySpend = sameDay ? (Number(ad.dailySpend) || 0) : 0;
+  if (ad.dailyBudgetLimit != null && effectiveDailySpend + cost > Number(ad.dailyBudgetLimit)) {
+    return { ok: false, status: 429, message: 'Daily budget reached' };
+  }
+
+  const guardWhere = {
+    id: adId,
+    ...servableAdWhere(now),
+    amountSpent: { lte: (Number(ad.totalBudget) || 0) - cost },
+  };
+  const incrementData = {
+    [counterField]: { increment: 1 },
+    amountSpent: { increment: cost },
+    dailySpend: sameDay ? { increment: cost } : cost,
+    dailySpendDate: today,
+    lastShown: now,
+  };
+
+  // Idempotent path: dedup via the unique eventId, count + log atomically.
+  if (eventModel && eventCtx.eventId) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        await tx[eventModel].create({ data: eventRowData(eventModel, adId, eventCtx) });
+        const r = await tx.ad.updateMany({ where: guardWhere, data: incrementData });
+        if (r.count === 0) { const e = new Error('guard'); e.guardRejected = true; throw e; }
+        return { ok: true };
+      });
+    } catch (e) {
+      if (e?.code === 'P2002') return { ok: true, duplicate: true }; // retry of an already-counted event
+      if (e?.guardRejected) return notServableOrExhausted(ad, cost);
+      throw e;
+    }
+  }
+
+  // No idempotency key: count atomically, then best-effort log a (server-keyed) event row.
+  const r = await prisma.ad.updateMany({ where: guardWhere, data: incrementData });
+  if (r.count === 0) return notServableOrExhausted(ad, cost);
+  if (eventModel) {
+    try {
+      await prisma[eventModel].create({ data: eventRowData(eventModel, adId, { ...eventCtx, eventId: randomUUID() }) });
+    } catch { /* logging is best-effort — the counter is the source of truth */ }
+  }
+  return { ok: true };
+}
 
 // ============================================================================
 // CREATE AD - Enhanced with industry-standard fields
@@ -395,26 +568,30 @@ function calculateEstimatedPerformance({ totalBudget, bidAmount, pricingModel, e
 // Get all ads
 export const getAllAds = asyncHandler(async (req, res) => {
   try {
-    const { 
-      type, 
-      placement, 
-      status, 
-      sponsored, 
+    const {
+      type,
+      placement,
+      sponsored,
       userId,
       limit = 50,
       offset = 0
     } = req.query;
 
     // Serve from cache when warm (key on every param that varies the result).
-    const cacheKey = `ads:${type || ''}:${placement || ''}:${status || ''}:${sponsored ?? ''}:${userId || ''}:${limit}:${offset}`;
+    const cacheKey = `ads:${type || ''}:${placement || ''}:${sponsored ?? ''}:${userId || ''}:${limit}:${offset}`;
     const cachedPayload = adsCache.get(cacheKey);
     if (cachedPayload) return res.json(cachedPayload);
 
-    // Build where clause — default to approved ads only (public feed safety)
-    const where = { isActive: true, status: 'approved' };
+    // Build where clause — this is a PUBLIC, cached endpoint, so it is hard-locked to
+    // active + approved ads within their (optional) start/end window. The `status`/
+    // `isActive` client overrides were removed: they let `?status=pending` leak unapproved
+    // ads, and a cached admin response could leak to anonymous callers (the cache key is
+    // param-only, not auth-scoped). Admin/moderator review uses the authenticated
+    // /admin/pending + /user/:userId endpoints instead. (Date-window staleness is bounded
+    // by the 5-min cache TTL.)
+    const where = { ...servableAdWhere(new Date()) };
     if (type) where.type = type;
     if (placement) where.placement = placement;
-    if (status) where.status = status; // Admin/management views can override
     if (sponsored !== undefined) where.sponsored = sponsored === 'true';
     if (userId) where.userId = userId;
 
@@ -569,8 +746,15 @@ export const getAdsByUser = asyncHandler(async (req, res) => {
 
 export const updateAd = asyncHandler(async (req, res) => {
   try {
-    const { adId } = req.params;
-    const updateData = { ...req.body };
+    // Only the ad's owner (or an admin/moderator) may update it.
+    const ad = await loadOwnedAd(req, res);
+    if (!ad) return;
+
+    // Whitelist campaign fields only — never status/isActive/amountSpent/counters/owner.
+    const updateData = {};
+    for (const key of Object.keys(req.body)) {
+      if (UPDATABLE_AD_FIELDS.has(key)) updateData[key] = req.body[key];
+    }
 
     // Handle date fields if present
     if (updateData.startDate) {
@@ -614,7 +798,7 @@ export const updateAd = asyncHandler(async (req, res) => {
     updateData.updatedAt = new Date();
 
     const updatedAd = await prisma.ad.update({
-      where: { id: adId },
+      where: { id: ad.id },
       data: updateData
     });
 
@@ -713,10 +897,12 @@ export const rejectAd = asyncHandler(async (req, res) => {
 // Pause an ad campaign
 export const pauseAd = asyncHandler(async (req, res) => {
   try {
-    const { adId } = req.params;
+    // Only the ad's owner (or an admin/moderator) may pause it.
+    const owned = await loadOwnedAd(req, res);
+    if (!owned) return;
 
     const ad = await prisma.ad.update({
-      where: { id: adId },
+      where: { id: owned.id },
       data: {
         status: 'paused',
         isActive: false,
@@ -742,10 +928,10 @@ export const pauseAd = asyncHandler(async (req, res) => {
 // Resume an ad campaign
 export const resumeAd = asyncHandler(async (req, res) => {
   try {
-    const { adId } = req.params;
+    // Only the ad's owner (or an admin/moderator) may resume it.
+    const ad = await loadOwnedAd(req, res);
+    if (!ad) return;
 
-    const ad = await prisma.ad.findUnique({ where: { id: adId } });
-    
     if (ad.status === 'rejected') {
       return res.status(400).json({
         success: false,
@@ -754,7 +940,7 @@ export const resumeAd = asyncHandler(async (req, res) => {
     }
 
     const updatedAd = await prisma.ad.update({
-      where: { id: adId },
+      where: { id: ad.id },
       data: {
         status: 'approved',
         isActive: true,
@@ -884,17 +1070,19 @@ export const getAdAnalytics = asyncHandler(async (req, res) => {
 // Delete an ad
 export const deleteAd = asyncHandler(async (req, res) => {
   try {
-    const { adId } = req.params;
+    // Only the ad's owner (or an admin/moderator) may delete it.
+    const ad = await loadOwnedAd(req, res);
+    if (!ad) return;
 
     await prisma.ad.delete({
-      where: { id: adId }
+      where: { id: ad.id }
     });
 
-    res.json({ 
+    res.json({
       success: true,
-      message: "Ad deleted successfully" 
+      message: "Ad deleted successfully"
     });
-    console.log("Ad deleted:", adId);
+    console.log("Ad deleted:", ad.id);
   } catch (error) {
     console.error("Error deleting ad:", error);
     res.status(500).json({ 
@@ -909,197 +1097,93 @@ export const deleteAd = asyncHandler(async (req, res) => {
 // TRACKING FUNCTIONS - Enhanced with budget tracking
 // ============================================================================
 
-// Track ad view
+// Track ad view (non-billable — only counts for a live ad)
 export const trackAdView = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
 
-    const ad = await prisma.ad.update({
-      where: { id: adId },
-      data: { 
+    const result = await prisma.ad.updateMany({
+      where: { id: adId, isActive: true },
+      data: {
         views: { increment: 1 },
         lastShown: new Date()
       }
     });
 
-    res.json({ 
-      success: true,
-      message: "View tracked", 
-      views: ad.views 
-    });
+    if (result.count === 0) {
+      return res.status(409).json({ success: false, message: "Ad not servable" });
+    }
+    res.json({ success: true, message: "View tracked" });
   } catch (error) {
     console.error("Error tracking ad view:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Something went wrong" 
+      message: "Something went wrong"
     });
   }
 });
 
-// Track ad impression (with budget deduction for CPM)
+// Track ad impression (atomic, with CPM budget deduction)
 export const trackAdImpression = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
-
-    const ad = await prisma.ad.findUnique({ where: { id: adId } });
-    
-    if (!ad) {
-      return res.status(404).json({ success: false, message: "Ad not found" });
+    const outcome = await recordBillableEvent(adId, {
+      counterField: 'impressions',
+      computeCost: (ad) => (ad.pricingModel === 'cpm' ? (Number(ad.bidAmount) || 0) / 1000 : 0),
+      eventModel: 'adImpression',
+    }, adEventContext(req));
+    if (!outcome.ok) {
+      return res.status(outcome.status).json({ success: false, message: outcome.message });
     }
-
-    // Calculate cost for CPM
-    let costIncrement = 0;
-    if (ad.pricingModel === 'cpm') {
-      costIncrement = ad.bidAmount / 1000; // Cost per single impression
-    }
-
-    // Check budget
-    if (ad.amountSpent + costIncrement > ad.totalBudget) {
-      // Pause ad if budget exhausted
-      await prisma.ad.update({
-        where: { id: adId },
-        data: { 
-          status: 'completed',
-          isActive: false 
-        }
-      });
-      return res.json({ 
-        success: false, 
-        message: "Budget exhausted" 
-      });
-    }
-
-    const updatedAd = await prisma.ad.update({
-      where: { id: adId },
-      data: { 
-        impressions: { increment: 1 },
-        amountSpent: { increment: costIncrement },
-        lastShown: new Date()
-      }
-    });
-
-    res.json({ 
-      success: true,
-      message: "Impression tracked", 
-      impressions: updatedAd.impressions,
-      amountSpent: updatedAd.amountSpent
-    });
+    res.json({ success: true, message: "Impression tracked", duplicate: outcome.duplicate ?? false });
   } catch (error) {
     console.error("Error tracking ad impression:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Something went wrong" 
+      message: "Something went wrong"
     });
   }
 });
 
-// Track ad click (with budget deduction for CPC)
+// Track ad click (atomic, with CPC budget deduction)
 export const trackAdClick = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
-
-    const ad = await prisma.ad.findUnique({ where: { id: adId } });
-    
-    if (!ad) {
-      return res.status(404).json({ success: false, message: "Ad not found" });
+    const outcome = await recordBillableEvent(adId, {
+      counterField: 'clicks',
+      computeCost: (ad) => (ad.pricingModel === 'cpc' ? (Number(ad.bidAmount) || 0) : 0),
+      eventModel: 'adClick',
+    }, adEventContext(req));
+    if (!outcome.ok) {
+      return res.status(outcome.status).json({ success: false, message: outcome.message });
     }
-
-    // Calculate cost for CPC
-    let costIncrement = 0;
-    if (ad.pricingModel === 'cpc') {
-      costIncrement = ad.bidAmount;
-    }
-
-    // Check budget
-    if (ad.amountSpent + costIncrement > ad.totalBudget) {
-      await prisma.ad.update({
-        where: { id: adId },
-        data: { 
-          status: 'completed',
-          isActive: false 
-        }
-      });
-      return res.json({ 
-        success: false, 
-        message: "Budget exhausted" 
-      });
-    }
-
-    const updatedAd = await prisma.ad.update({
-      where: { id: adId },
-      data: { 
-        clicks: { increment: 1 },
-        amountSpent: { increment: costIncrement }
-      }
-    });
-
-    res.json({ 
-      success: true,
-      message: "Click tracked", 
-      clicks: updatedAd.clicks,
-      amountSpent: updatedAd.amountSpent
-    });
+    res.json({ success: true, message: "Click tracked", duplicate: outcome.duplicate ?? false });
   } catch (error) {
     console.error("Error tracking ad click:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Something went wrong" 
+      message: "Something went wrong"
     });
   }
 });
 
-// Track conversion (with budget deduction for CPA)
+// Track conversion (atomic, with CPA budget deduction)
 export const trackAdConversion = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
-    const { conversionType, value } = req.body;
-
-    const ad = await prisma.ad.findUnique({ where: { id: adId } });
-    
-    if (!ad) {
-      return res.status(404).json({ success: false, message: "Ad not found" });
-    }
-
-    // Calculate cost for CPA
-    let costIncrement = 0;
-    if (ad.pricingModel === 'cpa') {
-      costIncrement = ad.bidAmount;
-    }
-
-    // Check budget
-    if (ad.amountSpent + costIncrement > ad.totalBudget) {
-      await prisma.ad.update({
-        where: { id: adId },
-        data: { 
-          status: 'completed',
-          isActive: false 
-        }
-      });
-      return res.json({ 
-        success: false, 
-        message: "Budget exhausted" 
-      });
-    }
-
-    const updatedAd = await prisma.ad.update({
-      where: { id: adId },
-      data: { 
-        conversions: { increment: 1 },
-        amountSpent: { increment: costIncrement }
-      }
+    const outcome = await recordBillableEvent(adId, {
+      counterField: 'conversions',
+      computeCost: (ad) => (ad.pricingModel === 'cpa' ? (Number(ad.bidAmount) || 0) : 0),
     });
-
-    res.json({ 
-      success: true,
-      message: "Conversion tracked", 
-      conversions: updatedAd.conversions,
-      amountSpent: updatedAd.amountSpent
-    });
+    if (!outcome.ok) {
+      return res.status(outcome.status).json({ success: false, message: outcome.message });
+    }
+    res.json({ success: true, message: "Conversion tracked" });
   } catch (error) {
     console.error("Error tracking conversion:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Something went wrong" 
+      message: "Something went wrong"
     });
   }
 });
