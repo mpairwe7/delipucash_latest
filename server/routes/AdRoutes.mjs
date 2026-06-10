@@ -1,5 +1,6 @@
 import express from 'express';
-import { verifyToken, requireAdmin, requireModerator } from '../utils/verifyUser.mjs';
+import { verifyToken, requireModerator, softAuth } from '../utils/verifyUser.mjs';
+import { adTrackingRateLimit } from '../utils/adRateLimit.mjs';
 import {
   getAllAds,
   getAdsByUser,
@@ -67,19 +68,23 @@ router.put('/:adId/approve', verifyToken, requireModerator, approveAd);
 router.put('/:adId/reject', verifyToken, requireModerator, rejectAd);
 
 // ============================================================================
-// TRACKING ROUTES
+// TRACKING ROUTES (public, but rate-limited + soft-authed)
+//
+// These deduct advertiser budget, so each is rate-limited (per-IP) and runs softAuth
+// to attribute to a real user when a token is present (anonymous still allowed). The
+// controller validates the ad is servable and spends budget atomically.
 // ============================================================================
 
 // Track ad view
-router.post('/:adId/view', trackAdView);
+router.post('/:adId/view', adTrackingRateLimit, softAuth, trackAdView);
 
 // Track ad impression (with CPM budget deduction)
-router.post('/:adId/impression', trackAdImpression);
+router.post('/:adId/impression', adTrackingRateLimit, softAuth, trackAdImpression);
 
 // Track ad click (with CPC budget deduction)
-router.post('/:adId/click', trackAdClick);
+router.post('/:adId/click', adTrackingRateLimit, softAuth, trackAdClick);
 
 // Track conversion (with CPA budget deduction)
-router.post('/:adId/conversion', trackAdConversion);
+router.post('/:adId/conversion', adTrackingRateLimit, softAuth, trackAdConversion);
 
 export default router;

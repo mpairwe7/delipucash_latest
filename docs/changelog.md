@@ -31,6 +31,60 @@ Deferred follow-up: a **persisted offline queue** that re-sends failed impressio
 events on reconnect (the `eventId` foundation for safe retries is now in place; tracking is
 still fire-and-forget, so events can be lost while offline).
 
+## 2026-06-10 — Ads remediation, Phase 2: revenue integrity (events, dedup, date-window)
+
+Builds on Phase 1. Restores trustworthy billing and an audit trail.
+
+- **Event tables + idempotency.** New `AdImpression` / `AdClick` models (unique `eventId`
+  + `(adId,createdAt)`/`(userId,createdAt)` indexes). Tracking now logs a **deduped event
+  row AND increments the counter in one transaction** — a duplicate `eventId` (client
+  retry) counts once, and the rows provide an audit trail + fraud signals (userId taken
+  from the **verified token**, never the body; device/session/ip/ua + viewability).
+- **Date-window serving.** `getAllAds` is filtered to active+approved **and within the
+  start/end window**; new composite indexes `(isActive,status,placement,priority)` and
+  `(startDate,endDate)`.
+- **Daily budget.** Added `dailySpend`/`dailySpendDate`; `dailyBudgetLimit` is now enforced
+  (HTTP 429 when the day's spend + cost would exceed it, with a UTC-day reset). Total
+  budget remains the atomic guard from Phase 1.
+- **Bug fix.** `getAllAds` still referenced the Phase-1-removed `status` query var in its
+  cache key — it would have 500'd the public feed on every call. Corrected.
+
+Migration `prisma/migrations/20260610120000_ads_event_tables` was generated **offline**
+(`prisma migrate diff` schema-to-schema — no live DB touched); apply with
+`prisma migrate deploy` in a controlled environment.
+
+> **Invariant:** an impression/click is counted at most once per `eventId` (idempotent),
+> logged with token-derived attribution, and served only within its date window. Tests:
+> `server/test/adIntegrity.test.js`. Full server suite: 58 pass.
+
+## 2026-06-10 — Ads remediation, Phase 1: P0 server security
+
+An audit of the ads system (custom server-driven; no AdMob) found critical server-side
+holes. This phase closes the actively-exploitable ones; integrity (event tables/dedup)
+and client tracking follow in later phases.
+
+- **Atomic budget + servable guard on tracking.** `trackAdImpression/Click/Conversion`
+  did a non-atomic check-then-update, so concurrent requests could overspend `totalBudget`,
+  and they charged budget for *any* existing ad (even paused/expired/unapproved). Replaced
+  with a single conditional `updateMany` whose WHERE carries the budget ceiling
+  (`amountSpent <= totalBudget - cost`) **and** active/approved/in-window conditions — one
+  statement, race-safe, never spends on a non-servable ad. `trackAdView` likewise only
+  counts for a live ad.
+- **Abuse protection on the (still public) tracking routes.** Added a per-IP rate limiter
+  (`utils/adRateLimit.mjs`, 60/min) + `softAuth` (attribute to a real user when a token is
+  present; anonymous still allowed) on `/view`,`/impression`,`/click`,`/conversion`.
+- **Ownership/role scope on management.** `updateAd`/`deleteAd`/`pauseAd`/`resumeAd` now
+  require the caller to own the ad (or be ADMIN/MODERATOR) via a shared `loadOwnedAd`
+  helper. `updateAd` also **whitelists** campaign fields — an owner can no longer set
+  `status:'approved'` (bypass moderation), reset `amountSpent`, or touch counters.
+- **Public feed lock.** `getAllAds` no longer honors the `status`/`isActive` query
+  override (it could leak `?status=pending` ads, and the param-keyed cache could serve a
+  cached admin response to anonymous callers). It is hard-locked to active + approved.
+
+> **Invariant:** budget is spent only via the atomic `recordBillableEvent` guard
+> (servable + within-budget in one `updateMany`); ad mutations require ownership; the
+> public `/all` endpoint is approved-only. Tests: `server/test/adSecurity.test.js`.
+
 ## 2026-06-09 — Question screen UX: test coverage + e2e wiring
 
 Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow into CI.

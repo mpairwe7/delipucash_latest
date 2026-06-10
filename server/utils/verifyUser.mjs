@@ -37,6 +37,25 @@ export const verifyToken = (req, res, next) => {
 };
 
 /**
+ * Soft authentication — attaches req.user when a valid bearer token is present, but
+ * NEVER rejects. Use on public endpoints that should attribute to a real user when
+ * possible (e.g. ad impression/click tracking) without blocking anonymous callers.
+ */
+export const softAuth = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return next();
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (!err && decoded) {
+      req.user = decoded;
+      req.userRef = decoded.id;
+    }
+    next(); // never reject — anonymous tracking is allowed
+  });
+};
+
+/**
  * Role-based authorization middleware
  * Checks if user has the required role(s)
  * Handles null roles by treating them as 'USER' (default)
