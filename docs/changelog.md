@@ -6,6 +6,32 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — CI: deploy workflow applies Prisma migrations (and survives install)
+
+The `Deploy Server` workflow had failed at **Install dependencies** on every main push
+since 2026-06-08: `postinstall` runs `prisma generate`, which loads `prisma.config.ts`
+and resolves `env('DIRECT_DATABASE_URL')` at install time — Prisma's `env()` throws on a
+missing var. (The CI `server-test` job had the same problem and already carried the fix;
+the deploy job never got it.) Real deploys were silently happening only via Vercel's Git
+integration, which runs no migrations — which is how the `VideoViewEvent` migration
+(Phases 1–2) ended up unapplied in production.
+
+- Install + Validate steps get placeholder `DATABASE_URL`/`DIRECT_DATABASE_URL`
+  (generate/validate never connect — mirrors `ci.yml`'s documented fix).
+- New **Apply database migrations** step (PR #14): after `vercel pull`, extracts the real
+  `DIRECT_DATABASE_URL`/`DATABASE_URL` from the pulled production env (grep/cut — the
+  file is never sourced, values never echoed) and runs `prisma migrate deploy` BEFORE
+  building/promoting. A migration failure blocks the promotion by design.
+
+> **Invariant:** code is never promoted against an unmigrated schema; the deploy job can
+> install without database credentials; DB URLs cross the workflow only via files and
+> env, never argv/logs. Refs #14.
+
+Operational note: at the time of this change the production Supabase project
+(`awvfsqlizoynsvqycegr`) is unreachable (paused/deleted — pooler reports tenant not
+found; `db.<ref>.supabase.co` does not resolve). The migrate step will fail until the
+project is restored, blocking workflow deploys — Vercel Git-integration deploys continue.
+
 ## 2026-06-10 — Server: production outage fix — remove @sentry/profiling-node
 
 Every production request was failing with `FUNCTION_INVOCATION_FAILED` (root, `/api/health`,
