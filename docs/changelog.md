@@ -41,8 +41,9 @@ Closes two critical authorization holes and makes the engagement counters trustw
 > `server/test/videoIntegrity.test.js`.
 
 Known follow-up (next PR): the client never calls the views endpoint — organic watches
-don't count, so Trending's `views >= 10` gate is unreachable organically. PR 2 wires
-`recordView` into the feed's `play_3s` milestone, carrying the telemetry sessionId.
+don't count, so Trending's `views >= 10` gate is unreachable organically. The follow-up
+PR (#16, Phase 3) wires `recordView` into the feed's `play_3s` milestone, carrying the
+telemetry sessionId.
 
 ## 2026-06-10 — Ads: offline event queue (Phase 3 follow-up)
 
