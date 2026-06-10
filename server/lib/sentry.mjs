@@ -4,8 +4,12 @@
 //
 // Required env: SENTRY_DSN (optional SENTRY_RELEASE, SENTRY_ENVIRONMENT).
 
+// NOTE: deliberately NO @sentry/profiling-node. Its top-level import loads a
+// prebuilt native binary keyed to the Node ABI; when Vercel bumped the function
+// runtime to Node 24 (ABI 137) the binary didn't exist and EVERY request died at
+// module load (FUNCTION_INVOCATION_FAILED) — a total production outage for a
+// nice-to-have CPU profiler. Error reporting + tracing below don't need it.
 import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
 
 const DSN = process.env.SENTRY_DSN || '';
 
@@ -15,9 +19,7 @@ if (DSN) {
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
     release: process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA || undefined,
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
-    profilesSampleRate: Number(process.env.SENTRY_PROFILES_SAMPLE_RATE ?? '0.05'),
     sendDefaultPii: false,
-    integrations: [nodeProfilingIntegration()],
     beforeSend(event) {
       // Strip sensitive headers + body fields that should never reach Sentry.
       if (event.request?.headers) {

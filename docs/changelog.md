@@ -6,6 +6,27 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Server: production outage fix — remove @sentry/profiling-node
+
+Every production request was failing with `FUNCTION_INVOCATION_FAILED` (root, `/api/health`,
+all API routes). Runtime logs: `Cannot find module '.../@sentry/profiling-node/lib/
+sentry_cpu_profiler-linux-x64-glibc-137.node'` — `lib/sentry.mjs` top-level-imported
+`@sentry/profiling-node`, which loads a prebuilt native binary keyed to the Node ABI.
+`server/package.json#engines` pins only bun, so when Vercel bumped the function runtime to
+Node 24 (ABI 137, no prebuilt in 8.47.x) the import crashed at module load — a total outage
+for a nice-to-have CPU profiler. The outage predated and was unrelated to the video
+remediation merges (older deployments crash identically).
+
+- Removed the dependency + `nodeProfilingIntegration()` from `Sentry.init` (error
+  reporting, tracing, and the PII-stripping `beforeSend` are unchanged — none need the
+  native module). A header note in `lib/sentry.mjs` documents why it must not return.
+- Alternative considered: pinning `engines.node = 22.x`. Rejected — keeps a fragile
+  native-ABI dependency on a serverless platform for marginal profiling value.
+
+> **Invariant:** the server has no native-binary runtime dependency tied to the Node ABI;
+> a Vercel Node-version bump cannot take production down at module load. Verified:
+> `bun -e "await import('./lib/sentry.mjs')"` loads clean; full server suite 77 pass.
+
 ## 2026-06-10 — Video remediation, Phase 5: UX honesty + polish
 
 Final phase of the video-screen remediation. Removes controls that did nothing and
