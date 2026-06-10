@@ -701,6 +701,12 @@ export function useSearchVideos(query: string): UseQueryResult<Video[], Error> {
 
 /**
  * Hook to increment video view
+ *
+ * @deprecated Unused legacy path — organic feed views are recorded by
+ * `services/viewTracker.ts` (session-deduped, carries the telemetry sessionId
+ * the server dedups on). The `api.videos.incrementView` call here neither
+ * dedups nor sends a sessionId. Prefer `recordView` / `useRecordVideoView`
+ * from `services/videoHooks.ts`.
  */
 export function useIncrementVideoView(): UseMutationResult<Video, Error, string> {
   const queryClient = useQueryClient();
