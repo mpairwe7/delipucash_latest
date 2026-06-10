@@ -27,6 +27,11 @@ jest.mock('@/utils/auth/store', () => ({
   },
 }));
 
+// videoApi reads the telemetry session id for the view/completion dedup body.
+jest.mock('@/services/telemetryApi', () => ({
+  telemetry: { getSessionId: () => 'sess-test' },
+}));
+
 import { videoApi } from '@/services/videoApi';
 
 // ---------------------------------------------------------------------------
@@ -214,6 +219,41 @@ describe('incrementView parsing', () => {
     fetchMock().mockResolvedValueOnce(resp({ ok: true }));
     const r = await videoApi.incrementView('v1');
     expect(r.data.views).toBe(0);
+  });
+});
+
+// ===========================================================================
+// View/completion dedup carriers — the server dedups per
+// (videoId, viewerKey, kind, UTC day); viewerKey prefers the verified token
+// user and falls back to this sessionId.
+// ===========================================================================
+describe('view/completion dedup carriers', () => {
+  it('incrementView POSTs the telemetry sessionId and attaches the Bearer token', async () => {
+    fetchMock().mockResolvedValueOnce(resp({ success: true, views: 5 }));
+    await videoApi.incrementView('v1');
+
+    expect(lastUrl()).toContain('/api/videos/v1/views');
+    expect(JSON.parse(lastCall()[1].body)).toEqual({ sessionId: 'sess-test' });
+    expect(lastAuthHeader()).toBe('Bearer test-token');
+  });
+
+  it('incrementView still works anonymously (no token → no Authorization header)', async () => {
+    mockAuthState.token = null;
+    fetchMock().mockResolvedValueOnce(resp({ success: true, views: 5 }));
+    const r = await videoApi.incrementView('v1');
+
+    expect(lastAuthHeader()).toBeUndefined();
+    expect(JSON.parse(lastCall()[1].body)).toEqual({ sessionId: 'sess-test' });
+    expect(r.data.views).toBe(5);
+  });
+
+  it('recordCompletion POSTs the telemetry sessionId and attaches the Bearer token', async () => {
+    fetchMock().mockResolvedValueOnce(resp({ success: true, counted: true }));
+    await videoApi.recordCompletion('v1');
+
+    expect(lastUrl()).toContain('/api/videos/v1/completion');
+    expect(JSON.parse(lastCall()[1].body)).toEqual({ sessionId: 'sess-test' });
+    expect(lastAuthHeader()).toBe('Bearer test-token');
   });
 });
 

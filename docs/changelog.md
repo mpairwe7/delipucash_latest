@@ -6,6 +6,37 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Video remediation, Phase 3: wire organic view recording
+
+Client half of the view-integrity fix. The audit found a **dead view pipeline**: no
+screen or component ever called the view endpoint, so organic feed watching never
+incremented `Video.views` — Trending's `views >= MIN_TRENDING_VIEWS (10)` gate was
+unreachable organically, and `completionRate = completions/views` was corrupted
+(completions WERE wired; views weren't).
+
+- New `services/viewTracker.ts` — `recordView(videoId)`: module-level per-app-session
+  `Set` dedup + fire-and-forget send. Wired into `VideoFeedItem`'s one-shot `play_3s`
+  telemetry milestone — the single organic-watch path for every feed tab (For You /
+  Following / Trending all render `VideoFeedItem`). Sponsored (`ad-*`) synthetic
+  entries are skipped — they aren't Video rows and have their own impression tracking.
+- `videoApi.incrementView` / `videoApi.recordCompletion` now POST
+  `{ sessionId: telemetry.getSessionId() }` and attach the Bearer token, so the
+  server dedup key (Phases 1–2) prefers the verified user and falls back to the
+  telemetry session — views become cross-checkable against `play_3s` events.
+- Legacy `services/hooks.ts#useIncrementVideoView` marked `@deprecated` (no dedup, no
+  sessionId, zero consumers); `useRecordVideoView` keeps its API and inherits the
+  carriers via `videoApi`.
+
+> **Invariant:** watching a feed video for 3 seconds records exactly one view per app
+> session client-side and at most one per viewer per UTC day server-side; trending
+> eligibility is now reachable organically. Tests: `__tests__/videoViewTracker.test.ts`
+> (session dedup, fire-and-forget), `__tests__/videoApi.endpoints.test.ts`
+> (sessionId + token carriers, anonymous path, tolerant parsing intact).
+
+Deferred: deep-linked detail flows (`VideoPlayer` modal is only reachable from the feed,
+which already recorded the view); offline view queue (views aren't billable — the
+server-side day-bucket dedup makes any future replay safe).
+
 ## 2026-06-10 — Video remediation, Phases 1–2: server authz + view-count integrity
 
 Server half of the video-screen remediation (from the video screen + components audit).
