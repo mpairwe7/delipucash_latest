@@ -37,11 +37,11 @@ import {
   Text,
   StyleSheet,
   Pressable,
-  ImageBackground,
   ActivityIndicator,
   Dimensions,
   Linking,
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -71,7 +71,6 @@ import {
   VolumeX,
   RotateCcw,
   BadgeCheck,
-  Captions,
   Shield,
   Clock,
   Sparkles,
@@ -108,6 +107,9 @@ const DOUBLE_TAP_DELAY = 300;
 const LONG_PRESS_DURATION = 500;
 const SEEK_AMOUNT = 10; // seconds
 const CONTROLS_HIDE_DELAY = 3000;
+// Neutral near-black placeholder while a thumbnail streams in (matches the
+// feed's black letterbox). Per-video blurhashes need an upload-pipeline field.
+const THUMBNAIL_BLURHASH = 'L00000fQfQfQfQfQfQfQfQfQfQfQ';
 
 // ============================================================================
 // TYPES
@@ -1364,12 +1366,18 @@ function VideoFeedItemComponent({
             )}
           </View>
 
-          {/* Thumbnail Layer (crossfade) */}
+          {/* Thumbnail Layer (crossfade) — expo-image: disk/memory cache + a
+              neutral blurhash placeholder while the thumbnail streams in, and
+              recyclingKey so FlatList recycling never flashes a stale frame */}
           <Animated.View style={[styles.thumbnailLayer, thumbnailStyle]} pointerEvents="none">
-            <ImageBackground
+            <ExpoImage
               source={{ uri: thumbnailUrl || getPlaceholderImage('video') }}
               style={styles.thumbnail}
-              resizeMode="cover"
+              contentFit="cover"
+              cachePolicy="memory-disk"
+              recyclingKey={video.id}
+              placeholder={{ blurhash: THUMBNAIL_BLURHASH }}
+              transition={150}
             />
           </Animated.View>
 
@@ -1651,14 +1659,6 @@ function VideoFeedItemComponent({
                   Original audio - creator
                 </Text>
               </View>
-              {/* 2026: Auto-caption indicator */}
-              <Pressable 
-                style={styles.captionToggle}
-                accessibilityRole="button"
-                accessibilityLabel="Toggle captions"
-              >
-                <Captions size={14} color={withAlpha('#FFFFFF', 0.7)} strokeWidth={2} />
-              </Pressable>
             </View>
           </View>
 
@@ -1960,15 +1960,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
-  },
-  captionToggle: {
-    padding: SPACING.xs,
-    borderRadius: RADIUS.sm,
-    backgroundColor: withAlpha('#FFFFFF', 0.15),
-    minWidth: COMPONENT_SIZE.touchTarget,
-    minHeight: COMPONENT_SIZE.touchTarget,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   // Interactive progress bar + duration display
   progressWrapper: {

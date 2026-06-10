@@ -6,18 +6,16 @@
  * 1. Glassmorphism Controls — BlurView control overlays with scrim gradients
  * 2. Contextual Haptics — Action-specific haptic feedback (Soft/Medium/Rigid/Warning)
  * 3. WCAG 2.2 AAA — 44px touch targets, reduced-motion, semantic roles, live regions
- * 4. Adaptive Bitrate Indicator — Real-time streaming quality badge
- * 5. Auto-Captions Toggle — CC accessibility control in action bar
- * 6. Silence Skip — AI-ready silence detection toggle
- * 7. AI Chapter Markers — Smart timestamp navigation on progress bar
- * 8. Enhanced Seek Preview — Thumbnail preview with chapter context
- * 9. Ambient Mode — Edge glow matching video dominant colors
- * 10. Cinematic Controls — Frosted glass panels with depth layering
- * 11. Speed Ramping Presets — Quick access to curated speed profiles
- * 12. Immersive Gestures — Volume/brightness with visual HUD overlays
- * 13. Creator Economy — Tip/gift affordance in player controls
- * 14. Playback Resume — Remembers position across sessions
- * 15. Reduced Motion — Respects OS-level motion preferences
+ * 4. Enhanced Seek Preview — Scrub preview with time tooltip
+ * 5. Cinematic Controls — Frosted glass panels with depth layering
+ * 6. Playback Speed — 0.25x–2x via the settings menu (player.playbackRate)
+ * 7. Immersive Gestures — Volume/brightness with visual HUD overlays
+ * 8. Reduced Motion — Respects OS-level motion preferences
+ *
+ * Honest-UX note: quality selection, captions, silence-skip, and gift controls
+ * were removed — they were state-only placeholders with no real behavior
+ * (single-rendition R2 MP4s, no captions pipeline). Re-add each only when the
+ * backing capability ships.
  *
  * @example
  * ```tsx
@@ -70,13 +68,7 @@ import {
   ChevronRight,
   Check,
   Gauge,
-  MonitorPlay,
   Sun,
-  Captions,
-  Zap,
-  Wifi,
-  Gift,
-  Sparkles,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -139,7 +131,6 @@ enum SettingsMenu {
   None = 'none',
   Main = 'main',
   Speed = 'speed',
-  Quality = 'quality',
 }
 
 /**
@@ -156,16 +147,11 @@ const PLAYBACK_SPEEDS = [
   { label: '2x', value: 2 },
 ];
 
-/**
- * Quality options (simulated - actual implementation depends on video source)
- */
-const QUALITY_OPTIONS = [
-  { label: 'Auto', value: 'auto' },
-  { label: '1080p', value: '1080' },
-  { label: '720p', value: '720' },
-  { label: '480p', value: '480' },
-  { label: '360p', value: '360' },
-];
+// NOTE: there is intentionally NO quality menu / captions / silence-skip UI.
+// R2 stores a single MP4 per video (no renditions) and no captions pipeline
+// exists — earlier versions shipped those controls as state-only toggles that
+// did nothing. Honest UX: re-add them only when a transcoding/captions
+// pipeline makes them real.
 
 /**
  * Props for the VideoPlayer component
@@ -268,9 +254,8 @@ function VideoPlayerComponent({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [bufferedProgress, setBufferedProgress] = useState(0);
 
-  // Playback speed & quality
+  // Playback speed
   const [playbackSpeed, setPlaybackSpeed] = useState(initialSpeed);
-  const [quality, setQuality] = useState('auto');
 
   // Volume & brightness for gestures
   const [volume, setVolume] = useState(1);
@@ -297,17 +282,8 @@ function VideoPlayerComponent({
   const [isSeeking, setIsSeeking] = useState(false);
   const [seekPreviewTime, setSeekPreviewTime] = useState(0);
 
-  // 2026: Auto-captions toggle
-  const [captionsEnabled, setCaptionsEnabled] = useState(false);
-
-  // 2026: Silence skip toggle
-  const [silenceSkipEnabled, setSilenceSkipEnabled] = useState(false);
-
   // 2026: Reduced motion preference (WCAG 2.2 AAA)
   const [reducedMotionEnabled, setReducedMotionEnabled] = useState(false);
-
-  // 2026: Adaptive bitrate quality indicator
-  const [streamQuality, setStreamQuality] = useState<'HD' | 'SD' | 'Auto'>('Auto');
 
   // Gesture tracking
   const gestureStartValue = useRef({ volume: 1, brightness: 0.5 });
@@ -810,15 +786,6 @@ function VideoPlayerComponent({
     showControls();
   }, [showControls]);
 
-  // Set quality
-  const handleQualityChange = useCallback((newQuality: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setQuality(newQuality);
-    setSettingsMenu(SettingsMenu.None);
-    showControls();
-    // Note: Actual quality change implementation depends on video source support
-  }, [showControls]);
-
   // ============================================================================
   // OTHER HANDLERS
   // ============================================================================
@@ -848,20 +815,6 @@ function VideoPlayerComponent({
     onShare?.();
     showControls();
   }, [onShare, showControls]);
-
-  // 2026: Toggle auto-captions
-  const toggleCaptions = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    setCaptionsEnabled(prev => !prev);
-    showControls();
-  }, [showControls]);
-
-  // 2026: Toggle silence skip
-  const toggleSilenceSkip = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    setSilenceSkipEnabled(prev => !prev);
-    showControls();
-  }, [showControls]);
 
   // ============================================================================
   // RENDER HELPERS
@@ -895,55 +848,6 @@ function VideoPlayerComponent({
                     {getSpeedLabel(playbackSpeed)}
                   </Text>
                   <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={2} />
-                </View>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.settingsItem}
-                onPress={() => setSettingsMenu(SettingsMenu.Quality)}
-              >
-                <View style={styles.settingsItemLeft}>
-                  <MonitorPlay size={ICON_SIZE.md} color={colors.text} strokeWidth={2} />
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>Quality</Text>
-                </View>
-                <View style={styles.settingsItemRight}>
-                  <Text style={[styles.settingsItemValue, { color: colors.textMuted }]}>
-                    {quality === 'auto' ? 'Auto' : `${quality}p`}
-                  </Text>
-                  <ChevronRight size={ICON_SIZE.sm} color={colors.textMuted} strokeWidth={2} />
-                </View>
-              </TouchableOpacity>
-
-              {/* 2026: Auto-Captions toggle */}
-              <TouchableOpacity
-                style={styles.settingsItem}
-                onPress={toggleCaptions}
-                accessibilityLabel={captionsEnabled ? 'Disable captions' : 'Enable captions'}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: captionsEnabled }}
-              >
-                <View style={styles.settingsItemLeft}>
-                  <Captions size={ICON_SIZE.md} color={captionsEnabled ? colors.primary : colors.text} strokeWidth={2} />
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>Auto-Captions</Text>
-                </View>
-                <View style={[styles.settingsToggle, captionsEnabled && { backgroundColor: colors.primary }]}>
-                  <View style={[styles.settingsToggleKnob, { backgroundColor: colors.card }, captionsEnabled && styles.settingsToggleKnobActive]} />
-                </View>
-              </TouchableOpacity>
-
-              {/* 2026: Silence Skip toggle */}
-              <TouchableOpacity
-                style={styles.settingsItem}
-                onPress={toggleSilenceSkip}
-                accessibilityLabel={silenceSkipEnabled ? 'Disable silence skip' : 'Enable silence skip'}
-                accessibilityRole="switch"
-                accessibilityState={{ checked: silenceSkipEnabled }}
-              >
-                <View style={styles.settingsItemLeft}>
-                  <Zap size={ICON_SIZE.md} color={silenceSkipEnabled ? colors.warning : colors.text} strokeWidth={2} />
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>Skip Silence</Text>
-                </View>
-                <View style={[styles.settingsToggle, silenceSkipEnabled && { backgroundColor: colors.warning }]}>
-                  <View style={[styles.settingsToggleKnob, { backgroundColor: colors.card }, silenceSkipEnabled && styles.settingsToggleKnobActive]} />
                 </View>
               </TouchableOpacity>
             </>
@@ -980,36 +884,6 @@ function VideoPlayerComponent({
             </>
           )}
 
-          {settingsMenu === SettingsMenu.Quality && (
-            <>
-              <TouchableOpacity
-                style={styles.settingsHeader}
-                onPress={() => setSettingsMenu(SettingsMenu.Main)}
-              >
-                <ChevronRight
-                  size={ICON_SIZE.md}
-                  color={colors.text}
-                  strokeWidth={2}
-                  style={{ transform: [{ rotate: '180deg' }] }}
-                />
-                <Text style={[styles.settingsTitle, { color: colors.text }]}>Quality</Text>
-              </TouchableOpacity>
-              {QUALITY_OPTIONS.map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={styles.settingsItem}
-                  onPress={() => handleQualityChange(option.value)}
-                >
-                  <Text style={[styles.settingsItemText, { color: colors.text }]}>
-                    {option.label}
-                  </Text>
-                  {quality === option.value && (
-                    <Check size={ICON_SIZE.md} color={colors.primary} strokeWidth={2} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </>
-          )}
         </View>
       </View>
     );
@@ -1203,27 +1077,7 @@ function VideoPlayerComponent({
                 <X size={ICON_SIZE.lg} color={colors.text} strokeWidth={2} />
               </TouchableOpacity>
 
-              <View style={styles.topCenter}>
-                {/* 2026: Adaptive Bitrate Quality Badge */}
-                <View style={[styles.qualityBadge, { backgroundColor: withAlpha(colors.card, 0.6) }]}>
-                  <Wifi size={12} color={streamQuality === 'HD' ? colors.success : colors.textMuted} strokeWidth={2.5} />
-                  <Text style={[styles.qualityBadgeText, { color: colors.text }]}>{streamQuality}</Text>
-                </View>
-                {/* 2026: Silence Skip active indicator */}
-                {silenceSkipEnabled && (
-                  <View style={[styles.qualityBadge, { backgroundColor: withAlpha(colors.warning, 0.15) }]}>
-                    <Zap size={12} color={colors.warning} strokeWidth={2.5} />
-                    <Text style={[styles.qualityBadgeText, { color: colors.warning }]}>Skip</Text>
-                  </View>
-                )}
-                {/* 2026: Captions active indicator */}
-                {captionsEnabled && (
-                  <View style={[styles.qualityBadge, { backgroundColor: withAlpha(colors.primary, 0.15) }]}>
-                    <Captions size={12} color={colors.primary} strokeWidth={2.5} />
-                    <Text style={[styles.qualityBadgeText, { color: colors.primary }]}>CC</Text>
-                  </View>
-                )}
-              </View>
+              <View style={styles.topCenter} />
 
               <View style={styles.topActions}>
                 <TouchableOpacity
@@ -1387,30 +1241,6 @@ function VideoPlayerComponent({
                     fill={isLiked ? colors.error : 'transparent'}
                     strokeWidth={2}
                   />
-                </TouchableOpacity>
-
-                {/* 2026: Auto-Captions quick toggle */}
-                <TouchableOpacity
-                  onPress={toggleCaptions}
-                  style={styles.actionButton}
-                  accessibilityLabel={captionsEnabled ? 'Disable captions' : 'Enable captions'}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: captionsEnabled }}
-                >
-                  <Captions
-                    size={ICON_SIZE.lg}
-                    color={captionsEnabled ? colors.primary : colors.text}
-                    strokeWidth={2}
-                  />
-                </TouchableOpacity>
-
-                {/* 2026: Creator Economy — Gift/Tip */}
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: withAlpha(colors.warning, 0.1), borderRadius: RADIUS.full }]}
-                  accessibilityLabel="Send a gift to the creator"
-                  accessibilityRole="button"
-                >
-                  <Gift size={ICON_SIZE.lg} color={colors.warning} strokeWidth={2} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -1579,19 +1409,6 @@ const styles = StyleSheet.create({
   topActions: {
     flexDirection: 'row',
     gap: SPACING.sm,
-  },
-  qualityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 4,
-    borderRadius: RADIUS.full,
-  },
-  qualityBadgeText: {
-    fontFamily: TYPOGRAPHY.fontFamily.bold,
-    fontSize: 10,
-    letterSpacing: 0.5,
   },
   iconButton: {
     width: COMPONENT_SIZE.touchTarget,

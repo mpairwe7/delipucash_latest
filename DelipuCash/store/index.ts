@@ -407,8 +407,8 @@ export {
   selectRecentlyWatched,
   selectVideoQueue,
   selectQueueLength,
-  // Selectors — Liked (aliased to avoid collision with VideoFeedStore)
-  selectLikedVideoIds as selectVideoStoreLikedVideoIds,
+  // NOTE: liked-video selectors live ONLY in VideoFeedStore now (the old
+  // VideoStore duplicate was removed — nothing rendered from it).
   // Computed selectors
   selectUploadProgress,
   selectRecordingProgress,

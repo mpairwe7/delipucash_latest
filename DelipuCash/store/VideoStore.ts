@@ -165,9 +165,6 @@ export interface VideoState {
   // Video queue for auto-play
   videoQueue: string[];
 
-  // Liked videos (local cache)
-  likedVideoIds: string[];
-
   // Warnings & prompts
   activeWarning: VideoLimitsWarning | null;
   showUpgradePrompt: boolean;
@@ -248,10 +245,6 @@ export interface VideoActions {
   playNextInQueue: () => string | null;
   clearQueue: () => void;
 
-  // Liked videos
-  toggleLikeVideo: (videoId: string) => boolean;
-  isVideoLiked: (videoId: string) => boolean;
-
   // Validation helpers
   validateFileSize: (sizeBytes: number) => { valid: boolean; error?: string };
   validateRecordingDuration: (seconds: number) => { valid: boolean; warning?: string; limitReached: boolean };
@@ -308,7 +301,6 @@ const initialState: VideoState = {
   player: initialPlayerState,
   watchHistory: [],
   videoQueue: [],
-  likedVideoIds: [],
   pendingUploads: [],
   activeWarning: null,
   showUpgradePrompt: false,
@@ -724,24 +716,9 @@ export const useVideoStore = create<VideoState & VideoActions>()(
 
       clearQueue: () => set({ videoQueue: [] }),
 
-      // Liked videos
-      toggleLikeVideo: (videoId) => {
-        const { likedVideoIds } = get();
-        const isLiked = likedVideoIds.includes(videoId);
-
-        if (isLiked) {
-          set({ likedVideoIds: likedVideoIds.filter(id => id !== videoId) });
-        } else {
-          set({ likedVideoIds: [...likedVideoIds, videoId] });
-        }
-
-        return !isLiked; // Return new like state
-      },
-
-      isVideoLiked: (videoId) => {
-        const { likedVideoIds } = get();
-        return likedVideoIds.includes(videoId);
-      },
+      // NOTE: liked-video state intentionally lives ONLY in VideoFeedStore
+      // (likedVideoIds Set + toggleLike). This store used to keep a duplicate
+      // persisted copy that nothing rendered from — a drift hazard.
 
       // Validation helpers
       validateFileSize: (sizeBytes) => {
@@ -854,7 +831,6 @@ export const useVideoStore = create<VideoState & VideoActions>()(
         recordingHistory: state.recordingHistory.slice(-10),
         livestreamHistory: state.livestreamHistory.slice(-10),
         watchHistory: state.watchHistory.slice(-50), // Keep last 50
-        likedVideoIds: state.likedVideoIds, // Persist liked videos
         pendingUploads: state.pendingUploads, // Persist for retry on reconnect
       }),
     }
@@ -908,9 +884,6 @@ export const selectRecentlyWatched = (state: VideoState) => state.watchHistory.s
 // Video queue selectors
 export const selectVideoQueue = (state: VideoState) => state.videoQueue;
 export const selectQueueLength = (state: VideoState) => state.videoQueue.length;
-
-// Liked videos selectors
-export const selectLikedVideoIds = (state: VideoState) => state.likedVideoIds;
 
 // ============================================================================
 // COMPUTED SELECTORS

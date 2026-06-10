@@ -138,6 +138,7 @@ import {
   selectAutoDataSaverOnCellular,
 } from '@/store/AppSettingsStore';
 import { useNetInfo } from '@react-native-community/netinfo';
+import { computeExternalOverlayVisible } from '@/utils/videoOverlayGate';
 import { useSearch } from '@/hooks/useSearch';
 import {
   useAdsForPlacement,
@@ -612,15 +613,16 @@ export default function VideosScreen(): React.ReactElement {
 
   // Single-audio rule: any full-screen overlay that owns its own player (or
   // simply covers the feed) must silence the feed underneath. The store gates
-  // feed playback on isExternalOverlayVisible, so we drive it from the union of
-  // all such overlays. The interstitial ad in particular plays its own audio —
-  // without this the feed video and the ad would play simultaneously.
-  const externalOverlayVisible =
-    liveStreamVisible ||
-    showInterstitialAd ||
-    uploadModalVisible ||
-    searchOverlayVisible ||
-    showAdFeedback;
+  // feed playback on isExternalOverlayVisible; the union lives in a pure,
+  // unit-tested helper (utils/videoOverlayGate) — register new overlays there.
+  const externalOverlayVisible = computeExternalOverlayVisible({
+    liveStreamVisible,
+    showInterstitialAd,
+    uploadModalVisible,
+    searchOverlayVisible,
+    showAdFeedback,
+    optionsSheetVisible: !!moreOptionsVideo,
+  });
 
   useEffect(() => {
     setExternalOverlayVisible(externalOverlayVisible);
