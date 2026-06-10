@@ -18,6 +18,12 @@
 // NOT mocked here (the real JS implementation provides it without native bindings).
 jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
 
+// NetInfo — official jest mock (useNetInfo/fetch/addEventListener); the real module
+// dereferences a native interface at import time and crashes under jest.
+jest.mock('@react-native-community/netinfo', () =>
+  require('@react-native-community/netinfo/jest/netinfo-mock.js'),
+);
+
 // AsyncStorage — same shape the existing store tests rely on (theme + UI stores persist).
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,

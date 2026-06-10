@@ -19,6 +19,9 @@ interface AppSettingsState {
   pushNotificationsEnabled: boolean;
   /** Reduce data usage — lower quality thumbnails, defer autoplay */
   dataSaverEnabled: boolean;
+  /** Auto-trim the video preload window on cellular connections (softer than
+   *  data saver: autoplay is unaffected, only neighbor prefetch narrows) */
+  autoDataSaverOnCellular: boolean;
   /** Haptic/vibration feedback on interactions */
   hapticFeedbackEnabled: boolean;
 }
@@ -26,6 +29,7 @@ interface AppSettingsState {
 interface AppSettingsActions {
   togglePushNotifications: () => void;
   toggleDataSaver: () => void;
+  toggleAutoDataSaverOnCellular: () => void;
   toggleHapticFeedback: () => void;
   /** Reset all preferences to defaults */
   resetSettings: () => void;
@@ -38,6 +42,7 @@ interface AppSettingsActions {
 const initialState: AppSettingsState = {
   pushNotificationsEnabled: true,
   dataSaverEnabled: false,
+  autoDataSaverOnCellular: true,
   hapticFeedbackEnabled: true,
 };
 
@@ -54,6 +59,8 @@ export const useAppSettingsStore = create<AppSettingsState & AppSettingsActions>
           set((s) => ({ pushNotificationsEnabled: !s.pushNotificationsEnabled })),
         toggleDataSaver: () =>
           set((s) => ({ dataSaverEnabled: !s.dataSaverEnabled })),
+        toggleAutoDataSaverOnCellular: () =>
+          set((s) => ({ autoDataSaverOnCellular: !s.autoDataSaverOnCellular })),
         toggleHapticFeedback: () =>
           set((s) => ({ hapticFeedbackEnabled: !s.hapticFeedbackEnabled })),
         resetSettings: () => set(initialState),
@@ -64,6 +71,7 @@ export const useAppSettingsStore = create<AppSettingsState & AppSettingsActions>
         partialize: (state) => ({
           pushNotificationsEnabled: state.pushNotificationsEnabled,
           dataSaverEnabled: state.dataSaverEnabled,
+          autoDataSaverOnCellular: state.autoDataSaverOnCellular,
           hapticFeedbackEnabled: state.hapticFeedbackEnabled,
         }),
       },
@@ -78,10 +86,12 @@ export const useAppSettingsStore = create<AppSettingsState & AppSettingsActions>
 
 export const selectPushNotificationsEnabled = (s: AppSettingsState) => s.pushNotificationsEnabled;
 export const selectDataSaverEnabled = (s: AppSettingsState) => s.dataSaverEnabled;
+export const selectAutoDataSaverOnCellular = (s: AppSettingsState) => s.autoDataSaverOnCellular;
 export const selectHapticFeedbackEnabled = (s: AppSettingsState) => s.hapticFeedbackEnabled;
 
 // Action selectors
 export const selectTogglePushNotifications = (s: AppSettingsState & AppSettingsActions) => s.togglePushNotifications;
 export const selectToggleDataSaver = (s: AppSettingsState & AppSettingsActions) => s.toggleDataSaver;
+export const selectToggleAutoDataSaverOnCellular = (s: AppSettingsState & AppSettingsActions) => s.toggleAutoDataSaverOnCellular;
 export const selectToggleHapticFeedback = (s: AppSettingsState & AppSettingsActions) => s.toggleHapticFeedback;
 export const selectResetSettings = (s: AppSettingsState & AppSettingsActions) => s.resetSettings;

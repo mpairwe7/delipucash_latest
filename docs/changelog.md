@@ -6,6 +6,42 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Video remediation, Phase 4: real source-load window + network awareness
+
+Playback/perf phase. The audit found the feed's "preloading" was **bookkeeping-only**
+(`markPreloaded` was called speculatively while every mounted item attached its source
+immediately — with `windowSize: 5` that's ~5 native players buffering uncontrolled), and
+data saver only deferred autoplay, not loading.
+
+- **Honest load window.** New pure helper `utils/videoPreload.ts#computeShouldLoad`:
+  active item always loads; default window 2 ahead / 1 behind (the store's long-standing
+  preload constants); manual data saver = active only; auto cellular trim = 1 ahead / 0
+  behind. `VerticalVideoFeed` passes `shouldLoad` per item.
+- **Sourceless players outside the window.** `VideoFeedItem` now creates its player with
+  a `null` source; a load-window effect attaches `replaceAsync(videoSource)` on entry and
+  releases (`replaceAsync(null)`) on exit — mounted-but-distant items hold no buffers.
+  **Data saver now actually prevents neighbor loading.**
+- **Truthful preload bookkeeping.** The speculative `markPreloaded` loop in
+  `VerticalVideoFeed` is gone; `VideoFeedItem` reports `markPreloaded` from the player's
+  real `readyToPlay` event and `markPreloadFailed` from `error`.
+- **Network awareness.** New persisted `autoDataSaverOnCellular` setting (default ON,
+  toggle in `QuickSettingsSheet`): on cellular, the load window narrows — autoplay is
+  untouched (softer than manual saver). Error recovery checks `NetInfo.fetch()` first:
+  offline → error UI immediately instead of the backoff + URL-refresh loop against a dead
+  network; retries are also gated on the item still being in the load window.
+- jest setup now uses NetInfo's official mock (the real module dereferences a native
+  interface at import time under jest).
+
+> **Invariant:** at most `1 (active) + ahead + behind` items hold a loaded source —
+> 4 on Wi-Fi, 2 on cellular (auto), 1 in data saver; `preload.preloadedIds` reflects
+> only sources a player actually reported ready. Tests:
+> `__tests__/videoPreloadWindow.test.ts` (window edges, saver, trim, cold start,
+> overrides); full suite + tsc + lint green.
+
+Risk noted for device verification before merge: `replaceAsync` churn on fast Android
+flings (the feed's scroll-speed classifier exists if dampening is needed); blank-frame on
+release is mitigated by the thumbnail crossfade on `!isActive`.
+
 ## 2026-06-10 — Video remediation, Phase 3: wire organic view recording
 
 Client half of the view-integrity fix. The audit found a **dead view pipeline**: no
