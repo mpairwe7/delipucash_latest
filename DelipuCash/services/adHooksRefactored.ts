@@ -35,6 +35,16 @@ const GC_TIME = 1000 * 60 * 30;
 /** Background refetch interval (10 minutes) */
 const REFETCH_INTERVAL = 1000 * 60 * 10;
 
+/**
+ * Stable idempotency key for an ad event. Lets the server dedup retries / offline
+ * re-sends of the same impression or click (so they count at most once).
+ */
+function generateEventId(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (typeof c?.randomUUID === 'function') return c.randomUUID();
+  return `evt-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 // ============================================================================
 // QUERY KEYS
 // ============================================================================
@@ -365,14 +375,16 @@ export function useRecordAdClick() {
     mutationFn: async (payload: {
       adId: string;
       placement: AdPlacement;
+      eventId?: string;
       deviceInfo?: { platform: string; version: string };
     }) => {
       // Record locally in UI store
       recordClick(payload.adId);
-      
-      // Send to server (fire and forget)
+
+      // Send to server (idempotency key dedups retries server-side)
       return adApi.recordAdClick({
         ...payload,
+        eventId: payload.eventId ?? generateEventId(),
         timestamp: new Date().toISOString(),
       });
     },
@@ -394,6 +406,7 @@ export function useRecordAdImpression() {
       adId: string;
       placement: AdPlacement;
       duration: number;
+      eventId?: string;
       wasVisible?: boolean;
       viewportPercentage?: number;
     }) => {
@@ -405,10 +418,11 @@ export function useRecordAdImpression() {
         wasClicked: false,
         wasCompleted: false,
       });
-      
-      // Send to server
+
+      // Send to server (idempotency key dedups retries server-side)
       return adApi.recordAdImpression({
         ...payload,
+        eventId: payload.eventId ?? generateEventId(),
         timestamp: new Date().toISOString(),
         wasVisible: payload.wasVisible ?? true,
         viewportPercentage: payload.viewportPercentage ?? 100,
@@ -454,59 +468,70 @@ export function useRecordVideoProgress() {
 // ============================================================================
 
 /**
- * Hook to track ad visibility and automatically record impressions
+ * Hook to track ad visibility and automatically record impressions.
+ *
+ * Records EXACTLY ONE impression per view: on the visible→invisible transition, or on
+ * unmount while still visible. The previous version fired in BOTH the invisible branch
+ * AND the effect cleanup, so scrolling an ad out of view double-counted it (and the
+ * cleanup re-ran on every dependency change, risking mid-view fires). A `firedRef` guard
+ * + a separate unmount-only effect make it idempotent per view; each view carries its own
+ * `eventId` so the server can dedup a re-send.
+ *
+ * @param viewportPercentage measured visible percentage (defaults to 100 when not measured)
  */
 export function useAdImpressionTracker(
   ad: Ad | null,
   placement: AdPlacement,
-  isVisible: boolean
+  isVisible: boolean,
+  viewportPercentage: number = 100
 ) {
-  const impressionRecorded = useRef(false);
   const viewStartTime = useRef<number | null>(null);
+  const firedRef = useRef(false);
   const { mutate: recordImpression } = useRecordAdImpression();
 
+  // Latest values in a ref so the unmount-only effect needn't depend on them.
+  const latest = useRef({ ad, placement, viewportPercentage });
+  latest.current = { ad, placement, viewportPercentage };
+
+  // Fire the impression at most once for the current view.
+  const fire = useCallback(() => {
+    const { ad: a, placement: p, viewportPercentage: vp } = latest.current;
+    if (!a || firedRef.current || viewStartTime.current == null) return;
+    firedRef.current = true;
+    const duration = Date.now() - viewStartTime.current;
+    viewStartTime.current = null;
+    recordImpression({
+      adId: a.id,
+      placement: p,
+      duration,
+      wasVisible: true,
+      viewportPercentage: vp,
+      eventId: generateEventId(),
+    });
+  }, [recordImpression]);
+
+  // Visibility transitions: start timing when visible, record once when hidden.
   useEffect(() => {
     if (!ad) {
-      impressionRecorded.current = false;
       viewStartTime.current = null;
+      firedRef.current = false;
       return;
     }
-
-    if (isVisible && !impressionRecorded.current) {
-      // Start tracking view time
-      viewStartTime.current = Date.now();
-      impressionRecorded.current = true;
-    }
-
-    if (!isVisible && viewStartTime.current && impressionRecorded.current) {
-      // Ad became invisible - record the impression with duration
-      const duration = Date.now() - viewStartTime.current;
-      recordImpression({
-        adId: ad.id,
-        placement,
-        duration,
-        wasVisible: true,
-        viewportPercentage: 100,
-      });
-      viewStartTime.current = null;
-    }
-
-    return () => {
-      // Cleanup: record impression if component unmounts while ad was visible
-      if (viewStartTime.current && ad) {
-        const duration = Date.now() - viewStartTime.current;
-        recordImpression({
-          adId: ad.id,
-          placement,
-          duration,
-          wasVisible: true,
-          viewportPercentage: 100,
-        });
+    if (isVisible) {
+      if (viewStartTime.current == null) {
+        viewStartTime.current = Date.now();
+        firedRef.current = false; // a fresh view
       }
-    };
-  }, [ad, isVisible, placement, recordImpression]);
+    } else {
+      fire();
+    }
+  }, [ad, isVisible, fire]);
 
-  return { impressionRecorded: impressionRecorded.current };
+  // Unmount-only: record once if still mid-view. `fire` is stable, so this does NOT
+  // re-run on re-renders (which is what caused the old mid-view double-fire).
+  useEffect(() => () => fire(), [fire]);
+
+  return { impressionRecorded: firedRef.current };
 }
 
 /**
