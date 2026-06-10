@@ -6,6 +6,35 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Infra: production DB moved Supabase → Neon; deploy workflow refit to migrate-only
+
+The production Supabase project (`awvfsqlizoynsvqycegr`) became unreachable (pooler:
+"tenant not found"; `db.<ref>.supabase.co` NXDOMAIN — paused/deleted), taking down every
+DB-backed endpoint. Replaced with **Neon** (provisioned via `neonctl`):
+
+- New project `delipucash` (`gentle-rice-07431009`), Postgres 17, `aws-ap-southeast-1`
+  (same region as the old Supabase). **All 17 migrations applied** to the default `main`
+  branch — including `20260610150000_video_view_events`, closing the view-count task.
+- New **`development` branch** (`br-gentle-truth-aokmiory`) created off the migrated
+  `main` — inherits schema + migration history. Topology: Vercel **production env →
+  `main`** (pooled URL + `pgbouncer=true` as `DATABASE_URL`, direct URL as
+  `DIRECT_DATABASE_URL`); **local `server/.env` → `development`** (old Supabase values
+  backed up to gitignored `.env.bak-supabase-20260610`). `channel_binding` is stripped
+  from Neon's URLs (Prisma's parser rejects it).
+- Vercel env updated via the REST API (`vercel env add` silently stores EMPTY when the
+  value is piped to non-TTY stdin — caught by the migrate step's own guard).
+- **Deploy workflow refit (this PR):** dropped `vercel build` + `vercel deploy
+  --prebuilt` — they raced Vercel's Git integration (which auto-deploys every main push
+  and has been the real deploy path all along) and broke under the Bun-installed CLI
+  (`spawn sh ENOENT`). The workflow is now the schema guard: validate → pull env →
+  `prisma migrate deploy` → post-apply `migrate status`. One deploy path (Git
+  integration), one migration path (this workflow).
+
+> **Invariant:** migrations are applied by exactly one automated path, from the verified
+> Vercel production env, with DB URLs crossing only files/env (never argv/logs); the
+> deploy/migration race is bounded by keeping migrations additive. **Old-DB data was not
+> migrated** — if the Supabase project is ever restored, export/import is still possible.
+
 ## 2026-06-10 — CI: deploy workflow applies Prisma migrations (and survives install)
 
 The `Deploy Server` workflow had failed at **Install dependencies** on every main push
