@@ -38,6 +38,7 @@ import { purchasesService } from '@/services/purchasesService';
 import { SSEProvider } from '@/providers/SSEProvider';
 import { AdFrequencyManager } from '@/services/adFrequencyManager';
 import { useOfflineQueueProcessor } from '@/hooks/useOfflineQueueProcessor';
+import { useAdEventQueueProcessor } from '@/hooks/useAdEventQueueProcessor';
 import { useUploadQueueProcessor } from '@/hooks/useUploadQueueProcessor';
 import { telemetry } from '@/services/telemetryApi';
 
@@ -199,6 +200,7 @@ useAuthStore.subscribe((state) => {
 function GlobalProcessors() {
   useOfflineQueueProcessor();
   useUploadQueueProcessor();
+  useAdEventQueueProcessor();
   return null;
 }
 

@@ -6,6 +6,23 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Ads: offline event queue (Phase 3 follow-up)
+
+Closes the deferred follow-up from the client tracking PR. Ad impression/click tracking
+was fire-and-forget, so a failed send (offline / flaky network) lost a billable event.
+
+- New `store/AdEventQueueStore.ts` — a persisted (AsyncStorage) queue of failed events,
+  deduped by `eventId` and capped at 200.
+- `useRecordAdImpression` / `useRecordAdClick` now enqueue the event when the server send
+  fails (instead of dropping it).
+- New `hooks/useAdEventQueueProcessor.ts` (mounted in `_layout.tsx` beside
+  `useOfflineQueueProcessor`) replays the queue when connectivity returns (`onlineManager`)
+  and once on mount; an event that keeps failing is discarded after 3 retries.
+
+> **Invariant:** replays are idempotent — each event carries its `eventId`, which the
+> server (Phase 2) dedups on, so a re-send counts at most once. Tests:
+> `__tests__/adEventQueue.test.tsx` (dedup, replay, retry, discard, offline no-op).
+
 ## 2026-06-10 — Ads remediation, Phases 3–4: client tracking integrity + transparency
 
 Client half of the ads remediation (complements the server security/integrity PR).

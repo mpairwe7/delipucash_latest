@@ -24,6 +24,7 @@ import { useAuthStore } from '../utils/auth/store';
 
 // Import UI store for client-side interactions (NOT for caching server data)
 import { useAdUIStore, type AdPlacement } from '../store/AdUIStore';
+import { useAdEventQueueStore } from '../store/AdEventQueueStore';
 import { useShallow } from 'zustand/react/shallow';
 
 /** Time before data is considered stale (5 minutes) */
@@ -382,13 +383,17 @@ export function useRecordAdClick() {
       recordClick(payload.adId);
 
       // Send to server (idempotency key dedups retries server-side)
-      return adApi.recordAdClick({
-        ...payload,
-        eventId: payload.eventId ?? generateEventId(),
-        timestamp: new Date().toISOString(),
-      });
+      const eventId = payload.eventId ?? generateEventId();
+      const fullPayload = { ...payload, eventId, timestamp: new Date().toISOString() };
+      const result = await adApi.recordAdClick(fullPayload);
+      // On failure (offline / network), queue it for replay on reconnect. The eventId
+      // makes the replay idempotent, so it counts at most once.
+      if (!result?.success) {
+        useAdEventQueueStore.getState().enqueue({ kind: 'click', eventId, payload: fullPayload });
+      }
+      return result;
     },
-    // Don't retry clicks - fire and forget
+    // No in-mutation retry — the offline queue handles re-sends.
     retry: false,
   });
 }
@@ -420,13 +425,20 @@ export function useRecordAdImpression() {
       });
 
       // Send to server (idempotency key dedups retries server-side)
-      return adApi.recordAdImpression({
+      const eventId = payload.eventId ?? generateEventId();
+      const fullPayload = {
         ...payload,
-        eventId: payload.eventId ?? generateEventId(),
+        eventId,
         timestamp: new Date().toISOString(),
         wasVisible: payload.wasVisible ?? true,
         viewportPercentage: payload.viewportPercentage ?? 100,
-      });
+      };
+      const result = await adApi.recordAdImpression(fullPayload);
+      // On failure (offline / network), queue it for replay on reconnect (idempotent via eventId).
+      if (!result?.success) {
+        useAdEventQueueStore.getState().enqueue({ kind: 'impression', eventId, payload: fullPayload });
+      }
+      return result;
     },
     retry: false,
   });
