@@ -26,8 +26,11 @@ the classic signature of a **debug APK with no JS bundle** (it expects a Metro d
 server, so on a Cloud device it shows the red "unable to load script" screen). Switched
 the build from `assembleDebug` to `assembleRelease` — a release APK embeds the bundle and
 runs standalone; Expo's default release buildType signs with the debug keystore, so no
-release-keystore secret is needed. (Remaining to get flows green: build-time
-`EXPO_PUBLIC_*` config, seeded test data, and per-flow login chaining.)
+release-keystore secret is needed. The release build then failed on
+`@sentry/react-native`'s source-map **upload** task (needs `SENTRY_AUTH_TOKEN`) — disabled
+it for CI smoke builds via `SENTRY_DISABLE_AUTO_UPLOAD=true` (the JS bundle still embeds).
+(Remaining to get flows green: build-time `EXPO_PUBLIC_*` config, seeded test data, and
+per-flow login chaining.)
 
 ## 2026-06-09 — Question screen UX: test coverage + e2e wiring
 

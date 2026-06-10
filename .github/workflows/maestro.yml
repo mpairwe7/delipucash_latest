@@ -66,6 +66,11 @@ jobs:
       # Android SDK — no emulator/macOS required.
       - name: Build release APK
         working-directory: DelipuCash
+        env:
+          # The release build runs @sentry/react-native's source-map upload, which
+          # needs a SENTRY_AUTH_TOKEN and fails the build without one. A CI smoke
+          # build doesn't need Sentry uploads — disable auto-upload (bundle still embeds).
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
         run: |
           npx expo prebuild --platform android --no-install
           cd android && ./gradlew assembleRelease
