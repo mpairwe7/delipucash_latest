@@ -27,15 +27,9 @@ const prismaMock = {
   $transaction: mock(async (fn) => fn(txMock)),
 };
 
+// Only prisma is mocked — see the note in adSecurity.test.js. A partial r2/memoryCache
+// mock would leak (process-global) and drop STORAGE_PATHS/TTLCache for other test files.
 mock.module('../lib/prisma.mjs', () => ({ default: prismaMock }));
-mock.module('../lib/r2.mjs', () => ({
-  getSignedDownloadUrl: async () => 'https://signed',
-  URL_EXPIRY: { DOWNLOAD_URL_EXPIRY: 86400 },
-}));
-mock.module('../lib/memoryCache.mjs', () => ({
-  getStore: () => ({ get: () => null, set: () => {} }),
-  mediaCacheMaxMs: () => 300000,
-}));
 
 const { trackAdImpression, getAllAds } = await import('../controllers/AdController.mjs');
 

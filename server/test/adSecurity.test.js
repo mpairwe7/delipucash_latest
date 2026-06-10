@@ -26,15 +26,11 @@ const prismaMock = {
   },
 };
 
+// Only prisma is mocked. We deliberately do NOT mock ../lib/r2.mjs or ../lib/memoryCache.mjs:
+// bun's mock.module is process-global, so a PARTIAL mock would drop their other exports
+// (STORAGE_PATHS, TTLCache) for unrelated test files in the same run. These tests never
+// sign URLs, so the real modules load fine.
 mock.module('../lib/prisma.mjs', () => ({ default: prismaMock }));
-mock.module('../lib/r2.mjs', () => ({
-  getSignedDownloadUrl: async () => 'https://signed',
-  URL_EXPIRY: { DOWNLOAD_URL_EXPIRY: 86400 },
-}));
-mock.module('../lib/memoryCache.mjs', () => ({
-  getStore: () => ({ get: () => null, set: () => {} }),
-  mediaCacheMaxMs: () => 300000,
-}));
 
 const { trackAdImpression, updateAd, deleteAd } = await import('../controllers/AdController.mjs');
 
