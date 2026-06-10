@@ -33,7 +33,8 @@ appId: com.arolainc.DelipuCash
 - assertVisible:
     text: 'Processing'
     optional: true
+# Best-effort check (optional) — drop the invalid `timeout` property; the default
+# wait applies. (extendedWaitUntil supports timeout but can't be optional.)
 - assertVisible:
     text: 'sent'
-    timeout: 30000
     optional: true

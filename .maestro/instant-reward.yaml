@@ -12,8 +12,11 @@ appId: com.arolainc.DelipuCash
     text: 'Instant Reward'
     index: 0
     optional: true
-- assertVisible:
-    text: 'Submit'
+# extendedWaitUntil is the valid construct for a timed wait — assertVisible has no
+# `timeout` property (Maestro Cloud rejects it as an unknown property).
+- extendedWaitUntil:
+    visible:
+      text: 'Submit'
     timeout: 8000
 
 # Pick the first option and submit

@@ -14,6 +14,12 @@ current `action-maestro-cloud` (Robin platform) requires the target project id. 
 `project-id: ${{ vars.MAESTRO_PROJECT_ID }}` to the upload step; the id is stored as a
 repo **variable** (public identifier, not a secret — the api-key remains the secret).
 
+With the id supplied, the Cloud validator then rejected the workspace for an **unknown
+`timeout` property on `assertVisible`** (`redeem.yaml`, `instant-reward.yaml`) — valid in
+the local `maestro` CLI but not on Cloud. Fixed: the required Submit gate uses
+`extendedWaitUntil` (the proper timed-wait construct); the optional "sent" check drops
+the `timeout` (extendedWaitUntil can't be `optional`).
+
 ## 2026-06-09 — Question screen UX: test coverage + e2e wiring
 
 Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow into CI.
