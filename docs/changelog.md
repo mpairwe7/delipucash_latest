@@ -6,6 +6,34 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-10 — Ads remediation, Phase 1: P0 server security
+
+An audit of the ads system (custom server-driven; no AdMob) found critical server-side
+holes. This phase closes the actively-exploitable ones; integrity (event tables/dedup)
+and client tracking follow in later phases.
+
+- **Atomic budget + servable guard on tracking.** `trackAdImpression/Click/Conversion`
+  did a non-atomic check-then-update, so concurrent requests could overspend `totalBudget`,
+  and they charged budget for *any* existing ad (even paused/expired/unapproved). Replaced
+  with a single conditional `updateMany` whose WHERE carries the budget ceiling
+  (`amountSpent <= totalBudget - cost`) **and** active/approved/in-window conditions — one
+  statement, race-safe, never spends on a non-servable ad. `trackAdView` likewise only
+  counts for a live ad.
+- **Abuse protection on the (still public) tracking routes.** Added a per-IP rate limiter
+  (`utils/adRateLimit.mjs`, 60/min) + `softAuth` (attribute to a real user when a token is
+  present; anonymous still allowed) on `/view`,`/impression`,`/click`,`/conversion`.
+- **Ownership/role scope on management.** `updateAd`/`deleteAd`/`pauseAd`/`resumeAd` now
+  require the caller to own the ad (or be ADMIN/MODERATOR) via a shared `loadOwnedAd`
+  helper. `updateAd` also **whitelists** campaign fields — an owner can no longer set
+  `status:'approved'` (bypass moderation), reset `amountSpent`, or touch counters.
+- **Public feed lock.** `getAllAds` no longer honors the `status`/`isActive` query
+  override (it could leak `?status=pending` ads, and the param-keyed cache could serve a
+  cached admin response to anonymous callers). It is hard-locked to active + approved.
+
+> **Invariant:** budget is spent only via the atomic `recordBillableEvent` guard
+> (servable + within-budget in one `updateMany`); ad mutations require ownership; the
+> public `/all` endpoint is approved-only. Tests: `server/test/adSecurity.test.js`.
+
 ## 2026-06-09 — Question screen UX: test coverage + e2e wiring
 
 Closes the coverage gaps from the Phase 3/4 work and wires the question E2E flow into CI.
