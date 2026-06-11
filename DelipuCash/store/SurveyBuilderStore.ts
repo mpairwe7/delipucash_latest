@@ -597,6 +597,7 @@ export const selectBuilderActions = (state: SurveyBuilderState & SurveyBuilderAc
   toggleMultiSelectMode: state.toggleMultiSelectMode,
   toggleQuestionSelection: state.toggleQuestionSelection,
   setScoringEnabled: state.setScoringEnabled,
+  resetBuilder: state.resetBuilder,
 });
 
 // ============================================================================

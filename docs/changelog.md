@@ -6,6 +6,37 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey creation overhaul, Phase 5: draft safety, theming consistency, cleanup
+
+Final polish phase.
+
+- **Clear draft after publish** — after a successful create, `SurveyForm` calls
+  `resetBuilder()` so the next "create" starts blank. Previously the just-published
+  questions lingered in the global builder store as a stale draft. (`resetBuilder` is now
+  exposed through `useBuilderActions`.)
+- **Exit guard** — leaving `create-survey` with in-progress questions now confirms
+  ("Leave without publishing? — your questions are saved as a draft") instead of silently
+  dropping the creator out. Backed by a shared, tested `builderHasUserContent` predicate
+  (`utils/surveyBuilderDraft.ts`) that also replaced the inline copy in the Phase-1
+  template/import replace-confirmation.
+- **Theming** — the preview-modal scrim uses the theme-aware `colors.backdrop` token
+  instead of a hardcoded `rgba(0,0,0,0.6)` (correct in light mode). (The light-grey
+  backgrounds inside the simulated device-preview frame are intentionally fixed — they
+  mimic a respondent's white screen regardless of app theme.)
+- **Dead-code removal** — deleted `components/survey/CollaboratorAvatars.tsx` (0 importers)
+  and its barrel export.
+
+> **Invariant:** publishing clears the draft; exiting with unsaved work prompts; the
+> preview scrim follows the theme. Tests: `__tests__/surveyBuilderDraft.test.ts`. Client
+> suite 280 pass; tsc + lint clean.
+
+**Deferred to a follow-up** (recorded so they aren't lost): live-updating preview with a
+conditional-logic view; builder question-list virtualization (FlatList) + a creation perf
+baseline; a deeper a11y/font-scaling/reduced-motion sweep of the builder; `PrimaryButton`
+reuse across the builder; wiring the built-but-unused server **templates API** (save-as /
+browse public templates); `Survey.branding`. The 1,347-line scripted `ConversationalBuilder`
+is now superseded by the real AI panel (Phase 4) and can be removed in that follow-up.
+
 ## 2026-06-11 — Survey creation overhaul, Phase 4: real AI survey builder (NVIDIA NIM + Groq)
 
 Makes the FAB's "Conversational (AI)" option real. It used to navigate to

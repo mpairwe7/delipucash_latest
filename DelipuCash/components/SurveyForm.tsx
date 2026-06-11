@@ -359,7 +359,15 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       });
 
       Alert.alert('Success', 'Survey created successfully!', [
-        { text: 'OK', onPress: onSuccess },
+        {
+          text: 'OK',
+          onPress: () => {
+            // Clear the draft so the next "create" starts fresh — otherwise the
+            // just-published questions linger in the builder store as a stale draft.
+            builderActions.resetBuilder();
+            onSuccess?.();
+          },
+        },
       ]);
     } catch (err) {
       // The server enforces the creator paywall (403 SUBSCRIPTION_REQUIRED) —
@@ -1067,7 +1075,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         transparent
         onRequestClose={() => setShowPreviewModal(false)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.backdrop }]}>
           <View style={[styles.previewContent, { backgroundColor: colors.card }]}>
             <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
               <View style={styles.modalHeaderContent}>
@@ -1548,7 +1556,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    // backgroundColor applied inline via colors.backdrop (theme-aware scrim)
     justifyContent: 'flex-end',
   },
   modalHeader: {
