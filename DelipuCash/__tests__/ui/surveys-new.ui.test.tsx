@@ -72,6 +72,22 @@ jest.mock('@/utils/auth', () => ({
   useAuthModal: (selector: (s: { open: () => void; close: () => void }) => unknown) =>
     typeof selector === 'function' ? selector({ open: jest.fn(), close: jest.fn() }) : jest.fn(),
 }));
+// SurveyCard (kept real) reads the reward config for its honest respondent
+// reward label — pin it so card text stays deterministic (10 pts → UGX 400).
+jest.mock('@/services/configHooks', () => ({
+  ...jest.requireActual('@/services/configHooks'),
+  useRewardConfig: () => ({
+    data: {
+      surveyCompletionPoints: 10,
+      pointsToCashNumerator: 2000,
+      pointsToCashDenominator: 50,
+      minWithdrawalPoints: 50,
+      defaultRegularRewardAmount: 200,
+      defaultInstantRewardAmount: 500,
+      referralBonusPoints: 60,
+    },
+  }),
+}));
 jest.mock('@/components/payment', () => {
   const React = require('react');
   const InlinePremiumSection = React.forwardRef(() => null);

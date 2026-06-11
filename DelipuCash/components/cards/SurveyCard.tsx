@@ -58,6 +58,7 @@ import { formatCurrency } from '@/services';
 import { Survey } from '@/types';
 import { triggerHaptic } from '@/utils/quiz-utils';
 import { useReducedMotion } from '@/utils/accessibility';
+import { useRewardConfig, pointsToUgx } from '@/services/configHooks';
 
 export interface SurveyCardProps {
   /** Survey data object */
@@ -101,6 +102,19 @@ function SurveyCardComponent({
   const scale = useSharedValue(1);
   const pressed = useSharedValue(0);
   const reduceMotion = useReducedMotion();
+
+  // Honest reward display: what a RESPONDENT actually earns is the config-driven
+  // completion points (credited at submission) — NOT survey.rewardAmount, which
+  // is the creator's per-response budget figure and is never paid out today
+  // (the MoMo payout pipeline is dormant pending an escrow/funding flow).
+  // Owners keep seeing their configured rewardAmount.
+  const { data: rewardConfig } = useRewardConfig();
+  const respondentRewardLabel = useMemo(() => {
+    const points = rewardConfig?.surveyCompletionPoints ?? 10;
+    const ugx = rewardConfig ? pointsToUgx(points, rewardConfig) : null;
+    return ugx != null ? `+${points} pts (~${formatCurrency(ugx)})` : `+${points} pts`;
+  }, [rewardConfig]);
+  const rewardLabel = isOwner ? formatCurrency(survey.rewardAmount || 0) : respondentRewardLabel;
 
   const progress = useMemo(() => {
     return survey.maxResponses
@@ -221,7 +235,7 @@ function SurveyCardComponent({
         ]}
         accessibilityRole="button"
         accessibilityLabel={`Survey: ${survey.title}`}
-        accessibilityHint={`${statusConfig.text}, ${getTimeRemaining()}, ${formatCurrency(survey.rewardAmount || 0)} reward. Double tap to ${isOwner ? 'edit' : 'take'} survey.`}
+        accessibilityHint={`${statusConfig.text}, ${getTimeRemaining()}, ${rewardLabel} reward. Double tap to ${isOwner ? 'edit' : 'take'} survey.`}
         accessibilityActions={[
           { name: 'activate', label: isOwner ? 'Edit survey' : 'Take survey' },
           ...(isOwner && onViewResponses ? [{ name: 'magicTap', label: 'View responses' }] : []),
@@ -276,7 +290,7 @@ function SurveyCardComponent({
           >
             <Gift size={13} color={colors.success} strokeWidth={2} />
             <Text style={[styles.rewardText, { color: colors.success }]}>
-              {formatCurrency(survey.rewardAmount || 0)}
+              {rewardLabel}
             </Text>
           </View>
         </View>

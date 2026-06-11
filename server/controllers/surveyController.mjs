@@ -1241,6 +1241,21 @@ function detectMoMoProvider(phone) {
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DORMANT BY DESIGN — survey MoMo payouts are intentionally NOT wired up.
+//
+// processSurveyPayout / rollbackPayoutBudget are a complete disbursement
+// pipeline (MTN/Airtel, retry + backoff, atomic budget rollback), but nothing
+// calls them: Survey.totalBudget is a self-declared number with NO
+// funding/escrow flow behind it, so activating payouts would disburse the
+// PLATFORM's MoMo money against unfunded creator promises. Respondents are
+// instead credited config-driven points at submission (and the client now
+// promises exactly that — see the 2026-06-11 "reward honesty" changelog entry,
+// which also documents the gated activation design: atomic budget spend at
+// submission, PENDING persist, async payout, points fallback, stale-PENDING
+// sweeper). Do not call these until an escrow/funding product decision exists.
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Process survey respondent payout with retry + exponential backoff
 const SURVEY_PAYOUT_MAX_RETRIES = 3;
 const SURVEY_PAYOUT_BASE_DELAY_MS = 1000;
