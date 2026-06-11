@@ -6,6 +6,42 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey creation overhaul, Phase 1: fix the broken entry points + real templates
+
+From the survey-creation audit (import + manual + flow into attempting). The audit
+found that **three of the four primary creation entry points silently dropped their
+work**: the creation FAB navigated to `/create-survey` with a `templateId`,
+`importedQuestions`, or `mode` param that the screen **never read** (no
+`useLocalSearchParams`), so picking a template, completing an import, or choosing
+"Conversational" all landed on a blank builder. Worse, the gallery templates held only
+preview strings — there were no real questions to load even if the param had been read.
+
+- **`create-survey.tsx` now reads the entry params** and hydrates the global builder
+  store on mount (questions via `loadQuestions`, title/description via the store actions
+  SurveyForm already reads). Loading is reflected by `SurveyForm` and survives its
+  tab-driven remounts. If the builder already holds the user's own work, it confirms
+  before replacing.
+- **Real, editable templates** — new `utils/surveyTemplates.ts` gives every gallery
+  template (`nps-simple`, `csat-standard`, `employee-pulse`, `product-discovery`,
+  `event-post`, `market-segmentation`) an actual `BuilderQuestionData[]` in the renderer
+  vocabulary, so "use template" loads a genuine, Google-Forms-style starting point the
+  creator edits freely. The param→content resolution is a pure `resolveCreationEntry`
+  helper (import JSON or template id → loadable content, null otherwise).
+- `mode==='conversational'` is plumbed through and falls back to the build tab for now;
+  the real AI panel arrives in the AI-builder phase.
+
+> **Invariant:** selecting a template or completing an import loads real, editable
+> questions into the builder instead of a blank form; an unknown template / malformed
+> import leaves the builder untouched; an in-progress draft is never silently replaced.
+> Tests: `__tests__/surveyTemplates.test.ts` (every gallery template resolves to a
+> non-empty renderer-vocabulary question set; resolver happy/malformed/precedence).
+> Client suite: 261 pass.
+
+Follow-ups (later phases): honest CSV/TSV/JSON import (drop the non-functional Excel
+claim), builder validation parity + Google-Forms-style inline question/option ergonomics,
+a real LLM "Conversational" builder via NVIDIA NIM + Groq (open models, no Anthropic),
+and preview/draft-safety/a11y polish.
+
 ## 2026-06-11 — Survey remediation, Phase 4: UX polish
 
 Final survey phase: light-mode-correct scrims, paywall UX, and discoverability.

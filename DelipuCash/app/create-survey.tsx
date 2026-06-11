@@ -26,10 +26,13 @@ import {
   useWindowDimensions,
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from '@/utils/haptics';
-import { useRouter, Href } from 'expo-router';
+import { useRouter, useLocalSearchParams, Href } from 'expo-router';
+import { useBuilderActions, useSurveyBuilderStore } from '@/store/SurveyBuilderStore';
+import { resolveCreationEntry } from '@/utils/surveyTemplates';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
@@ -145,8 +148,21 @@ const CreateSurveyScreen: React.FC = () => {
     return Math.max(0, Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
   }, [subscriptionInfo?.expirationDate]);
 
+  // Creation-entry params — the FAB routes here with one of these set. Until
+  // this was read, Template/Import/Conversational all silently dropped their
+  // payload and landed on a blank builder.
+  const params = useLocalSearchParams<{
+    templateId?: string;
+    importedQuestions?: string;
+    mode?: string;
+  }>();
+  const builderActions = useBuilderActions();
+  const hydratedRef = useRef(false);
+
   // State
-  const [activeTab, setActiveTab] = useState<TabKey>('build');
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    params.mode === 'import' ? 'import' : 'build'
+  );
   const [isReducedMotion, setIsReducedMotion] = useState(false);
 
   // Animation refs
@@ -162,6 +178,49 @@ const CreateSurveyScreen: React.FC = () => {
     );
     return () => subscription.remove();
   }, []);
+
+  // Hydrate the builder from a creation-entry param (template / import), once.
+  // The builder store is global, so loading here is reflected by SurveyForm
+  // (which reads questions/title/description from the same store) and survives
+  // its tab-driven remounts. If the builder already holds the user's own work,
+  // confirm before replacing it.
+  useEffect(() => {
+    if (hydratedRef.current) return;
+
+    const content = resolveCreationEntry({
+      importedQuestions: params.importedQuestions,
+      templateId: params.templateId,
+    });
+    if (!content) return;
+    hydratedRef.current = true;
+    const payload = content;
+
+    const loadContent = (c: typeof payload) => {
+      if (c.title) builderActions.setSurveyTitle(c.title);
+      if (c.description) builderActions.setSurveyDescription(c.description);
+      builderActions.loadQuestions(c.questions);
+      setActiveTab('build');
+    };
+
+    // Treat the builder as "empty" when it holds only the single blank default
+    // question. Anything more is the user's in-progress work — confirm first.
+    const existing = useSurveyBuilderStore.getState().questions;
+    const hasUserContent =
+      existing.length > 1 || (existing.length === 1 && existing[0].text.trim().length > 0);
+
+    if (hasUserContent) {
+      Alert.alert(
+        'Replace current draft?',
+        'Loading this will replace the questions you have started.',
+        [
+          { text: 'Keep mine', style: 'cancel' },
+          { text: 'Replace', style: 'destructive', onPress: () => loadContent(payload) },
+        ]
+      );
+    } else {
+      loadContent(payload);
+    }
+  }, [params.importedQuestions, params.templateId, builderActions]);
 
   // Auth/subscription gating handled via inline renderAccessDenied() states below.
   // No Alert.alert — cleaner UX, no double-render.
