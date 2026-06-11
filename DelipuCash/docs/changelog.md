@@ -3,6 +3,25 @@
 Dated audit trail of substantive change sets: what changed, why, the invariants it
 establishes, and the tests that lock it in.
 
+## 2026-06-11 — Storybook: QueryClientProvider in preview (visual CI un-broken)
+
+**Scope:** `.storybook/preview.tsx`. Branch `fix/storybook-query-provider`.
+
+The "Storybook + Playwright pixel diff" check (advisory) failed on every PR because
+the two `SurveyCard` ended-state stories crashed on render with
+`No QueryClient set, use QueryClientProvider to set one` — `SurveyCard` gained
+`useRewardConfig` (TanStack Query) in the survey overhaul (#26–#30), and the
+Storybook preview decorator provided SafeArea but no QueryClient. Added a
+`QueryClientProvider` with a deterministic client (`retry: false`, no refocus/
+reconnect refetch, `staleTime: Infinity`) so static-Storybook queries fail fast and
+components render their no-data fallback without refetch churn between screenshot
+and baseline.
+
+**Invariant:** every story renders under providers matching the app's runtime
+expectations; queries in stories settle deterministically.
+**Verified:** full visual suite locally — 21/21 pass, and the two recovered stories
+match the *committed* baselines (no pixel drift, no baseline churn). `tsc` clean.
+
 ## 2026-06-11 — Server dependency security audit (72 Dependabot alerts → 0)
 
 **Scope:** `server/package.json`, `server/bun.lock`, `server/package-lock.json`.
