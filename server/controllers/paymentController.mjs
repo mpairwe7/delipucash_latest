@@ -69,7 +69,7 @@ const initiateMtnCollection = async (token, amount, phoneNumber, referenceId) =>
     return response.data;
   } catch (error) {
     log.error('MTN collection error', { status: error.response?.status, message: error.message });
-    throw new Error(`MTN Collection failed: ${error.response?.data?.message || error.message}`);
+    throw new Error(`MTN Collection failed: ${error.response?.data?.message || error.message}`, { cause: error });
   }
 };
 
@@ -99,7 +99,7 @@ const initiateMtnDisbursement = async (token, amount, phoneNumber, referenceId) 
     return response.data;
   } catch (error) {
     log.error('MTN disbursement error', { status: error.response?.status, message: error.message });
-    throw new Error(`MTN Disbursement failed: ${error.response?.data?.message || error.message}`);
+    throw new Error(`MTN Disbursement failed: ${error.response?.data?.message || error.message}`, { cause: error });
   }
 };
 
@@ -140,7 +140,7 @@ const initiateAirtelCollection = async (token, amount, phoneNumber, referenceId)
     return response.data;
   } catch (error) {
     log.error('Airtel collection error', { status: error.response?.status, message: error.message });
-    throw new Error(`Airtel Collection failed: ${error.response?.data?.message || error.message}`);
+    throw new Error(`Airtel Collection failed: ${error.response?.data?.message || error.message}`, { cause: error });
   }
 };
 
@@ -180,7 +180,7 @@ const initiateAirtelDisbursement = async (token, amount, phoneNumber, referenceI
     return response.data;
   } catch (error) {
     log.error('Airtel disbursement error', { status: error.response?.status, message: error.message });
-    throw new Error(`Airtel Disbursement failed: ${error.response?.data?.message || error.message}`);
+    throw new Error(`Airtel Disbursement failed: ${error.response?.data?.message || error.message}`, { cause: error });
   }
 };
 
@@ -275,7 +275,7 @@ export const processMtnPayment = async ({ amount, phoneNumber, userId, reason, r
  * @param {string} params.reason - Payment reason/description
  * @returns {Promise<{success: boolean, reference: string|null}>}
  */
-export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason, referenceId: externalRef }) => {
+export const processAirtelPayment = async ({ amount, phoneNumber, userId, reason: _reason, referenceId: externalRef }) => {
   try {
     validateDisbursementAmount(amount, 'AIRTEL');
     log.info('Processing Airtel disbursement', { amount, phone: maskPhone(phoneNumber), userId });
@@ -495,7 +495,7 @@ const checkPaymentStatusWithRetry = async (referenceId, provider, token, phoneNu
       log.error(`${operationType} status check attempt failed`, { attempt, message: error.message });
 
       if (attempt === maxAttempts) {
-        throw new Error(`${operationType} failed after ${maxAttempts} attempts: ${error.message}`);
+        throw new Error(`${operationType} failed after ${maxAttempts} attempts: ${error.message}`, { cause: error });
       }
 
       // Wait before retry
@@ -884,7 +884,7 @@ export const handleCallback = asyncHandler(async (req, res) => {
 
 // Initiate Disbursement (Reward Payment) — Admin-only
 export const initiateDisbursement = asyncHandler(async (req, res) => {
-  const { amount, phoneNumber, provider, reason = 'Reward payment' } = req.body;
+  const { amount, phoneNumber, provider } = req.body;
   // Use authenticated user ID from JWT — admin-only route
   const userId = req.user?.id;
 

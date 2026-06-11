@@ -279,7 +279,6 @@ export async function generateSurveyQuestions(input, opts = {}) {
         // Network/HTTP/timeout errors won't be fixed by a repair prompt — move
         // to the next provider immediately. Only retry on bad MODEL OUTPUT.
         const isOutputError = err instanceof AiGenerationError;
-        // eslint-disable-next-line no-console
         console.warn(`[aiSurveyGenerator] ${provider.name} attempt ${attempt + 1} failed: ${err.message}`);
         if (!isOutputError) break;
         if (attempt === 0) {

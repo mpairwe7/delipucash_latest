@@ -1585,7 +1585,6 @@ export const getLiveStreams = asyncHandler(async (req, res) => {
 export const joinLivestream = asyncHandler(async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const userId = req.user.id;
 
     const livestream = await prisma.livestream.findUnique({
       where: { sessionId },

@@ -21,7 +21,7 @@
 
 import asyncHandler from 'express-async-handler';
 import prisma from '../lib/prisma.mjs';
-import r2, {
+import {
   uploadVideo,
   uploadThumbnail,
   uploadAvatar,
@@ -606,7 +606,7 @@ export const finalizePresignedVideoUpload = asyncHandler(async (req, res) => {
  * Check file size and type against user's limits
  */
 export const validateUploadRequest = asyncHandler(async (req, res) => {
-  const { userId: bodyUserId, fileSize, fileName, mimeType, type = 'video' } = req.body;
+  const { userId: bodyUserId, fileSize, mimeType, type = 'video' } = req.body;
   const authUserId = req.user?.id ? String(req.user.id).trim() : '';
   const requestedUserId = bodyUserId ? String(bodyUserId).trim() : '';
   const userId = authUserId || requestedUserId;
@@ -921,8 +921,6 @@ export const uploadAdMediaToR2 = asyncHandler(async (req, res) => {
 
   try {
     let result;
-    const storagePath = isVideo ? 'ads/videos' : 'ads/images';
-    const key = generateObjectKey(storagePath, mediaFile.originalname, userId);
 
     console.log(`[R2Controller] Starting ad media upload: ${mediaFile.originalname} (${(mediaFile.size / 1024 / 1024).toFixed(2)}MB)`);
 

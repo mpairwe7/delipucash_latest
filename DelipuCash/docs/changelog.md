@@ -117,3 +117,38 @@ status) or actively harmful (auto-claims on load). The hook's fallback comment
 also mean the daily-reward feature is currently inert. Left untouched because the
 correct fix (a dedicated GET status endpoint) is a backend-contract change and
 risks breaking the claim flow — flag for product/backend owner.
+
+## 2026-06-11 — Server: working lint gate + 54-finding cleanup (incl. 1 real bug)
+
+**Scope:** server-wide. Branch `chore/server-lint`. The server's `lint` script had
+never worked — `eslint` was not even a devDependency and no CI job ran it.
+
+### What changed
+
+- Added `eslint` + `@eslint/js` + `globals` (dev) with a correctness-focused flat
+  config (`server/eslint.config.mjs`): recommended rules, node/bun globals,
+  `_`-prefix escape hatch for intentionally-unused bindings, `allowEmptyCatch`,
+  bun-test globals for `test/**`. Both lockfiles regenerated (bun + npm stay in sync).
+- New non-required CI job **Server — lint** in `ci.yml` (mirrors the server-test
+  job's install/caching).
+- Fixed all 54 findings. The notable one is a **real production bug** in
+  `submitRewardQuestionAnswer` (rewardQuestionController): the catch block logged
+  `rewardQuestionId`/`authenticatedUser`, both `const`s scoped *inside* the `try` —
+  on the concurrent-winner race path the log line itself threw `ReferenceError`,
+  turning a graceful 409 ("another user claimed the spot first") into a 500 for a
+  user who answered correctly. Hoisted both above the `try` (+ optional chaining in
+  the log).
+- Mechanical remainder: 13 `throw` sites now attach `{ cause: error }`
+  (payment/MTN/Airtel/R2 wrappers — preserves original stacks in logs); unused
+  Express `next` params `_`-prefixed (NOT removed — Express dispatches error
+  middleware by arity); dead imports/consts deleted; unused destructured fields
+  dropped. `detectMoMoProvider`/`processSurveyPayout` in surveyController are
+  "DORMANT BY DESIGN" per their block comment — suppressed with a reasoned
+  eslint-disable rather than deleted. `JWT_EXPIRES_IN` ("kept only for reference")
+  `_`-prefixed rather than deleted.
+
+### Verification
+
+`bun run lint`: 0 problems. `bun test`: 137/137 (unchanged). All edits applied via
+exactly-once string-match codemod (fails loudly on drift); riskiest hunks reviewed
+manually.

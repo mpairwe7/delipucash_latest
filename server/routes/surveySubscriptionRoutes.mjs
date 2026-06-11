@@ -10,9 +10,6 @@ import express from 'express';
 import {
   getPlans,
   getSubscriptionStatus,
-  initiatePayment,
-  checkPaymentStatus,
-  getPaymentHistory,
   cancelSubscription,
 } from '../controllers/surveyPaymentController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
