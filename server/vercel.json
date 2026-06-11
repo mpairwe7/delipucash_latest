@@ -3,6 +3,7 @@
   "name": "node-js",
   "installCommand": "bun install",
   "buildCommand": "bun run vercel-build",
+  "ignoreCommand": "test \"$VERCEL_ENV\" != \"production\"",
   "routes": [
     {
       "src": "/(.*)",

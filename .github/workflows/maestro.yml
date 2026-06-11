@@ -5,7 +5,8 @@
 # Apple-Silicon macOS runner ("Timeout waiting for emulator to boot"). We build
 # the debug APK on a cheap Linux runner and upload it + the .maestro flows to
 # Maestro Cloud, which runs them on real hosted devices. Needs the
-# MAESTRO_API_TOKEN repo secret.
+# MAESTRO_API_TOKEN and MAESTRO_PROJECT_ID repo secrets (the upload action
+# requires a project id — find it at console.mobile.dev → project settings).
 # =============================================================================
 
 name: Maestro E2E
@@ -32,6 +33,21 @@ jobs:
       # consumes the MAESTRO_API_TOKEN / EXPO_TOKEN secrets, so a retargeted mutable
       # tag must not be able to change the executed code.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      # The Maestro Cloud upload action hard-requires project-id; without it the job
+      # used to die AFTER the ~25-minute APK build with a cryptic "Input required and
+      # not supplied: project-id". Validate both secrets up front so a missing value
+      # fails in seconds with an actionable message instead.
+      - name: Preflight Maestro secrets
+        env:
+          HAS_TOKEN: ${{ secrets.MAESTRO_API_TOKEN != '' }}
+          HAS_PROJECT: ${{ secrets.MAESTRO_PROJECT_ID != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ] || [ "$HAS_PROJECT" != "true" ]; then
+            echo "::error::Maestro Cloud is not fully configured: MAESTRO_API_TOKEN and MAESTRO_PROJECT_ID repo secrets are both required."
+            echo "::error::Get the project id from console.mobile.dev (project settings), then run: gh secret set MAESTRO_PROJECT_ID"
+            exit 1
+          fi
 
       - name: Setup Java
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
@@ -74,5 +90,6 @@ jobs:
         uses: mobile-dev-inc/action-maestro-cloud@892c9dd6e50cff4f8c9046f6263047dc5bf419d5 # v1
         with:
           api-key: ${{ secrets.MAESTRO_API_TOKEN }}
+          project-id: ${{ secrets.MAESTRO_PROJECT_ID }}
           app-file: DelipuCash/android/app/build/outputs/apk/debug/app-debug.apk
           workspace: .maestro

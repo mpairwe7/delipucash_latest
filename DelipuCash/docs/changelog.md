@@ -78,6 +78,35 @@ overrides phase. `prisma generate` exercised (loads `@prisma/config` → `effect
 `uuid` v4 import smoke-tested. Note: `server`'s `lint` script is pre-existing
 broken (`eslint` is not a server devDependency) — out of scope here.
 
+## 2026-06-11 — CI: fix always-failing Maestro + Vercel preview checks
+
+**Scope:** `.github/workflows/maestro.yml`, `server/vercel.json`. Branch
+`ci/fix-maestro-vercel-checks`. Neither check is required by branch protection,
+but both showed a red ✗ on every PR, training people to ignore CI.
+
+1. **Maestro E2E** died after the ~25-minute APK build with
+   `Input required and not supplied: project-id` — the pinned
+   `action-maestro-cloud` requires a `project-id` input the workflow never
+   passed. Wired `project-id: ${{ secrets.MAESTRO_PROJECT_ID }}` into the upload
+   step and added a preflight step that fails in seconds with an actionable
+   message when either Maestro secret is missing (instead of wasting the build).
+   ACTION REQUIRED: add the `MAESTRO_PROJECT_ID` repo secret (value from
+   console.mobile.dev → project settings) to turn the check green.
+2. **Vercel (server) preview deploys** errored in 4–6s on every PR while
+   production deploys succeed in ~40s: `vercel-build` runs `prisma generate`,
+   whose `prisma.config.ts` throws on missing `DIRECT_DATABASE_URL`, and the
+   DB env vars exist only in the Production environment. Server previews were
+   never functional (deploy model is production-on-main via the Deploy Server
+   workflow + Git integration), so previews are now skipped via
+   `ignoreCommand: test "$VERCEL_ENV" != "production"` (exit 0 skips the build,
+   exit 1 proceeds — verified both branches). Alternative, if functional
+   preview servers are ever wanted: add Preview-scoped `DATABASE_URL` /
+   `DIRECT_DATABASE_URL` pointing at the Neon development branch and drop the
+   ignoreCommand.
+
+**Invariants:** Maestro misconfiguration fails fast with instructions, never
+after the build; Vercel builds the server only for production.
+
 ## 2026-06-11 — Home screen (dashboard) gap fixes
 
 **Scope:** `app/(tabs)/home-redesigned.tsx` (the live Home tab; `index.tsx` is hidden
