@@ -33,6 +33,7 @@ import * as Haptics from '@/utils/haptics';
 import { useRouter, useLocalSearchParams, Href } from 'expo-router';
 import { useBuilderActions, useSurveyBuilderStore } from '@/store/SurveyBuilderStore';
 import { resolveCreationEntry } from '@/utils/surveyTemplates';
+import { builderHasUserContent } from '@/utils/surveyBuilderDraft';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   X,
@@ -205,13 +206,9 @@ const CreateSurveyScreen: React.FC = () => {
       setActiveTab('build');
     };
 
-    // Treat the builder as "empty" when it holds only the single blank default
-    // question. Anything more is the user's in-progress work — confirm first.
-    const existing = useSurveyBuilderStore.getState().questions;
-    const hasUserContent =
-      existing.length > 1 || (existing.length === 1 && existing[0].text.trim().length > 0);
-
-    if (hasUserContent) {
+    // Anything beyond the single blank default question is the user's
+    // in-progress work — confirm before replacing it.
+    if (builderHasUserContent(useSurveyBuilderStore.getState().questions)) {
       Alert.alert(
         'Replace current draft?',
         'Loading this will replace the questions you have started.',
@@ -252,6 +249,20 @@ const CreateSurveyScreen: React.FC = () => {
   }, [router]);
 
   const handleCancel = useCallback(() => {
+    // Guard against losing in-progress work on an accidental back/close. The
+    // draft is persisted to storage either way, but the confirmation makes that
+    // explicit rather than silently dropping the creator out of the editor.
+    if (builderHasUserContent(useSurveyBuilderStore.getState().questions)) {
+      Alert.alert(
+        'Leave without publishing?',
+        'Your questions are saved as a draft and will be here when you return.',
+        [
+          { text: 'Keep editing', style: 'cancel' },
+          { text: 'Leave', style: 'destructive', onPress: () => router.back() },
+        ]
+      );
+      return;
+    }
     router.back();
   }, [router]);
 

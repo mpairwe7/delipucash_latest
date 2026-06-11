@@ -74,8 +74,5 @@ export { WebhookSetupModal } from './WebhookSetupModal';
 // Creation Progress Badges (gamification)
 export { CreationProgressBadges } from './CreationProgressBadges';
 
-// Collaborator Avatars (real-time presence)
-export { CollaboratorAvatars } from './CollaboratorAvatars';
-
 // Survey Completion Overlay (post-submission celebration + next actions)
 export { SurveyCompletionOverlay } from './SurveyCompletionOverlay';
