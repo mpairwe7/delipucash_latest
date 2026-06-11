@@ -143,28 +143,75 @@ export function hasTemplateContent(templateId: string): boolean {
   return templateId in TEMPLATE_SEEDS;
 }
 
+const RENDERER_TYPES: BuilderQuestionType[] = [
+  'text', 'paragraph', 'radio', 'checkbox', 'dropdown',
+  'rating', 'boolean', 'date', 'time', 'number', 'file_upload',
+];
+
+/**
+ * Coerce arbitrary parsed JSON (from the importedQuestions route param) into
+ * well-formed BuilderQuestionData. The param is serialized by our own
+ * ImportWizard, but a truncated/edited/foreign value must never reach the
+ * builder as malformed data — entries without usable text are dropped, the
+ * type is constrained to the renderer vocabulary, and every field is coerced to
+ * its expected shape. Untrusted conditional logic is not carried through.
+ */
+function sanitizeImportedQuestions(parsed: unknown): BuilderQuestionData[] {
+  if (!Array.isArray(parsed)) return [];
+  const out: BuilderQuestionData[] = [];
+  parsed.forEach((raw, i) => {
+    if (!raw || typeof raw !== 'object') return;
+    const q = raw as Record<string, unknown>;
+    const text = typeof q.text === 'string' ? q.text.trim() : '';
+    if (!text) return; // unusable — skip
+
+    const type = typeof q.type === 'string' && (RENDERER_TYPES as string[]).includes(q.type)
+      ? (q.type as BuilderQuestionType)
+      : 'text';
+    const options = Array.isArray(q.options)
+      ? q.options.filter((o): o is string => typeof o === 'string')
+      : [];
+    const min = typeof q.minValue === 'number' && Number.isFinite(q.minValue) ? q.minValue : undefined;
+    const max = typeof q.maxValue === 'number' && Number.isFinite(q.maxValue) ? q.maxValue : undefined;
+
+    out.push({
+      id: typeof q.id === 'string' && q.id ? q.id : `imported_${i + 1}`,
+      text,
+      type,
+      options,
+      minValue: min,
+      maxValue: max,
+      placeholder: typeof q.placeholder === 'string' ? q.placeholder : undefined,
+      required: q.required === true,
+      conditionalLogic: null,
+      fileUploadConfig: null,
+      points: typeof q.points === 'number' && Number.isFinite(q.points) ? q.points : 0,
+    });
+  });
+  return out;
+}
+
 /**
  * Resolve a creation-entry param set (from the FAB) to loadable builder content.
- * `importedQuestions` is a JSON-serialized BuilderQuestionData[]; `templateId`
- * resolves to a structured template. Returns null when neither yields content
- * (unknown template, malformed/empty import) — the caller leaves the builder
- * untouched. Pure + side-effect-free so it can be unit-tested without rendering
- * the screen.
+ * `importedQuestions` is a JSON-serialized question array (validated/coerced via
+ * sanitizeImportedQuestions); `templateId` resolves to a structured template.
+ * Returns null when neither yields content (unknown template, malformed/empty
+ * import) — the caller leaves the builder untouched. Pure + side-effect-free so
+ * it can be unit-tested without rendering the screen.
  */
 export function resolveCreationEntry(params: {
   importedQuestions?: string | null;
   templateId?: string | null;
 }): TemplateContent | null {
   if (params.importedQuestions) {
+    let parsed: unknown;
     try {
-      const parsed = JSON.parse(params.importedQuestions);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return { title: '', description: '', questions: parsed as BuilderQuestionData[] };
-      }
+      parsed = JSON.parse(params.importedQuestions);
     } catch {
       return null;
     }
-    return null;
+    const questions = sanitizeImportedQuestions(parsed);
+    return questions.length > 0 ? { title: '', description: '', questions } : null;
   }
   if (params.templateId) {
     return getTemplateContent(params.templateId);

@@ -31,7 +31,7 @@ describe('getTemplateContent', () => {
     }
   });
 
-  it('produces questions only in the renderer vocabulary with stable ids', () => {
+  it('produces questions only in the renderer vocabulary with unique ids', () => {
     const content = getTemplateContent('csat-standard')!;
     const ids = new Set<string>();
     for (const q of content.questions) {
@@ -82,5 +82,26 @@ describe('resolveCreationEntry', () => {
     const content = resolveCreationEntry({ importedQuestions: imported, templateId: 'nps-simple' });
     expect(content!.questions).toHaveLength(1);
     expect(content!.questions[0].text).toBe('Import wins');
+  });
+
+  it('sanitizes malformed imported entries instead of trusting the raw param', () => {
+    const imported = JSON.stringify([
+      'not an object',
+      null,
+      { text: '   ' },                                  // blank → dropped
+      { text: 'Keep me', type: 'wat', options: [1, 'A', null] }, // bad type→text, options filtered
+      { text: 'Bounded', type: 'rating', minValue: 1, maxValue: 5, conditionalLogic: { rules: ['evil'] } },
+    ]);
+    const content = resolveCreationEntry({ importedQuestions: imported });
+    expect(content!.questions).toHaveLength(2);
+    expect(content!.questions[0]).toMatchObject({ text: 'Keep me', type: 'text', options: ['A'] });
+    // untrusted conditional logic is never carried through; ids are assigned
+    expect(content!.questions[1]).toMatchObject({ text: 'Bounded', type: 'rating', minValue: 1, maxValue: 5, conditionalLogic: null });
+    expect(typeof content!.questions[1].id).toBe('string');
+  });
+
+  it('returns null when every imported entry is unusable', () => {
+    expect(resolveCreationEntry({ importedQuestions: JSON.stringify([{ foo: 'bar' }, 5, null]) })).toBeNull();
+    expect(resolveCreationEntry({ importedQuestions: JSON.stringify({ not: 'an array' }) })).toBeNull();
   });
 });
