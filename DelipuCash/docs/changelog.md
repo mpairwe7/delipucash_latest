@@ -28,11 +28,15 @@ shaped the fix:
 
 ### What changed
 
-Direct bumps (runtime): `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`
-^3.990.0 → ^3.1066.0 (drags fast-xml-parser 5.3.4 → 5.7.3, kills the critical),
-`axios` → 1.17.0 (23 alerts), `nodemailer` 6 → 8.0.11 (single `createTransport`
-SMTP call site — API unchanged), `multer` → 2.1.1, `express-rate-limit` → ^8.2.2,
-`uuid` 9 → 11.1.1 (two `v4` import sites — API unchanged; deliberately not 14.x).
+Direct bumps (runtime) — listed as `package.json` range → lockfile-resolved
+version (the ranges are minimum *patched floors*; both lockfiles in this change
+pin the resolutions): `@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`
+^3.990.0 → ^3.1066.0, resolving 3.1066.0 (drags fast-xml-parser 5.3.4 → 5.7.3,
+kills the critical); `axios` ^1.13.5 → ^1.16.0, resolving 1.17.0 (23 alerts);
+`nodemailer` ^6.10.1 → ^8.0.5, resolving 8.0.11 (single `createTransport` SMTP
+call site — API unchanged); `multer` ^2.0.2 → ^2.1.1, resolving 2.1.1;
+`express-rate-limit` ^8.2.1 → ^8.2.2, resolving 8.5.2; `uuid` ^9.0.1 → ^11.1.1,
+resolving 11.1.1 (two `v4` import sites — API unchanged; deliberately not 14.x).
 
 New `overrides` block (security floors for transitives whose parents pin exact or
 lag): `hono` ^4.12.7, `@hono/node-server` ^1.19.13, `effect` ^3.20.0, `lodash`
