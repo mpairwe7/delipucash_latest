@@ -7,6 +7,8 @@ import { getRewardConfig, pointsToUgx } from '../lib/rewardConfig.mjs';
 import { createNotificationFromTemplateHelper } from './notificationController.mjs';
 import { checkAndUnlockAchievements } from '../lib/achievementChecker.mjs';
 import { getStore } from '../lib/memoryCache.mjs';
+import { VALID_QUESTION_TYPES, normalizeQuestionType } from '../lib/surveyQuestionTypes.mjs';
+import { validateConditionalLogic, remapConditionalLogicIds } from '../lib/surveyConditionalLogic.mjs';
 
 // In-process cache for public survey lists. These responses carry no per-user
 // fields and no signed URLs, so they are safe to cache by query params. 90s TTL
@@ -56,6 +58,74 @@ async function checkSurveyExpiringNotifications(userId) {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Shared validation for survey creation payloads (createSurvey + uploadSurvey).
+ * Normalizes question types in place onto `normalizedType`. Returns null when
+ * valid, or { status, body } to send. `textKey` differs between the two
+ * endpoints' historical payload shapes ('question' vs 'text').
+ */
+function validateCreationPayload({ title, questions, startDate, endDate, textKey }) {
+  if (typeof title !== 'string' || title.trim().length === 0) {
+    return { status: 400, body: { message: 'Survey title is required' } };
+  }
+  if (!Array.isArray(questions) || questions.length === 0) {
+    return { status: 400, body: { message: 'At least one question is required' } };
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+    return { status: 400, body: { message: 'Invalid date format for startDate or endDate' } };
+  }
+  if (end <= start) {
+    return { status: 400, body: { message: 'End date must be after start date' } };
+  }
+
+  const invalidText = questions.findIndex(
+    (q) => !q || typeof q[textKey] !== 'string' || q[textKey].trim().length === 0
+  );
+  if (invalidText !== -1) {
+    return { status: 400, body: { message: `Question ${invalidText + 1} is missing its text` } };
+  }
+
+  const invalidTypes = [];
+  for (const q of questions) {
+    const normalized = normalizeQuestionType(q.type);
+    if (!normalized) {
+      invalidTypes.push(q.type);
+    } else {
+      q.normalizedType = normalized;
+    }
+  }
+  if (invalidTypes.length > 0) {
+    return {
+      status: 400,
+      body: {
+        message: `Invalid question type(s): ${invalidTypes.map(String).join(', ')}`,
+        validTypes: VALID_QUESTION_TYPES,
+      },
+    };
+  }
+
+  // Conditional logic: rules must reference EARLIER questions by the ids the
+  // client used (builder clientIds). Synthetic fallback ids make unresolvable
+  // references fail validation instead of being stored dead.
+  const logicErrors = validateConditionalLogic(
+    questions.map((q, i) => ({
+      id: q.clientId ?? q.id ?? `__q${i}`,
+      conditionalLogic: q.conditionalLogic ?? null,
+    }))
+  );
+  if (logicErrors.length > 0) {
+    return {
+      status: 400,
+      body: { message: 'Invalid conditional logic', errors: logicErrors },
+    };
+  }
+
+  return null;
+}
+
 // Create a Survey
 export const createSurvey = asyncHandler(async (req, res) => {
   const { surveyTitle, surveyDescription, questions, startDate, endDate, rewardAmount, maxResponses, totalBudget } = req.body;
@@ -65,34 +135,15 @@ export const createSurvey = asyncHandler(async (req, res) => {
     return res.status(401).json({ message: 'Authentication required' });
   }
 
-  // Log the incoming request
-  console.log('Incoming request: POST /surveys/create');
-  console.log('Survey Title:', surveyTitle);
-  console.log('Survey Description:', surveyDescription);
-  console.log('Questions:', JSON.stringify(questions, null, 2));
-  console.log('User ID:', userId);
-  console.log('Reward Amount:', rewardAmount);
-  console.log('Total Budget:', totalBudget);
+  // No payload logging — question text can carry PII; log ids/counts only.
+  console.log(`Incoming request: POST /surveys/create, userId: ${userId}, questions: ${Array.isArray(questions) ? questions.length : 0}`);
 
-  // Validate dates
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-    return res.status(400).json({ message: 'Invalid date format for startDate or endDate' });
-  }
-  if (end <= start) {
-    return res.status(400).json({ message: 'End date must be after start date' });
-  }
-
-  // Validate question types
-  const VALID_QUESTION_TYPES = ['text', 'textarea', 'multiple_choice', 'checkbox', 'rating', 'nps', 'slider', 'dropdown', 'date', 'time', 'file_upload'];
-
-  const invalidQuestions = questions.filter(q => !VALID_QUESTION_TYPES.includes(q.type));
-  if (invalidQuestions.length > 0) {
-    return res.status(400).json({
-      message: `Invalid question type(s): ${invalidQuestions.map(q => q.type).join(', ')}`,
-      validTypes: VALID_QUESTION_TYPES,
-    });
+  // Shared validation: title/questions presence, dates, canonical question
+  // types (legacy aliases like multiple_choice/textarea normalize to the
+  // renderer vocabulary instead of being stored unrenderable).
+  const invalid = validateCreationPayload({ title: surveyTitle, questions, startDate, endDate, textKey: 'question' });
+  if (invalid) {
+    return res.status(invalid.status).json(invalid.body);
   }
 
   // Validate budget if provided
@@ -113,58 +164,50 @@ export const createSurvey = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Create the survey
-    const newSurvey = await prisma.survey.create({
-      data: {
-        title: surveyTitle,
-        description: surveyDescription,
-        userId,
-        rewardAmount: parsedReward,
-        maxResponses: maxResponses || null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        totalBudget: parsedBudget,
-      },
+    // Atomic: survey + questions in one transaction — a partial failure can no
+    // longer leave an empty (question-less) survey behind.
+    const uploadedQuestions = await prisma.$transaction(async (tx) => {
+      const newSurvey = await tx.survey.create({
+        data: {
+          title: surveyTitle,
+          description: surveyDescription,
+          userId,
+          rewardAmount: parsedReward,
+          maxResponses: maxResponses || null,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          totalBudget: parsedBudget,
+        },
+      });
+
+      const created = [];
+      for (const q of questions) {
+        created.push(
+          await tx.uploadSurvey.create({
+            data: {
+              text: q.question,
+              type: q.normalizedType,
+              options: JSON.stringify(q.options || []),
+              placeholder: q.placeholder || '',
+              minValue: q.minValue || null,
+              maxValue: q.maxValue || null,
+              required: q.required ?? true,
+              userId,
+              surveyId: newSurvey.id,
+            },
+          })
+        );
+      }
+      return created;
     });
 
-    // Format questions with userId and surveyId
-    const formattedQuestions = questions.map((q) => ({
-      text: q.question,
-      type: q.type,
-      options: JSON.stringify(q.options || []),
-      placeholder: q.placeholder || '',
-      minValue: q.minValue || null,
-      maxValue: q.maxValue || null,
-      required: q.required ?? true,
-      userId,
-      surveyId: newSurvey.id,
-    }));
+    console.log(`Survey created: ${uploadedQuestions[0]?.surveyId}, questions: ${uploadedQuestions.length}`);
 
-    // Log formatted questions
-    console.log('Formatted Questions:', JSON.stringify(formattedQuestions, null, 2));
-
-    // Use createMany for bulk insert
-    const createdQuestions = await prisma.uploadSurvey.createMany({
-      data: formattedQuestions,
-    });
-
-    // Fetch the newly created questions to return them in the response
-    const uploadedQuestions = await prisma.uploadSurvey.findMany({
-      where: {
-        surveyId: newSurvey.id,
-      },
-    });
-
-    // Log successful creation
-    console.log('Survey and questions created successfully.');
-
-    // Return the survey and uploaded questions
     res.status(201).json({
       message: 'Survey and questions created successfully.',
       questions: uploadedQuestions,
     });
   } catch (error) {
-    // Log the error
     console.error('Error creating survey and questions:', error);
 
     res.status(500).json({ message: 'Error creating survey and questions' });
@@ -176,8 +219,16 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
   const { title, description, questions, startDate, endDate, rewardAmount, maxResponses, totalBudget } = req.body;
   const userId = req.user?.id;
 
-  // Log the incoming request (no sensitive data)
-  console.log('Incoming request: POST /api/surveys/upload, userId:', userId);
+  // Log the incoming request (no payloads — question text can carry PII)
+  console.log(`Incoming request: POST /api/surveys/upload, userId: ${userId}, questions: ${Array.isArray(questions) ? questions.length : 0}`);
+
+  // Validation parity with createSurvey: title/questions presence, dates,
+  // canonical question types, conditional-logic references (rules reference the
+  // client-supplied per-question `clientId`).
+  const invalid = validateCreationPayload({ title, questions, startDate, endDate, textKey: 'text' });
+  if (invalid) {
+    return res.status(invalid.status).json(invalid.body);
+  }
 
   // Validate budget if provided
   const parsedBudget = totalBudget ? parseFloat(totalBudget) : null;
@@ -197,60 +248,71 @@ export const uploadSurvey = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Create the survey
-    const newSurvey = await prisma.survey.create({
-      data: {
-        title,
-        description,
-        userId,
-        rewardAmount: parsedReward,
-        maxResponses: maxResponses || null,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate),
-        totalBudget: parsedBudget,
-      },
+    // Atomic create + conditional-logic id remap.
+    //
+    // The builder references questions by client-side ids (q_<ts>_<n>) inside
+    // conditionalLogic rules. The DB mints fresh UUIDs, so the rules MUST be
+    // rewritten to the created ids — before this remap existed, every
+    // app-created rule referenced ids that didn't exist and the logic was dead
+    // (an `equals` show-rule hid its question forever). Questions are created
+    // sequentially first (capturing clientId → uuid), then the ones with logic
+    // get their rewritten rules in a second pass inside the same transaction.
+    const uploadedQuestions = await prisma.$transaction(async (tx) => {
+      const newSurvey = await tx.survey.create({
+        data: {
+          title,
+          description,
+          userId,
+          rewardAmount: parsedReward,
+          maxResponses: maxResponses || null,
+          startDate: new Date(startDate),
+          endDate: new Date(endDate),
+          totalBudget: parsedBudget,
+        },
+      });
+
+      const idMap = new Map(); // clientId -> created UUID
+      const created = [];
+      for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+        const row = await tx.uploadSurvey.create({
+          data: {
+            text: q.text,
+            type: q.normalizedType,
+            options: typeof q.options === 'string' ? q.options : JSON.stringify(q.options || []),
+            placeholder: q.placeholder || '',
+            minValue: q.minValue || null,
+            maxValue: q.maxValue || null,
+            required: q.required ?? true,
+            conditionalLogic: null, // remapped + written in the second pass
+            userId,
+            surveyId: newSurvey.id,
+          },
+        });
+        idMap.set(q.clientId ?? q.id ?? `__q${i}`, row.id);
+        created.push(row);
+      }
+
+      for (let i = 0; i < questions.length; i++) {
+        const logic = questions[i].conditionalLogic;
+        if (!logic || !Array.isArray(logic.rules) || logic.rules.length === 0) continue;
+        const remapped = remapConditionalLogicIds(logic, idMap);
+        created[i] = await tx.uploadSurvey.update({
+          where: { id: created[i].id },
+          data: { conditionalLogic: remapped },
+        });
+      }
+
+      return created;
     });
 
-    // Format questions with userId and surveyId (including optional conditionalLogic)
-    const formattedQuestions = questions.map((q) => ({
-      text: q.text,
-      type: q.type,
-      options: typeof q.options === 'string' ? q.options : JSON.stringify(q.options || []),
-      placeholder: q.placeholder || '',
-      minValue: q.minValue || null,
-      maxValue: q.maxValue || null,
-      required: q.required ?? true,
-      conditionalLogic: q.conditionalLogic || null,
-      userId,
-      surveyId: newSurvey.id,
-    }));
+    console.log(`Survey uploaded: ${uploadedQuestions[0]?.surveyId}, questions: ${uploadedQuestions.length}`);
 
-    // Log formatted questions
-    console.log('Formatted Questions:', JSON.stringify(formattedQuestions, null, 2));
-
-    // Use createMany for bulk insert
-    const createdQuestions = await prisma.uploadSurvey.createMany({
-      data: formattedQuestions,
-    });
-
-    // Fetch the newly created questions to return them in the response
-    const uploadedQuestions = await prisma.uploadSurvey.findMany({
-      where: {
-        surveyId: newSurvey.id,
-      },
-    });
-
-    // Log successful upload
-    console.log('Survey and questions uploaded successfully.');
-
-    // Return the survey and uploaded questions
     res.status(201).json({
       message: 'Survey and questions uploaded successfully.',
       questions: uploadedQuestions,
-
     });
   } catch (error) {
-    // Log the error
     console.error('Error uploading survey and questions:', error);
 
     res.status(500).json({ message: 'Error uploading survey and questions' });
@@ -298,7 +360,7 @@ export const updateSurvey = asyncHandler(async (req, res) => {
     // Verify ownership before allowing update
     const existingSurvey = await prisma.survey.findUnique({
       where: { id: surveyId },
-      select: { userId: true },
+      select: { userId: true, startDate: true, endDate: true },
     });
 
     if (!existingSurvey) {
@@ -309,15 +371,70 @@ export const updateSurvey = asyncHandler(async (req, res) => {
       return res.status(403).json({ message: 'Access denied. You do not own this survey.' });
     }
 
-    // Validate dates if provided
-    if (startDate !== undefined && endDate !== undefined) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+    // Validate the COMBINED window whenever either date changes — a single-sided
+    // update used to skip validation entirely (could set end < start).
+    if (startDate !== undefined || endDate !== undefined) {
+      const start = startDate !== undefined ? new Date(startDate) : existingSurvey.startDate;
+      const end = endDate !== undefined ? new Date(endDate) : existingSurvey.endDate;
       if (isNaN(start.getTime()) || isNaN(end.getTime())) {
         return res.status(400).json({ message: 'Invalid date format' });
       }
       if (end <= start) {
         return res.status(400).json({ message: 'End date must be after start date' });
+      }
+    }
+
+    // Validate question types up front (canonicalized like creation)
+    if (questions && questions.length > 0) {
+      for (const q of questions) {
+        const normalized = normalizeQuestionType(q.type);
+        if (!normalized) {
+          return res.status(400).json({
+            message: `Invalid question type: ${String(q.type)}`,
+            validTypes: VALID_QUESTION_TYPES,
+          });
+        }
+        q.normalizedType = normalized;
+      }
+    }
+
+    // Structural-edit lock: once a survey has responses, answers are keyed by
+    // question id + option TEXT — changing structure silently corrupts every
+    // existing response and the analytics built on them. Metadata edits (title,
+    // description, dates, reward, cap) remain allowed; ending a survey early
+    // via endDate is the supported "close it" path.
+    if (questions && questions.length > 0) {
+      const responseCount = await prisma.surveyResponse.count({ where: { surveyId } });
+      if (responseCount > 0) {
+        return res.status(409).json({
+          code: 'EDIT_LOCKED',
+          message: 'This survey already has responses — its questions can no longer be edited. You can still update the title, description, dates, or end it early.',
+        });
+      }
+
+      // Validate conditional logic against the survey's FULL ordered question
+      // list (payload edits merged over the persisted questions, new questions
+      // appended) — the creation paths validate; the update path must too, or
+      // a partial update could store forward references/cycles/unknown
+      // operators that the submit-time evaluator then chokes on.
+      const existingQuestions = await prisma.uploadSurvey.findMany({
+        where: { surveyId },
+        select: { id: true, conditionalLogic: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const payloadById = new Map(questions.filter((q) => q.id).map((q) => [q.id, q]));
+      const merged = existingQuestions.map((e) => {
+        const incoming = payloadById.get(e.id);
+        return incoming
+          ? { id: e.id, conditionalLogic: incoming.conditionalLogic ?? null }
+          : e;
+      });
+      for (const q of questions) {
+        if (!q.id) merged.push({ id: `__new_${merged.length}`, conditionalLogic: q.conditionalLogic ?? null });
+      }
+      const logicErrors = validateConditionalLogic(merged);
+      if (logicErrors.length > 0) {
+        return res.status(400).json({ message: 'Invalid conditional logic', errors: logicErrors });
       }
     }
 
@@ -330,53 +447,61 @@ export const updateSurvey = asyncHandler(async (req, res) => {
     if (rewardAmount !== undefined) updateData.rewardAmount = rewardAmount;
     if (maxResponses !== undefined) updateData.maxResponses = maxResponses;
 
-    // Update the survey
-    const updatedSurvey = await prisma.survey.update({
-      where: { id: surveyId },
-      data: updateData,
-    });
+    // Survey metadata + question writes are atomic. Question updates are scoped
+    // to THIS survey via updateMany({ id, surveyId }) — the previous unscoped
+    // update({ where: { id: q.id } }) let a caller pass question ids belonging
+    // to OTHER surveys and tamper with them (IDOR).
+    const updatedSurvey = await prisma.$transaction(async (tx) => {
+      const updated = await tx.survey.update({
+        where: { id: surveyId },
+        data: updateData,
+      });
 
-    // Update or create questions
-    if (questions && questions.length > 0) {
-      await Promise.all(
-        questions.map(async (q) => {
+      if (questions && questions.length > 0) {
+        const unknownIds = [];
+        for (const q of questions) {
+          const data = {
+            text: q.text,
+            type: q.normalizedType,
+            options: JSON.stringify(q.options || []),
+            placeholder: q.placeholder || '',
+            minValue: q.minValue || null,
+            maxValue: q.maxValue || null,
+            required: q.required ?? true,
+            conditionalLogic: q.conditionalLogic ?? null,
+          };
           if (q.id) {
-            // Update existing question
-            await prisma.uploadSurvey.update({
-              where: { id: q.id },
-              data: {
-                text: q.text,
-                type: q.type,
-                options: JSON.stringify(q.options || []),
-                placeholder: q.placeholder || '',
-                minValue: q.minValue || null,
-                maxValue: q.maxValue || null,
-                required: q.required ?? true,
-              },
+            const result = await tx.uploadSurvey.updateMany({
+              where: { id: q.id, surveyId },
+              data,
             });
+            if (result.count === 0) unknownIds.push(q.id);
           } else {
-            // Create new question
-            await prisma.uploadSurvey.create({
-              data: {
-                text: q.text,
-                type: q.type,
-                options: JSON.stringify(q.options || []),
-                placeholder: q.placeholder || '',
-                minValue: q.minValue || null,
-                maxValue: q.maxValue || null,
-                required: q.required ?? true,
-                userId: updatedSurvey.userId,
-                surveyId: updatedSurvey.id,
-              },
+            await tx.uploadSurvey.create({
+              data: { ...data, userId: updated.userId, surveyId: updated.id },
             });
           }
-        })
-      );
-    }
+        }
+        if (unknownIds.length > 0) {
+          const err = new Error('unknown question ids');
+          err.unknownQuestionIds = unknownIds;
+          throw err; // rolls back the whole update
+        }
+      }
 
-    console.log('Survey updated successfully:', updatedSurvey);
+      return updated;
+    });
+
+    console.log('Survey updated successfully:', updatedSurvey.id);
     res.status(200).json({ message: 'Survey updated successfully', survey: updatedSurvey });
   } catch (error) {
+    if (error?.unknownQuestionIds) {
+      return res.status(400).json({
+        code: 'UNKNOWN_QUESTION_IDS',
+        message: 'Some question ids do not belong to this survey.',
+        ids: error.unknownQuestionIds,
+      });
+    }
     console.error('Error updating survey:', error);
     res.status(500).json({ message: 'Error updating survey' });
   }
@@ -404,12 +529,36 @@ export const deleteSurvey = asyncHandler(async (req, res) => {
       return res.status(403).json({ message: 'Access denied. You do not own this survey.' });
     }
 
-    // Clean up R2 file uploads before deleting survey
+    // A survey with responses cannot be deleted: SurveyResponse rows are the
+    // respondents' earning/audit records (points were credited against them and
+    // they carry payment fields), and the FK has no cascade — the old code
+    // 500'd here on P2003 after already deleting the questions. Owners should
+    // end the survey early (PUT endDate) instead.
+    const responseCount = await prisma.surveyResponse.count({ where: { surveyId } });
+    if (responseCount > 0) {
+      return res.status(409).json({
+        code: 'SURVEY_HAS_RESPONSES',
+        message: `This survey has ${responseCount} response(s) and cannot be deleted — respondents' earning records must be preserved. End the survey early instead (update its end date).`,
+      });
+    }
+
+    // Collect R2 keys BEFORE the delete (SurveyFileUpload cascades with the
+    // survey), but only delete the objects AFTER the DB commit — storage
+    // cleanup must never run for a delete that then fails.
     const fileUploads = await prisma.surveyFileUpload.findMany({
       where: { surveyId },
       select: { r2Key: true },
     });
 
+    // Atomic: questions (no DB cascade) + survey in one transaction — a crash
+    // between the two can no longer leave a question-less survey behind.
+    // SurveyFileUpload + SurveyWebhook cascade at the DB.
+    await prisma.$transaction([
+      prisma.uploadSurvey.deleteMany({ where: { surveyId } }),
+      prisma.survey.delete({ where: { id: surveyId } }),
+    ]);
+
+    // Best-effort storage cleanup — must never fail the request.
     if (fileUploads.length > 0) {
       const { deleteFile } = await import('../lib/r2.mjs');
       await Promise.allSettled(
@@ -417,18 +566,16 @@ export const deleteSurvey = asyncHandler(async (req, res) => {
       );
     }
 
-    // Delete the survey and its related questions (cascades handle the rest)
-    await prisma.uploadSurvey.deleteMany({
-      where: { surveyId },
-    });
-
-    await prisma.survey.delete({
-      where: { id: surveyId },
-    });
-
     console.log('Survey deleted successfully:', surveyId);
     res.status(200).json({ message: 'Survey deleted successfully' });
   } catch (error) {
+    // Race backstop: a response landed between the count and the delete
+    if (error?.code === 'P2003') {
+      return res.status(409).json({
+        code: 'SURVEY_HAS_RESPONSES',
+        message: 'This survey has responses and cannot be deleted — end it early instead.',
+      });
+    }
     console.error('Error deleting survey:', error);
     res.status(500).json({ message: 'Error deleting survey' });
   }
@@ -617,6 +764,24 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
     // user can simply retry instead of being permanently locked out by the
     // @@unique([userId, surveyId]) constraint with their points never granted.
     const surveyResponse = await prisma.$transaction(async (tx) => {
+      // Atomic maxResponses guard (the ads budget-guard pattern): the cap
+      // condition and the counter increment are ONE statement, so two racing
+      // submissions at capacity can't both pass. Surveys without a cap still
+      // increment the denormalized counter. A duplicate-attempt rollback
+      // (P2002 below) undoes the increment with the rest of the transaction.
+      const guard = await tx.survey.updateMany({
+        where: {
+          id: surveyId,
+          ...(survey.maxResponses != null ? { responsesSubmitted: { lt: survey.maxResponses } } : {}),
+        },
+        data: { responsesSubmitted: { increment: 1 } },
+      });
+      if (guard.count === 0) {
+        const full = new Error('Survey is full');
+        full.surveyFull = true;
+        throw full;
+      }
+
       const created = await tx.surveyResponse.create({
         data: {
           userId,
@@ -685,6 +850,15 @@ export const submitSurveyResponse = asyncHandler(async (req, res) => {
       submittedAt: surveyResponse.createdAt,
     });
   } catch (error) {
+    // Survey reached its response cap (atomic guard rejected the increment)
+    if (error?.surveyFull) {
+      return res.status(410).json({
+        success: false,
+        submitted: false,
+        code: 'SURVEY_FULL',
+        message: 'This survey has reached its maximum number of responses and is no longer accepting submissions.',
+      });
+    }
     // Handle duplicate submission (race condition hitting DB unique constraint)
     if (error.code === 'P2002') {
       return res.status(409).json({

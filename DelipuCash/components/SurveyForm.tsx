@@ -336,6 +336,10 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       }
 
       return {
+        // Builder-local id — the server uses it to remap conditionalLogic
+        // rule references (rule.sourceQuestionId) onto the DB-minted question
+        // UUIDs at creation time. Never persisted server-side.
+        clientId: q.id,
         text: q.text,
         type: q.type,
         options,
