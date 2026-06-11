@@ -872,6 +872,21 @@ export default function SurveysScreen(): React.ReactElement {
                 Tap the + button to get started
               </Text>
             )}
+            {/* Cross-tab CTA — an empty tab should point somewhere useful, not
+                dead-end (e.g. empty Active → check Upcoming; empty Completed →
+                find one to take). */}
+            {activeTab !== 'my-surveys' && (
+              <Pressable
+                onPress={() => setActiveTab(activeTab === 'running' ? 'upcoming' : 'running')}
+                style={[styles.emptyCta, { backgroundColor: withAlpha(colors.primary, 0.1) }]}
+                accessibilityRole="button"
+                accessibilityLabel={activeTab === 'running' ? 'Browse upcoming surveys' : 'See active surveys'}
+              >
+                <Text style={[styles.emptyCtaText, { color: colors.primary }]} maxFontSizeMultiplier={FONT_SCALE.body}>
+                  {activeTab === 'running' ? 'Browse upcoming surveys' : 'See active surveys'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         );
 
@@ -882,6 +897,7 @@ export default function SurveysScreen(): React.ReactElement {
     auth,
     colors,
     activeTab,
+    setActiveTab,
     handleAdClick,
     handleAdImpression,
     getSurveyPressHandler,
@@ -1207,6 +1223,7 @@ export default function SurveysScreen(): React.ReactElement {
         placeholder="Search surveys..."
         searchContext="Surveys"
         trendingSearches={['Market research', 'Customer feedback', 'Product survey', 'Opinion poll']}
+        resultsCount={search.trim().length > 0 ? currentSurveys.length : null}
       />
 
       {/* Templates Gallery Modal */}
@@ -1497,6 +1514,19 @@ const styles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
     marginTop: SPACING.lg,
+    textAlign: "center",
+  },
+  emptyCta: {
+    marginTop: SPACING.lg,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.xl,
+    borderRadius: RADIUS.full,
+    minHeight: COMPONENT_SIZE.touchTarget,
+    justifyContent: "center",
+  },
+  emptyCtaText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
     textAlign: "center",
   },
 });

@@ -1088,7 +1088,7 @@ const SurveyResponsesScreen = (): React.ReactElement => {
       accessibilityViewIsModal
       accessibilityLabel="Export options dialog"
     >
-      <View style={[styles.modalOverlay, { backgroundColor: withAlpha('#000000', 0.5) }]}>
+      <View style={[styles.modalOverlay, { backgroundColor: colors.backdrop }]}>
         <View 
           style={[
             styles.modalContent, 

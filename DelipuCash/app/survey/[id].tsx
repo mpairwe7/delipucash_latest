@@ -787,7 +787,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
 
             <Modal visible={showDropdownModal} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent>
               <TouchableOpacity
-                style={styles.dropdownOverlay}
+                style={[styles.dropdownOverlay, { backgroundColor: colors.backdrop }]}
                 activeOpacity={1}
                 onPress={() => setShowDropdownModal(false)}
               >
@@ -1384,7 +1384,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               </View>
             </View>
 
-            <View style={styles.modalStats}>
+            <View style={[styles.modalStats, { backgroundColor: withAlpha(colors.text, 0.04) }]}>
               <View style={styles.modalStatRow}>
                 <Clock size={18} color={colors.text} strokeWidth={1.5} />
                 <Text style={[styles.modalStatText, { color: colors.text }]}>Estimated time left ~ {formatDuration(Math.max(survey.questions.length - currentQuestionIndex - 1, 0) * 2)}</Text>
@@ -1734,7 +1734,7 @@ const styles = StyleSheet.create({
     padding: SPACING.md,
     gap: SPACING.sm,
     marginBottom: SPACING.lg,
-    backgroundColor: withAlpha("#000000", 0.02),
+    // backgroundColor applied inline: withAlpha(colors.text, 0.04) (theme-aware tint)
   },
   modalStatRow: {
     flexDirection: "row",
@@ -1812,7 +1812,7 @@ const styles = StyleSheet.create({
   },
   dropdownOverlay: {
     flex: 1,
-    backgroundColor: withAlpha("#000000", 0.5),
+    // backgroundColor applied inline: colors.backdrop (theme-aware scrim)
     justifyContent: "flex-end",
   },
   dropdownSheet: {

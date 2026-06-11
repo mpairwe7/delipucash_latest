@@ -6,6 +6,30 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey remediation, Phase 4: UX polish
+
+Final survey phase: light-mode-correct scrims, paywall UX, and discoverability.
+
+- **Theme-aware backdrop token.** New `ThemeColors.backdrop` (dark: 65% black; light:
+  45% near-black) — a fixed `withAlpha("#000000", 0.5)` scrim read as a heavy grey wash
+  in light mode. Applied to the attempt screen's dropdown sheet + submit-modal stats
+  tint and the responses screen's modal overlay. (Survey scope only; the app-wide scrim
+  rollout stays deferred.)
+- **Paywall UX completes the PR-#22 server gate.** `SurveyForm`'s generic create-error
+  alert now detects the subscription error and offers "View plans" → `/subscription`
+  instead of dead-ending — and surfaces the server's actual error message otherwise.
+- **Empty tabs cross-link instead of dead-ending**: empty Active → "Browse upcoming
+  surveys"; other empty tabs → "See active surveys" (44px target, a11y-labelled).
+- **Live search count while typing**: `SearchOverlay` gains an optional `resultsCount`
+  prop (additive — the videos screen is unaffected) rendered as a polite live region;
+  the surveys screen feeds it the debounced match count, so feedback no longer waits
+  for submit.
+
+> **Invariant:** survey overlays use the theme backdrop (no hardcoded black scrims); a
+> paywall rejection routes to plans; an empty tab always offers a next action. Tests:
+> `surveys-new.ui.test.tsx` (cross-tab CTA switches tabs). Client suite: 254 pass; tsc +
+> lint clean.
+
 ## 2026-06-11 — Survey remediation, Phase 3: client perf + robustness
 
 - **Typing no longer re-evaluates conditional logic.** `visibleQuestions` depended on

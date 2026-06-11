@@ -31,6 +31,7 @@ import {
   Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import * as Haptics from '@/utils/haptics';
 import {
   Plus,
@@ -370,8 +371,22 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
       Alert.alert('Success', 'Survey created successfully!', [
         { text: 'OK', onPress: onSuccess },
       ]);
-    } catch {
-      Alert.alert('Error', 'Failed to create survey. Please try again.');
+    } catch (err) {
+      // The server enforces the creator paywall (403 SUBSCRIPTION_REQUIRED) —
+      // route that case to the plans screen instead of a dead-end error.
+      const message = err instanceof Error ? err.message : '';
+      if (/subscription/i.test(message)) {
+        Alert.alert(
+          'Subscription required',
+          'An active survey subscription is needed to publish surveys.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'View plans', onPress: () => router.push('/subscription') },
+          ],
+        );
+      } else {
+        Alert.alert('Error', message || 'Failed to create survey. Please try again.');
+      }
     }
   };
 

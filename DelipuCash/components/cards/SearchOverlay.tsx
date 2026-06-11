@@ -60,6 +60,10 @@ export interface SearchOverlayProps {
   placeholder?: string;
   searchContext?: string;
   trendingSearches?: string[];
+  /** Live match count for the current query (null/undefined hides the line).
+   *  Lets screens surface "N results" WHILE typing instead of only after
+   *  submitting the search. */
+  resultsCount?: number | null;
 }
 
 // ============================================================================
@@ -146,6 +150,7 @@ function SearchOverlayComponent({
   placeholder = 'Search...',
   searchContext = 'content',
   trendingSearches = [],
+  resultsCount = null,
 }: SearchOverlayProps): React.ReactElement | null {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -304,6 +309,18 @@ function SearchOverlayComponent({
             )}
           </View>
 
+          {/* Live result count — visible while typing, not just after submit */}
+          {query.trim().length > 0 && resultsCount != null && (
+            <Text
+              style={[styles.liveCount, { color: colors.textMuted }]}
+              accessibilityLiveRegion="polite"
+            >
+              {resultsCount === 0
+                ? 'No matches yet'
+                : `${resultsCount} result${resultsCount === 1 ? '' : 's'}`}
+            </Text>
+          )}
+
           {/* ── Content ── */}
           <ScrollView
             keyboardShouldPersistTaps="handled"
@@ -416,6 +433,12 @@ function SearchOverlayComponent({
 const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
+  },
+  liveCount: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.sm,
   },
   overlay: {
     flex: 1,

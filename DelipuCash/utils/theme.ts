@@ -387,6 +387,9 @@ export interface ThemeColors {
   tabBackground: string;
   tabActive: string;
   tabInactive: string;
+  /** Modal/sheet scrim behind overlays — theme-aware (a fixed 50% black scrim
+   *  reads as a heavy grey wash in light mode). Pre-baked alpha. */
+  backdrop: string;
 }
 
 /**
@@ -429,6 +432,7 @@ const DARK_COLORS: ThemeColors = {
   tabBackground: '#000000',
   tabActive: '#FFFFFF',
   tabInactive: '#6B6B6B',
+  backdrop: 'rgba(0, 0, 0, 0.65)',
 };
 
 /**
@@ -454,6 +458,7 @@ const LIGHT_COLORS: ThemeColors = {
   tabBackground: '#FFFFFF',
   tabActive: '#000000',
   tabInactive: '#999999',
+  backdrop: 'rgba(17, 17, 17, 0.45)',
 };
 
 // ============================================================================
