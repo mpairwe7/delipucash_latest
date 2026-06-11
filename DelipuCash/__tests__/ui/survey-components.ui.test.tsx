@@ -14,6 +14,43 @@ jest.mock('@/services', () => ({
   formatCurrency: (n: number) => `UGX ${n}`,
 }));
 
+// Reward honesty: respondent-facing cards promise the config-driven completion
+// points (what submission actually credits) — never survey.rewardAmount, which
+// is the creator's unfunded per-response budget figure. Pin the config so the
+// label is deterministic: 10 pts → UGX 400.
+jest.mock('@/services/configHooks', () => ({
+  ...jest.requireActual('@/services/configHooks'),
+  useRewardConfig: () => ({
+    data: {
+      surveyCompletionPoints: 10,
+      pointsToCashNumerator: 2000,
+      pointsToCashDenominator: 50,
+      minWithdrawalPoints: 50,
+      defaultRegularRewardAmount: 200,
+      defaultInstantRewardAmount: 500,
+      referralBonusPoints: 60,
+    },
+  }),
+}));
+
+describe('SurveyCard reward honesty', () => {
+  it('promises a respondent the config-driven points, never survey.rewardAmount', () => {
+    renderWithProviders(
+      <SurveyCard survey={makeSurvey({ rewardAmount: 2000 })} testID="survey-s-1" />
+    );
+    expect(screen.getByText('+10 pts (~UGX 400)')).toBeOnTheScreen();
+    expect(screen.queryByText('UGX 2000')).toBeNull();
+  });
+
+  it('keeps showing the configured rewardAmount to the survey OWNER', () => {
+    renderWithProviders(
+      <SurveyCard survey={makeSurvey({ rewardAmount: 2000 })} isOwner testID="survey-s-1" />
+    );
+    expect(screen.getByText('UGX 2000')).toBeOnTheScreen();
+    expect(screen.queryByText(/\+10 pts/)).toBeNull();
+  });
+});
+
 describe('SurveyCard', () => {
   it('renders the title with an accessible "Survey:" label and testID', () => {
     renderWithProviders(

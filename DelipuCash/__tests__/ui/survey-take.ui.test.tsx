@@ -35,6 +35,23 @@ jest.mock('@/utils/auth', () => ({
   ...jest.requireActual('@/utils/auth'),
   useAuth: () => ({ auth: { user: { id: 'u-1' } }, isReady: true }),
 }));
+// Reward honesty: the hero promises the config-driven completion points (what
+// submission actually credits), never survey.rewardAmount. Pin the config:
+// 10 pts → UGX 400.
+jest.mock('@/services/configHooks', () => ({
+  ...jest.requireActual('@/services/configHooks'),
+  useRewardConfig: () => ({
+    data: {
+      surveyCompletionPoints: 10,
+      pointsToCashNumerator: 2000,
+      pointsToCashDenominator: 50,
+      minWithdrawalPoints: 50,
+      defaultRegularRewardAmount: 200,
+      defaultInstantRewardAmount: 500,
+      referralBonusPoints: 60,
+    },
+  }),
+}));
 // expo-document-picker lives behind this — stub so the top-level import doesn't pull native bindings.
 jest.mock('@/components/survey/FileUploadQuestion', () => ({
   __esModule: true,
@@ -128,6 +145,13 @@ describe('SurveyAttemptScreen — states', () => {
     expect(screen.getByRole('progressbar', { name: 'Question 1 of 1' })).toBeOnTheScreen();
     expect(screen.getByText('Q one')).toBeOnTheScreen();
     expect(screen.getByText('Required')).toBeOnTheScreen();
+  });
+
+  it('promises the config-driven points in the hero, never survey.rewardAmount', async () => {
+    await render(makeSurveyDetailQuery(makeSurveyWithQuestions([radio({ id: 'q1', text: 'Q one' })])));
+    expect(screen.getByText(/Earn 10 pts/)).toBeOnTheScreen();
+    // The factory's rewardAmount (500) must NOT be promised to the respondent.
+    expect(screen.queryByText(/Reward:.*500/)).toBeNull();
   });
 });
 

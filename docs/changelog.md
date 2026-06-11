@@ -6,6 +6,42 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey remediation, Phase 2: reward honesty (points now, payouts gated)
+
+The audit's headline product finding: respondent-facing UI promised
+`survey.rewardAmount` (creator-set, default UGX 2,000) on cards and the attempt screen,
+but submission credits only the config-driven `surveyCompletionPoints` (10 pts ≈ UGX 400).
+The full MoMo payout pipeline (`processSurveyPayout` + budget rollback) exists but is
+UNREACHABLE dead code — and activating it would be worse: `Survey.totalBudget` is a
+self-declared number with **no funding/escrow flow**, so payouts would disburse the
+PLATFORM's MoMo money against unfunded creator promises.
+
+Decision (maintainer): **honest points now; payout design documented + gated.**
+
+- **Respondent UI now promises what is actually credited.** `SurveyCard` (badge +
+  accessibility hint) and the attempt screen (hero pill + submit-modal stat) show
+  `+{points} pts (~UGX {pointsToUgx})` from the live reward config
+  (`useRewardConfig`/`pointsToUgx`) — never `rewardAmount`. **Owners** keep seeing their
+  configured `rewardAmount` (it remains their budget figure). The completion overlay was
+  already honest (it shows the actual `pointsAwarded`).
+- **Server:** a DORMANT-BY-DESIGN header on the payout pipeline explains why nothing may
+  call it until an escrow/funding product exists.
+- **Gated activation design** (do NOT build until escrow ships): at-submission atomic
+  budget spend (`amountDisbursed` increment guarded by the `totalBudget` ceiling — the
+  ads literal-ceiling `updateMany` pattern), persist `amountAwarded` + `paymentStatus:
+  PENDING` + phone/provider (`AppUser.phone` → `detectMoMoProvider`), fire
+  `processSurveyPayout` async post-commit (retry/backoff + rollback already exist),
+  points fallback when the pool is exhausted or no provider matches, a stale-PENDING
+  sweeper modeled on `cleanupStalePayments`, and freezing `rewardAmount`/flooring
+  `totalBudget` at `amountDisbursed` once responses exist. Activation criteria: an
+  escrow/funding flow + a product decision on cash-replaces-points.
+
+> **Invariant:** every reward number a respondent sees is the config-driven amount that
+> submission actually credits; `rewardAmount` is creator-facing only; the payout pipeline
+> stays uncallable until funded. Tests: `__tests__/ui/survey-components.ui.test.tsx`
+> (respondent vs owner labels), `__tests__/ui/survey-take.ui.test.tsx` (hero promises
+> config points, never rewardAmount). Client suite: 239 pass.
+
 ## 2026-06-11 — Survey remediation, Phase 1: server authz + data integrity
 
 Server half of the survey-screen remediation (from the survey screen + components audit).

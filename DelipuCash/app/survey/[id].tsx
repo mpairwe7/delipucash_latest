@@ -43,6 +43,7 @@ import * as Haptics from "@/utils/haptics";
 import { PrimaryButton } from "@/components";
 import { formatCurrency, formatDuration } from "@/services";
 import { useCheckSurveyAttempt, useSubmitSurvey, useSurvey } from "@/services/hooks";
+import { useRewardConfig, pointsToUgx } from "@/services/configHooks";
 import { useSurveyAttemptStore } from "@/store/SurveyAttemptStore";
 import { useShallow } from "zustand/react/shallow";
 import { UploadSurvey } from "@/types";
@@ -218,12 +219,23 @@ const SurveyAttemptScreen = (): React.ReactElement => {
   // Server state: TanStack Query
   const { data: surveyData, isLoading, error } = useSurvey(id || "");
   const submitSurveyMutation = useSubmitSurvey();
-  
+
   // Check if user has already attempted this survey (single attempt enforcement)
-  const { 
-    data: attemptStatus, 
-    isLoading: checkingAttempt 
+  const {
+    data: attemptStatus,
+    isLoading: checkingAttempt
   } = useCheckSurveyAttempt(id || "", userId);
+
+  // Honest reward display: what the respondent actually earns on completion is
+  // the config-driven points (credited at submission) — never
+  // survey.rewardAmount, which is the creator's per-response budget figure and
+  // is not paid out (MoMo payout pipeline dormant pending an escrow flow).
+  const { data: rewardConfig } = useRewardConfig();
+  const earnLabel = useMemo(() => {
+    const points = rewardConfig?.surveyCompletionPoints ?? 10;
+    const ugx = rewardConfig ? pointsToUgx(points, rewardConfig) : null;
+    return ugx != null ? `${points} pts (~${formatCurrency(ugx)})` : `${points} pts`;
+  }, [rewardConfig]);
 
   // Client state: Zustand store (draft auto-save, progress tracking)
   // ── State via useShallow (grouped, re-render safe) ──
@@ -1211,7 +1223,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
           <View style={styles.rewardRow}>
             <View style={[styles.rewardPill, { backgroundColor: colors.card, borderColor: withAlpha(colors.primary, 0.2) }]}>
               <CheckCircle2 size={16} color={colors.primary} strokeWidth={1.5} />
-              <Text style={[styles.rewardText, { color: colors.primary }]}>Reward: {formatCurrency(survey.rewardAmount)}</Text>
+              <Text style={[styles.rewardText, { color: colors.primary }]}>Earn {earnLabel}</Text>
             </View>
             <View style={[styles.rewardPill, { backgroundColor: colors.card, borderColor: withAlpha(colors.textMuted, 0.25) }]}>
               <ListChecks size={16} color={colors.text} strokeWidth={1.5} />
@@ -1376,7 +1388,7 @@ const SurveyAttemptScreen = (): React.ReactElement => {
               </View>
               <View style={styles.modalStatRow}>
                 <CheckCircle2 size={18} color={colors.primary} strokeWidth={1.5} />
-                <Text style={[styles.modalStatText, { color: colors.text }]}>Reward on completion: {formatCurrency(survey.rewardAmount)}</Text>
+                <Text style={[styles.modalStatText, { color: colors.text }]}>Earn on completion: {earnLabel}</Text>
               </View>
             </View>
 
