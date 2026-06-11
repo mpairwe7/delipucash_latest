@@ -51,6 +51,7 @@ import {
   Sparkles,
   Clock,
   Zap,
+  ArrowUp,
 } from "lucide-react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
@@ -59,6 +60,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   FadeIn,
   FadeInDown,
+  FadeOut,
+  runOnJS,
   useAnimatedScrollHandler,
   useSharedValue,
 } from "react-native-reanimated";
@@ -90,6 +93,7 @@ import {
   // Home-specific components
   PersonalizedHeader,
   HeroRewardCard,
+  HeroCardSkeleton,
   QuickActions,
   DashboardSkeleton,
   EarningOpportunitiesList,
@@ -124,6 +128,10 @@ import {
 import { useResponsiveLayout, FONT_SCALE } from '@/hooks/useResponsiveLayout';
 import { useSearch } from '@/hooks/useSearch';
 import { isSmallScreen } from '@/utils/responsive';
+
+// Show the scroll-to-top FAB once the user has scrolled roughly past the
+// hero + wallet fold. Evaluated on the UI thread; only flips React state on change.
+const SCROLL_TOP_THRESHOLD = 600;
 
 // Section identifiers for FlatList
 type SectionType =
@@ -276,9 +284,12 @@ export default function HomePage(): React.ReactElement {
   });
   const { showToast } = useToast();
 
-  // Scroll animation value
-  const scrollY = useSharedValue(0);
+  // Scroll-to-top FAB visibility. The shared value is the UI-thread latch so the
+  // scroll worklet only crosses to JS (setShowScrollTop) when visibility flips,
+  // not on every frame.
   const flatListRef = useRef<FlatList<DashboardSection>>(null);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const scrollTopShown = useSharedValue(false);
 
   // Data hooks with loading + error states
   const {
@@ -302,7 +313,7 @@ export default function HomePage(): React.ReactElement {
   } = useUpcomingSurveys();
   const { data: dailyReward, refetch: refetchDailyReward } = useDailyReward();
   const { data: dashboardStats, refetch: refetchStats } = useDashboardStats();
-  const { data: unreadCount } = useUnreadNotificationCount();
+  const { data: unreadCount, refetch: refetchUnreadCount } = useUnreadNotificationCount();
   const claimDailyReward = useClaimDailyReward();
 
   // Ad hooks - gated by premium status (premium users see no ads)
@@ -420,12 +431,24 @@ export default function HomePage(): React.ReactElement {
     featuredAdKey,
   ]);
 
-  // Scroll handler for animations
+  // Scroll handler — toggles the scroll-to-top FAB once the user passes the fold.
+  // Runs on the UI thread; only crosses to JS when the visibility actually changes.
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
-      scrollY.value = event.contentOffset.y;
+      const shouldShow = event.contentOffset.y > SCROLL_TOP_THRESHOLD;
+      if (shouldShow !== scrollTopShown.value) {
+        scrollTopShown.value = shouldShow;
+        runOnJS(setShowScrollTop)(shouldShow);
+      }
     },
   });
+
+  // Smoothly return to the top of the dashboard (scroll-to-top FAB).
+  const handleScrollToTop = useCallback(() => {
+    triggerHaptic('light');
+    flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+    AccessibilityInfo.announceForAccessibility('Scrolled to top');
+  }, []);
 
   // Refresh handler
   const onRefresh = useCallback(async (): Promise<void> => {
@@ -442,6 +465,7 @@ export default function HomePage(): React.ReactElement {
       refetchStats(),
       refetchAds(),
       refetchLeaderboard(),
+      refetchUnreadCount(),
     ]);
 
     setRefreshing(false);
@@ -451,7 +475,7 @@ export default function HomePage(): React.ReactElement {
   }, [
     refetch, refetchVideos, refetchQuestions, refetchRunningSurveys,
     refetchUpcomingSurveys, refetchDailyReward, refetchStats,
-    refetchAds, refetchLeaderboard,
+    refetchAds, refetchLeaderboard, refetchUnreadCount,
   ]);
 
   // Claim daily reward handler — guarded on availability
@@ -618,7 +642,15 @@ export default function HomePage(): React.ReactElement {
     ({ item, index }) => {
       switch (item.type) {
         case "hero-reward":
-          if (!dailyReward) return null;
+          // Show a skeleton (not null) while the reward query is in flight so the
+          // card doesn't pop in later and shove the rest of the feed downward.
+          if (!dailyReward) {
+            return (
+              <View style={styles.sectionContainer}>
+                <HeroCardSkeleton />
+              </View>
+            );
+          }
           return (
             <View style={styles.sectionContainer}>
               <HeroRewardCard
@@ -799,16 +831,18 @@ export default function HomePage(): React.ReactElement {
                     </Text>
                   </View>
                 ) : (<>
-                <View style={styles.opportunitiesHeader}>
-                  <Sparkles size={14} color={colors.warning} />
-                  <Text
-                    style={[styles.opportunitiesSubtitle, { color: colors.textSecondary }]}
-                    allowFontScaling
-                    maxFontSizeMultiplier={FONT_SCALE.body}
-                  >
-                    Personalized earning opportunities
-                  </Text>
-                </View>
+                {earningOpportunities.length > 0 && (
+                  <View style={styles.opportunitiesHeader}>
+                    <Sparkles size={14} color={colors.warning} />
+                    <Text
+                      style={[styles.opportunitiesSubtitle, { color: colors.textSecondary }]}
+                      allowFontScaling
+                      maxFontSizeMultiplier={FONT_SCALE.body}
+                    >
+                      Personalized earning opportunities
+                    </Text>
+                  </View>
+                )}
                 <EarningOpportunitiesList
                   opportunities={earningOpportunities}
                   onOpportunityPress={handleOpportunityPress}
@@ -1167,7 +1201,7 @@ export default function HomePage(): React.ReactElement {
         keyExtractor={keyExtractor}
         renderItem={renderSection}
         onScroll={scrollHandler}
-        scrollEventThrottle={200}
+        scrollEventThrottle={16}
         contentContainerStyle={[
           styles.flatListContent,
           {
@@ -1230,6 +1264,26 @@ export default function HomePage(): React.ReactElement {
         searchContext="Home"
         trendingSearches={['Watch & earn', 'Surveys', 'Instant rewards', 'Cash out']}
       />
+
+      {/* Scroll-to-top FAB — appears once the user scrolls past the fold */}
+      {showScrollTop && (
+        <Animated.View
+          entering={FadeIn.duration(200)}
+          exiting={FadeOut.duration(200)}
+          style={[styles.scrollTopButton, { bottom: insets.bottom + SPACING.lg }]}
+        >
+          <Pressable
+            onPress={handleScrollToTop}
+            style={[styles.scrollTopButtonInner, { backgroundColor: colors.primary }]}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll to top"
+            accessibilityHint="Returns to the top of the dashboard"
+            hitSlop={8}
+          >
+            <ArrowUp size={22} color="#FFFFFF" strokeWidth={2} />
+          </Pressable>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1435,5 +1489,22 @@ const styles = StyleSheet.create({
   bannerAdContainer: {
     marginVertical: SPACING.md,
     alignItems: "center",
+  },
+
+  // Scroll-to-top FAB
+  scrollTopButton: {
+    position: "absolute",
+    right: SPACING.lg,
+    width: 48,
+    height: 48,
+    borderRadius: RADIUS.full,
+    zIndex: 1000,
+    ...SHADOWS.lg,
+  },
+  scrollTopButtonInner: {
+    flex: 1,
+    borderRadius: RADIUS.full,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });
