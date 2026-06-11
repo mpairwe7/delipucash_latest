@@ -6,6 +6,69 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey remediation, Phase 1: server authz + data integrity
+
+Server half of the survey-screen remediation (from the survey screen + components audit).
+Closes an IDOR, a broken delete path, an unenforced response cap, a client-only paywall,
+and the bug that made conditional logic dead end-to-end.
+
+- **IDOR closed.** `updateSurvey`'s per-question writes used
+  `uploadSurvey.update({ where: { id } })` unscoped to the owned survey — any survey
+  owner could tamper with ANY question of ANY other survey by passing foreign ids. Now
+  `updateMany({ id, surveyId })`; unknown ids → 400 `UNKNOWN_QUESTION_IDS` and the whole
+  update (now one `$transaction`) rolls back. Single-sided date updates validate the
+  combined window; question types are validated; `conditionalLogic` is no longer dropped.
+- **Structural-edit lock.** Once a survey has responses, question edits return 409
+  `EDIT_LOCKED` (answers are keyed by question id + option text — edits silently
+  corrupted every existing response and the analytics built on them). Metadata edits
+  (title/description/dates/reward/cap) stay allowed; ending early via `endDate` is the
+  supported close path.
+- **deleteSurvey fixed.** It claimed "cascades handle the rest", but `SurveyResponse`
+  has no cascade — deleting any answered survey 500'd on P2003 AFTER already deleting
+  the questions (and R2 files). Now: responses exist → 409 `SURVEY_HAS_RESPONSES`
+  (respondents' earning records are preserved; end the survey instead); zero-response
+  deletes run questions+survey in one `$transaction` with R2 cleanup AFTER the commit;
+  P2003 race backstop → 409.
+- **maxResponses enforced (atomically).** It was never checked — capped surveys accepted
+  unlimited responses. New denormalized `Survey.responsesSubmitted` (migration
+  `20260611090000_survey_response_guard`, COUNT-backfilled) + the ads atomic-spend
+  pattern: cap condition + increment in ONE `updateMany` inside the submission
+  transaction; cap reached → 410 `SURVEY_FULL`; a duplicate-attempt rollback undoes the
+  increment too.
+- **Server-side paywall.** `/create` + `/upload` accepted any authenticated user — the
+  subscription gate was client-only. New `utils/surveyAccess.mjs#requireSurveyCreatorAccess`
+  (ADMIN/MODERATOR bypass, `surveysubscriptionStatus`/legacy `subscriptionStatus`
+  ACTIVE, or unexpired SUCCESSFUL MoMo SURVEY payment — mirrors
+  `getUnifiedSubscriptionStatus`) → 403 `SUBSCRIPTION_REQUIRED`.
+- **uploadSurvey finally validates** (it validated nothing): title/questions/text
+  presence, dates, canonical types, conditional-logic references; creation is atomic
+  (survey + questions in one transaction — no more empty surveys on partial failure).
+- **Conditional logic resurrected.** The builder references questions by client-side ids
+  (`q_<ts>_<n>`) inside rules; the server minted fresh UUIDs and stored the rules
+  untouched — `rule.sourceQuestionId` never matched at attempt time, so every
+  app-created rule was dead (an `equals` show-rule hid its question forever; the
+  server's symmetric submit-time check masked it). The client now sends `clientId` per
+  question (`SurveyForm.tsx`); the server validates references (new
+  `lib/surveyConditionalLogic.mjs`, an ESM port of the client validator) and remaps
+  every rule onto the created UUIDs inside the creation transaction.
+- **Type vocabulary unified.** `createSurvey`'s whitelist rejected the app's real types
+  (`radio`/`paragraph`/`number`/`boolean`) and accepted unrenderable ones
+  (`multiple_choice`/`textarea`/`nps`/`slider`) — an unknown required type bricks the
+  attempt (renderer default-cases to text, `isAnswerValid` returns false → Next disabled
+  forever). New `lib/surveyQuestionTypes.mjs`: canonical list = renderer vocabulary;
+  legacy aliases normalize (`multiple_choice→radio`, `textarea→paragraph`,
+  `nps/slider→rating`). Applied to create/upload/update.
+- **Rate limits** (`utils/surveyRateLimit.mjs`): submission 30/min/IP, creation
+  30/hour/IP. **PII logs** of full question payloads removed (ids/counts only).
+
+> **Invariant:** survey mutations require ownership; question writes are scoped to the
+> owned survey; a survey with responses can be ended but never structurally edited or
+> deleted; a survey accepts at most `maxResponses` responses (atomic guard); creation
+> requires an active survey subscription, validates the renderer type vocabulary, and
+> remaps conditional-logic ids so rules reference real questions. Tests:
+> `server/test/surveySecurity.test.js`, `surveyUpload.test.js`, `surveyIntegrity.test.js`
+> (+ `surveySubmit.test.js` extended). Server suite: 109 pass.
+
 ## 2026-06-10 — Infra: production DB moved Supabase → Neon; deploy workflow refit to migrate-only
 
 The production Supabase project (`awvfsqlizoynsvqycegr`) became unreachable (pooler:

@@ -315,6 +315,10 @@ model Survey {
   branding           Json?
   totalBudget        Float?
   amountDisbursed    Float            @default(0)
+  // Denormalized response counter — the atomic maxResponses guard increments it
+  // with a conditional updateMany (responsesSubmitted < maxResponses) inside the
+  // submission transaction, making the cap race-safe.
+  responsesSubmitted Int              @default(0)
 
   @@index([userId])
   @@index([startDate, endDate])

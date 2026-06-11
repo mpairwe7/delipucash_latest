@@ -1,6 +1,8 @@
 import express from 'express';
 import { createSurvey, getSurveysByStatus, uploadSurvey, submitSurveyResponse, getSurveyById, getSurveyResponses, checkSurveyAttempt, getAllSurveys, updateSurvey, deleteSurvey, getSurveyAnalytics, getSurveyPayoutSummary } from '../controllers/surveyController.mjs';
 import { verifyToken } from '../utils/verifyUser.mjs';
+import { requireSurveyCreatorAccess } from '../utils/surveyAccess.mjs';
+import { surveySubmitRateLimit, surveyCreateRateLimit } from '../utils/surveyRateLimit.mjs';
 import jwt from 'jsonwebtoken';
 
 const router = express.Router();
@@ -29,9 +31,13 @@ router.get('/:surveyId/attempt', verifyToken, checkSurveyAttempt);
 router.get('/:surveyId/responses', verifyToken, getSurveyResponses);
 router.get('/:surveyId/analytics', verifyToken, getSurveyAnalytics);
 router.get('/:surveyId/payout-summary', verifyToken, getSurveyPayoutSummary);
-router.post('/create', verifyToken, createSurvey);
-router.post('/upload', verifyToken, uploadSurvey);
-router.post('/:surveyId/responses', verifyToken, submitSurveyResponse);
+// Creation: server-side paywall (the client gate alone was bypassable by
+// direct API calls) + a modest rate limit.
+router.post('/create', surveyCreateRateLimit, verifyToken, requireSurveyCreatorAccess, createSurvey);
+router.post('/upload', surveyCreateRateLimit, verifyToken, requireSurveyCreatorAccess, uploadSurvey);
+// Submission: rate-limited; the @@unique([userId,surveyId]) constraint stays
+// the deep defense against double-crediting.
+router.post('/:surveyId/responses', surveySubmitRateLimit, verifyToken, submitSurveyResponse);
 router.put('/:surveyId', verifyToken, updateSurvey);
 router.delete('/:surveyId', verifyToken, deleteSurvey);
 

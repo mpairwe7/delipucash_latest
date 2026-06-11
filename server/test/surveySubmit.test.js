@@ -18,7 +18,11 @@ import { test, expect, mock, beforeEach } from 'bun:test';
 
 // ── Stub singletons before importing the controller ────────────────────────────
 const prismaMock = {
-  survey: { findUnique: mock(async () => null) },
+  survey: {
+    findUnique: mock(async () => null),
+    // Atomic maxResponses guard inside the submit transaction — count 1 = capacity available
+    updateMany: mock(async () => ({ count: 1 })),
+  },
   surveyResponse: {
     findFirst: mock(async () => null),
     create: mock(async () => ({ id: 'resp-1', createdAt: new Date('2026-01-01T00:00:00.000Z') })),
@@ -87,6 +91,7 @@ function activeSurvey(overrides = {}) {
 beforeEach(() => {
   for (const m of [
     prismaMock.survey.findUnique,
+    prismaMock.survey.updateMany,
     prismaMock.surveyResponse.findFirst,
     prismaMock.surveyResponse.create,
     prismaMock.surveyResponse.count,
@@ -96,6 +101,7 @@ beforeEach(() => {
     m.mockClear();
   }
   // Re-assert default happy-path implementations (mockClear keeps impl, but be explicit).
+  prismaMock.survey.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.surveyResponse.findFirst.mockResolvedValue(null);
   prismaMock.surveyResponse.create.mockResolvedValue({
     id: 'resp-1',
