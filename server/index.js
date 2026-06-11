@@ -41,6 +41,7 @@ import surveyWebhookRoutes from './routes/surveyWebhookRoutes.mjs';
 import surveyTemplateRoutes from './routes/surveyTemplateRoutes.mjs';
 import surveyCollabRoutes from './routes/surveyCollabRoutes.mjs';
 import surveyImportRoutes from './routes/surveyImportRoutes.mjs';
+import surveyAiRoutes from './routes/surveyAiRoutes.mjs';
 import configRoutes from './routes/configRoutes.mjs';
 import followRoutes from './routes/followRoutes.mjs';
 import transactionRoutes from './routes/transactionRoutes.mjs';
@@ -153,6 +154,7 @@ app.use('/api/surveys', surveyWebhookRoutes); // Survey webhook routes
 app.use('/api/surveys', surveyTemplateRoutes); // Survey template routes
 app.use('/api/surveys', surveyCollabRoutes); // Survey collaboration routes
 app.use('/api/surveys', surveyImportRoutes); // Survey import preview & samples
+app.use('/api/surveys', surveyAiRoutes); // Survey AI generation (POST /ai/generate)
 // Real-time SSE routes — only mounted when REALTIME_SSE_ENABLED=true. When
 // disabled, clients receive 404 and fall back to polling (their default).
 if (REALTIME_ENABLED) {

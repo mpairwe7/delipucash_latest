@@ -43,8 +43,10 @@ import {
   Code2,
   Lock,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react-native';
 import SurveyForm from '../components/SurveyForm';
+import { AiSurveyPanel } from '@/components/survey/AiSurveyPanel';
 import { PrimaryButton } from '@/components/PrimaryButton';
 import {
   SPACING,
@@ -67,7 +69,7 @@ import { UserRole } from '@/types';
 // TYPES & INTERFACES
 // ============================================================================
 
-type TabKey = 'build' | 'import';
+type TabKey = 'build' | 'import' | 'ai';
 
 interface TabConfig {
   key: TabKey;
@@ -159,9 +161,10 @@ const CreateSurveyScreen: React.FC = () => {
   const builderActions = useBuilderActions();
   const hydratedRef = useRef(false);
 
-  // State
+  // State — the FAB's "Conversational (AI)" option routes here with
+  // mode=conversational; open the AI tab for it.
   const [activeTab, setActiveTab] = useState<TabKey>(
-    params.mode === 'import' ? 'import' : 'build'
+    params.mode === 'conversational' ? 'ai' : params.mode === 'import' ? 'import' : 'build'
   );
   const [isReducedMotion, setIsReducedMotion] = useState(false);
 
@@ -257,21 +260,40 @@ const CreateSurveyScreen: React.FC = () => {
     setActiveTab(tab);
   }, []);
 
+  // AI panel produced a draft — load it into the builder and switch to Build so
+  // the creator reviews/edits before publishing. Never auto-publishes.
+  const handleAiGenerated = useCallback(
+    (result: { title: string; description: string; questions: Parameters<typeof builderActions.loadQuestions>[0] }) => {
+      if (result.title) builderActions.setSurveyTitle(result.title);
+      if (result.description) builderActions.setSurveyDescription(result.description);
+      builderActions.loadQuestions(result.questions);
+      setActiveTab('build');
+    },
+    [builderActions],
+  );
+
   // Tab configuration
   const tabs: TabConfig[] = [
     {
       key: 'build',
-      label: 'Build Survey',
+      label: 'Build',
       description: responsive.isPhone ? 'Design manually' : 'Design with live preview',
       icon: <PenTool size={ICON_SIZE.base} color={activeTab === 'build' ? colors.primaryText : colors.textSecondary} />,
       accessibilityHint: 'Create a survey by adding questions manually',
     },
     {
+      key: 'ai',
+      label: 'AI',
+      description: responsive.isPhone ? 'Describe it' : 'Generate from a prompt',
+      icon: <Sparkles size={ICON_SIZE.base} color={activeTab === 'ai' ? colors.primaryText : colors.textSecondary} />,
+      accessibilityHint: 'Generate a survey from a natural-language description',
+    },
+    {
       key: 'import',
-      label: 'Import File',
-      description: responsive.isPhone ? 'JSON, CSV, Excel, TSV' : 'Upload a ready-made survey file',
+      label: 'Import',
+      description: responsive.isPhone ? 'JSON, CSV, TSV' : 'Upload a ready-made survey file',
       icon: <Upload size={ICON_SIZE.base} color={activeTab === 'import' ? colors.primaryText : colors.textSecondary} />,
-      accessibilityHint: 'Import a survey from a JSON, CSV, Excel, or TSV file',
+      accessibilityHint: 'Import a survey from a JSON, CSV, or TSV file',
     },
   ];
 
@@ -636,14 +658,20 @@ const CreateSurveyScreen: React.FC = () => {
             },
           ]}
         >
-          {activeTab === 'import' && renderImportHelper()}
-          
-          <SurveyForm
-            key={activeTab}
-            startWithImport={activeTab === 'import'}
-            onSuccess={handleSuccess}
-            onCancel={handleCancel}
-          />
+          {activeTab === 'ai' ? (
+            <AiSurveyPanel onGenerated={handleAiGenerated} />
+          ) : (
+            <>
+              {activeTab === 'import' && renderImportHelper()}
+
+              <SurveyForm
+                key={activeTab}
+                startWithImport={activeTab === 'import'}
+                onSuccess={handleSuccess}
+                onCancel={handleCancel}
+              />
+            </>
+          )}
         </View>
       </ScrollView>
     </Animated.View>
