@@ -147,6 +147,7 @@
     "@storybook/react-native-web-vite": "10.4.2",
     "@testing-library/react-native": "13.3.3",
     "@types/jest": "^29.5.12",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "~19.1.10",
     "eslint": "^9.39.3",
     "eslint-config-expo": "~10.0.0",

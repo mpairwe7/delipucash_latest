@@ -1,6 +1,12 @@
 /**
  * Survey Import Wizard Component
- * CSV/Excel/JSON import wizard for bulk question creation (2026)
+ * CSV/TSV/JSON import wizard for bulk question creation (2026)
+ *
+ * NOTE: Excel (.xlsx) is intentionally NOT supported — there is no spreadsheet
+ * parser on the client or server, so a real .xlsx would have failed to parse.
+ * Spreadsheet import is CSV/TSV (parsed with papaparse for correct handling of
+ * quoted fields, embedded newlines, and delimiter detection). To import from
+ * Excel, export the sheet as CSV first.
  *
  * Features:
  * - Step-by-step import flow (select → preview → confirm)
@@ -33,7 +39,6 @@ import {
 import {
   FileJson,
   FileSpreadsheet,
-  FileText,
   Upload,
   Download,
   Check,
@@ -51,6 +56,7 @@ import {
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import Papa from 'papaparse';
 import * as Haptics from '@/utils/haptics';
 import {
   SPACING,
@@ -73,7 +79,7 @@ import { surveyApi } from '@/services/surveyApi';
 // TYPES
 // ============================================================================
 
-type ImportFileType = 'json' | 'csv' | 'excel';
+type ImportFileType = 'json' | 'csv';
 type ImportStep = 'select' | 'preview' | 'validate' | 'complete';
 
 interface QuestionData {
@@ -114,9 +120,12 @@ interface ImportWizardProps {
   useServerParsing?: boolean;
 }
 
+// Renderer vocabulary — must match the attempt screen + the server
+// (lib/surveyQuestionTypes.mjs). file_upload is included so an import that
+// declares it round-trips instead of being silently coerced to text.
 const VALID_QUESTION_TYPES = [
   'text', 'paragraph', 'radio', 'checkbox', 'dropdown',
-  'rating', 'boolean', 'date', 'time', 'number',
+  'rating', 'boolean', 'date', 'time', 'number', 'file_upload',
 ];
 
 const QUESTION_TYPE_LABELS: Record<string, string> = {
@@ -130,6 +139,7 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
   date: 'Date',
   time: 'Time',
   number: 'Number',
+  file_upload: 'File Upload',
 };
 
 // Stable references for FlatList items (avoid re-renders)
@@ -169,52 +179,19 @@ function normalizeLineEndings(content: string): string {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-function parseCSVLine(line: string, delimiter: string = ','): string[] {
-  const values: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (char === '"' && !inQuotes) {
-      inQuotes = true;
-    } else if (char === '"' && inQuotes) {
-      if (nextChar === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = false;
-      }
-    } else if (char === delimiter && !inQuotes) {
-      values.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  values.push(current.trim());
-  return values;
-}
-
-function detectDelimiter(content: string): ',' | '\t' | ';' {
-  const firstLine = content.split('\n')[0] || '';
-  let tabCount = 0, commaCount = 0, semicolonCount = 0;
-  let inQuotes = false;
-
-  for (const char of firstLine) {
-    if (char === '"') inQuotes = !inQuotes;
-    else if (!inQuotes) {
-      if (char === '\t') tabCount++;
-      else if (char === ',') commaCount++;
-      else if (char === ';') semicolonCount++;
-    }
-  }
-
-  if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return '\t';
-  if (semicolonCount > commaCount) return ';';
-  return ',';
+/**
+ * Parse delimited text into rows with papaparse. Handles quoted fields,
+ * embedded newlines/commas, and CSV vs TSV vs semicolon delimiters — the
+ * hand-rolled line-splitter this replaced broke on a quoted cell that spanned
+ * lines (it split on \n first). `|` is excluded from the delimiter guesses
+ * because it is the in-cell options separator.
+ */
+function parseDelimitedRows(content: string): string[][] {
+  const result = Papa.parse<string[]>(content, {
+    skipEmptyLines: 'greedy',
+    delimitersToGuess: [',', '\t', ';'],
+  });
+  return (result.data || []).map((row) => row.map((cell) => (cell ?? '').trim()));
 }
 
 function isValidQuestionType(type: string): boolean {
@@ -225,7 +202,6 @@ function getMimeType(fileType: ImportFileType): string {
   switch (fileType) {
     case 'json': return 'application/json';
     case 'csv': return 'text/csv';
-    case 'excel': return 'text/tab-separated-values';
   }
 }
 
@@ -318,18 +294,17 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
   const parseSpreadsheetContent = useCallback((content: string): ParsedImport => {
     const cleanContent = normalizeLineEndings(stripBOM(content));
-    const lines = cleanContent.split('\n').filter(line => line.trim());
+    const rows = parseDelimitedRows(cleanContent);
     const errors: string[] = [];
     const warnings: string[] = [];
     const invalidRows: InvalidRow[] = [];
 
-    if (lines.length < 2) {
+    if (rows.length < 2) {
       errors.push('File must have a header row and at least one data row');
       return { questions: [], errors, warnings, invalidRows };
     }
 
-    const delimiter = detectDelimiter(cleanContent);
-    const rawHeaders = parseCSVLine(lines[0], delimiter).map(h => h.replace(/['"]/g, '').trim());
+    const rawHeaders = rows[0].map(h => h.replace(/['"]/g, '').trim());
     const columnMappings = autoMapColumns(rawHeaders);
 
     const fieldIndex = (field: TargetField): number => {
@@ -357,8 +332,8 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
     });
 
     const questions: QuestionData[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const values = parseCSVLine(lines[i], delimiter);
+    for (let i = 1; i < rows.length; i++) {
+      const values = rows[i];
       const text = values[textIndex]?.replace(/^["']|["']$/g, '').trim();
 
       if (!text) {
@@ -418,8 +393,9 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
     try {
       const mimeTypes: Record<ImportFileType, string[]> = {
         json: ['application/json'],
-        csv: ['text/csv', 'text/comma-separated-values'],
-        excel: ['application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'text/tab-separated-values'],
+        // CSV card covers TSV too — the parser auto-detects the delimiter.
+        // text/plain is the common fallback OSes report for .csv/.tsv.
+        csv: ['text/csv', 'text/comma-separated-values', 'text/tab-separated-values', 'text/plain'],
       };
 
       const result = await DocumentPicker.getDocumentAsync({
@@ -602,8 +578,7 @@ export const ImportWizard: React.FC<ImportWizardProps> = ({
 
       {([
         { type: 'json', label: 'JSON', icon: <FileJson size={28} color={colors.primary} />, desc: 'Structured data format' },
-        { type: 'csv', label: 'CSV', icon: <FileSpreadsheet size={28} color={colors.success} />, desc: 'Comma-separated values' },
-        { type: 'excel', label: 'Excel/TSV', icon: <FileText size={28} color={colors.warning} />, desc: 'Spreadsheet formats' },
+        { type: 'csv', label: 'CSV / TSV', icon: <FileSpreadsheet size={28} color={colors.success} />, desc: 'Comma- or tab-separated values' },
       ] as const).map((item) => (
         <TouchableOpacity
           key={item.type}
