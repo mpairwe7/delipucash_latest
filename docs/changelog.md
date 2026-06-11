@@ -6,6 +6,49 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey creation overhaul, Phase 4: real AI survey builder (NVIDIA NIM + Groq)
+
+Makes the FAB's "Conversational (AI)" option real. It used to navigate to
+`/create-survey?mode=conversational` (a param the screen ignored → blank builder), and
+the 1,347-line `ConversationalBuilder` it nominally pointed at was a **scripted state
+machine, never rendered anywhere, and not AI**. This adds genuine LLM generation —
+**without Anthropic**, per the product decision: open instruction models via **NVIDIA NIM
+(primary)** and **Groq (fallback)**, OpenAI-compatible Chat Completions over plain
+server-side `fetch` (no vendor SDK).
+
+- **`server/lib/aiSurveyGenerator.mjs`** — provider-neutral generator. Resolves providers
+  from env (NVIDIA first, Groq fallback; included only when their key is set), calls
+  Chat Completions with JSON mode + a strict renderer-vocabulary schema, then **never
+  trusts the output**: parses JSON (tolerating prose-wrapping), normalizes types via the
+  shared `normalizeQuestionType`, downgrades under-optioned choice questions to text,
+  drops inverted bounds. **Validate-and-repair**: one repair re-prompt on bad *output*,
+  fall through NVIDIA→Groq on a *transport* error, `AiUnavailableError` (→503) when nothing
+  is configured, `AiGenerationError` (→502) when all providers fail. Per-request
+  `AbortController` timeout. **Keys and prompts are never logged** (counts/lengths only).
+- **`POST /api/surveys/ai/generate`** (`surveyAiRoutes` + `surveyAiController`) — behind the
+  same `surveyCreateRateLimit` + `verifyToken` + `requireSurveyCreatorAccess` (paywall) as
+  creation. Validates prompt presence/length and count (1–25). Returns a **draft only** —
+  it never persists a survey.
+- **Client** — `services/aiSurveyApi.ts` maps the draft to `BuilderQuestionData[]`;
+  `components/survey/AiSurveyPanel.tsx` is a prompt UI (examples, char counter, loading,
+  graceful error with "build manually" fallback). `create-survey.tsx` gains an **AI tab**
+  (and `mode=conversational` opens it); a generated draft loads into the builder and
+  switches to **Build** for review/edit — **human-in-the-loop, never auto-published**. The
+  stale import-tab "Excel" copy was corrected to "CSV, TSV" to match Phase 2.
+- **Secrets** (names only — never committed): `NVIDIA_API_KEY`, `GROQ_API_KEY` (+ optional
+  `*_MODEL`/`*_BASE_URL`) in gitignored `server/.env` and Vercel production env. Both have
+  free tiers. **The feature is inert until at least one key is set** (endpoint 503s; the
+  builder still works). Documented in `server/.env.example`.
+
+> **Invariant:** AI generation produces an editable draft the creator reviews before
+> publishing; it never auto-creates a survey; it is auth-gated, paywalled, and rate-limited
+> like manual creation; it degrades gracefully (one provider down → fallback; none
+> configured → clear 503, builder unaffected); no API key or prompt is ever logged. Tests:
+> `server/test/aiSurveyGenerator.test.js` (parse/normalize, repair retry, NVIDIA→Groq
+> fallback, unavailable), `server/test/surveyAiController.test.js` (validation + error
+> mapping), `__tests__/aiSurveyApi.test.ts` (draft→builder mapping, error surfacing) — all
+> with `fetch` mocked, no live LLM call. Server 134 pass; client 277 pass.
+
 ## 2026-06-11 — Survey creation overhaul, Phase 3: builder validation parity + honest controls
 
 The builder would publish structures that render badly or block respondents, and
