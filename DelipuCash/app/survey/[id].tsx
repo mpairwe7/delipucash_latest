@@ -57,7 +57,7 @@ import {
   useTheme,
   withAlpha,
 } from "@/utils/theme";
-import { evaluateConditions } from "@/utils/conditionalLogic";
+import { evaluateConditions, getLogicSourceIds, buildLogicAnswersKey } from "@/utils/conditionalLogic";
 import type { ConditionalLogicConfig } from "@/types";
 import { FileUploadQuestion } from "@/components/survey/FileUploadQuestion";
 import { SurveyCompletionOverlay } from "@/components/survey/SurveyCompletionOverlay";
@@ -138,73 +138,56 @@ const toParsedOption = (opt: unknown): ParsedOption => {
   return { id: text, text };
 };
 
-const parseQuestionOptions = (question: UploadSurvey): ParsedOption[] => {
+/**
+ * Parse a question's serialized options ONCE and derive every per-type config
+ * from the same parsed value. Replaces four helpers that each re-parsed the
+ * same JSON (~5 JSON.parse per question per survey load). Semantics preserved
+ * exactly per type.
+ */
+interface ParsedQuestionConfig {
+  options: ParsedOption[];
+  maxRating: number;
+  booleanLabels: BooleanLabels;
+  numberConstraints: NumberConstraints;
+}
+
+const parseQuestionConfig = (question: UploadSurvey): ParsedQuestionConfig => {
+  let parsed: unknown = null;
   try {
-    const parsed = JSON.parse(question.options || "[]");
-    if (Array.isArray(parsed)) {
-      return parsed.map(toParsedOption);
-    }
-
-    if (parsed && typeof parsed === "object") {
-      if (Array.isArray((parsed as { options?: unknown[] }).options)) {
-        return (parsed as { options: unknown[] }).options.map(toParsedOption);
-      }
-
-      if (Array.isArray((parsed as { labels?: string[] }).labels)) {
-        return (parsed as { labels: string[] }).labels.map(toParsedOption);
-      }
-    }
-
-    return [];
+    parsed = JSON.parse(question.options || "null");
   } catch {
-    return [];
+    parsed = null;
   }
-};
+  const obj = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+    ? (parsed as { options?: unknown[]; labels?: string[]; max?: number; min?: number; yesLabel?: string; noLabel?: string })
+    : null;
 
-const getMaxRating = (question: UploadSurvey): number => {
-  if (question.maxValue) return question.maxValue;
-  try {
-    const parsed = JSON.parse(question.options || "{}");
-    if (parsed && typeof parsed === "object") {
-      if ((parsed as { max?: number }).max) return (parsed as { max: number }).max;
-      if (Array.isArray((parsed as { labels?: string[] }).labels)) return (parsed as { labels: string[] }).labels.length;
-    }
-  } catch {
-    // ignore parse errors
+  // Options: plain array, { options: [...] }, or { labels: [...] }
+  let options: ParsedOption[] = [];
+  if (Array.isArray(parsed)) {
+    options = parsed.map(toParsedOption);
+  } else if (obj) {
+    if (Array.isArray(obj.options)) options = obj.options.map(toParsedOption);
+    else if (Array.isArray(obj.labels)) options = obj.labels.map(toParsedOption);
   }
-  return 5;
-};
 
-const getBooleanLabels = (question: UploadSurvey): BooleanLabels => {
-  try {
-    const parsed = JSON.parse(question.options || "{}");
-    if (parsed && typeof parsed === "object") {
-      return {
-        yesLabel: (parsed as { yesLabel?: string }).yesLabel || "Yes",
-        noLabel: (parsed as { noLabel?: string }).noLabel || "No",
-      };
-    }
-  } catch {
-    // ignore
-  }
-  return { yesLabel: "Yes", noLabel: "No" };
-};
+  // Rating scale: column max, then options.max, then labels length, then 5
+  const maxRating =
+    question.maxValue ||
+    (obj?.max ? obj.max : Array.isArray(obj?.labels) ? obj.labels.length : 5) ||
+    5;
 
-const getNumberConstraints = (question: UploadSurvey): NumberConstraints => {
-  const constraints: NumberConstraints = {
-    min: question.minValue ?? null,
-    max: question.maxValue ?? null,
+  const booleanLabels: BooleanLabels = {
+    yesLabel: obj?.yesLabel || "Yes",
+    noLabel: obj?.noLabel || "No",
   };
-  try {
-    const parsed = JSON.parse(question.options || "{}");
-    if (parsed && typeof parsed === "object") {
-      if ((parsed as { min?: number }).min != null) constraints.min = (parsed as { min: number }).min;
-      if ((parsed as { max?: number }).max != null) constraints.max = (parsed as { max: number }).max;
-    }
-  } catch {
-    // ignore
-  }
-  return constraints;
+
+  const numberConstraints: NumberConstraints = {
+    min: obj?.min != null ? obj.min : question.minValue ?? null,
+    max: obj?.max != null ? obj.max : question.maxValue ?? null,
+  };
+
+  return { options, maxRating, booleanLabels, numberConstraints };
 };
 
 const SurveyAttemptScreen = (): React.ReactElement => {
@@ -344,29 +327,49 @@ const SurveyAttemptScreen = (): React.ReactElement => {
       description: surveyData.description || "",
       rewardAmount: surveyData.rewardAmount || 0,
       estimatedTime: (surveyData.uploads?.length || 0) * 2,
-      questions: (surveyData.uploads || []).map((q: UploadSurvey) => ({
-        id: q.id,
-        text: q.text,
-        type: (q.type as QuestionType) || "text",
-        required: q.required ?? true,
-        options: parseQuestionOptions(q),
-        maxRating: getMaxRating(q),
-        placeholder: q.placeholder,
-        booleanLabels: q.type === "boolean" ? getBooleanLabels(q) : undefined,
-        numberConstraints: q.type === "number" ? getNumberConstraints(q) : undefined,
-        conditionalLogic: q.conditionalLogic ?? null,
-      })),
+      questions: (surveyData.uploads || []).map((q: UploadSurvey) => {
+        const config = parseQuestionConfig(q); // one JSON.parse per question
+        return {
+          id: q.id,
+          text: q.text,
+          type: (q.type as QuestionType) || "text",
+          required: q.required ?? true,
+          options: config.options,
+          maxRating: config.maxRating,
+          placeholder: q.placeholder,
+          booleanLabels: q.type === "boolean" ? config.booleanLabels : undefined,
+          numberConstraints: q.type === "number" ? config.numberConstraints : undefined,
+          conditionalLogic: q.conditionalLogic ?? null,
+        };
+      }),
     };
   }, [surveyData]);
 
-  // Filter questions based on conditional logic — hidden questions are skipped
+  // Filter questions based on conditional logic — hidden questions are skipped.
+  //
+  // Perf: visibility depends ONLY on answers to rule-SOURCE questions, so the
+  // memo is keyed on those (logicAnswersKey), not the whole answers map.
+  // Previously every keystroke into ANY question re-filtered all questions and
+  // re-ran every rule; now typing into a non-source question evaluates nothing.
+  const logicSourceIds = useMemo(
+    () => (survey ? getLogicSourceIds(survey.questions) : new Set<string>()),
+    [survey]
+  );
+  const logicAnswersKey = useMemo(
+    () => buildLogicAnswersKey(answers, logicSourceIds),
+    [answers, logicSourceIds]
+  );
   const visibleQuestions = useMemo(() => {
     if (!survey) return [];
+    if (logicSourceIds.size === 0) return survey.questions; // no logic anywhere
     return survey.questions.filter((q) => {
       if (!q.conditionalLogic?.rules?.length) return true;
       return evaluateConditions(q.conditionalLogic, answers);
     });
-  }, [survey, answers]);
+    // `answers` is intentionally represented by logicAnswersKey: only the
+    // rule-source answers can change the result.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [survey, logicSourceIds, logicAnswersKey]);
 
   // Keep the store's question count in sync with the *visible* set so navigation
   // (goNext / setCurrentIndex) clamps against questions the user can actually

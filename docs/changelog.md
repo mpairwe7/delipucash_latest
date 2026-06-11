@@ -6,6 +6,43 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey remediation, Phase 3: client perf + robustness
+
+- **Typing no longer re-evaluates conditional logic.** `visibleQuestions` depended on
+  the whole `answers` map, so every keystroke into ANY question re-filtered all
+  questions and re-ran every rule (O(questions×rules) per keystroke). It is now keyed
+  on `buildLogicAnswersKey(answers, getLogicSourceIds(questions))` (new pure helpers in
+  `utils/conditionalLogic.ts`) — only answers to rule-SOURCE questions can trigger
+  evaluation. The existing commit-count perf baseline could not catch this (commits
+  stay constant; its fixture has no logic), so a dedicated lock exists:
+  `__tests__/perf/survey-logic.perf.test.tsx` spies on `evaluateConditions` and asserts
+  ZERO calls while typing into a non-source question.
+- **One `JSON.parse` per question.** The four per-type parse helpers in
+  `app/survey/[id].tsx` (options/rating/boolean/number) each re-parsed the same
+  serialized options (~5 parses per question) — merged into `parseQuestionConfig`,
+  semantics preserved per type.
+- **Submit migrated off the legacy API layer.** `useSubmitSurvey` now calls
+  `surveyApi.submitResponse` (reads already lived in `services/surveyApi.ts`; the
+  legacy `services/api.ts` path had drifted — untyped `pointsAwarded`/`cashEquivalent`).
+  `SurveySubmissionResult` gained the typed reward fields; retry stays 0.
+- **Builder drafts survive corruption.** The persist `migrate` is now the exported pure
+  `sanitizePersistedBuilderState`: a structurally invalid draft (non-array questions,
+  junk entries — e.g. a truncated AsyncStorage write) used to crash the builder on open
+  with no way out short of clearing app data; it now resets to a clean draft, and valid
+  drafts still get the v0→v2 migrations. Tests: `__tests__/surveyBuilderStore.test.ts`.
+- **File uploads are cancellable.** `uploadSurveyFile` accepts an `AbortSignal`
+  (r2UploadService precedent: cancel must abort the actual XHR, not just UI state),
+  `useUploadSurveyFile` exposes `cancel()`, and `FileUploadQuestion` shows a Cancel
+  button while uploading — previously a stalled large file left the respondent stuck
+  (Next is blocked during upload) with no out short of killing the app. Tests:
+  `__tests__/surveyFileUpload.abort.test.ts` (pre-aborted short-circuit, mid-flight
+  abort, normal completion).
+
+> **Invariant:** keystrokes into non-source questions evaluate zero conditional rules;
+> a corrupt builder draft never takes the builder down; an in-flight survey file upload
+> can always be aborted client-side. Client suite: 253 pass (38 suites); tsc + lint
+> clean.
+
 ## 2026-06-11 — Survey remediation, Phase 2: reward honesty (points now, payouts gated)
 
 The audit's headline product finding: respondent-facing UI promised
