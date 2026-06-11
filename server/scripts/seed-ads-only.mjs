@@ -12,7 +12,6 @@ const BASE_URL = process.env.API_BASE_URL || 'https://delipucash-latest.vercel.a
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@delipucash.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123456';
 
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 // High-quality images (Unsplash)
 const IMG = {

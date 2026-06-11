@@ -56,7 +56,6 @@ async function checkSurveyExpiringNotifications(userId) {
   }
 }
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Shared validation for survey creation payloads (createSurvey + uploadSurvey).
@@ -942,7 +941,7 @@ export const getSurveysByStatus = asyncHandler(async (req, res) => {
   const currentDate = new Date();
   console.log(`Current date: ${currentDate}`);
 
-  let whereClause = {};
+  let whereClause;
 
   if (status === 'running') {
     console.log('Filtering for running surveys');
@@ -1225,6 +1224,7 @@ export const getSurveyAnalytics = asyncHandler(async (req, res) => {
 
 // Detect MoMo provider from Ugandan phone number
 // Handles: 07xxxxxxxx, 256xxxxxxxx, +256xxxxxxxx
+// eslint-disable-next-line no-unused-vars -- DORMANT BY DESIGN: part of the unwired payout pipeline documented below
 function detectMoMoProvider(phone) {
   const cleaned = phone.replace(/[^0-9]/g, '');
   // Normalize to local 10-digit format (0xxxxxxxxx)
@@ -1260,6 +1260,7 @@ function detectMoMoProvider(phone) {
 const SURVEY_PAYOUT_MAX_RETRIES = 3;
 const SURVEY_PAYOUT_BASE_DELAY_MS = 1000;
 
+// eslint-disable-next-line no-unused-vars -- DORMANT BY DESIGN: see block comment above
 async function processSurveyPayout({ responseId, phone, provider, amount, userId, surveyId }, attempt = 1) {
   try {
     console.log(`Processing survey payout: response=${responseId}, amount=${amount}, provider=${provider} (attempt ${attempt}/${SURVEY_PAYOUT_MAX_RETRIES})`);

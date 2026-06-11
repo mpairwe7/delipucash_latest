@@ -2,7 +2,6 @@ import asyncHandler from "express-async-handler";
 import prisma from '../lib/prisma.mjs';
 import bcrypt from 'bcryptjs';
 import { errorHandler } from "../utils/error.mjs";
-import jwt from 'jsonwebtoken';
 import { send2FACode, sendPasswordResetEmail, isEmailConfigured } from '../lib/emailService.mjs';
 import crypto from 'crypto';
 
@@ -11,7 +10,7 @@ import { createNotificationFromTemplateHelper } from './notificationController.m
 import { getRewardConfig as fetchRewardConfig } from '../lib/rewardConfig.mjs';
 
 // Legacy constant — kept only for reference; new tokens use tokenUtils.mjs
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
+const _JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '30d';
 
 // ===========================================
 // 2FA Helper Functions
@@ -106,7 +105,7 @@ const clearAll2FAFields = (userId) =>
   });
 
 // User Signup
-export const signup = asyncHandler(async (req, res, next) => {
+export const signup = asyncHandler(async (req, res, _next) => {
   const {email: rawEmail, password,firstName,lastName,phone, referralCode: incomingReferralCode } = req.body;
   const email = rawEmail?.toLowerCase().trim();
 
@@ -267,7 +266,7 @@ export const signup = asyncHandler(async (req, res, next) => {
 // Revokes ALL sessions to immediately log the user out everywhere.
 //
 // Mandate: https://support.google.com/googleplay/android-developer/answer/13327826
-export const requestAccountDeletion = asyncHandler(async (req, res, next) => {
+export const requestAccountDeletion = asyncHandler(async (req, res, _next) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -381,7 +380,7 @@ export const requestAccountDeletion = asyncHandler(async (req, res, next) => {
 // ===========================================
 // Push Token Registration (Expo Push Service)
 // ===========================================
-export const registerPushToken = asyncHandler(async (req, res, next) => {
+export const registerPushToken = asyncHandler(async (req, res, _next) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
   const { expoPushToken } = req.body || {};
@@ -402,7 +401,7 @@ export const registerPushToken = asyncHandler(async (req, res, next) => {
 // ===========================================
 // Referral Stats (current user)
 // ===========================================
-export const getReferralStats = asyncHandler(async (req, res, next) => {
+export const getReferralStats = asyncHandler(async (req, res, _next) => {
   const userId = req.user?.id;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
@@ -639,7 +638,7 @@ export const signin = asyncHandler(async (req, res, next) => {
 
 
 // User SignOut
-export const signOut = asyncHandler(async (req, res, next) => {
+export const signOut = asyncHandler(async (req, res, _next) => {
   const userId = req.user?.id;
   const bearerToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -661,7 +660,7 @@ export const signOut = asyncHandler(async (req, res, next) => {
         data: { isActive: false, logoutTime: new Date(), refreshTokenHash: null, refreshTokenExpiresAt: null },
       });
     }
-  } catch (error) {
+  } catch (_error) {
     // Non-critical — session cleanup failure shouldn't block signout
   }
 

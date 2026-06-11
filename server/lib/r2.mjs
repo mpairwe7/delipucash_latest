@@ -267,7 +267,7 @@ export async function uploadFile(buffer, key, mimeType, metadata = {}) {
     };
   } catch (error) {
     console.error('[R2] Upload error:', error);
-    throw new Error(`Failed to upload file: ${error.message}`);
+    throw new Error(`Failed to upload file: ${error.message}`, { cause: error });
   }
 }
 
@@ -460,7 +460,7 @@ export async function uploadMultipart(buffer, key, mimeType, metadata = {}) {
     }
     
     console.error('[R2] Multipart upload error:', error);
-    throw new Error(`Failed to upload file: ${error.message}`);
+    throw new Error(`Failed to upload file: ${error.message}`, { cause: error });
   }
 }
 
@@ -484,7 +484,7 @@ export async function getSignedDownloadUrl(key, expiresIn = URL_EXPIRY.SIGNED_UR
     return await getSignedUrl(r2Client, command, { expiresIn });
   } catch (error) {
     console.error('[R2] Signed URL generation error:', error);
-    throw new Error(`Failed to generate signed URL: ${error.message}`);
+    throw new Error(`Failed to generate signed URL: ${error.message}`, { cause: error });
   }
 }
 
@@ -509,7 +509,7 @@ export async function getSignedUploadUrl(key, mimeType, expiresIn = URL_EXPIRY.U
     return { url, key };
   } catch (error) {
     console.error('[R2] Presigned upload URL generation error:', error);
-    throw new Error(`Failed to generate upload URL: ${error.message}`);
+    throw new Error(`Failed to generate upload URL: ${error.message}`, { cause: error });
   }
 }
 
@@ -531,7 +531,7 @@ export async function deleteFile(key) {
     return true;
   } catch (error) {
     console.error('[R2] Delete error:', error);
-    throw new Error(`Failed to delete file: ${error.message}`);
+    throw new Error(`Failed to delete file: ${error.message}`, { cause: error });
   }
 }
 
@@ -602,7 +602,7 @@ export async function listFiles(prefix, maxKeys = 1000) {
     }));
   } catch (error) {
     console.error('[R2] List files error:', error);
-    throw new Error(`Failed to list files: ${error.message}`);
+    throw new Error(`Failed to list files: ${error.message}`, { cause: error });
   }
 }
 

@@ -1,4 +1,3 @@
-import prisma from '../lib/prisma.mjs';
 
 export const getExploreItems = async (req, res) => {
   try {

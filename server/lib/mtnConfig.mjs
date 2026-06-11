@@ -143,7 +143,7 @@ export const getMtnToken = async (product = 'collection') => {
         status: error.response?.status,
         message: error.message,
       });
-      throw new Error(`MTN API Error (${product}): ${error.response?.data?.message || error.message}`);
+      throw new Error(`MTN API Error (${product}): ${error.response?.data?.message || error.message}`, { cause: error });
     }
   };
 

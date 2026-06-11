@@ -3,6 +3,25 @@
 Dated audit trail of substantive change sets: what changed, why, the invariants it
 establishes, and the tests that lock it in.
 
+## 2026-06-11 — Storybook: QueryClientProvider in preview (visual CI un-broken)
+
+**Scope:** `.storybook/preview.tsx`. Branch `fix/storybook-query-provider`.
+
+The "Storybook + Playwright pixel diff" check (advisory) failed on every PR because
+the two `SurveyCard` ended-state stories crashed on render with
+`No QueryClient set, use QueryClientProvider to set one` — `SurveyCard` gained
+`useRewardConfig` (TanStack Query) in the survey overhaul (#26–#30), and the
+Storybook preview decorator provided SafeArea but no QueryClient. Added a
+`QueryClientProvider` with a deterministic client (`retry: false`, no refocus/
+reconnect refetch, `staleTime: Infinity`) so static-Storybook queries fail fast and
+components render their no-data fallback without refetch churn between screenshot
+and baseline.
+
+**Invariant:** every story renders under providers matching the app's runtime
+expectations; queries in stories settle deterministically.
+**Verified:** full visual suite locally — 21/21 pass, and the two recovered stories
+match the *committed* baselines (no pixel drift, no baseline churn). `tsc` clean.
+
 ## 2026-06-11 — Server dependency security audit (72 Dependabot alerts → 0)
 
 **Scope:** `server/package.json`, `server/bun.lock`, `server/package-lock.json`.
@@ -146,3 +165,38 @@ status) or actively harmful (auto-claims on load). The hook's fallback comment
 also mean the daily-reward feature is currently inert. Left untouched because the
 correct fix (a dedicated GET status endpoint) is a backend-contract change and
 risks breaking the claim flow — flag for product/backend owner.
+
+## 2026-06-11 — Server: working lint gate + 54-finding cleanup (incl. 1 real bug)
+
+**Scope:** server-wide. Branch `chore/server-lint`. The server's `lint` script had
+never worked — `eslint` was not even a devDependency and no CI job ran it.
+
+### What changed
+
+- Added `eslint` + `@eslint/js` + `globals` (dev) with a correctness-focused flat
+  config (`server/eslint.config.mjs`): recommended rules, node/bun globals,
+  `_`-prefix escape hatch for intentionally-unused bindings, `allowEmptyCatch`,
+  bun-test globals for `test/**`. Both lockfiles regenerated (bun + npm stay in sync).
+- New non-required CI job **Server — lint** in `ci.yml` (mirrors the server-test
+  job's install/caching).
+- Fixed all 54 findings. The notable one is a **real production bug** in
+  `submitRewardQuestionAnswer` (rewardQuestionController): the catch block logged
+  `rewardQuestionId`/`authenticatedUser`, both `const`s scoped *inside* the `try` —
+  on the concurrent-winner race path the log line itself threw `ReferenceError`,
+  turning a graceful 409 ("another user claimed the spot first") into a 500 for a
+  user who answered correctly. Hoisted both above the `try` (+ optional chaining in
+  the log).
+- Mechanical remainder: 13 `throw` sites now attach `{ cause: error }`
+  (payment/MTN/Airtel/R2 wrappers — preserves original stacks in logs); unused
+  Express `next` params `_`-prefixed (NOT removed — Express dispatches error
+  middleware by arity); dead imports/consts deleted; unused destructured fields
+  dropped. `detectMoMoProvider`/`processSurveyPayout` in surveyController are
+  "DORMANT BY DESIGN" per their block comment — suppressed with a reasoned
+  eslint-disable rather than deleted. `JWT_EXPIRES_IN` ("kept only for reference")
+  `_`-prefixed rather than deleted.
+
+### Verification
+
+`bun run lint`: 0 problems. `bun test`: 137/137 (unchanged). All edits applied via
+exactly-once string-match codemod (fails loudly on drift); riskiest hunks reviewed
+manually.
