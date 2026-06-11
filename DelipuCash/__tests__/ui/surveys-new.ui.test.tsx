@@ -137,6 +137,15 @@ describe('SurveysScreen — feed states', () => {
     expect(screen.getByText('No active surveys')).toBeOnTheScreen();
   });
 
+  it('empty tab offers a cross-tab CTA instead of dead-ending', () => {
+    mockRunning.mockReturnValue(makeSurveyQuery([]));
+    renderWithProviders(<SurveysScreen />);
+
+    const cta = screen.getByRole('button', { name: 'Browse upcoming surveys' });
+    fireEvent.press(cta);
+    expect(useSurveyUIStore.getState().activeTab).toBe('upcoming');
+  });
+
   it('does not render survey cards while the active query is loading', () => {
     mockRunning.mockReturnValue(makeSurveyQuery([], { isLoading: true, data: [] }));
     renderWithProviders(<SurveysScreen />);
