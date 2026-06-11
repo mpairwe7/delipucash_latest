@@ -33,7 +33,10 @@ appId: com.arolainc.DelipuCash
 - assertVisible:
     text: 'Processing'
     optional: true
-- assertVisible:
-    text: 'sent'
+# assertVisible does not accept `timeout` (cloud validator rejects it:
+# "Unknown Property: timeout") — extendedWaitUntil is the wait-with-timeout command.
+- extendedWaitUntil:
+    visible:
+      text: 'sent'
     timeout: 30000
     optional: true
