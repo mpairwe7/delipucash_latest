@@ -58,6 +58,10 @@ export interface SurveySubmissionResult {
   success: boolean;
   submitted: boolean;
   reward: number;
+  /** Config-driven points credited at submission (what the UI shows) */
+  pointsAwarded?: number;
+  /** UGX equivalent of pointsAwarded at the config conversion rate */
+  cashEquivalent?: number;
   responseId?: string;
   submittedAt?: string;
   message: string;

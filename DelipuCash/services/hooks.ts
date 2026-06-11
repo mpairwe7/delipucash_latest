@@ -24,6 +24,7 @@ import {
 } from "@/types";
 import { keepPreviousData, useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
+import { surveyApi } from "./surveyApi";
 import { useAuthStore } from '@/utils/auth/store';
 import { useInstantRewardStore } from '@/store/InstantRewardStore';
 import { useSSEStore, selectNeedsPolling } from '@/store/SSEStore';
@@ -865,7 +866,10 @@ export function useSubmitSurvey(): UseMutationResult<
   return useMutation({
     mutationKey: ['surveys', 'submit'],
     mutationFn: async ({ surveyId, responses }) => {
-      const response = await api.surveys.submit(surveyId, responses);
+      // Submit through the dedicated survey API layer (services/surveyApi.ts) —
+      // reads already live there; the legacy services/api.ts submit path had
+      // drifted (untyped pointsAwarded/cashEquivalent).
+      const response = await surveyApi.submitResponse(surveyId, responses);
       if (!response.success) throw new Error(response.error);
       return response.data;
     },

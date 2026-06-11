@@ -11,7 +11,7 @@
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { createProvidersWrapper } from '@/test-utils';
 import { useSubmitSurvey } from '@/services/hooks';
-import api from '@/services/api';
+import { surveyApi } from '@/services/surveyApi';
 
 describe('useSubmitSurvey', () => {
   let submitSpy: jest.SpyInstance;
@@ -20,7 +20,7 @@ describe('useSubmitSurvey', () => {
 
   it('does NOT retry the POST when the submission fails', async () => {
     submitSpy = jest
-      .spyOn(api.surveys, 'submit')
+      .spyOn(surveyApi, 'submitResponse')
       .mockResolvedValue({ success: false, error: 'network error' } as never);
 
     const { result } = renderHook(() => useSubmitSurvey(), {
@@ -38,7 +38,7 @@ describe('useSubmitSurvey', () => {
   });
 
   it('returns the awarded points on success', async () => {
-    submitSpy = jest.spyOn(api.surveys, 'submit').mockResolvedValue({
+    submitSpy = jest.spyOn(surveyApi, 'submitResponse').mockResolvedValue({
       success: true,
       data: { pointsAwarded: 10, cashEquivalent: 400, message: 'ok' },
     } as never);

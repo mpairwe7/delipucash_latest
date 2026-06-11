@@ -52,6 +52,10 @@ export interface UploadProgressEvent {
 
 export interface UploadOptions {
   onProgress?: (event: UploadProgressEvent) => void;
+  /** Abort the in-flight XHR when this fires (see r2UploadService precedent —
+   *  without it, "cancel" only mutated UI state while the upload kept running
+   *  and could still finalize server-side). */
+  signal?: AbortSignal;
 }
 
 // ============================================================================
@@ -65,9 +69,14 @@ export async function uploadSurveyFile(
   fileName: string,
   mimeType: string,
   options: UploadOptions = {},
-): Promise<{ success: boolean; data?: SurveyFileUploadResult; error?: string }> {
+): Promise<{ success: boolean; data?: SurveyFileUploadResult; error?: string; cancelled?: boolean }> {
   const token = getAuthToken();
   if (!token) return { success: false, error: 'Not authenticated' };
+
+  // Pre-aborted: short-circuit before allocating an XHR.
+  if (options.signal?.aborted) {
+    return { success: false, error: 'Upload cancelled', cancelled: true };
+  }
 
   return new Promise((resolve) => {
     const formData = new FormData();
@@ -82,6 +91,10 @@ export async function uploadSurveyFile(
     xhr.open('POST', `${API_BASE_URL}/api/surveys/${surveyId}/files`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
+    const onAbortSignal = () => xhr.abort();
+    options.signal?.addEventListener('abort', onAbortSignal);
+    const cleanup = () => options.signal?.removeEventListener('abort', onAbortSignal);
+
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && options.onProgress) {
         options.onProgress({
@@ -93,6 +106,7 @@ export async function uploadSurveyFile(
     };
 
     xhr.onload = () => {
+      cleanup();
       try {
         const response = JSON.parse(xhr.responseText);
         if (xhr.status >= 200 && xhr.status < 300 && response.success) {
@@ -105,7 +119,13 @@ export async function uploadSurveyFile(
       }
     };
 
+    xhr.onabort = () => {
+      cleanup();
+      resolve({ success: false, error: 'Upload cancelled', cancelled: true });
+    };
+
     xhr.onerror = () => {
+      cleanup();
       resolve({ success: false, error: 'Network error during upload' });
     };
 

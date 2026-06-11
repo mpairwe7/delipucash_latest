@@ -5,7 +5,7 @@
  * Provides progress tracking and optimistic cache updates.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   uploadSurveyFile,
@@ -30,16 +30,22 @@ interface UseUploadSurveyFileParams {
 export function useUploadSurveyFile() {
   const [progress, setProgress] = useState(0);
   const queryClient = useQueryClient();
+  // One controller per in-flight upload — cancel() aborts the actual XHR
+  // (not just UI state; see r2UploadService abort precedent).
+  const abortRef = useRef<AbortController | null>(null);
 
   const mutation = useMutation<
-    { success: boolean; data?: SurveyFileUploadResult; error?: string },
+    { success: boolean; data?: SurveyFileUploadResult; error?: string; cancelled?: boolean },
     Error,
     UseUploadSurveyFileParams
   >({
-    mutationFn: ({ surveyId, questionId, fileUri, fileName, mimeType }) =>
-      uploadSurveyFile(surveyId, questionId, fileUri, fileName, mimeType, {
+    mutationFn: ({ surveyId, questionId, fileUri, fileName, mimeType }) => {
+      abortRef.current = new AbortController();
+      return uploadSurveyFile(surveyId, questionId, fileUri, fileName, mimeType, {
         onProgress: (event: UploadProgressEvent) => setProgress(event.progress),
-      }),
+        signal: abortRef.current.signal,
+      });
+    },
     onSuccess: (result, variables) => {
       if (result.success) {
         // Invalidate any cached file queries for this survey
@@ -52,6 +58,9 @@ export function useUploadSurveyFile() {
     onError: () => {
       setProgress(0);
     },
+    onSettled: () => {
+      abortRef.current = null;
+    },
   });
 
   const reset = useCallback(() => {
@@ -59,11 +68,18 @@ export function useUploadSurveyFile() {
     mutation.reset();
   }, [mutation]);
 
+  /** Abort the in-flight upload (no-op when idle). The mutation settles with
+   *  { cancelled: true } rather than throwing. */
+  const cancel = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
   return {
     ...mutation,
     progress,
     isUploading: mutation.isPending,
     reset,
+    cancel,
   };
 }
 

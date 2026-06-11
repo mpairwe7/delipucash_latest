@@ -89,6 +89,7 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
     progress,
     isUploading,
     reset: resetUpload,
+    cancel: cancelUpload,
   } = useUploadSurveyFile();
 
   const { mutate: deleteFile, isPending: isDeleting } = useDeleteSurveyFile();
@@ -245,6 +246,20 @@ export const FileUploadQuestion: React.FC<FileUploadQuestionProps> = ({
           <Text style={[styles.uploadingText, { color: colors.primary }]}>
             Uploading... {progress}%
           </Text>
+          {/* Cancel aborts the actual XHR — previously a stalled large file left
+              the user stuck (Next is blocked while uploading) with no way out. */}
+          <TouchableOpacity
+            onPress={() => {
+              cancelUpload();
+              resetUpload();
+            }}
+            style={[styles.cancelBtn, { backgroundColor: withAlpha(colors.error, 0.1) }]}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel file upload"
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={[styles.cancelBtnText, { color: colors.error }]}>Cancel</Text>
+          </TouchableOpacity>
         </View>
         <View style={[styles.progressTrack, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
           <View style={[styles.progressFill, { backgroundColor: colors.primary, width: `${progress}%` }]} />
@@ -400,6 +415,16 @@ const styles = StyleSheet.create({
     borderRadius: RADIUS.md,
   },
   retryText: {
+    fontFamily: TYPOGRAPHY.fontFamily.medium,
+    fontSize: TYPOGRAPHY.fontSize.sm,
+  },
+  cancelBtn: {
+    marginLeft: 'auto',
+    paddingVertical: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    borderRadius: RADIUS.md,
+  },
+  cancelBtnText: {
     fontFamily: TYPOGRAPHY.fontFamily.medium,
     fontSize: TYPOGRAPHY.fontSize.sm,
   },

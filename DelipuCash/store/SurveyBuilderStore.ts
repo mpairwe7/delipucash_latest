@@ -201,6 +201,66 @@ const initialState: SurveyBuilderState = {
 
 type FullBuilderStore = SurveyBuilderState & SurveyBuilderActions & UndoState & UndoActions;
 
+/**
+ * Migration + corruption guard for the persisted builder draft.
+ *
+ * Exported pure so it's directly unit-testable. A corrupt or structurally
+ * invalid draft (non-array questions, non-object entries — e.g. a truncated
+ * AsyncStorage write or a bad manual edit) previously flowed straight into the
+ * store and crashed the builder on open, with no way out short of clearing app
+ * data. Now any unusable shape resets to a clean draft ({} merges over the
+ * store's defaults) instead of taking the builder down.
+ */
+export function sanitizePersistedBuilderState(
+  persistedState: unknown,
+  version: number
+): Record<string, unknown> {
+  try {
+    if (!persistedState || typeof persistedState !== 'object' || Array.isArray(persistedState)) {
+      return {};
+    }
+    const state = { ...(persistedState as Record<string, unknown>) };
+
+    // Structural validation — a draft we can't trust is a draft we drop.
+    if (state.questions !== undefined) {
+      if (!Array.isArray(state.questions)) return {};
+      if ((state.questions as unknown[]).some((q) => !q || typeof q !== 'object' || Array.isArray(q))) {
+        return {};
+      }
+    }
+
+    if (version === 0) {
+      // Ensure all questions have conditionalLogic and fileUploadConfig fields
+      if (Array.isArray(state.questions)) {
+        state.questions = (state.questions as any[]).map(q => ({
+          ...q,
+          conditionalLogic: q.conditionalLogic ?? null,
+          fileUploadConfig: q.fileUploadConfig ?? null,
+        }));
+      }
+      // Ensure earnedBadges exists
+      if (!state.earnedBadges) {
+        state.earnedBadges = [];
+      }
+    }
+    if (version < 2) {
+      // Add points field to all questions and isScoringEnabled
+      if (Array.isArray(state.questions)) {
+        state.questions = (state.questions as any[]).map(q => ({
+          ...q,
+          points: q.points ?? 0,
+        }));
+      }
+      if (state.isScoringEnabled === undefined) {
+        state.isScoringEnabled = false;
+      }
+    }
+    return state;
+  } catch {
+    return {}; // corrupt beyond repair — start the builder clean
+  }
+}
+
 export const useSurveyBuilderStore = create<FullBuilderStore>()(
   devtools(
     persist(
@@ -465,36 +525,8 @@ export const useSurveyBuilderStore = create<FullBuilderStore>()(
         name: 'survey-builder-storage',
         storage: createJSONStorage(() => AsyncStorage),
         version: 2,
-        migrate: (persistedState: unknown, version: number) => {
-          const state = persistedState as Record<string, unknown>;
-          if (version === 0) {
-            // Ensure all questions have conditionalLogic and fileUploadConfig fields
-            if (Array.isArray(state.questions)) {
-              state.questions = (state.questions as any[]).map(q => ({
-                ...q,
-                conditionalLogic: q.conditionalLogic ?? null,
-                fileUploadConfig: q.fileUploadConfig ?? null,
-              }));
-            }
-            // Ensure earnedBadges exists
-            if (!state.earnedBadges) {
-              state.earnedBadges = [];
-            }
-          }
-          if (version < 2) {
-            // Add points field to all questions and isScoringEnabled
-            if (Array.isArray(state.questions)) {
-              state.questions = (state.questions as any[]).map(q => ({
-                ...q,
-                points: q.points ?? 0,
-              }));
-            }
-            if (state.isScoringEnabled === undefined) {
-              state.isScoringEnabled = false;
-            }
-          }
-          return state;
-        },
+        migrate: (persistedState: unknown, version: number) =>
+          sanitizePersistedBuilderState(persistedState, version),
         partialize: (state) => ({
           // Persist: questions, metadata, badges, scoring — NOT undo history or UI ephemera
           surveyTitle: state.surveyTitle,

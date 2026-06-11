@@ -130,6 +130,36 @@ export function getVisibleQuestions<T extends { conditionalLogic?: ConditionalLo
   return allQuestions.filter((q) => isQuestionVisible(q, answers));
 }
 
+/**
+ * Collect every question id that any conditional rule references. Only answers
+ * to THESE questions can change visibility — everything else is noise for the
+ * visibility computation.
+ */
+export function getLogicSourceIds(
+  questions: { conditionalLogic?: ConditionalLogicConfig | null }[]
+): Set<string> {
+  const ids = new Set<string>();
+  for (const q of questions) {
+    for (const rule of q.conditionalLogic?.rules ?? []) {
+      ids.add(rule.sourceQuestionId);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Stable key over ONLY the rule-source answers. Memoizing visibility on this
+ * key (instead of the whole answers map) means typing into a non-source
+ * question never re-evaluates any conditional logic — previously every
+ * keystroke re-filtered all questions and re-ran every rule.
+ * Sorted for determinism; tiny by construction (only source answers).
+ */
+export function buildLogicAnswersKey(answers: AnswerMap, sourceIds: Set<string>): string {
+  if (sourceIds.size === 0) return '';
+  // JSON-encoded [id, answer] pairs — collision-safe regardless of answer content.
+  return JSON.stringify([...sourceIds].sort().map((id) => [id, answers[id] ?? null]));
+}
+
 // ============================================================================
 // AVAILABLE OPERATORS PER QUESTION TYPE
 // ============================================================================
