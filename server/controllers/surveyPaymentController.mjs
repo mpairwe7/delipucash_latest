@@ -10,7 +10,6 @@
 import crypto from 'crypto';
 import prisma from '../lib/prisma.mjs';
 import asyncHandler from 'express-async-handler';
-import { v4 as uuidv4 } from 'uuid';
 import {
   processMtnCollection,
   processAirtelCollection,

@@ -59,7 +59,6 @@ const VALID_CTA_TYPES = [
 ];
 const VALID_GENDERS = ['all', 'male', 'female', 'other'];
 const VALID_AGE_RANGES = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];
-const VALID_STATUSES = ['pending', 'approved', 'rejected', 'paused', 'completed'];
 
 // Campaign fields a user may set via updateAd. Excludes status/isActive/amountSpent/
 // counters/approval/ownership so an owner can't self-approve (bypassing moderation),
@@ -524,43 +523,6 @@ function calculateEstimatedReach({ targetAgeRanges, targetGender, targetLocation
   return Math.round(baseReach * multiplier);
 }
 
-/**
- * Calculate estimated performance metrics based on budget and pricing model
- */
-function calculateEstimatedPerformance({ totalBudget, bidAmount, pricingModel, estimatedReach }) {
-  const budget = parseFloat(totalBudget) || 0;
-  const bid = parseFloat(bidAmount) || 0;
-  
-  if (budget <= 0 || bid <= 0) {
-    return { impressions: 0, clicks: 0, estimatedCTR: 0 };
-  }
-  
-  let impressions = 0;
-  let clicks = 0;
-  const estimatedCTR = 0.02; // 2% CTR estimate
-  
-  switch (pricingModel) {
-    case 'cpm':
-      impressions = Math.round((budget / bid) * 1000);
-      clicks = Math.round(impressions * estimatedCTR);
-      break;
-    case 'cpc':
-      clicks = Math.round(budget / bid);
-      impressions = Math.round(clicks / estimatedCTR);
-      break;
-    case 'cpa':
-      clicks = Math.round((budget / bid) * 10); // 10 clicks per conversion
-      impressions = Math.round(clicks / estimatedCTR);
-      break;
-    case 'flat':
-      impressions = estimatedReach || 10000;
-      clicks = Math.round(impressions * estimatedCTR);
-      break;
-  }
-  
-  return { impressions, clicks, estimatedCTR };
-}
-
 // ============================================================================
 // GET ALL ADS - Enhanced with new fields
 // ============================================================================
@@ -859,7 +821,7 @@ export const approveAd = asyncHandler(async (req, res) => {
 export const rejectAd = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
-    const { reason, adminUserId } = req.body;
+    const { reason } = req.body;
 
     if (!reason) {
       return res.status(400).json({
@@ -1192,15 +1154,12 @@ export const trackAdConversion = asyncHandler(async (req, res) => {
 export const trackAdInteraction = asyncHandler(async (req, res) => {
   try {
     const { adId } = req.params;
-    const { 
-      position, 
-      index, 
-      action, 
-      timestamp, 
-      userId, 
-      sessionId, 
-      deviceInfo, 
-      additionalData 
+    const {
+      position,
+      index,
+      action,
+      userId,
+      deviceInfo,
     } = req.body;
 
     console.log("Tracking ad interaction:", {

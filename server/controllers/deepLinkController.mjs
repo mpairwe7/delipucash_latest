@@ -221,7 +221,7 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-function generateRedirectPage(deepLink, token, email) {
+function generateRedirectPage(deepLink, _token, _email) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -376,7 +376,7 @@ function generateRedirectPage(deepLink, token, email) {
 </html>`;
 }
 
-function generateVerifyLoginPage(deepLink, email) {
+function generateVerifyLoginPage(deepLink, _email) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>

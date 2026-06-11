@@ -136,7 +136,7 @@ export const getAirtelToken = async () => {
         status: error.response?.status,
         message: error.message,
       });
-      throw new Error(`Airtel API Error: ${error.response?.data?.message || error.message}`);
+      throw new Error(`Airtel API Error: ${error.response?.data?.message || error.message}`, { cause: error });
     }
   };
 

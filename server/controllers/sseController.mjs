@@ -1,6 +1,6 @@
 import prisma from '../lib/prisma.mjs';
 import { cleanupOldEvents } from '../lib/eventBus.mjs';
-import { subscribe, isListenerActive, getSubscriberCount } from '../lib/pgNotify.mjs';
+import { subscribe, isListenerActive } from '../lib/pgNotify.mjs';
 
 // ---------- Configuration (overridable via env) ----------
 
@@ -107,7 +107,6 @@ export const sseStream = async (req, res) => {
   res.write('retry: 3000\n\n');
   res.write(`: connected (mode: ${isListenerActive() ? 'push' : 'poll'})\n\n`);
 
-  const connectionStart = Date.now();
   let isOpen = true;
   let flushing = false;
   let pendingFlush = false; // Tracks if a NOTIFY arrived during an active flush

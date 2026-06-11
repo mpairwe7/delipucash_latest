@@ -32,7 +32,7 @@ async function main() {
   console.log('='.repeat(60));
   
   const testUser = generateTestUser();
-  let authToken = null;
+  let authToken;
   let userId = null;
   
   try {

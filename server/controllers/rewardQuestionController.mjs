@@ -777,20 +777,26 @@ function validateAnswerSubmission(body, params) {
 
 // Submit an answer to a reward question
 export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
+  // Hoisted above the try: the catch block logs these on the concurrent-winner
+  // race path; declared inside the try they'd be out of scope there and the
+  // log line itself would throw ReferenceError (turning a graceful 409 into a 500).
+  let rewardQuestionId;
+  let authenticatedUser;
   try {
     // Declarative validation
     const validation = validateAnswerSubmission(req.body, req.params);
     if (!validation.valid) {
       return res.status(400).json({ message: validation.error, code: validation.code });
     }
-    const { rewardQuestionId, selectedAnswer } = validation.data;
+    const { selectedAnswer } = validation.data;
+    rewardQuestionId = validation.data.rewardQuestionId;
 
     // Token-bound identity: resolve user from verified JWT (set by verifyToken middleware)
     if (!req.user?.id) {
       return res.status(401).json({ message: 'Authentication required', code: 'AUTH_REQUIRED' });
     }
 
-    const authenticatedUser = await prisma.appUser.findUnique({
+    authenticatedUser = await prisma.appUser.findUnique({
       where: { id: req.user.id },
       select: { id: true, email: true, phone: true },
     });
@@ -1128,7 +1134,7 @@ export const submitRewardQuestionAnswer = asyncHandler(async (req, res) => {
   } catch (error) {
     // Concurrent winner conflict — answer was correct but another user claimed the spot first
     if (error.message === 'CONCURRENT_WINNER_CONFLICT') {
-      log.warn('Concurrent winner race lost', { rewardQuestionId, userEmail: authenticatedUser.email });
+      log.warn('Concurrent winner race lost', { rewardQuestionId, userEmail: authenticatedUser?.email });
       return res.status(409).json({
         message: 'Correct answer! However, another user claimed the last winner spot just before you. You still earned points for answering correctly.',
         isCorrect: true,

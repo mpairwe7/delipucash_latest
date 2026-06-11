@@ -75,7 +75,6 @@ test('validatePhone — rejects too-short numbers', () => {
 
 // Velocity rule arithmetic — proves the 24h + burst windows behave as documented.
 const VELOCITY_24H_LIMIT = 3;
-const VELOCITY_24H_WINDOW_MS = 24 * 60 * 60 * 1000;
 const VELOCITY_BURST_WINDOW_MS = 5 * 60 * 1000;
 
 function assertVelocity(count24h, recentBurstAtMs) {
