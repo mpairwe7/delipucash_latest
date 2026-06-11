@@ -200,3 +200,19 @@ never worked — `eslint` was not even a devDependency and no CI job ran it.
 `bun run lint`: 0 problems. `bun test`: 137/137 (unchanged). All edits applied via
 exactly-once string-match codemod (fails loudly on drift); riskiest hunks reviewed
 manually.
+
+## 2026-06-11 — Maestro flows: fix workspace syntax (assertVisible+timeout)
+
+**Scope:** `.maestro/redeem.yaml`, `.maestro/instant-reward.yaml`. Branch
+`fix/maestro-flow-syntax`.
+
+With MAESTRO_PROJECT_ID set, the validation run got past the upload auth (proving
+PR #34's fix) and hit the next layer: the Maestro Cloud workspace validator
+rejected the flows with `Unknown Property: timeout` — both files attached
+`timeout:` to `assertVisible`, which the schema doesn't accept. Replaced with the
+documented wait-with-timeout command, preserving semantics: `extendedWaitUntil`
+(hard gate in instant-reward.yaml — fails the flow if 'Submit' never appears;
+`optional: true` soft check in redeem.yaml). The PR's own Maestro E2E run
+(triggers on `.maestro/**`) validates the workspace upload end-to-end. Note:
+on-device flow results depend on test accounts/seed data — workspace validation
+is the gate this fixes.
