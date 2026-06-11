@@ -35,10 +35,14 @@ server-side `fetch` (no vendor SDK).
   (and `mode=conversational` opens it); a generated draft loads into the builder and
   switches to **Build** for review/edit — **human-in-the-loop, never auto-published**. The
   stale import-tab "Excel" copy was corrected to "CSV, TSV" to match Phase 2.
+- **Default models:** NVIDIA → `moonshotai/kimi-k2.6` (Moonshot Kimi K2.6, free on NVIDIA
+  NIM with developer registration); Groq → `llama-3.3-70b-versatile`. Both overridable via
+  `NVIDIA_MODEL` / `GROQ_MODEL`.
 - **Secrets** (names only — never committed): `NVIDIA_API_KEY`, `GROQ_API_KEY` (+ optional
   `*_MODEL`/`*_BASE_URL`) in gitignored `server/.env` and Vercel production env. Both have
   free tiers. **The feature is inert until at least one key is set** (endpoint 503s; the
-  builder still works). Documented in `server/.env.example`.
+  builder still works). Documented in `server/.env.example`. Verified end-to-end against a
+  live Groq key (`.env.local`): a real prompt returned a valid normalized 4-question draft.
 
 > **Invariant:** AI generation produces an editable draft the creator reviews before
 > publishing; it never auto-creates a survey; it is auth-gated, paywalled, and rate-limited

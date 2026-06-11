@@ -42,8 +42,14 @@ const MAX_QUESTIONS = 25;
  * Resolve the configured providers in priority order. A provider is included
  * only when its API key is present, so a partial config still works (NVIDIA
  * only, Groq only, or both). Model ids are overridable via env; the defaults
- * are open instruction models both providers host — verify against each
- * provider's current catalog when rotating.
+ * are open models the providers host free — verify against each provider's
+ * current catalog when rotating.
+ *
+ * NVIDIA default: `moonshotai/kimi-k2.6` (Moonshot AI Kimi K2.6 on NVIDIA NIM,
+ * free with NVIDIA Developer registration; OpenAI-compatible). Groq default:
+ * Llama 3.3 70B. Both honour chat/completions with JSON mode; the parser also
+ * tolerates non-strict JSON, so a provider that ignores response_format still
+ * works.
  */
 export function resolveProviders(env = process.env) {
   const providers = [];
@@ -52,7 +58,7 @@ export function resolveProviders(env = process.env) {
       name: 'nvidia',
       url: env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1/chat/completions',
       apiKey: env.NVIDIA_API_KEY,
-      model: env.NVIDIA_MODEL || 'meta/llama-3.3-70b-instruct',
+      model: env.NVIDIA_MODEL || 'moonshotai/kimi-k2.6',
     });
   }
   if (env.GROQ_API_KEY) {

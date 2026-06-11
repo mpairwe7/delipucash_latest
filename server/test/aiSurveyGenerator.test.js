@@ -50,9 +50,24 @@ test('resolveProviders includes only providers with a key, NVIDIA first', () => 
   expect(both.map((p) => p.name)).toEqual(['nvidia', 'groq']);
 });
 
+test('NVIDIA defaults to the free Kimi K2.6 model, Groq to Llama 3.3', () => {
+  const [nvidia] = resolveProviders({ NVIDIA_API_KEY: 'n' });
+  expect(nvidia.model).toBe('moonshotai/kimi-k2.6');
+  expect(nvidia.url).toBe('https://integrate.api.nvidia.com/v1/chat/completions');
+  const [groq] = resolveProviders({ GROQ_API_KEY: 'g' });
+  expect(groq.model).toBe('llama-3.3-70b-versatile');
+});
+
 test('resolveProviders honours model/url overrides', () => {
   const [p] = resolveProviders({ NVIDIA_API_KEY: 'n', NVIDIA_MODEL: 'custom/model' });
   expect(p.model).toBe('custom/model');
+});
+
+test('mirrors the current .env.local — Groq-only config resolves to one provider', () => {
+  // .env.local has GROQ_API_KEY + GROQ_MODEL=llama-3.3-70b-versatile and no NVIDIA key.
+  const providers = resolveProviders({ GROQ_API_KEY: 'gsk_x', GROQ_MODEL: 'llama-3.3-70b-versatile' });
+  expect(providers).toHaveLength(1);
+  expect(providers[0]).toMatchObject({ name: 'groq', model: 'llama-3.3-70b-versatile' });
 });
 
 // ---------------------------------------------------------------------------
