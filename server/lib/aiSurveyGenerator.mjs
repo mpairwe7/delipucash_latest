@@ -36,6 +36,12 @@ export class AiGenerationError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+// Hard ceiling across ALL providers + repair attempts. The worst case
+// (2 providers × 2 attempts × per-call timeout) must stay under the Vercel
+// function maxDuration (60s in server/vercel.json) so a degraded run returns a
+// graceful 502 instead of being platform-killed with a raw 504. Env-tunable.
+const DEFAULT_TOTAL_BUDGET_MS = 50_000;
+const MIN_CALL_BUDGET_MS = 2_000;
 const MAX_QUESTIONS = 25;
 
 /**
@@ -227,13 +233,16 @@ function extractJson(content) {
  * Generate survey questions from a natural-language prompt.
  *
  * @param {{ prompt: string, count?: number, existingQuestions?: any[] }} input
- * @param {{ fetchImpl?: Function, providers?: any[], timeoutMs?: number, env?: object }} [opts]
+ * @param {{ fetchImpl?: Function, providers?: any[], timeoutMs?: number, totalBudgetMs?: number, now?: Function, env?: object }} [opts]
  * @returns {Promise<{ title: string, description: string, questions: object[], provider: string }>}
  */
 export async function generateSurveyQuestions(input, opts = {}) {
   const fetchImpl = opts.fetchImpl || globalThis.fetch;
-  const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
-  const providers = opts.providers || resolveProviders(opts.env);
+  const env = opts.env || process.env;
+  const perCallTimeout = opts.timeoutMs || Number(env.AI_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS;
+  const totalBudget = opts.totalBudgetMs || Number(env.AI_TOTAL_BUDGET_MS) || DEFAULT_TOTAL_BUDGET_MS;
+  const now = opts.now || Date.now;
+  const providers = opts.providers || resolveProviders(env);
 
   if (!fetchImpl) throw new AiUnavailableError('No fetch implementation available');
   if (providers.length === 0) {
@@ -241,14 +250,28 @@ export async function generateSurveyQuestions(input, opts = {}) {
   }
 
   const messages = buildMessages(input);
+  const deadline = now() + totalBudget;
   let lastError;
+  let budgetExhausted = false;
 
   for (const provider of providers) {
+    if (budgetExhausted) break;
     // Up to two attempts per provider: initial, then one repair re-prompt.
     let attemptMessages = messages;
     for (let attempt = 0; attempt < 2; attempt++) {
+      // Each call's timeout is the smaller of the per-call limit and the time
+      // left in the overall budget, so the total never exceeds totalBudget.
+      const remaining = deadline - now();
+      if (remaining < MIN_CALL_BUDGET_MS) {
+        budgetExhausted = true;
+        lastError = lastError || new Error('time budget exhausted');
+        break;
+      }
       try {
-        const content = await callProvider(provider, attemptMessages, { fetchImpl, timeoutMs });
+        const content = await callProvider(provider, attemptMessages, {
+          fetchImpl,
+          timeoutMs: Math.min(perCallTimeout, remaining),
+        });
         const result = parseAndNormalize(content);
         return { ...result, provider: provider.name };
       } catch (err) {

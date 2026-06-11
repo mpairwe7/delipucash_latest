@@ -123,6 +123,20 @@ test('repairs bad output with one retry on the SAME provider before falling thro
   expect(n).toBe(2); // initial + repair, no fallback
 });
 
+test('stops within the total time budget instead of exhausting every provider+retry', async () => {
+  // Each call "takes" 4s of budget (injected clock); with a 5s budget only ONE
+  // call fits — the generator must give up gracefully, not run all 4 attempts.
+  // Guards the worst-case latency staying under the Vercel function maxDuration.
+  let t = 0;
+  const now = () => t;
+  let calls = 0;
+  const fetchImpl = async () => { calls += 1; t += 4000; return completion('garbage not json'); };
+  await expect(
+    generateSurveyQuestions({ prompt: 'x' }, { fetchImpl, providers: [NVIDIA, GROQ], totalBudgetMs: 5000, now }),
+  ).rejects.toBeInstanceOf(AiGenerationError);
+  expect(calls).toBe(1); // budget exhausted after the first call, not 4
+});
+
 test('falls back NVIDIA→Groq on a provider HTTP error (no repair on transport errors)', async () => {
   const seen = [];
   const fetchImpl = async (url) => {

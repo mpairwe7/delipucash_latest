@@ -24,7 +24,10 @@ server-side `fetch` (no vendor SDK).
   drops inverted bounds. **Validate-and-repair**: one repair re-prompt on bad *output*,
   fall through NVIDIA→Groq on a *transport* error, `AiUnavailableError` (→503) when nothing
   is configured, `AiGenerationError` (→502) when all providers fail. Per-request
-  `AbortController` timeout. **Keys and prompts are never logged** (counts/lengths only).
+  `AbortController` timeout (30s, `AI_TIMEOUT_MS`) **plus a total time budget** (50s,
+  `AI_TOTAL_BUDGET_MS`) across all providers+retries so the worst case stays under the
+  server's 60s Vercel function `maxDuration` — a degraded run returns a graceful 502, never
+  a platform-killed 504. **Keys and prompts are never logged** (counts/lengths only).
 - **`POST /api/surveys/ai/generate`** (`surveyAiRoutes` + `surveyAiController`) — behind the
   same `surveyCreateRateLimit` + `verifyToken` + `requireSurveyCreatorAccess` (paywall) as
   creation. Validates prompt presence/length and count (1–25). Returns a **draft only** —

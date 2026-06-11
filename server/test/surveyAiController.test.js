@@ -2,14 +2,25 @@
  * Tests for the AI generate endpoint controller (creation PR 4).
  * The generator is mocked; this locks request validation and error mapping.
  */
-import { test, expect, mock, beforeEach } from 'bun:test';
-import { AiUnavailableError, AiGenerationError } from '../lib/aiSurveyGenerator.mjs';
+import { test, expect, mock, beforeEach, afterEach } from 'bun:test';
+import * as realGen from '../lib/aiSurveyGenerator.mjs';
 
-let genImpl;
+// Snapshot the REAL exports into a plain object BEFORE mocking. The `realGen`
+// namespace is a live binding — after mock.module replaces the module it would
+// point back at the delegating mock, so `genImpl = realGen.generateSurveyQuestions`
+// would self-recurse (infinite loop / hang) when both AI test files load in one
+// process. REAL_MODULE freezes the real functions so that never happens.
+const REAL_MODULE = { ...realGen };
+const { AiUnavailableError, AiGenerationError } = REAL_MODULE;
+
+// mock.module is process-global; spreading the real snapshot keeps
+// resolveProviders/parseAndNormalize real for aiSurveyGenerator.test.js, and the
+// generateSurveyQuestions override delegates to `genImpl` (defaults real, swapped
+// to a stub only during this file's tests, restored in afterEach).
+let genImpl = REAL_MODULE.generateSurveyQuestions;
 mock.module('../lib/aiSurveyGenerator.mjs', () => ({
+  ...REAL_MODULE,
   generateSurveyQuestions: (...args) => genImpl(...args),
-  AiUnavailableError,
-  AiGenerationError,
 }));
 
 const { generateAiSurvey } = await import('../controllers/surveyAiController.mjs');
@@ -33,6 +44,12 @@ beforeEach(() => {
     questions: [{ text: 'Q', type: 'text', options: [], required: false }],
     provider: 'nvidia',
   }));
+});
+
+// Restore the real generator so the global mock doesn't leak a stub into other
+// test files (e.g. aiSurveyGenerator.test.js) that run in the same process.
+afterEach(() => {
+  genImpl = REAL_MODULE.generateSurveyQuestions;
 });
 
 test('400 when prompt is missing or blank', async () => {
