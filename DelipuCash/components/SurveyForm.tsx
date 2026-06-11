@@ -58,6 +58,7 @@ import {
 } from 'lucide-react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, BORDER_WIDTH, SHADOWS, withAlpha } from '@/utils/theme';
+import { validateBuilderSurvey } from '@/utils/surveyBuilderValidation';
 import { useCreateSurvey } from '@/services/hooks';
 import { UploadSurvey } from '@/types';
 import useUser from '@/utils/useUser';
@@ -121,8 +122,12 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
   // Reward & budget state
   const [rewardAmount, setRewardAmount] = useState('2000');
-  const [enableMoMoPayout, setEnableMoMoPayout] = useState(false);
-  const [totalBudget, setTotalBudget] = useState('');
+  const [maxResponses, setMaxResponses] = useState('');
+  // MoMo payouts are dormant server-side (no escrow/funding) — the toggle is
+  // shown disabled as "Coming soon". Kept as constants so the publish path
+  // stays inert (always false → no budget sent) without branching everywhere.
+  const enableMoMoPayout = false;
+  const totalBudget = '';
 
   // Title/description synced with builder store for cross-mode persistence
   const title = useSurveyBuilderStore((s) => s.surveyTitle);
@@ -242,40 +247,19 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
   }, [builderActions]);
 
   const handleSave = async () => {
-    // Validation
-    if (!title.trim()) {
-      Alert.alert('Error', 'Please enter a survey title');
+    // Pre-publish guards that mirror the server and protect the attempt
+    // renderer (empty options, inverted bounds, dates, response cap). The
+    // error names the offending question (1-based) so the creator can find it.
+    const { error: validationError, parsedMaxResponses } = validateBuilderSurvey({
+      title,
+      questions,
+      startDate,
+      endDate,
+      maxResponses,
+    });
+    if (validationError) {
+      Alert.alert('Error', validationError);
       return;
-    }
-
-    if (questions.some(q => !q.text.trim())) {
-      Alert.alert('Error', 'Please fill in all question texts');
-      return;
-    }
-
-    // Validate options for choice-based questions
-    if (questions.some(q => (q.type === 'radio' || q.type === 'checkbox' || q.type === 'dropdown') && q.options.length < 2)) {
-      Alert.alert('Error', 'Choice questions (radio, checkbox, dropdown) must have at least 2 options');
-      return;
-    }
-
-    if (startDate >= endDate) {
-      Alert.alert('Error', 'End date must be after start date');
-      return;
-    }
-
-    // Validate budget
-    if (enableMoMoPayout) {
-      const budgetVal = parseFloat(totalBudget);
-      const rewardVal = parseFloat(rewardAmount) || 2000;
-      if (!budgetVal || budgetVal <= 0) {
-        Alert.alert('Error', 'Please enter a valid total budget for mobile money payouts');
-        return;
-      }
-      if (budgetVal < rewardVal) {
-        Alert.alert('Error', `Total budget must be at least ${rewardVal} UGX (one response)`);
-        return;
-      }
     }
 
     // Convert questions to UploadSurvey format based on type
@@ -307,12 +291,14 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
           });
           break;
         case 'number':
+          // Bounds live ONLY in the minValue/maxValue columns — the attempt
+          // renderer (parseQuestionConfig) reads the column and prefers it over
+          // options JSON, so duplicating min/max here created a dual source of
+          // truth that could drift. options carries just the placeholder.
           minValue = q.minValue ?? null;
           maxValue = q.maxValue ?? null;
           options = JSON.stringify({
             placeholder: q.placeholder || 'Enter a number',
-            min: minValue,
-            max: maxValue
           });
           break;
         case 'date':
@@ -332,7 +318,9 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         case 'checkbox':
         case 'dropdown':
         default:
-          options = JSON.stringify(q.options);
+          // Strip blank options so a trailing empty input never ships as a
+          // selectable empty row (validation already guaranteed ≥2 non-empty).
+          options = JSON.stringify(q.options.filter(o => o.trim().length > 0));
           break;
       }
 
@@ -355,6 +343,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
 
     try {
       const parsedReward = parseFloat(rewardAmount) || 2000;
+      // MoMo payouts dormant → no budget is sent (enableMoMoPayout is always false).
       const parsedBudget = enableMoMoPayout && totalBudget ? parseFloat(totalBudget) : undefined;
 
       await createSurveyMutation.mutateAsync({
@@ -363,6 +352,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
         startDate: startDate.toISOString(),
         endDate: endDate.toISOString(),
         rewardAmount: parsedReward,
+        maxResponses: parsedMaxResponses,
         totalBudget: parsedBudget,
         questions: surveyQuestions,
         userId: user?.id,
@@ -854,7 +844,7 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
             </TouchableOpacity>
           </View>
 
-          {/* Reward & Budget */}
+          {/* Reward */}
           <View style={styles.inputGroup}>
             <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Reward per response (UGX)</Text>
             <TextInput
@@ -864,46 +854,54 @@ const SurveyForm: React.FC<SurveyFormProps> = ({ onSuccess, onCancel, startWithI
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
               style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+              accessibilityLabel="Reward per response in UGX"
             />
             <Text style={[styles.helperText, { color: colors.textMuted }]}>
               Points awarded to each respondent
             </Text>
           </View>
 
-          <View style={[styles.toggleRow, { borderColor: colors.border }]}>
+          {/* Response limit (optional) — the server enforces this cap atomically */}
+          <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Response limit (optional)</Text>
+            <TextInput
+              value={maxResponses}
+              onChangeText={setMaxResponses}
+              placeholder="No limit"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
+              accessibilityLabel="Maximum number of responses, optional"
+            />
+            <Text style={[styles.helperText, { color: colors.textMuted }]}>
+              The survey closes automatically once this many responses are in. Leave blank for unlimited.
+            </Text>
+          </View>
+
+          {/* Mobile Money payouts — disabled until escrow/funding ships */}
+          <View style={[styles.toggleRow, { borderColor: colors.border, opacity: 0.6 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.inputLabel, { color: colors.text, marginBottom: 2 }]}>Enable Mobile Money Payouts</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={[styles.inputLabel, { color: colors.text, marginBottom: 2 }]}>Mobile Money Payouts</Text>
+                <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: RADIUS.full, backgroundColor: withAlpha(colors.warning, 0.15) }}>
+                  <Text style={{ fontSize: TYPOGRAPHY.fontSize.xs, fontWeight: '700', color: colors.warning }}>COMING SOON</Text>
+                </View>
+              </View>
               <Text style={[styles.helperText, { color: colors.textMuted }]}>
-                Auto-send money to respondents with registered phones
+                Cash payouts to respondents will arrive in a future update. For now, respondents earn reward points.
               </Text>
             </View>
             <Switch
-              value={enableMoMoPayout}
-              onValueChange={setEnableMoMoPayout}
+              value={false}
+              disabled
+              onValueChange={() => {}}
               trackColor={{ false: colors.border, true: withAlpha(colors.primary, 0.4) }}
-              thumbColor={enableMoMoPayout ? colors.primary : colors.textMuted}
-              accessibilityLabel="Enable Mobile Money Payouts"
+              thumbColor={colors.textMuted}
+              accessibilityLabel="Mobile Money Payouts (coming soon)"
               accessibilityRole="switch"
-              accessibilityState={{ checked: enableMoMoPayout }}
+              accessibilityState={{ checked: false, disabled: true }}
             />
           </View>
-
-          {enableMoMoPayout && (
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textMuted }]}>Total Budget (UGX)</Text>
-              <TextInput
-                value={totalBudget}
-                onChangeText={setTotalBudget}
-                placeholder={`Min: ${rewardAmount || '2000'}`}
-                placeholderTextColor={colors.textMuted}
-                keyboardType="numeric"
-                style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.background }]}
-              />
-              <Text style={[styles.helperText, { color: colors.textMuted }]}>
-                Maximum amount to disburse. Covers up to {totalBudget && !isNaN(parseFloat(totalBudget)) && parseFloat(rewardAmount) > 0 ? Math.floor(parseFloat(totalBudget) / parseFloat(rewardAmount)) : '—'} responses.
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Questions */}

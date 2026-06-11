@@ -6,6 +6,36 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey creation overhaul, Phase 3: builder validation parity + honest controls
+
+The builder would publish structures that render badly or block respondents, and
+advertised a payout it can't deliver:
+
+- **Pre-publish validation** (`utils/surveyBuilderValidation.ts`, a pure helper consumed
+  by `SurveyForm`) now rejects: an empty survey, a question with blank text, a choice
+  question with fewer than **2 non-empty** options (a blank option used to ship as a
+  selectable empty row that submits `""`), inverted **rating/number bounds** (min > max),
+  end-date ≤ start-date, and a non-integer/zero response limit. Each error **names the
+  offending question** (1-based) instead of a generic message. Choice-option serialization
+  also strips blank entries defensively.
+- **Response limit control** — a new optional "Response limit" field in the builder. The
+  cap was enforced atomically server-side since the #22 remediation (`responsesSubmitted`),
+  but was **uncreatable in-app** (API-only). Persists via `useCreateSurvey` →
+  `/api/surveys/upload`.
+- **MoMo payout toggle → disabled "Coming soon."** Cash payouts are dormant server-side
+  (no escrow/funding, per #23). The switch is shown disabled with a COMING SOON badge and
+  honest helper text ("respondents earn reward points"); no budget is sent. This replaces
+  the old "Auto-send money to respondents" promise.
+- **Fidelity:** the `number` type no longer duplicates `min`/`max` into the options JSON —
+  bounds live only in the `minValue`/`maxValue` columns that the attempt renderer
+  (`parseQuestionConfig`) already prefers, removing a dual source of truth that could drift.
+
+> **Invariant:** the builder cannot publish a survey with an empty option, inverted
+> bounds, a blank-text question, or a malformed response cap; the creator is told which
+> question is wrong; the response cap is settable in-app; the payout toggle makes no
+> promise the backend can't keep. Tests: `__tests__/surveyBuilderValidation.test.ts` (12
+> cases). Client suite 273 pass; tsc + lint clean.
+
 ## 2026-06-11 — Survey creation overhaul, Phase 2: honest, robust CSV/TSV/JSON import (drop Excel)
 
 The import wizard advertised "Excel/TSV", the picker accepted `.xlsx` MIME, and the
