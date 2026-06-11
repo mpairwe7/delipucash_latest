@@ -9,15 +9,12 @@
  */
 
 import asyncHandler from 'express-async-handler';
+import Papa from 'papaparse';
+import { normalizeQuestionType } from '../lib/surveyQuestionTypes.mjs';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
-const VALID_QUESTION_TYPES = [
-  'text', 'paragraph', 'radio', 'checkbox', 'dropdown',
-  'rating', 'boolean', 'date', 'time', 'number', 'file_upload',
-];
 
 const MAX_QUESTIONS_PER_FILE = 200;
 const MAX_QUESTION_TEXT_LENGTH = 2000;
@@ -174,63 +171,9 @@ function normalizeLineEndings(content) {
   return content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-function parseDelimitedLine(line, delimiter = ',') {
-  const values = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (char === '"' && !inQuotes) {
-      inQuotes = true;
-    } else if (char === '"' && inQuotes) {
-      if (nextChar === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = false;
-      }
-    } else if (char === delimiter && !inQuotes) {
-      values.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-
-  // If still in quotes at end of line, close gracefully
-  if (inQuotes) {
-    values._unclosedQuote = true;
-  }
-
-  values.push(current.trim());
-  return values;
-}
-
-function detectDelimiter(content) {
-  const firstLine = content.split('\n')[0] || '';
-  let tabCount = 0, commaCount = 0, semicolonCount = 0;
-  let inQuotes = false;
-
-  for (const char of firstLine) {
-    if (char === '"') inQuotes = !inQuotes;
-    else if (!inQuotes) {
-      if (char === '\t') tabCount++;
-      else if (char === ',') commaCount++;
-      else if (char === ';') semicolonCount++;
-    }
-  }
-
-  if (tabCount >= commaCount && tabCount >= semicolonCount && tabCount > 0) return '\t';
-  if (semicolonCount > commaCount) return ';';
-  return ',';
-}
-
-function isValidQuestionType(type) {
-  return VALID_QUESTION_TYPES.includes(type?.toLowerCase());
-}
+// CSV/TSV row parsing is handled by papaparse in parseSpreadsheetFile — the
+// previous hand-rolled line parser + delimiter detector broke on quoted cells
+// that spanned lines (it split on \n first).
 
 function detectFormatFromFilename(filename) {
   const ext = (filename || '').toLowerCase().split('.').pop();
@@ -283,11 +226,13 @@ function parseJSONFile(content) {
       warnings.push(`Question ${index + 1}: Text truncated from ${questionText.length} to ${MAX_QUESTION_TEXT_LENGTH} characters`);
     }
 
-    const rawType = String(q.type || 'text').toLowerCase();
-    if (!isValidQuestionType(rawType)) {
+    // Normalize legacy aliases (multiple_choice→radio, textarea→paragraph,
+    // nps/slider→rating) to the renderer vocabulary, matching the creation path.
+    const normalizedType = normalizeQuestionType(q.type);
+    if (!normalizedType) {
       warnings.push(`Question ${index + 1}: Invalid type "${q.type}", defaulting to "text"`);
     }
-    const type = isValidQuestionType(rawType) ? rawType : 'text';
+    const type = normalizedType || 'text';
 
     let options = Array.isArray(q.options) ? q.options.map(String) : [];
 
@@ -349,20 +294,25 @@ function parseJSONFile(content) {
 
 function parseSpreadsheetFile(content) {
   const cleanContent = normalizeLineEndings(stripBOM(content));
-  const lines = cleanContent.split('\n').filter((line) => line.trim());
   const errors = [];
   const warnings = [];
   const invalidRows = [];
 
-  if (lines.length < 2) {
+  // papaparse handles quoted fields, embedded newlines/commas, and CSV vs TSV
+  // vs semicolon delimiters. The previous split('\n') broke any quoted cell
+  // that spanned lines. `|` is excluded from the guesses (it is the in-cell
+  // options separator). Matches the client wizard parser.
+  const rows = (Papa.parse(cleanContent, {
+    skipEmptyLines: 'greedy',
+    delimitersToGuess: [',', '\t', ';'],
+  }).data || []).map((row) => row.map((cell) => (cell ?? '').trim()));
+
+  if (rows.length < 2) {
     errors.push('File must have a header row and at least one data row');
     return { questions: [], errors, warnings, invalidRows, columnMappings: [] };
   }
 
-  const delimiter = detectDelimiter(cleanContent);
-  const rawHeaders = parseDelimitedLine(lines[0], delimiter).map((h) =>
-    h.replace(/['"]/g, '').trim()
-  );
+  const rawHeaders = rows[0].map((h) => h.replace(/['"]/g, '').trim());
 
   const columnMappings = autoMapColumns(rawHeaders);
 
@@ -392,19 +342,14 @@ function parseSpreadsheetFile(content) {
     }
   });
 
-  if (lines.length - 1 > MAX_QUESTIONS_PER_FILE) {
-    errors.push(`File contains ${lines.length - 1} data rows. Maximum is ${MAX_QUESTIONS_PER_FILE}.`);
+  if (rows.length - 1 > MAX_QUESTIONS_PER_FILE) {
+    errors.push(`File contains ${rows.length - 1} data rows. Maximum is ${MAX_QUESTIONS_PER_FILE}.`);
     return { questions: [], errors, warnings, invalidRows, columnMappings };
   }
 
   const questions = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseDelimitedLine(lines[i], delimiter);
-
-    // Warn about unclosed quotes in this row
-    if (values._unclosedQuote) {
-      warnings.push(`Row ${i + 1}: Unclosed quote detected — values may be misaligned`);
-    }
+  for (let i = 1; i < rows.length; i++) {
+    const values = rows[i];
 
     let text = values[textIndex]?.replace(/^["']|["']$/g, '').trim();
 
@@ -419,9 +364,10 @@ function parseSpreadsheetFile(content) {
       text = text.slice(0, MAX_QUESTION_TEXT_LENGTH);
     }
 
-    const rawType = typeIndex !== -1 ? values[typeIndex]?.toLowerCase().trim() : 'text';
-    const type = isValidQuestionType(rawType) ? rawType : 'text';
-    if (typeIndex !== -1 && !isValidQuestionType(rawType)) {
+    const rawType = typeIndex !== -1 ? values[typeIndex]?.trim() : 'text';
+    const normalizedType = normalizeQuestionType(rawType);
+    const type = normalizedType || 'text';
+    if (typeIndex !== -1 && !normalizedType) {
       warnings.push(`Row ${i + 1}: Invalid type "${rawType}", using "text"`);
     }
 

@@ -50,6 +50,7 @@
     "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "nodemailer": "^6.10.1",
+    "papaparse": "^5.5.3",
     "pg": "8.17.2",
     "postgres": "^3.4.8",
     "serverless-http": "^4.0.0",

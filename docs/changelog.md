@@ -6,6 +6,37 @@ Add an entry as part of the work, not after.
 
 ---
 
+## 2026-06-11 — Survey creation overhaul, Phase 2: honest, robust CSV/TSV/JSON import (drop Excel)
+
+The import wizard advertised "Excel/TSV", the picker accepted `.xlsx` MIME, and the
+"Spreadsheet formats" card implied real Excel support — but there is **no spreadsheet
+parser anywhere** (no `xlsx`/`sheetjs` on client or server). A real `.xlsx` is a binary
+zip and would have failed to parse. Separately, both the client and server CSV parsers
+split on `\n` **before** handling quotes, so any quoted cell that spanned multiple lines
+was silently broken into bogus rows.
+
+- **Excel removed honestly.** `ImportWizard` drops the "Excel/TSV" card and the
+  `.xlsx`/`.ms-excel`/`spreadsheetml` MIME types; the spreadsheet option is now
+  **"CSV / TSV"** (the parser auto-detects the delimiter). Header doc updated. To import
+  from Excel, export as CSV first.
+- **Robust parsing via papaparse** (was an installed-but-unused dependency). Both the
+  client wizard parser and the **server** preview parser (`surveyImportController.mjs` —
+  the primary path, since import is server-first) now use `Papa.parse` with
+  delimiter-guessing limited to `, \t ;` (`|` stays the in-cell options separator).
+  Quoted fields, embedded newlines/commas, and CSV-vs-TSV all parse correctly; the
+  hand-rolled line splitters + delimiter detectors are gone.
+- **Type parity.** The import controller now normalizes legacy aliases through the shared
+  `lib/surveyQuestionTypes.mjs#normalizeQuestionType` (`multiple_choice→radio`,
+  `textarea→paragraph`, `nps/slider→rating`) instead of coercing them to `text`; the
+  client `VALID_QUESTION_TYPES` gains `file_upload` so imports round-trip the full
+  renderer vocabulary.
+
+> **Invariant:** the importer only offers formats it can actually parse; a quoted CSV/TSV
+> cell that spans lines stays a single field; imported question types are normalized to
+> the renderer vocabulary; a real `.xlsx` is rejected with a clear message. Tests:
+> `server/test/surveyImport.test.js` (alias normalization CSV+JSON, unknown→text,
+> binary `.xlsx` rejected, multiline-quoted cell). Server suite 116 pass; client 261 pass.
+
 ## 2026-06-11 — Survey creation overhaul, Phase 1: fix the broken entry points + real templates
 
 From the survey-creation audit (import + manual + flow into attempting). The audit
