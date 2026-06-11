@@ -36,8 +36,17 @@ export async function requireSurveyCreatorAccess(req, res, next) {
     if (user.role === 'ADMIN' || user.role === 'MODERATOR') return next();
     if (user.surveysubscriptionStatus === 'ACTIVE' || user.subscriptionStatus === 'ACTIVE') return next();
 
+    // Active billing window only — a future-dated payment must not grant
+    // access early (startDate), nor an expired one late (endDate).
+    const now = new Date();
     const momoPayment = await prisma.payment.findFirst({
-      where: { userId, status: 'SUCCESSFUL', featureType: 'SURVEY', endDate: { gt: new Date() } },
+      where: {
+        userId,
+        status: 'SUCCESSFUL',
+        featureType: 'SURVEY',
+        startDate: { lte: now },
+        endDate: { gt: now },
+      },
       select: { id: true },
     });
     if (momoPayment) return next();

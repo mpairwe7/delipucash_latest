@@ -411,6 +411,31 @@ export const updateSurvey = asyncHandler(async (req, res) => {
           message: 'This survey already has responses — its questions can no longer be edited. You can still update the title, description, dates, or end it early.',
         });
       }
+
+      // Validate conditional logic against the survey's FULL ordered question
+      // list (payload edits merged over the persisted questions, new questions
+      // appended) — the creation paths validate; the update path must too, or
+      // a partial update could store forward references/cycles/unknown
+      // operators that the submit-time evaluator then chokes on.
+      const existingQuestions = await prisma.uploadSurvey.findMany({
+        where: { surveyId },
+        select: { id: true, conditionalLogic: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      const payloadById = new Map(questions.filter((q) => q.id).map((q) => [q.id, q]));
+      const merged = existingQuestions.map((e) => {
+        const incoming = payloadById.get(e.id);
+        return incoming
+          ? { id: e.id, conditionalLogic: incoming.conditionalLogic ?? null }
+          : e;
+      });
+      for (const q of questions) {
+        if (!q.id) merged.push({ id: `__new_${merged.length}`, conditionalLogic: q.conditionalLogic ?? null });
+      }
+      const logicErrors = validateConditionalLogic(merged);
+      if (logicErrors.length > 0) {
+        return res.status(400).json({ message: 'Invalid conditional logic', errors: logicErrors });
+      }
     }
 
     // Build update data dynamically to only update provided fields

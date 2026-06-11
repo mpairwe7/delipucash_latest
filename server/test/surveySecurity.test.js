@@ -34,6 +34,7 @@ const prismaMock = {
     updateMany: mock(async () => ({ count: 1 })),
     create: mock(async () => ({})),
     deleteMany: mock(async () => ({ count: 0 })),
+    findMany: mock(async () => []),
   },
   surveyResponse: {
     findFirst: mock(async () => null),
@@ -88,6 +89,7 @@ beforeEach(() => {
   prismaMock.uploadSurvey.updateMany = mock(async () => ({ count: 1 }));
   prismaMock.uploadSurvey.create = mock(async () => ({}));
   prismaMock.uploadSurvey.deleteMany = mock(async () => ({ count: 0 }));
+  prismaMock.uploadSurvey.findMany = mock(async () => []);
   prismaMock.surveyResponse.count = mock(async () => 0);
   prismaMock.surveyFileUpload.findMany = mock(async () => []);
   prismaMock.appUser.findUnique = mock(async () => ({ role: 'USER' }));
@@ -177,6 +179,31 @@ test('single-sided endDate update validates against the EXISTING startDate', asy
 
   expect(res.statusCode).toBe(400);
   expect(prismaMock.survey.update.mock.calls.length).toBe(0);
+});
+
+test('updateSurvey validates conditional logic against the merged question list', async () => {
+  // q1 exists; the payload edits q1 with a rule referencing a question that
+  // does not exist anywhere in the survey → 400, nothing written.
+  prismaMock.uploadSurvey.findMany = mock(async () => [{ id: 'q1', conditionalLogic: null }]);
+
+  const res = makeRes();
+  await updateSurvey(
+    {
+      params: { surveyId: 's1' },
+      body: {
+        questions: [{
+          id: 'q1', text: 'Edited', type: 'text', options: [],
+          conditionalLogic: { logicType: 'all', rules: [{ sourceQuestionId: 'q_GONE', operator: 'equals', value: 'Yes' }] },
+        }],
+      },
+      user: { id: 'owner' },
+    },
+    res, () => {},
+  );
+
+  expect(res.statusCode).toBe(400);
+  expect(res.body.message).toBe('Invalid conditional logic');
+  expect(prismaMock.uploadSurvey.updateMany.mock.calls.length).toBe(0);
 });
 
 test('question types are validated and legacy aliases normalize (multiple_choice → radio)', async () => {
@@ -293,6 +320,20 @@ test('unexpired SUCCESSFUL MoMo SURVEY payment → allowed', async () => {
     { id: 'pay-1' },
   );
   expect(nextCalled).toBe(true);
+});
+
+test('the MoMo predicate enforces the ACTIVE billing window (startDate AND endDate)', async () => {
+  let captured;
+  prismaMock.appUser.findUnique = mock(async () => ({ role: 'USER', surveysubscriptionStatus: 'INACTIVE', subscriptionStatus: 'INACTIVE' }));
+  prismaMock.payment.findFirst = mock(async (args) => { captured = args; return null; });
+
+  const res = makeRes();
+  await requireSurveyCreatorAccess({ user: { id: 'u1' } }, res, () => {});
+
+  // A future-dated payment must not grant access early, nor an expired one late.
+  expect(captured.where.startDate).toHaveProperty('lte');
+  expect(captured.where.endDate).toHaveProperty('gt');
+  expect(res.statusCode).toBe(403);
 });
 
 test('ADMIN bypasses the paywall', async () => {
