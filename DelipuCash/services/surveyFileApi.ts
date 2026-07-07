@@ -62,6 +62,30 @@ export interface UploadOptions {
 // UPLOAD FILE
 // ============================================================================
 
+/**
+ * Mirrors the server allowlist (surveyFileController ALLOWED_MIME_TYPES) so a
+ * disallowed file fails instantly with a clear message instead of after a
+ * full upload round-trip. The server remains the enforcement point.
+ */
+const ALLOWED_SURVEY_FILE_TYPES = [
+  // Documents
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+  'text/csv',
+  // Images
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  // Archives
+  'application/zip',
+  'application/x-zip-compressed',
+];
+
 export async function uploadSurveyFile(
   surveyId: string,
   questionId: string,
@@ -72,6 +96,13 @@ export async function uploadSurveyFile(
 ): Promise<{ success: boolean; data?: SurveyFileUploadResult; error?: string; cancelled?: boolean }> {
   const token = getAuthToken();
   if (!token) return { success: false, error: 'Not authenticated' };
+
+  if (!ALLOWED_SURVEY_FILE_TYPES.includes(mimeType)) {
+    return {
+      success: false,
+      error: 'This file type is not supported. Use a PDF, Word/Excel document, text/CSV file, image, or ZIP archive.',
+    };
+  }
 
   // Pre-aborted: short-circuit before allocating an XHR.
   if (options.signal?.aborted) {

@@ -11,13 +11,14 @@
  * @module services/videoHooks
  */
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   useQuery,
   useSuspenseQuery,
   useMutation,
   useQueryClient,
   useInfiniteQuery,
+  type QueryClient,
   type UseQueryResult,
   type UseMutationResult,
   type UseInfiniteQueryResult,
@@ -289,6 +290,8 @@ export function useInfiniteVideos(params: Omit<UseVideosParams, 'page'> = {}): U
  * ```
  */
 export function useVideoDetails(videoId: string): UseQueryResult<VideoWithDetails | null> {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: videoQueryKeys.detail(videoId),
     queryFn: async () => {
@@ -298,7 +301,46 @@ export function useVideoDetails(videoId: string): UseQueryResult<VideoWithDetail
     },
     enabled: !!videoId,
     staleTime: 1000 * 60, // 1 minute
+    // Instant open from a feed: render the list-cached video immediately
+    // (VideoWithDetails only adds optional fields) while the full details
+    // (author, comments, related) fetch in the background.
+    placeholderData: () => findCachedVideo(queryClient, videoId),
   });
+}
+
+/**
+ * Find a video already present in any list-shaped cache under `['videos']`:
+ * infinite feeds (`{ pages: [{ videos }] }`) and flat arrays (trending,
+ * recommended, search, bookmarked). Detail/comments/status caches don't
+ * match these shapes and are skipped. Used to seed the detail screen when
+ * navigating from a feed so it never shows a spinner for data we hold.
+ */
+export function findCachedVideo(
+  queryClient: QueryClient,
+  videoId: string,
+): Video | undefined {
+  if (!videoId) return undefined;
+
+  for (const [, data] of queryClient.getQueriesData({ queryKey: videoQueryKeys.all })) {
+    if (!data || typeof data !== 'object') continue;
+
+    if (Array.isArray(data)) {
+      const hit = (data as Video[]).find((v) => v?.id === videoId);
+      if (hit) return hit;
+      continue;
+    }
+
+    const pages = (data as { pages?: { videos?: Video[] }[] }).pages;
+    if (Array.isArray(pages)) {
+      for (const page of pages) {
+        if (!Array.isArray(page?.videos)) continue;
+        const hit = page.videos.find((v) => v?.id === videoId);
+        if (hit) return hit;
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -692,27 +734,38 @@ export function useTrendingVideos(limit: number = 20): UseQueryResult<Video[]> {
  * Hook to fetch following videos — videos from creators the user has engaged with.
  * Uses infinite query for seamless infinite scroll within the Following tab.
  */
+/**
+ * Page sizes shared by the tab hooks and usePrefetchVideos, so a prefetched
+ * page is byte-identical to what the tab would fetch (trending's limit is
+ * even part of its query key).
+ */
+export const FOLLOWING_FEED_PAGE_LIMIT = 15;
+export const TRENDING_FEED_PAGE_LIMIT = 20;
+
+/** Page fetcher shared by useInfiniteFollowingVideos and usePrefetchVideos. */
+async function fetchFollowingPage(pageParam: number, limit: number) {
+  const response = await videoApi.getFollowing(pageParam, limit);
+  if (!response.success) throw new Error(response.error || 'Failed to fetch following videos');
+
+  const pagination = (response as any).pagination;
+  const hasMore = pagination ? pageParam < pagination.totalPages : response.data.length === limit;
+
+  return {
+    videos: response.data,
+    nextPage: hasMore ? pageParam + 1 : null,
+  };
+}
+
 export function useInfiniteFollowingVideos(params: { limit?: number; enabled?: boolean } = {}): UseInfiniteQueryResult<{
   pages: { videos: Video[]; nextPage: number | null }[];
   pageParams: number[];
 }> {
-  const { limit = 15, enabled = true } = params;
+  const { limit = FOLLOWING_FEED_PAGE_LIMIT, enabled = true } = params;
   const refetchInterval = useAdaptiveInterval(VIDEO_FEED_POLL_INTERVAL_MS);
 
   return useInfiniteQuery({
     queryKey: videoQueryKeys.following(),
-    queryFn: async ({ pageParam = 1 }) => {
-      const response = await videoApi.getFollowing(pageParam, limit);
-      if (!response.success) throw new Error(response.error || 'Failed to fetch following videos');
-
-      const pagination = (response as any).pagination;
-      const hasMore = pagination ? pageParam < pagination.totalPages : response.data.length === limit;
-
-      return {
-        videos: response.data,
-        nextPage: hasMore ? pageParam + 1 : null,
-      };
-    },
+    queryFn: ({ pageParam = 1 }) => fetchFollowingPage(pageParam as number, limit),
     getNextPageParam: (lastPage) => lastPage.nextPage,
     initialPageParam: 1,
     enabled,
@@ -1085,6 +1138,25 @@ export function usePersonalizedFeed(params: {
  * Replaces the old single-page useTrendingVideos for the Trending tab.
  * Auto-refreshes hourly.
  */
+/** Page fetcher shared by useInfiniteTrendingVideos and usePrefetchVideos. */
+async function fetchTrendingPage(
+  pageParam: number,
+  opts: { limit: number; country?: string; language?: string },
+) {
+  const response = await videoApi.getTrending({ page: pageParam, ...opts });
+  if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
+
+  const pagination = response.pagination;
+  const hasMore = pagination
+    ? pageParam < pagination.totalPages
+    : response.data.length === opts.limit;
+
+  return {
+    videos: response.data,
+    nextPage: hasMore ? pageParam + 1 : null,
+  };
+}
+
 export function useInfiniteTrendingVideos(params: {
   limit?: number;
   country?: string;
@@ -1094,30 +1166,55 @@ export function useInfiniteTrendingVideos(params: {
   pages: { videos: Video[]; nextPage: number | null }[];
   pageParams: number[];
 }> {
-  const { limit = 20, country, language, enabled = true } = params;
+  const { limit = TRENDING_FEED_PAGE_LIMIT, country, language, enabled = true } = params;
 
   return useInfiniteQuery({
     queryKey: videoQueryKeys.trendingInfinite({ limit, country, language }),
-    queryFn: async ({ pageParam = 1 }) => {
-      const response = await videoApi.getTrending({ page: pageParam, limit, country, language });
-      if (!response.success) throw new Error(response.error || 'Failed to fetch trending videos');
-
-      const pagination = response.pagination;
-      const hasMore = pagination
-        ? pageParam < pagination.totalPages
-        : response.data.length === limit;
-
-      return {
-        videos: response.data,
-        nextPage: hasMore ? pageParam + 1 : null,
-      };
-    },
+    queryFn: ({ pageParam = 1 }) => fetchTrendingPage(pageParam as number, { limit, country, language }),
     getNextPageParam: (lastPage) => lastPage.nextPage,
     initialPageParam: 1,
     enabled,
     staleTime: 1000 * 60 * 60, // 1 hour — trending is hourly
     refetchInterval: 1000 * 60 * 60, // Auto-refresh hourly
   });
+}
+
+/**
+ * Prefetch the Following + Trending tab feeds — the video counterpart of
+ * usePrefetchQuestions. Call once the active feed has loaded so the other
+ * tabs open instantly instead of cold-fetching on first tap.
+ *
+ * Keys/page sizes match the tab hooks exactly (via the shared fetchers and
+ * *_FEED_PAGE_LIMIT constants); prefetchInfiniteQuery is a no-op when fresh
+ * data is already cached. Following is skipped for signed-out users, matching
+ * the tab's own `enabled` gate.
+ */
+export function usePrefetchVideos() {
+  const queryClient = useQueryClient();
+
+  return useCallback(() => {
+    queryClient.prefetchInfiniteQuery({
+      queryKey: videoQueryKeys.trendingInfinite({
+        limit: TRENDING_FEED_PAGE_LIMIT,
+        country: undefined,
+        language: undefined,
+      }),
+      queryFn: ({ pageParam }) =>
+        fetchTrendingPage(pageParam as number, { limit: TRENDING_FEED_PAGE_LIMIT }),
+      initialPageParam: 1,
+      staleTime: 1000 * 60 * 60,
+    });
+
+    if (useAuthStore.getState().auth?.user?.id) {
+      queryClient.prefetchInfiniteQuery({
+        queryKey: videoQueryKeys.following(),
+        queryFn: ({ pageParam }) =>
+          fetchFollowingPage(pageParam as number, FOLLOWING_FEED_PAGE_LIMIT),
+        initialPageParam: 1,
+        staleTime: 1000 * 60 * 2,
+      });
+    }
+  }, [queryClient]);
 }
 
 /**

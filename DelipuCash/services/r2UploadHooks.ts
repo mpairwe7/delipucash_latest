@@ -150,6 +150,10 @@ export function useUploadVideoToR2(): UseMutationResult<
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
+    // No mutation-level retry: the service retries each step granularly
+    // (fresh presign + backoff). The global retry: 2 would re-run the WHOLE
+    // mutationFn — re-uploading the entire video file on every attempt.
+    retry: 0,
     mutationFn: async (params: UseUploadVideoParams) => {
       setProgress(0);
       setIsUploading(true);
@@ -226,6 +230,8 @@ export function useUploadMediaToR2(): UseMutationResult<
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
+    // retry: 0 — see useUploadVideo; a mutation-level retry re-transfers files
+    retry: 0,
     mutationFn: async (params: UseUploadMediaParams) => {
       setProgress(0);
       setIsUploading(true);
@@ -313,6 +319,8 @@ export function useUploadThumbnailToR2(): UseMutationResult<
   const [isUploading, setIsUploading] = useState(false);
 
   const mutation = useMutation({
+    // retry: 0 — see useUploadVideo; a mutation-level retry re-transfers files
+    retry: 0,
     mutationFn: async (params: UseUploadThumbnailParams) => {
       setProgress(0);
       setIsUploading(true);
@@ -397,6 +405,9 @@ export function useUploadToPresignedUrl(): PresignedUrlUploadResult {
   const [isUploading, setIsUploading] = useState(false);
 
   const mutation = useMutation<boolean, Error, PresignedUploadParams>({
+    // retry: 0 — a stored presigned URL may have expired by the retry, and a
+    // mutation-level retry re-transfers the file; callers re-presign instead
+    retry: 0,
     mutationFn: async ({ presignedUrl, fileUri, mimeType }: PresignedUploadParams) => {
       setProgress(0);
       setIsUploading(true);

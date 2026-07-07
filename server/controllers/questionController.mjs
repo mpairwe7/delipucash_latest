@@ -745,13 +745,95 @@ export const AddRewardQuestion = asyncHandler(async (req, res) => {
 // ============================================================================
 
 /**
- * GET /api/questions/leaderboard?limit=10
- * Returns top users ranked by total answers + points.
+ * Period leaderboard: rank by activity (responses + question attempts) since
+ * the window start. Uses the [userId, createdAt] / [userEmail, attemptedAt]
+ * indexes; the merge happens in memory over only period-active users.
+ */
+async function getPeriodLeaderboard(res, { limit, userId, period }) {
+  try {
+    const since =
+      period === 'today'
+        ? new Date(new Date().setHours(0, 0, 0, 0))
+        : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [responseGroups, attemptGroups] = await Promise.all([
+      prisma.response.groupBy({
+        by: ['userId'],
+        where: { createdAt: { gte: since } },
+        _count: { _all: true },
+      }),
+      prisma.questionAttempt.groupBy({
+        by: ['userEmail'],
+        where: { attemptedAt: { gte: since } },
+        _count: { _all: true },
+      }),
+    ]);
+
+    if (responseGroups.length === 0 && attemptGroups.length === 0) {
+      return res.json({
+        success: true,
+        data: { users: [], currentUserRank: 0, totalUsers: 0 },
+      });
+    }
+
+    // Resolve the active users (responses key by id, attempts by email)
+    const activeUsers = await prisma.appUser.findMany({
+      where: {
+        OR: [
+          { id: { in: responseGroups.map((g) => g.userId) } },
+          { email: { in: attemptGroups.map((g) => g.userEmail) } },
+        ],
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, avatar: true, points: true },
+    });
+
+    const responsesByUserId = new Map(responseGroups.map((g) => [g.userId, g._count._all]));
+    const attemptsByEmail = new Map(attemptGroups.map((g) => [g.userEmail, g._count._all]));
+
+    const ranked = activeUsers
+      .map((u) => ({
+        id: u.id,
+        name: `${u.firstName} ${u.lastName}`.trim(),
+        avatar: u.avatar,
+        points: u.points,
+        answersCount: (responsesByUserId.get(u.id) || 0) + (attemptsByEmail.get(u.email) || 0),
+      }))
+      .sort((a, b) => b.answersCount - a.answersCount || b.points - a.points)
+      .map((u, index) => ({ ...u, rank: index + 1 }));
+
+    const currentUserRank = userId
+      ? ranked.find((u) => u.id === userId)?.rank || 0
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        users: ranked.slice(0, limit),
+        currentUserRank,
+        totalUsers: ranked.length,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching period leaderboard:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch leaderboard', error: error.message });
+  }
+}
+
+/**
+ * GET /api/questions/leaderboard?limit=10&period=all|weekly|today
+ * Returns top users. `all` (default) ranks by cumulative points; `weekly`
+ * (last 7 days) and `today` rank by activity in the window — responses +
+ * question attempts — since points are cumulative and can't be time-sliced.
  * Public endpoint — no auth required.
  */
 export const getLeaderboard = asyncHandler(async (req, res) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
   const userId = req.query.userId || null;
+  const period = ['all', 'weekly', 'today'].includes(req.query.period) ? req.query.period : 'all';
+
+  if (period !== 'all') {
+    return getPeriodLeaderboard(res, { limit, userId, period });
+  }
 
   try {
     // Get top users by points (points represent earnings/activity)

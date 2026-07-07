@@ -22,6 +22,7 @@ import {
     UserStats,
     Video,
 } from "@/types";
+import { useCallback } from "react";
 import { keepPreviousData, useMutation, UseMutationResult, useQuery, useQueryClient, UseQueryResult, useSuspenseQuery } from "@tanstack/react-query";
 import api from "./api";
 import { surveyApi } from "./surveyApi";
@@ -830,6 +831,30 @@ export function useSurvey(surveyId: string): UseQueryResult<Survey | null, Error
 }
 
 /**
+ * Prefetch a survey's detail before navigating (the loader-equivalent
+ * pattern — see docs/data-fetching.md). Fire-and-forget on card press so
+ * /survey/[id] mounts with the cache already warm; a no-op when the survey
+ * is already fresh in cache.
+ */
+export function usePrefetchSurvey(): (surveyId: string) => void {
+  const queryClient = useQueryClient();
+
+  return useCallback(
+    (surveyId: string) => {
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.survey(surveyId),
+        queryFn: async () => {
+          const response = await api.surveys.getById(surveyId);
+          return response.data;
+        },
+        staleTime: 1000 * 60 * 2,
+      });
+    },
+    [queryClient],
+  );
+}
+
+/**
  * Hook to check if user has already attempted a survey
  * Industry standard: Single attempt per user per survey
  */
@@ -1008,8 +1033,101 @@ export function useSubmitResponse(): UseMutationResult<Response, Error, { questi
   });
 }
 
+/** Intended NEXT reaction state for a response (mirrors the mutation params). */
+export interface ResponseReactionIntent {
+  isLiked?: boolean;
+  isDisliked?: boolean;
+}
+
 /**
- * Hook to like a response
+ * Write a like/dislike count under both field spellings so every reader sees
+ * the same value: the backend returns `likeCount`/`dislikeCount`, the legacy
+ * `Response` type carries `likesCount`/`dislikesCount`, and transformResponses
+ * reads them with `likeCount ?? likesCount`.
+ */
+const readCount = (r: any, singular: string, plural: string): number =>
+  r[singular] ?? r[plural] ?? 0;
+
+/**
+ * Apply an optimistic reaction toggle to one response object.
+ * Setting a reaction clears the opposite one (matching the question-detail
+ * screen's toggle UX); un-setting only decrements its own counter. A no-op
+ * intent (already in that state) leaves counts untouched so double-fires
+ * can't drift them.
+ */
+export function applyResponseReaction(r: any, intent: ResponseReactionIntent): any {
+  const next = { ...r };
+  const setLikes = (value: number) => {
+    next.likeCount = value;
+    next.likesCount = value;
+  };
+  const setDislikes = (value: number) => {
+    next.dislikeCount = value;
+    next.dislikesCount = value;
+  };
+  const likes = readCount(r, 'likeCount', 'likesCount');
+  const dislikes = readCount(r, 'dislikeCount', 'dislikesCount');
+
+  if (intent.isLiked !== undefined && intent.isLiked !== !!r.isLiked) {
+    next.isLiked = intent.isLiked;
+    if (intent.isLiked) {
+      setLikes(likes + 1);
+      if (r.isDisliked) {
+        next.isDisliked = false;
+        setDislikes(Math.max(0, dislikes - 1));
+      }
+    } else {
+      setLikes(Math.max(0, likes - 1));
+    }
+  }
+
+  if (intent.isDisliked !== undefined && intent.isDisliked !== !!r.isDisliked) {
+    next.isDisliked = intent.isDisliked;
+    if (intent.isDisliked) {
+      setDislikes(dislikes + 1);
+      if (r.isLiked) {
+        next.isLiked = false;
+        setLikes(Math.max(0, likes - 1));
+      }
+    } else {
+      setDislikes(Math.max(0, dislikes - 1));
+    }
+  }
+
+  return next;
+}
+
+/**
+ * Build a cache updater that applies a reaction to the matching response in
+ * every cache shape that can hold responses:
+ *  - detail caches: `{ ..., responses: Response[] }` (questionQueryKeys.detail / legacy question)
+ *  - bare arrays:   `Response[]` (questionQueryKeys.responses)
+ * Unrelated shapes pass through untouched; a missing cache stays missing
+ * (setQueryData ignores an undefined return).
+ */
+export function makeResponseReactionUpdater(responseId: string, intent: ResponseReactionIntent) {
+  const updateList = (list: any[]) =>
+    list.map((r) => (r?.id === responseId ? applyResponseReaction(r, intent) : r));
+
+  return (old: any): any => {
+    if (!old || typeof old !== 'object') return old;
+    if (Array.isArray(old)) return updateList(old);
+    if (Array.isArray(old.responses)) return { ...old, responses: updateList(old.responses) };
+    return old;
+  };
+}
+
+/** The three cache hierarchies a response reaction touches. */
+const responseReactionKeys = (questionId: string) => [
+  queryKeys.question(questionId),
+  questionQueryKeys.detail(questionId),
+  questionQueryKeys.responses(questionId),
+];
+
+/**
+ * Hook to like a response — optimistic with rollback.
+ * The like counter and isLiked flag update immediately in the detail/legacy/
+ * responses caches; onSettled refetches to reconcile with the server.
  */
 export function useLikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string; isLiked?: boolean }> {
   const queryClient = useQueryClient();
@@ -1021,17 +1139,31 @@ export function useLikeResponse(): UseMutationResult<Response, Error, { response
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: (_, variables) => {
-      // Invalidate both legacy and questionHooks query key hierarchies
-      queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(variables.questionId) });
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.responses(variables.questionId) });
+    onMutate: async ({ responseId, questionId, isLiked = true }) => {
+      const keys = responseReactionKeys(questionId);
+      await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      const snapshots = keys.map(
+        (queryKey) => [queryKey, queryClient.getQueryData(queryKey)] as const,
+      );
+      const update = makeResponseReactionUpdater(responseId, { isLiked });
+      keys.forEach((queryKey) => queryClient.setQueryData(queryKey, update));
+      return { snapshots };
+    },
+    onError: (_err, _variables, context) => {
+      context?.snapshots.forEach(([queryKey, data]) => {
+        if (data !== undefined) queryClient.setQueryData(queryKey, data);
+      });
+    },
+    onSettled: (_data, _err, variables) => {
+      responseReactionKeys(variables.questionId).forEach((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      );
     },
   });
 }
 
 /**
- * Hook to dislike a response
+ * Hook to dislike a response — optimistic with rollback (mirror of useLikeResponse).
  */
 export function useDislikeResponse(): UseMutationResult<Response, Error, { responseId: string; questionId: string; isDisliked?: boolean }> {
   const queryClient = useQueryClient();
@@ -1043,11 +1175,25 @@ export function useDislikeResponse(): UseMutationResult<Response, Error, { respo
       if (!response.success) throw new Error(response.error);
       return response.data;
     },
-    onSuccess: (_, variables) => {
-      // Invalidate both legacy and questionHooks query key hierarchies
-      queryClient.invalidateQueries({ queryKey: queryKeys.question(variables.questionId) });
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.detail(variables.questionId) });
-      queryClient.invalidateQueries({ queryKey: questionQueryKeys.responses(variables.questionId) });
+    onMutate: async ({ responseId, questionId, isDisliked = true }) => {
+      const keys = responseReactionKeys(questionId);
+      await Promise.all(keys.map((queryKey) => queryClient.cancelQueries({ queryKey })));
+      const snapshots = keys.map(
+        (queryKey) => [queryKey, queryClient.getQueryData(queryKey)] as const,
+      );
+      const update = makeResponseReactionUpdater(responseId, { isDisliked });
+      keys.forEach((queryKey) => queryClient.setQueryData(queryKey, update));
+      return { snapshots };
+    },
+    onError: (_err, _variables, context) => {
+      context?.snapshots.forEach(([queryKey, data]) => {
+        if (data !== undefined) queryClient.setQueryData(queryKey, data);
+      });
+    },
+    onSettled: (_data, _err, variables) => {
+      responseReactionKeys(variables.questionId).forEach((queryKey) =>
+        queryClient.invalidateQueries({ queryKey }),
+      );
     },
   });
 }

@@ -3,6 +3,149 @@
 Dated audit trail of substantive change sets: what changed, why, the invariants it
 establishes, and the tests that lock it in.
 
+## 2026-07-08 — Close remaining audit items: idempotent finalize (server), finalize-only recovery, leaderboard periods, upload UX
+
+**Scope (app):** `services/r2UploadService.ts`, `services/hooks.ts`,
+`services/questionHooks.ts`, `services/surveyFileApi.ts`,
+`hooks/useUploadQueueProcessor.ts`, `components/video/UploadModal.tsx`,
+`store/VideoStore.ts`, `app/leaderboard.tsx`, `app/(tabs)/surveys-new.tsx`.
+**Scope (server):** `controllers/r2UploadController.mjs`,
+`controllers/questionController.mjs`.
+
+1. **Server: idempotent finalize** — `finalizePresignedVideoUpload` now returns
+   the existing Video (200) when a record with the same `r2VideoKey` exists
+   (403 if it belongs to another user), so finalize replays can't duplicate.
+2. **Finalize-only recovery (closes the orphan window)** — when the transfer
+   succeeded but finalize exhausted retries, the error now carries
+   `finalizePayload`; the upload modal queues it (`PendingUpload.finalizePayload`)
+   with a "publishing will finish automatically" toast, and the queue processor
+   re-sends only the finalize call (`finalizeVideoUploadOnly`) on reconnect —
+   never re-uploading bytes. Queue successes now also invalidate `['videos']`
+   (background uploads previously didn't appear until staleTime expiry).
+3. **Server + client: leaderboard periods** — `GET /api/questions/leaderboard`
+   accepts `period=all|weekly|today` (`all` ranks by cumulative points;
+   windows rank by responses + attempts in range, using the
+   `[userId, createdAt]` / `[userEmail, attemptedAt]` indexes). The screen's
+   existing tabs now drive the query; `keepPreviousData` prevents skeleton
+   flash on tab switch.
+4. **Upload UX polish** — "Preparing upload…" label/strip while the presign
+   step runs (was a frozen-looking "0%"); hint in the cover picker when
+   auto-thumbnail generation fails; "Retrying N queued uploads…" toast;
+   abort-controller ref dropped after abort; documented that the ≥1%
+   progress-sync threshold only throttles the store mirror (the visible bar
+   is per-event).
+5. **Survey files: client-side MIME allowlist** mirroring the server's
+   (server remains the enforcement point) — disallowed files fail instantly
+   instead of after a full upload. **Survey detail prefetch** on card press
+   (`usePrefetchSurvey`) — loader-equivalent warm-up while navigation animates.
+
+**Invariant:** finalize replays are idempotent end-to-end (server keyed on
+r2VideoKey; client queues payload, never re-transfers).
+**Verified:** app `tsc` clean, 6 retry tests incl. the queue-recovery contract
+(`finalizePayload` exposure + finalize-only call) green; server controllers
+`node --check` clean (eslint runs in CI — no local node_modules).
+
+## 2026-07-07 — Upload resilience: step-granular retries, finalize timeout, queue fixes
+
+**Scope:** `services/r2UploadService.ts`, `services/r2UploadHooks.ts`,
+`hooks/useUploadQueueProcessor.ts`, `components/video/UploadModal.tsx`,
+`__tests__/r2Upload.retry.test.ts` (new), `docs/data-fetching.md` (Uploads section).
+
+### Context
+
+An upload-stack audit found the presigned video flow brittle: one transient
+network blip anywhere lost the whole upload. Fixes:
+
+1. **Transfer retry with fresh presign** — `uploadFileWithFreshPresign` wraps
+   presign + R2 PUT with 3 attempts and exponential backoff; each retry gets a
+   NEW presigned URL, so expired links recover too. Intermediate failures are
+   not surfaced to `onError` (no error-flash during silent retry); cancellation
+   is never retried. Thumbnails use the same path.
+2. **Finalize no longer orphans uploads** — `finalizeVideoUpload` retries the
+   small record-creation POST on network errors and 5xx with backoff and a 30 s
+   hard timeout (`fetchWithTimeout`, previously unbounded), refreshes an expired
+   token once, fails fast on 4xx. The completed R2 transfer is never redone.
+3. **Upload mutations set `retry: 0`** — the global `mutations.retry: 2` was
+   silently re-running entire mutationFns, i.e. re-uploading whole video files;
+   retries now live in the service at step granularity.
+4. **Offline queue robustness** — validates the video file still exists before
+   retrying (OS may purge cache files; a missing file now drops with a specific
+   message instead of a generic failure), and fixed a double-increment that
+   halved the retry budget (retryCount bumped both before the attempt and on
+   error; MAX_RETRIES=3 effectively allowed 2 attempts).
+5. **Double-tap guard** — `handleUpload` guards with a synchronous ref;
+   `uploadPhase` state updates too late to stop two rapid taps spawning
+   concurrent uploads.
+
+**Invariant:** a successful file transfer is never re-uploaded by any retry
+layer; user cancellation aborts immediately at every step.
+**Verified:** `tsc` clean; 4 new regression tests (fresh-presign retry,
+finalize-500 retry without re-transfer, 4xx fail-fast, no-retry-after-cancel);
+existing abort tests still green.
+
+## 2026-07-07 — Feed audit gaps: optimistic response reactions, video prefetch, cache-seeded detail
+
+**Scope:** `services/hooks.ts`, `services/videoHooks.ts`, `app/(tabs)/videos-new.tsx`,
+`__tests__/responseReactions.optimistic.test.tsx` (new), `__tests__/videoPrefetch.test.tsx` (new).
+
+An audit of the question/video screens against the data-fetching conventions
+(docs/data-fetching.md) found three gaps; all fixed:
+
+1. **`useLikeResponse`/`useDislikeResponse` were invalidate-only** — a reaction on
+   question-detail waited a full round-trip + refetch before counts moved. Now
+   optimistic with rollback via exported pure helpers (`applyResponseReaction`,
+   `makeResponseReactionUpdater`) that update counts under both field spellings
+   (backend `likeCount`, legacy `likesCount`), clear the opposite reaction, and are
+   double-fire safe.
+2. **No prefetching in the video stack** — Following/Trending loaded cold on first
+   tap. Added `usePrefetchVideos` (mirror of `usePrefetchQuestions`), wired into
+   videos-new after the active feed loads. Page fetchers are shared between the tab
+   hooks and the prefetch (`fetchTrendingPage`/`fetchFollowingPage` +
+   `*_FEED_PAGE_LIMIT` constants) so keys/page sizes can't drift. Following is
+   skipped when signed out, matching the tab's `enabled` gate.
+3. **`useVideoDetails` ignored list caches** — video/[id] showed a spinner for a
+   video already in the feed cache. Now seeds `placeholderData` via exported
+   `findCachedVideo` (scans infinite + flat list shapes under `['videos']`;
+   `VideoWithDetails` only adds optional fields, so a feed `Video` renders safely
+   while full details fetch).
+
+**Invariant:** prefetched pages are byte-identical to tab fetches (shared fetchers,
+key-exact); reaction toggles never drift counts on double-fire or rollback.
+**Verified:** `tsc` clean; 13 new tests (reaction helpers/rollback, cache finder,
+prefetch key-match through the real tab hook, auth gating) all green.
+
+## 2026-07-07 — Data fetching: last useEffect screen → TanStack Query; setup extracted
+
+**Scope:** `services/queryClient.ts` (new), `services/supportHooks.ts` (new),
+`hooks/useDebouncedValue.ts` (new), `app/_layout.tsx`, `app/help-support.tsx`,
+`docs/data-fetching.md` (new), `__tests__/supportHooks.optimistic.test.tsx` (new).
+
+### Context
+
+The app was already on TanStack Query v5 (persisted cache, focus/online managers,
+per-domain `services/*Hooks.ts`), but two gaps remained:
+
+- The QueryClient, AsyncStorage persister, NetInfo/AppState wiring, and the
+  passive-logout cache-clear watcher lived inline in `app/_layout.tsx` (~90 lines),
+  unreachable for tests/Storybook and mixed into route concerns. Extracted verbatim
+  to `services/queryClient.ts`; `_layout.tsx` now imports `queryClient`,
+  `asyncStoragePersister`, `QUERY_PERSIST_MAX_AGE`. The persist key
+  (`REACT_QUERY_OFFLINE_CACHE`) has a single exported definition.
+- `app/help-support.tsx` was the last screen fetching in `useEffect`: six useState
+  data slots + `Promise.all` loader + hand-rolled debounce effect. Replaced with
+  `services/supportHooks.ts` (key factory, per-resource queries, `useSearchFAQs`
+  gated on >2 chars with `keepPreviousData`, optimistic `useRateFAQ` with rollback,
+  `useRefreshSupport` root invalidation) + `useDebouncedValue`. Loading/error state
+  is now derived per tab, so one failing resource no longer blanks all three tabs.
+  `useRateFAQ` deliberately skips `onSettled` invalidation: the backend acknowledges
+  but doesn't persist ratings yet — a refetch would wipe the optimistic bump.
+
+**Invariant:** components never fetch in `useEffect` or call API modules directly —
+server state flows through `services/*Hooks.ts` (pattern doc: `docs/data-fetching.md`).
+The QueryClient and its RN wiring have exactly one home: `services/queryClient.ts`.
+**Verified:** `tsc` clean; `expo lint` 0 errors; full jest suite 43/43 suites,
+285/285 tests (3 new: optimistic bump both caches + rollback + search gating).
+
 ## 2026-06-11 — Storybook: QueryClientProvider in preview (visual CI un-broken)
 
 **Scope:** `.storybook/preview.tsx`. Branch `fix/storybook-query-provider`.

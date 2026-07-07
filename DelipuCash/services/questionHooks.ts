@@ -692,19 +692,28 @@ export function useSubmitQuestionResponse(): UseMutationResult<
 }
 
 /**
+ * Leaderboard ranking window. `all` ranks by cumulative points; `weekly` /
+ * `today` rank by activity in the window (server computes both).
+ */
+export type LeaderboardPeriod = 'all' | 'weekly' | 'today';
+
+/**
  * Fetch leaderboard data.
- * Long staleTime — leaderboard doesn't change frequently.
+ * Long staleTime — leaderboard doesn't change frequently. Each period is its
+ * own cache entry; keepPreviousData holds the current list on screen while a
+ * newly selected period loads (no skeleton flash on tab switch).
  */
 export function useQuestionsLeaderboard(
   limit: number = 10,
-  enabled = true
+  enabled = true,
+  period: LeaderboardPeriod = 'all'
 ): UseQueryResult<LeaderboardResult, Error> {
   const userId = getCurrentUserId();
 
   return useQuery({
-    queryKey: [...questionQueryKeys.leaderboard, limit],
+    queryKey: [...questionQueryKeys.leaderboard, limit, period],
     queryFn: async () => {
-      const params = new URLSearchParams({ limit: String(limit) });
+      const params = new URLSearchParams({ limit: String(limit), period });
       if (userId) params.set('userId', userId);
 
       const response = await fetchJson<{ data: LeaderboardResult }>(
@@ -721,6 +730,7 @@ export function useQuestionsLeaderboard(
     gcTime: 1000 * 60 * 30,
     retry: 1,
     enabled,
+    placeholderData: keepPreviousData,
   });
 }
 

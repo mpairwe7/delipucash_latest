@@ -17,13 +17,18 @@ import * as FileSystem from 'expo-file-system';
 import { useVideoStore } from '@/store/VideoStore';
 import { useAuthStore } from '@/utils/auth/store';
 import { useToast } from '@/components/ui/Toast';
-import { onlineManager } from '@tanstack/react-query';
-import { uploadVideoViaPresignedUrl, uploadThumbnailViaPresignedUrl } from '@/services/r2UploadService';
+import { onlineManager, useQueryClient } from '@tanstack/react-query';
+import {
+  uploadVideoViaPresignedUrl,
+  uploadThumbnailViaPresignedUrl,
+  finalizeVideoUploadOnly,
+} from '@/services/r2UploadService';
 
 const MAX_RETRIES = 3;
 
 export function useUploadQueueProcessor() {
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
   const processingRef = useRef<Set<string>>(new Set());
   const isProcessingRef = useRef(false);
   const showToastRef = useRef(showToast);
@@ -42,6 +47,18 @@ export function useUploadQueueProcessor() {
         const currentUserId = auth.user.id;
         const pending = [...useVideoStore.getState().pendingUploads];
         if (pending.length === 0) return;
+
+        // Let the user know queued work is being retried (silent-retry UX gap:
+        // previously the only signal was the eventual success/failure toast).
+        const retryable = pending.filter(
+          (u) => u.userId === currentUserId && u.retryCount < MAX_RETRIES,
+        );
+        if (retryable.length > 0) {
+          showToastRef.current({
+            message: `Retrying ${retryable.length} queued upload${retryable.length === 1 ? '' : 's'}…`,
+            type: 'info',
+          });
+        }
 
         for (const upload of pending) {
           // Skip if already being processed (race condition guard)
@@ -66,8 +83,32 @@ export function useUploadQueueProcessor() {
           processingRef.current.add(upload.id);
 
           try {
-            // Increment retry count before attempting
-            useVideoStore.getState().incrementUploadRetry(upload.id);
+            // Finalize-only recovery: the file is already in R2 — just
+            // re-send the (idempotent) finalize call; never re-upload.
+            if (upload.finalizePayload) {
+              await finalizeVideoUploadOnly(upload.finalizePayload);
+              useVideoStore.getState().removePendingUpload(upload.id);
+              queryClient.invalidateQueries({ queryKey: ['videos'] });
+              showToastRef.current({
+                message: `"${upload.title}" published!`,
+                type: 'success',
+              });
+              continue;
+            }
+
+            // Validate the video file still exists — the OS may purge cache
+            // files between queueing and retry (especially across restarts).
+            // A missing file can never succeed, so drop it with a specific
+            // message instead of burning retries on a generic failure.
+            const videoInfo = await FileSystem.getInfoAsync(upload.videoUri).catch(() => null);
+            if (!videoInfo?.exists) {
+              useVideoStore.getState().removePendingUpload(upload.id);
+              showToastRef.current({
+                message: `"${upload.title}" can't be uploaded — the video file no longer exists on this device.`,
+                type: 'error',
+              });
+              continue;
+            }
 
             // Validate thumbnail file still exists (may be cleaned up after app restart)
             let thumbnailUri = upload.thumbnailUri;
@@ -104,11 +145,18 @@ export function useUploadQueueProcessor() {
             // Remove from queue on success
             useVideoStore.getState().removePendingUpload(upload.id);
 
+            // The queue bypasses the upload hooks, so invalidate the feed
+            // caches here — otherwise the new video only appears after
+            // staleTime expiry.
+            queryClient.invalidateQueries({ queryKey: ['videos'] });
+
             showToastRef.current({
               message: `"${upload.title}" uploaded successfully!`,
               type: 'success',
             });
           } catch (error) {
+            // Single increment per failed attempt (a second pre-attempt
+            // increment used to double-count, halving the real retry budget)
             const errorMsg = error instanceof Error ? error.message : 'Unknown error';
             useVideoStore.getState().incrementUploadRetry(upload.id, errorMsg);
             // Stays in queue for next online event
@@ -134,5 +182,5 @@ export function useUploadQueueProcessor() {
     }
 
     return unsubscribe;
-  }, []);
+  }, [queryClient]);
 }

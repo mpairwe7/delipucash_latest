@@ -679,8 +679,151 @@ export async function uploadToPresignedUrl(
 // PRESIGNED VIDEO UPLOAD ORCHESTRATOR
 // ============================================================================
 
+/** Attempts per file transfer / finalize call (1 initial + 2 retries). */
+const UPLOAD_MAX_ATTEMPTS = 3;
+/** Hard timeout for the small finalize JSON POST (the XHR upload has its own 10 min timeout). */
+const FINALIZE_TIMEOUT_MS = 30_000;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const isCancellation = (error: Error, signal?: AbortSignal) =>
+  signal?.aborted || /cancel/i.test(error.message);
+
 /**
- * Upload a thumbnail via presigned URL.
+ * Presign + PUT with bounded exponential-backoff retry.
+ *
+ * Every retry requests a FRESH presigned URL, so both transient network drops
+ * and expired presign links recover transparently. User cancellation (signal)
+ * is never retried. Intermediate failures are NOT surfaced through
+ * options.onError — only the final error is, once all attempts are exhausted —
+ * so the UI doesn't flash an error state during a silent retry.
+ */
+async function uploadFileWithFreshPresign(
+  fileUri: string,
+  fileName: string,
+  mimeType: string,
+  userId: string,
+  type: 'video' | 'thumbnail',
+  options: UploadOptions = {}
+): Promise<{ key: string; publicUrl: string }> {
+  let lastError = new Error('Upload failed');
+
+  for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt++) {
+    if (options.signal?.aborted) throw new Error('Upload was cancelled');
+    try {
+      const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, type);
+      if (!presignResult.success) {
+        throw new Error(presignResult.error || 'Failed to get upload URL');
+      }
+
+      const uploadSuccess = await uploadToPresignedUrl(
+        presignResult.data.uploadUrl,
+        fileUri,
+        mimeType,
+        {
+          onProgress: options.onProgress,
+          onStart: attempt === 1 ? options.onStart : undefined,
+          signal: options.signal,
+        }
+      );
+      if (!uploadSuccess) {
+        throw new Error('Direct upload to storage failed');
+      }
+
+      return { key: presignResult.data.key, publicUrl: presignResult.data.publicUrl };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('Upload failed');
+      if (isCancellation(lastError, options.signal)) throw lastError;
+      if (attempt < UPLOAD_MAX_ATTEMPTS) await wait(1000 * 2 ** (attempt - 1));
+    }
+  }
+
+  options.onError?.(lastError);
+  throw lastError;
+}
+
+/** fetch with a hard timeout that also honors the caller's abort signal. */
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener('abort', onAbort);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
+
+/**
+ * Create the Video DB record after the file is already in R2.
+ *
+ * This is the step that previously orphaned uploads: the expensive transfer
+ * had succeeded, then one failed JSON POST threw the whole upload away.
+ * Retries transient failures (network errors, timeouts, 5xx) with backoff and
+ * refreshes an expired token once; 4xx errors fail fast.
+ */
+async function finalizeVideoUpload(
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<any> {
+  let lastError = new Error('Failed to finalize upload');
+
+  for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt++) {
+    if (signal?.aborted) throw new Error('Upload was cancelled');
+
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/r2/upload/finalize-video`,
+        { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) },
+        FINALIZE_TIMEOUT_MS,
+        signal
+      );
+    } catch {
+      if (signal?.aborted) throw new Error('Upload was cancelled');
+      lastError = new Error(
+        'Network error while finalizing upload. The video was uploaded but the record was not created.'
+      );
+      if (attempt < UPLOAD_MAX_ATTEMPTS) await wait(1000 * 2 ** (attempt - 1));
+      continue;
+    }
+
+    if (isTokenExpiredResponse(response.status)) {
+      const refreshed = await silentRefresh();
+      if (refreshed && attempt < UPLOAD_MAX_ATTEMPTS) continue; // immediate retry with fresh token
+    }
+
+    if (response.ok) {
+      return safeParseJSON(response);
+    }
+
+    try {
+      const data = await safeParseJSON(response);
+      lastError = new Error(data.message || 'Failed to finalize upload');
+    } catch (parseError) {
+      lastError = parseError instanceof Error ? parseError : new Error('Failed to finalize upload');
+    }
+
+    // 5xx is transient — retry; other statuses (validation, auth) are permanent
+    if (response.status >= 500 && attempt < UPLOAD_MAX_ATTEMPTS) {
+      await wait(1000 * 2 ** (attempt - 1));
+      continue;
+    }
+    throw lastError;
+  }
+
+  throw lastError;
+}
+
+/**
+ * Upload a thumbnail via presigned URL (with fresh-presign retry).
  * Returns the R2 key and public URL for use in the finalize call.
  */
 export async function uploadThumbnailViaPresignedUrl(
@@ -690,35 +833,25 @@ export async function uploadThumbnailViaPresignedUrl(
   mimeType: string,
   signal?: AbortSignal
 ): Promise<{ key: string; publicUrl: string; mimeType: string }> {
-  const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, 'thumbnail');
-  if (!presignResult.success) {
-    throw new Error(presignResult.error || 'Failed to get thumbnail upload URL');
-  }
-
-  const success = await uploadToPresignedUrl(
-    presignResult.data.uploadUrl,
+  const { key, publicUrl } = await uploadFileWithFreshPresign(
     thumbnailUri,
+    fileName,
     mimeType,
+    userId,
+    'thumbnail',
     { signal }
   );
-  if (!success) {
-    throw new Error('Thumbnail upload failed');
-  }
-
-  return {
-    key: presignResult.data.key,
-    publicUrl: presignResult.data.publicUrl,
-    mimeType,
-  };
+  return { key, publicUrl, mimeType };
 }
 
 /**
  * Upload a video via presigned URL (bypasses Vercel body size limit).
  *
  * Flow:
- * 1. Get presigned URL from server (small JSON request)
- * 2. Upload video directly to R2 via XHR (progress tracked)
- * 3. Finalize — tell server to create Video DB record (small JSON request)
+ * 1+2. Presign + upload directly to R2 (progress tracked; fresh-presign retry
+ *      on transient failure — see uploadFileWithFreshPresign)
+ * 3.   Finalize — create the Video DB record (timeout + retry — see
+ *      finalizeVideoUpload; the transfer is never redone once it succeeded)
  */
 export async function uploadVideoViaPresignedUrl(
   videoUri: string,
@@ -736,77 +869,60 @@ export async function uploadVideoViaPresignedUrl(
   const fileName = metadata.fileName || videoUri.split('/').pop() || 'video.mp4';
   const mimeType = metadata.mimeType || 'video/mp4';
 
-  // Step 1: Get presigned URL (small JSON — fits within Vercel limit)
-  const presignResult = await getPresignedUploadUrl(fileName, mimeType, userId, 'video');
-  if (!presignResult.success) {
-    throw new Error(presignResult.error || 'Failed to get upload URL');
-  }
-  const { uploadUrl, key: r2VideoKey, publicUrl: videoPublicUrl } = presignResult.data;
+  const { key: r2VideoKey, publicUrl: videoPublicUrl } = await uploadFileWithFreshPresign(
+    videoUri,
+    fileName,
+    mimeType,
+    userId,
+    'video',
+    options
+  );
 
-  // Step 2: Upload directly to R2 (bypasses Vercel entirely)
-  // Only forward onProgress/onStart — onComplete is deferred until after finalize (Step 3)
-  const uploadSuccess = await uploadToPresignedUrl(uploadUrl, videoUri, mimeType, {
-    onProgress: options.onProgress,
-    onStart: options.onStart,
-    onError: options.onError,
-    signal: options.signal,
-  });
-  if (!uploadSuccess) {
-    throw new Error('Direct upload to storage failed');
-  }
+  const finalizeBody = {
+    r2VideoKey,
+    videoUrl: videoPublicUrl,
+    videoMimeType: mimeType,
+    r2ThumbnailKey: thumbnailData?.key || null,
+    thumbnailUrl: thumbnailData?.publicUrl || '',
+    thumbnailMimeType: thumbnailData?.mimeType || null,
+    title: metadata.title,
+    description: metadata.description,
+    duration: metadata.duration,
+  };
 
-  // Step 3: Finalize — create DB record via server (small JSON request)
-  let finalizeResponse: Response;
+  let data;
   try {
-    finalizeResponse = await fetch(`${API_BASE_URL}/api/r2/upload/finalize-video`, {
-      method: 'POST',
-      headers: authHeaders(),
-      signal: options.signal,
-      body: JSON.stringify({
-        r2VideoKey,
-        videoUrl: videoPublicUrl,
-        videoMimeType: mimeType,
-        r2ThumbnailKey: thumbnailData?.key || null,
-        thumbnailUrl: thumbnailData?.publicUrl || '',
-        thumbnailMimeType: thumbnailData?.mimeType || null,
-        title: metadata.title,
-        description: metadata.description,
-        duration: metadata.duration,
-      }),
-    });
-  } catch (networkErr) {
-    throw new Error('Network error while finalizing upload. The video was uploaded but the record was not created.');
-  }
-
-  // If token expired on finalize, refresh and retry (finalize is cheap)
-  if (isTokenExpiredResponse(finalizeResponse.status)) {
-    const refreshed = await silentRefresh();
-    if (refreshed) {
-      finalizeResponse = await fetch(`${API_BASE_URL}/api/r2/upload/finalize-video`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          r2VideoKey,
-          videoUrl: videoPublicUrl,
-          videoMimeType: mimeType,
-          r2ThumbnailKey: thumbnailData?.key || null,
-          thumbnailUrl: thumbnailData?.publicUrl || '',
-          thumbnailMimeType: thumbnailData?.mimeType || null,
-          title: metadata.title,
-          description: metadata.description,
-          duration: metadata.duration,
-        }),
-      });
+    data = await finalizeVideoUpload(finalizeBody, options.signal);
+  } catch (error) {
+    // The transfer already succeeded — expose the finalize payload on the
+    // error so callers can queue a finalize-only retry (the endpoint is
+    // idempotent on r2VideoKey) instead of re-uploading the whole file.
+    if (error instanceof Error && !isCancellation(error, options.signal)) {
+      (error as Error & { finalizePayload?: Record<string, unknown> }).finalizePayload =
+        finalizeBody;
     }
-  }
-
-  const data = await safeParseJSON(finalizeResponse);
-  if (!finalizeResponse.ok) {
-    throw new Error(data.message || 'Failed to finalize upload');
+    throw error;
   }
 
   options.onComplete?.();
 
+  return {
+    success: true,
+    data: data.video || (data.data as VideoUploadResult),
+  };
+}
+
+/**
+ * Re-run ONLY the finalize step for an upload whose transfer already
+ * succeeded (payload captured from a failed finalize via `finalizePayload`
+ * on the thrown error). Safe to call repeatedly — the server endpoint is
+ * idempotent on r2VideoKey and returns the existing record on replay.
+ */
+export async function finalizeVideoUploadOnly(
+  payload: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<ApiResponse<VideoUploadResult>> {
+  const data = await finalizeVideoUpload(payload, signal);
   return {
     success: true,
     data: data.video || (data.data as VideoUploadResult),

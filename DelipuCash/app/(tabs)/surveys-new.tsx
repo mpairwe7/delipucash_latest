@@ -31,7 +31,7 @@ import {
   SurveyCardSkeleton,
   type CreationMode,
 } from "@/components/survey";
-import { useRunningSurveys, useUpcomingSurveys, useCompletedSurveys } from "@/services/hooks";
+import { useRunningSurveys, useUpcomingSurveys, useCompletedSurveys, usePrefetchSurvey } from "@/services/hooks";
 import { useUnreadNotificationCount } from "@/services/notificationHooks";
 import { useSurveyCreatorAccess } from "@/services/purchasesHooks";
 import { InlinePremiumSection, type InlinePremiumSectionRef } from "@/components/payment";
@@ -624,9 +624,12 @@ export default function SurveysScreen(): React.ReactElement {
   }, [recordAdImpression]);
 
   // Navigation handlers
+  const prefetchSurvey = usePrefetchSurvey();
   const handleSurveyPress = useCallback((id: string) => {
+    // Warm the detail cache while the navigation animates (loader pattern)
+    prefetchSurvey(id);
     router.push(`/survey/${id}`);
-  }, []);
+  }, [prefetchSurvey]);
 
   // Ref-based handlers to avoid inline closures in renderItem
   const surveyPressHandlersRef = useRef<Map<string, () => void>>(new Map());

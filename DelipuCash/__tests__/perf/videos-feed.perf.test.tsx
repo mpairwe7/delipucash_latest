@@ -43,6 +43,9 @@ jest.mock('@/services/videoHooks', () => {
     useVideoFeedback: jest.fn(() => ({ mutate: jest.fn() })),
     useRecordVideoCompletion: jest.fn(() => ({ mutate: jest.fn() })),
     useBlockUser: jest.fn(() => ({ mutate: jest.fn() })),
+    usePrefetchVideos: jest.fn(() => jest.fn()),
+    FOLLOWING_FEED_PAGE_LIMIT: 15,
+    TRENDING_FEED_PAGE_LIMIT: 20,
   };
 });
 jest.mock('@/services/notificationHooks', () => ({ __esModule: true, useUnreadNotificationCount: () => ({ data: 0 }) }));

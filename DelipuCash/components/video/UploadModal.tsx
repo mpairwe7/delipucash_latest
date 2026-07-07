@@ -60,6 +60,7 @@ import {
 } from '@/utils/video-utils';
 import { useVideoPremiumAccess } from '@/services/purchasesHooks';
 import { useVideoStore, selectCurrentUpload } from '@/store/VideoStore';
+import { useToast } from '@/components/ui/Toast';
 import { useAuthStore } from '@/utils/auth/store';
 import {
   useUploadVideoToR2,
@@ -156,6 +157,7 @@ function UploadModalComponent({
   const completeUpload = useVideoStore(s => s.completeUpload);
   const failUpload = useVideoStore(s => s.failUpload);
   const setPremiumStatus = useVideoStore(s => s.setPremiumStatus);
+  const { showToast } = useToast();
 
   // R2 upload hooks — real progress via XHR
   const {
@@ -209,16 +211,19 @@ function UploadModalComponent({
   const [selectedThumbnail, setSelectedThumbnail] = useState<SelectedThumbnail | null>(null);
   const [autoThumbnail, setAutoThumbnail] = useState<SelectedThumbnail | null>(null);
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+  const [thumbnailGenFailed, setThumbnailGenFailed] = useState(false);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
 
   // Auto-generate thumbnail when video is selected (if user hasn't picked one manually)
   useEffect(() => {
     if (!selectedFile) {
       setAutoThumbnail(null);
+      setThumbnailGenFailed(false);
       return;
     }
     let cancelled = false;
     setIsGeneratingThumbnail(true);
+    setThumbnailGenFailed(false);
 
     (async () => {
       try {
@@ -234,8 +239,12 @@ function UploadModalComponent({
           });
         }
       } catch {
-        // Thumbnail generation failed — user can still upload without it
-        if (!cancelled) setAutoThumbnail(null);
+        // Thumbnail generation failed — upload still works; surface a hint in
+        // the picker so the user can add a cover manually (covers drive taps).
+        if (!cancelled) {
+          setAutoThumbnail(null);
+          setThumbnailGenFailed(true);
+        }
       } finally {
         if (!cancelled) setIsGeneratingThumbnail(false);
       }
@@ -252,10 +261,16 @@ function UploadModalComponent({
   // and able to finalize server-side after the user "cancelled").
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Abort any in-flight upload if the modal unmounts.
+  // Synchronous double-tap guard: uploadPhase state updates async, so two
+  // rapid taps could both pass validation and spawn concurrent uploads.
+  const uploadInFlightRef = useRef(false);
+
+  // Abort any in-flight upload if the modal unmounts (and drop the reference
+  // so the controller doesn't outlive the component).
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      abortControllerRef.current = null;
     };
   }, []);
 
@@ -264,12 +279,14 @@ function UploadModalComponent({
     // stops consuming bandwidth and cannot finalize after cancellation.
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    abortControllerRef.current = null;
     setTitle('');
     setDescription('');
     setSelectedFile(null);
     setSelectedThumbnail(null);
     setAutoThumbnail(null);
     setIsGeneratingThumbnail(false);
+    setThumbnailGenFailed(false);
     setFileSizeError(null);
     if (storeCurrentUpload) {
       cancelUpload(storeCurrentUpload.fileId);
@@ -410,6 +427,7 @@ function UploadModalComponent({
 
   // ── Upload handler — presigned URL flow (bypasses Vercel body limit) ────────
   const handleUpload = useCallback(async () => {
+    if (uploadInFlightRef.current) return;
     if (!title.trim()) {
       Alert.alert('Validation Error', 'Please enter a title for your video');
       return;
@@ -423,6 +441,7 @@ function UploadModalComponent({
       return;
     }
 
+    uploadInFlightRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setUploadPhase('uploading');
 
@@ -433,6 +452,7 @@ function UploadModalComponent({
       uri: selectedFile.uri,
     });
     if (!upload?.fileId) {
+      uploadInFlightRef.current = false;
       const uploadError = useVideoStore.getState().lastError || 'Unable to start upload';
       Alert.alert('Upload Error', uploadError);
       return;
@@ -501,6 +521,36 @@ function UploadModalComponent({
         return;
       }
 
+      // Finalize-only failure: the file is already in R2 — queue just the
+      // finalize call (idempotent server-side) instead of asking the user to
+      // re-upload the whole video, and let them move on.
+      const finalizePayload = (error as Error & { finalizePayload?: Record<string, unknown> })
+        .finalizePayload;
+      if (finalizePayload && userId && selectedFile) {
+        useVideoStore.getState().enqueuePendingUpload({
+          videoUri: selectedFile.uri,
+          thumbnailUri: effectiveThumbnail?.uri,
+          title: title.trim(),
+          description: description.trim(),
+          duration: Number(finalizePayload.duration) || 0,
+          userId,
+          finalizePayload,
+        });
+        if (fileId) completeUpload(fileId, String(finalizePayload.videoUrl || ''));
+        setUploadPhase('idle');
+        setTitle('');
+        setDescription('');
+        setSelectedFile(null);
+        setSelectedThumbnail(null);
+        setFileSizeError(null);
+        showToast({
+          message: 'Video uploaded — publishing will finish automatically.',
+          type: 'info',
+        });
+        onClose();
+        return;
+      }
+
       setUploadPhase('idle');
       if (fileId) failUpload(fileId, error.message);
 
@@ -531,11 +581,13 @@ function UploadModalComponent({
       }
 
       Alert.alert('Upload Failed', userMessage, actions);
+    } finally {
+      uploadInFlightRef.current = false;
     }
   }, [
     title, description, selectedFile, effectiveThumbnail, userId,
     uploadVideoOnly, uploadMedia, startUpload, completeUpload, failUpload,
-    onUploadComplete, onClose,
+    onUploadComplete, onClose, showToast,
   ]);
 
   const isValid = title.trim().length > 0 && selectedFile !== null && !fileSizeError;
@@ -568,7 +620,10 @@ function UploadModalComponent({
     // Guard: skip if value hasn't changed (prevents infinite loop)
     if (uploadProgress === lastSyncedProgressRef.current) return;
 
-    // Only sync if progress increased by at least 1% or hit terminal values
+    // Only sync if progress increased by at least 1% or hit terminal values.
+    // This throttles ONLY the app-wide VideoStore mirror (mini-player etc.);
+    // the modal's visible bar renders uploadProgress from the hook, which
+    // updates on every XHR progress event — no perceived jumpiness.
     const diff = uploadProgress - lastSyncedProgressRef.current;
     if (diff >= 1 || uploadProgress === 100 || uploadProgress === 0) {
       lastSyncedProgressRef.current = uploadProgress;
@@ -645,6 +700,7 @@ function UploadModalComponent({
               ]}
             >
               {uploadPhase === 'processing' ? 'Processing...' :
+               isUploading && uploadProgress === 0 ? 'Preparing…' :
                isUploading ? `${uploadProgress}%` :
                'Upload'}
             </Text>
@@ -672,6 +728,15 @@ function UploadModalComponent({
           <View style={[styles.phaseStatusContainer, { backgroundColor: withAlpha(colors.warning, 0.1) }]}>
             <Text style={[styles.phaseStatusText, { color: colors.warning }]}>
               Video uploaded. Finalizing on server...
+            </Text>
+          </View>
+        )}
+        {/* Presign step runs before any bytes move — without this the modal
+            sat on "0%" and read as frozen on slow networks */}
+        {uploadPhase === 'uploading' && uploadProgress === 0 && (
+          <View style={[styles.phaseStatusContainer, { backgroundColor: withAlpha(colors.primary, 0.1) }]}>
+            <Text style={[styles.phaseStatusText, { color: colors.primary }]}>
+              Preparing upload…
             </Text>
           </View>
         )}
@@ -784,9 +849,11 @@ function UploadModalComponent({
                 </View>
               ) : (
                 <View style={styles.thumbnailPlaceholder}>
-                  <ImageIcon size={20} color={colors.textMuted} strokeWidth={1.5} />
-                  <Text style={[styles.thumbnailPlaceholderText, { color: colors.textMuted }]}>
-                    Add cover image (optional)
+                  <ImageIcon size={20} color={thumbnailGenFailed ? colors.warning : colors.textMuted} strokeWidth={1.5} />
+                  <Text style={[styles.thumbnailPlaceholderText, { color: thumbnailGenFailed ? colors.warning : colors.textMuted }]}>
+                    {thumbnailGenFailed
+                      ? "Couldn't generate a cover from the video — tap to add one"
+                      : 'Add cover image (optional)'}
                   </Text>
                 </View>
               )}

@@ -500,6 +500,50 @@ export const finalizePresignedVideoUpload = asyncHandler(async (req, res) => {
   }
 
   try {
+    // Idempotency: finalize may be retried by the client after a lost
+    // response or from its offline queue. r2VideoKey is unique per presign,
+    // so an existing record means THIS upload was already finalized —
+    // return it instead of creating a duplicate Video.
+    const existing = await prisma.video.findFirst({
+      where: { r2VideoKey },
+      include: {
+        user: { select: { id: true, firstName: true, lastName: true, avatar: true } },
+      },
+    });
+    if (existing) {
+      if (existing.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'FORBIDDEN',
+          message: 'This upload belongs to a different user',
+        });
+      }
+      const [replayVideoUrl, replayThumbnailUrl] = await Promise.all([
+        getSignedDownloadUrl(existing.r2VideoKey),
+        existing.r2ThumbnailKey
+          ? getSignedDownloadUrl(existing.r2ThumbnailKey)
+          : Promise.resolve(existing.thumbnail),
+      ]);
+      console.log(`[R2Controller] Finalize replay — video already exists: ${existing.id}`);
+      return res.status(200).json({
+        success: true,
+        message: 'Video already finalized',
+        video: {
+          id: existing.id,
+          title: existing.title,
+          description: existing.description,
+          videoUrl: replayVideoUrl,
+          thumbnail: replayThumbnailUrl,
+          duration: existing.duration,
+          r2VideoKey: existing.r2VideoKey,
+          r2ThumbnailKey: existing.r2ThumbnailKey,
+          videoSizeBytes: Number(existing.videoSizeBytes),
+          createdAt: existing.createdAt,
+          user: existing.user,
+        },
+      });
+    }
+
     // Verify the video file actually exists in R2
     const videoMeta = await getFileMetadata(r2VideoKey);
     if (!videoMeta) {

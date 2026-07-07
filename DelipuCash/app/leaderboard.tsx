@@ -52,7 +52,11 @@ import {
   SHADOWS,
   withAlpha,
 } from "@/utils/theme";
-import { useQuestionsLeaderboard, type LeaderboardUser } from "@/services/questionHooks";
+import {
+  useQuestionsLeaderboard,
+  type LeaderboardUser,
+  type LeaderboardPeriod,
+} from "@/services/questionHooks";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const isTablet = SCREEN_WIDTH >= 768;
@@ -69,7 +73,8 @@ const MEDAL_COLORS = {
 } as const;
 
 // ─── Time period tabs ───────────────────────────────────────────────────────
-type TimePeriod = "all" | "weekly" | "today";
+// Coupled to the hook's period type so the tab ids stay valid API values.
+type TimePeriod = LeaderboardPeriod;
 const TIME_TABS: { id: TimePeriod; label: string }[] = [
   { id: "all", label: "All Time" },
   { id: "weekly", label: "This Week" },
@@ -307,7 +312,9 @@ export default function LeaderboardScreen() {
   const [selectedTab, setSelectedTab] = useState<TimePeriod>("all");
   const [refreshing, setRefreshing] = useState(false);
 
-  const { data: leaderboard, isLoading, refetch } = useQuestionsLeaderboard(50);
+  // Each period is its own cache entry; keepPreviousData in the hook keeps
+  // the current list visible while the newly selected period loads.
+  const { data: leaderboard, isLoading, refetch } = useQuestionsLeaderboard(50, true, selectedTab);
 
   const top3 = useMemo(() => (leaderboard?.users ?? []).slice(0, 3), [leaderboard]);
   const rest = useMemo(() => (leaderboard?.users ?? []).slice(3), [leaderboard]);

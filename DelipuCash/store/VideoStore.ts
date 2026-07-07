@@ -127,6 +127,12 @@ export interface PendingUpload {
   createdAt: string;
   retryCount: number;
   lastError?: string;
+  /**
+   * When set, the file transfer already succeeded and only the finalize
+   * (DB record creation) failed. The queue processor re-sends this payload
+   * to the idempotent finalize endpoint instead of re-uploading the file.
+   */
+  finalizePayload?: Record<string, unknown>;
 }
 
 /** Watch history entry */

@@ -24,13 +24,13 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { NotificationProvider } from '@/utils/usePushNotifications';
 import { ToastProvider } from '@/components/ui/Toast';
-import { initSentry, identifyUser, Sentry } from '@/utils/sentry';
-import { QueryClient, focusManager, onlineManager } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import NetInfo from '@react-native-community/netinfo';
 
+import {
+  queryClient,
+  asyncStoragePersister,
+  QUERY_PERSIST_MAX_AGE,
+} from '@/services/queryClient';
 import { useAuthStore, initializeAuth } from '@/utils/auth/store';
 import { silentRefresh } from '@/services/tokenRefresh';
 import { useThemeStore } from '@/utils/theme';
@@ -44,9 +44,6 @@ import { telemetry } from '@/services/telemetryApi';
 
 // Suppress Reanimated false-positive warning (all .value reads are inside useAnimatedStyle)
 LogBox.ignoreLogs(['Reading from `value` during component render']);
-
-// Initialize Sentry BEFORE any component renders so early-boot errors are captured.
-initSentry();
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 // This is called at module level to ensure it runs before any rendering.
@@ -111,91 +108,6 @@ export const unstable_settings = {
   initialRouteName: 'index',
 };
 
-// Configure online manager for network awareness
-if (Platform.OS !== 'web') {
-  onlineManager.setEventListener((setOnline) => {
-    return NetInfo.addEventListener((state) => {
-      setOnline(!!state.isConnected);
-    });
-  });
-}
-
-// Wire TanStack Query focusManager to AppState so stale queries
-// automatically refetch when the app returns from background.
-// This ensures user profile data is fresh after resume.
-if (Platform.OS !== 'web') {
-  focusManager.setEventListener((handleFocus) => {
-    const subscription = AppState.addEventListener('change', (status: AppStateStatus) => {
-      handleFocus(status === 'active');
-    });
-    return () => subscription.remove();
-  });
-}
-
-// Create QueryClient at module level to avoid timing issues with expo-router
-// This ensures the QueryClient is always available when components mount
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      // Retry configuration for network resilience
-      retry: 3,
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      // Stale time defaults
-      staleTime: 1000 * 60 * 2, // 2 minutes
-      // gcTime must be ≥ persister maxAge so cached data survives to be restored.
-      // 24 hours: Instagram/TikTok-style "instant open" even after hours away.
-      gcTime: 1000 * 60 * 60 * 24, // 24 hours
-      // Refetch settings — refetch stale queries when app returns to foreground
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
-      // Network mode - fetch when online, use cache when offline
-      networkMode: 'offlineFirst',
-    },
-    mutations: {
-      // Retry mutations up to 2 times for failed network requests
-      retry: 2,
-      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-      // Network mode for mutations
-      networkMode: 'offlineFirst',
-    },
-  },
-});
-
-// AsyncStorage persister — survives cold restarts.
-// On next app open the cache is restored BEFORE any network request,
-// giving every screen instant data (stale-while-revalidate).
-// Throttle writes to 2 s to avoid excessive I/O during rapid cache updates.
-const asyncStoragePersister = createAsyncStoragePersister({
-  storage: AsyncStorage,
-  key: 'REACT_QUERY_OFFLINE_CACHE',
-  throttleTime: 2000,
-});
-
-// ============================================================================
-// Auth transition watcher — clears query cache on passive auth clear
-// ============================================================================
-// When auth transitions from authenticated → null via passive paths (403
-// response, failed refresh), the query cache MUST be cleared to prevent the
-// previous user's data from leaking if a different user logs in.
-// This runs at module level (outside React) because passive auth clears
-// can happen from any service (tokenRefresh.ts, api.ts fetchJson 403).
-// The explicit signOut() in useAuth.ts already calls queryClient.clear(),
-// but these passive paths don't — this is the centralized safety net.
-// (2026 best-practice: Instagram, Threads, X all use centralized auth
-// transition observers to ensure cache/state isolation between users.)
-let previousAuthState: boolean = false; // tracks "was authenticated"
-useAuthStore.subscribe((state) => {
-  const isNowAuthenticated = !!state.auth;
-  if (previousAuthState && !isNowAuthenticated) {
-    // Auth transitioned from non-null → null (passive logout)
-    queryClient.clear();
-    // Also clear the persisted offline cache so stale user data
-    // doesn't rehydrate for a different user on next cold start.
-    AsyncStorage.removeItem('REACT_QUERY_OFFLINE_CACHE').catch(() => {});
-  }
-  previousAuthState = isNowAuthenticated;
-});
-
 /** Invisible component that runs global background tasks inside the provider tree */
 function GlobalProcessors() {
   useOfflineQueueProcessor();
@@ -218,11 +130,6 @@ function GlobalProcessors() {
  * 6. This is the *baseline*; individual screens can override via the
  *    focus-aware `useStatusBar()` hook when they need a different style.
  */
-// Module-level constant — routes that auto-hide system bars
-const IMMERSIVE_PREFIX = '/video/';
-
-
-
 /**
  * Root-level system bars policy — safety net for screens that don't use
  * useStatusBar(). Tab screens manage their own status bar via the
@@ -377,11 +284,6 @@ function RootLayoutInner() {
     }
   }, [auth, isReady]);
 
-  // Sync Sentry user identity on every auth change so crash reports are attributable.
-  useEffect(() => {
-    identifyUser(auth?.user?.id ? { id: auth.user.id } : null);
-  }, [auth?.user?.id]);
-
   // Initialize RevenueCat Purchases SDK
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -442,7 +344,7 @@ function RootLayoutInner() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister: asyncStoragePersister, maxAge: 1000 * 60 * 60 * 24 }}
+        persistOptions={{ persister: asyncStoragePersister, maxAge: QUERY_PERSIST_MAX_AGE }}
       >
         <SSEProvider>
         <NotificationProvider>
@@ -486,4 +388,4 @@ function RootLayoutInner() {
   );
 }
 
-export default Sentry.wrap(RootLayoutInner);
+export default RootLayoutInner;

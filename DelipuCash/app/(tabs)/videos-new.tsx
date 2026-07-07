@@ -102,6 +102,9 @@ import {
   useVideoFeedback,
   useRecordVideoCompletion,
   useBlockUser,
+  usePrefetchVideos,
+  FOLLOWING_FEED_PAGE_LIMIT,
+  TRENDING_FEED_PAGE_LIMIT,
 } from '@/services/videoHooks';
 import {
   VerticalVideoFeed,
@@ -507,7 +510,10 @@ export default function VideosScreen(): React.ReactElement {
     fetchNextPage: fetchNextFollowing,
     hasNextPage: hasNextFollowing,
     isFetchingNextPage: isFetchingNextFollowing,
-  } = useInfiniteFollowingVideos({ limit: 15, enabled: isAuthenticated ?? undefined });
+  } = useInfiniteFollowingVideos({
+    limit: FOLLOWING_FEED_PAGE_LIMIT,
+    enabled: isAuthenticated ?? undefined,
+  });
 
   // Trending: infinite scroll with pagination + localization
   const {
@@ -518,13 +524,20 @@ export default function VideosScreen(): React.ReactElement {
     fetchNextPage: fetchNextTrending,
     hasNextPage: hasNextTrending,
     isFetchingNextPage: isFetchingNextTrending,
-  } = useInfiniteTrendingVideos({ limit: 20 });
+  } = useInfiniteTrendingVideos({ limit: TRENDING_FEED_PAGE_LIMIT });
 
   // Explore: random diverse videos for feed blending
   const { data: exploreVideos } = useExploreVideos({
     limit: 10,
     enabled: activeTab === 'for-you',
   });
+
+  // Warm the Following + Trending caches once the active feed has loaded so
+  // those tabs open instantly (mirrors questions-new's adjacent-tab prefetch)
+  const prefetchVideos = usePrefetchVideos();
+  useEffect(() => {
+    if (!isForYouLoading) prefetchVideos();
+  }, [isForYouLoading, prefetchVideos]);
 
   // User controls + completion tracking
   const { mutate: submitFeedback } = useVideoFeedback();

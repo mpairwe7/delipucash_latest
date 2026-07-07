@@ -3,9 +3,13 @@
  * Comprehensive help center with FAQ, contact methods, and tutorials
  * Architecture: FlatList for FAQ, ScrollView for Contact/Tutorials
  * Follows transactions.tsx / notifications.tsx patterns
+ *
+ * Server state lives in TanStack Query (services/supportHooks.ts):
+ * per-resource queries with per-tab loading/error derivation, a debounced
+ * server-backed FAQ search, and an optimistic rate-FAQ mutation.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import React, { useState, useCallback, useMemo, memo } from 'react';
 import {
   StyleSheet,
   View,
@@ -14,7 +18,6 @@ import {
   RefreshControl,
   Pressable,
   Linking,
-  InteractionManager,
   AccessibilityInfo,
 } from 'react-native';
 import Animated, {
@@ -57,20 +60,23 @@ import {
   withAlpha,
   type ThemeColors,
 } from '@/utils/theme';
-import {
-  fetchFAQs,
-  searchFAQs,
-  rateFAQ,
-  fetchContactMethods,
-  fetchQuickActions,
-  fetchTutorials,
-  getFAQCategories,
-  type FAQItem,
-  type ContactMethod,
-  type QuickAction,
-  type Tutorial,
-  type FAQCategory,
+import type {
+  FAQItem,
+  QuickAction,
+  Tutorial,
+  FAQCategory,
 } from '@/services/supportApi';
+import {
+  useFAQs,
+  useFAQCategories,
+  useContactMethods,
+  useQuickActions,
+  useTutorials,
+  useSearchFAQs,
+  useRateFAQ,
+  useRefreshSupport,
+} from '@/services/supportHooks';
+import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,6 +84,11 @@ import {
 
 const MAX_ANIMATED_INDEX = 15;
 const SKELETON_COUNT = 4;
+
+// Stable fallback while a query has no data yet — keeps downstream useMemo
+// deps referentially stable across renders (TanStack preserves identity of
+// fetched data via structural sharing; this covers the undefined case).
+const EMPTY: never[] = [];
 
 type TabType = 'faq' | 'contact' | 'tutorials';
 
@@ -358,86 +369,52 @@ export default function HelpSupportScreen() {
   const router = useRouter();
   const { showToast } = useToast();
 
-  // State
+  // UI state — server state lives in the query hooks below
   const [activeTab, setActiveTab] = useState<TabType>('faq');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<
     FAQCategory | 'all'
   >('all');
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Data
-  const [faqs, setFaqs] = useState<FAQItem[]>([]);
-  const [searchResults, setSearchResults] = useState<FAQItem[]>([]);
-  const [contacts, setContacts] = useState<ContactMethod[]>([]);
-  const [quickActions, setQuickActions] = useState<QuickAction[]>([]);
-  const [tutorials, setTutorials] = useState<Tutorial[]>([]);
-  const [categories, setCategories] = useState<
-    { category: FAQCategory; count: number }[]
-  >([]);
 
   // -------------------------------------------------------------------------
-  // Data Loading
+  // Data — TanStack Query (cached, persisted, refetch-on-focus/reconnect)
   // -------------------------------------------------------------------------
 
-  const loadData = useCallback(async (silent = false) => {
-    if (!silent) setIsLoading(true);
-    setError(null);
-    try {
-      const [faqData, contactData, actionsData, tutorialData, categoryData] =
-        await Promise.all([
-          fetchFAQs(),
-          fetchContactMethods(),
-          fetchQuickActions(),
-          fetchTutorials(),
-          getFAQCategories(),
-        ]);
+  const faqsQuery = useFAQs();
+  const categoriesQuery = useFAQCategories();
+  const contactsQuery = useContactMethods();
+  const quickActionsQuery = useQuickActions();
+  const tutorialsQuery = useTutorials();
 
-      setFaqs(faqData);
-      setContacts(contactData);
-      setQuickActions(actionsData);
-      setTutorials(tutorialData);
-      setCategories(categoryData);
-      setSelectedCategory('all');
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to load support data';
-      setError(message);
-    } finally {
-      if (!silent) setIsLoading(false);
-    }
-  }, []);
+  // Debounced server-backed search; each term is its own cache entry
+  const debouncedSearch = useDebouncedValue(searchQuery, 300);
+  const searchResultsQuery = useSearchFAQs(debouncedSearch);
 
-  useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      loadData();
-    });
-    return () => task.cancel();
-  }, [loadData]);
+  const rateFAQMutate = useRateFAQ().mutate;
+  const refreshSupport = useRefreshSupport();
 
-  // Search with debounce
-  useEffect(() => {
-    const searchTimeout = setTimeout(async () => {
-      if (searchQuery.trim().length > 2) {
-        setIsSearching(true);
-        try {
-          const results = await searchFAQs(searchQuery);
-          setSearchResults(results);
-        } catch {
-          showToast({ message: 'Search failed. Try again.', type: 'error' });
-        } finally {
-          setIsSearching(false);
-        }
-      } else {
-        setSearchResults([]);
-      }
-    }, 300);
+  const faqs = faqsQuery.data ?? EMPTY;
+  const contacts = contactsQuery.data ?? EMPTY;
+  const quickActions = quickActionsQuery.data ?? EMPTY;
+  const tutorials = tutorialsQuery.data ?? EMPTY;
+  const categories = categoriesQuery.data ?? EMPTY;
 
-    return () => clearTimeout(searchTimeout);
-  }, [searchQuery, showToast]);
+  // Per-tab loading/error — one failing resource no longer blanks every tab.
+  // isPending is only true with no cached data, so persisted caches render instantly.
+  const isSearchActive = searchQuery.trim().length > 2;
+  const isSearching =
+    (isSearchActive && searchQuery !== debouncedSearch) ||
+    searchResultsQuery.isFetching;
+  const isFAQLoading = faqsQuery.isPending || categoriesQuery.isPending;
+  const faqError =
+    faqsQuery.error ??
+    categoriesQuery.error ??
+    (isSearchActive ? searchResultsQuery.error : null);
+  const isContactLoading = contactsQuery.isPending || quickActionsQuery.isPending;
+  const contactError = contactsQuery.error ?? quickActionsQuery.error;
+  const isTutorialsLoading = tutorialsQuery.isPending;
+  const tutorialsError = tutorialsQuery.error;
 
   // -------------------------------------------------------------------------
   // Handlers
@@ -446,9 +423,9 @@ export default function HelpSupportScreen() {
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-    await loadData(true);
+    await refreshSupport();
     setIsRefreshing(false);
-  }, [loadData]);
+  }, [refreshSupport]);
 
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
@@ -464,16 +441,21 @@ export default function HelpSupportScreen() {
     [],
   );
 
+  // Optimistic: the helpful/notHelpful counter bumps immediately and rolls
+  // back if the request fails (see useRateFAQ).
   const handleFAQRate = useCallback(
-    async (faqId: string, helpful: boolean) => {
-      try {
-        const result = await rateFAQ(faqId, helpful);
-        showToast({ message: result.message, type: 'success' });
-      } catch {
-        showToast({ message: 'Failed to submit rating', type: 'error' });
-      }
+    (faqId: string, helpful: boolean) => {
+      rateFAQMutate(
+        { faqId, helpful },
+        {
+          onSuccess: (result) =>
+            showToast({ message: result.message, type: 'success' }),
+          onError: () =>
+            showToast({ message: 'Failed to submit rating', type: 'error' }),
+        },
+      );
     },
-    [showToast],
+    [rateFAQMutate, showToast],
   );
 
   const handleQuickAction = useCallback(
@@ -528,15 +510,18 @@ export default function HelpSupportScreen() {
   // Memoized Data
   // -------------------------------------------------------------------------
 
+  // While typing (pre-debounce) keepPreviousData holds the last results,
+  // so this mirrors the old "stale results until new ones land" behavior.
+  const searchResults = searchResultsQuery.data;
   const displayedFAQs = useMemo(() => {
-    if (searchQuery.trim().length > 2) {
-      return searchResults;
+    if (isSearchActive) {
+      return searchResults ?? [];
     }
     if (selectedCategory !== 'all') {
       return faqs.filter((faq) => faq.category === selectedCategory);
     }
     return faqs;
-  }, [searchQuery, searchResults, faqs, selectedCategory]);
+  }, [isSearchActive, searchResults, faqs, selectedCategory]);
 
   // -------------------------------------------------------------------------
   // FAQ Tab — FlatList Components
@@ -630,7 +615,7 @@ export default function HelpSupportScreen() {
   );
 
   const FAQListEmpty = useMemo(() => {
-    if (isLoading || isSearching) {
+    if (isFAQLoading || isSearching) {
       return (
         <View style={styles.skeletonList}>
           {Array.from({ length: SKELETON_COUNT }).map((_, i) => (
@@ -639,11 +624,11 @@ export default function HelpSupportScreen() {
         </View>
       );
     }
-    if (error) {
+    if (faqError) {
       return (
         <SupportErrorState
-          message={error}
-          onRetry={loadData}
+          message={faqError.message}
+          onRetry={refreshSupport}
           colors={colors}
         />
       );
@@ -655,14 +640,14 @@ export default function HelpSupportScreen() {
         description="Try different keywords or browse categories"
       />
     );
-  }, [isLoading, isSearching, error, colors, loadData]);
+  }, [isFAQLoading, isSearching, faqError, colors, refreshSupport]);
 
   // -------------------------------------------------------------------------
   // Contact Tab Content
   // -------------------------------------------------------------------------
 
   const renderContactContent = useMemo(() => {
-    if (isLoading) {
+    if (isContactLoading) {
       return (
         <View style={styles.skeletonList}>
           {Array.from({ length: 3 }).map((_, i) => (
@@ -671,11 +656,11 @@ export default function HelpSupportScreen() {
         </View>
       );
     }
-    if (error) {
+    if (contactError) {
       return (
         <SupportErrorState
-          message={error}
-          onRetry={loadData}
+          message={contactError.message}
+          onRetry={refreshSupport}
           colors={colors}
         />
       );
@@ -745,12 +730,12 @@ export default function HelpSupportScreen() {
       </>
     );
   }, [
-    isLoading,
-    error,
+    isContactLoading,
+    contactError,
     quickActions,
     contacts,
     colors,
-    loadData,
+    refreshSupport,
     handleQuickAction,
   ]);
 
@@ -759,7 +744,7 @@ export default function HelpSupportScreen() {
   // -------------------------------------------------------------------------
 
   const renderTutorialsContent = useMemo(() => {
-    if (isLoading) {
+    if (isTutorialsLoading) {
       return (
         <View style={styles.skeletonList}>
           {Array.from({ length: 3 }).map((_, i) => (
@@ -768,11 +753,11 @@ export default function HelpSupportScreen() {
         </View>
       );
     }
-    if (error) {
+    if (tutorialsError) {
       return (
         <SupportErrorState
-          message={error}
-          onRetry={loadData}
+          message={tutorialsError.message}
+          onRetry={refreshSupport}
           colors={colors}
         />
       );
@@ -794,7 +779,7 @@ export default function HelpSupportScreen() {
         ))}
       </>
     );
-  }, [isLoading, error, tutorials, colors, loadData, handleTutorialPress]);
+  }, [isTutorialsLoading, tutorialsError, tutorials, colors, refreshSupport, handleTutorialPress]);
 
   // -------------------------------------------------------------------------
   // Render
