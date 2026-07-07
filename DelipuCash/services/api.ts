@@ -31,7 +31,6 @@ import {
 } from "@/types";
 import { useAuthStore } from '@/utils/auth/store';
 import { silentRefresh, isTokenExpiredResponse } from './tokenRefresh';
-import { addBreadcrumb } from '@/utils/sentry';
 
 /** Get current authenticated user ID from auth store */
 const getCurrentUserId = (): string | null =>
@@ -139,24 +138,12 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<ApiRespon
     const looksJson = contentType.includes('application/json');
     const json = looksJson ? await response.json() : { message: await response.text() };
 
-    addBreadcrumb('api.response', {
-      path,
-      method: initRest.method ?? 'GET',
-      status: response.status,
-      ok: response.ok,
-    });
-
     if (!response.ok) {
       return { success: false, data: json as T, error: json?.message || "Request failed" };
     }
 
     return { success: true, data: json as T };
   } catch (error) {
-    addBreadcrumb('api.error', {
-      path,
-      method: initRest.method ?? 'GET',
-      error: error instanceof Error ? error.message : String(error),
-    });
     return { success: false, data: {} as T, error: error instanceof Error ? error.message : "Network error" };
   }
 }

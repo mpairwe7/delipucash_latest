@@ -45,7 +45,7 @@ maestro test .maestro/questions-smoke.yaml
 ## How it works
 
 - **`jest.setup.ts`** (`setupFilesAfterEnv`) — global native-module mocks (reanimated,
-  AsyncStorage, Sentry, expo media/haptics/status-bar, lucide icons, RevenueCat/maps,
+  AsyncStorage, expo media/haptics/status-bar, lucide icons, RevenueCat/maps,
   React Navigation focus hooks, push-notification context). Mirrors the existing
   `jest.mock(path, factory)` idiom.
 - **`test-utils/`** — `renderWithProviders` (SafeAreaProvider + QueryClientProvider; the

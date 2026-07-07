@@ -92,15 +92,7 @@
     "plugins": [
       "expo-router",
       "./plugins/withDisableLint.js",
-      [
-        "@sentry/react-native/expo",
-        {
-          "organization": "delipucash",
-          "project": "delipucash-mobile",
-          "url": "https://sentry.io/",
-          "note": "Set SENTRY_AUTH_TOKEN in EAS build secrets for source-map upload."
-        }
-      ],
+      "./plugins/withGradleMemory.js",
       [
         "expo-splash-screen",
         {

@@ -3,7 +3,7 @@
  *
  * Applied to every test file via `setupFilesAfterEnv` in package.json. Mirrors the
  * per-file `jest.mock(path, factory)` idiom already used in
- * __tests__/instantRewardStore.test.ts and __tests__/sentry.test.ts
+ * __tests__/instantRewardStore.test.ts
  * (`__esModule: true` + `default` for default-export native modules).
  *
  * RNTL v13 auto-registers its Jest matchers (build/index.js requires
@@ -39,26 +39,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
-// Sentry — no-op wrapper (same approach as __tests__/sentry.test.ts).
-jest.mock('@sentry/react-native', () => ({
-  init: jest.fn(),
-  wrap: (component: unknown) => component,
-  captureException: jest.fn(),
-  captureMessage: jest.fn(),
-  addBreadcrumb: jest.fn(),
-  setUser: jest.fn(),
-  setTag: jest.fn(),
-  setContext: jest.fn(),
-  setExtra: jest.fn(),
-  withScope: jest.fn((cb: (scope: unknown) => void) =>
-    cb({ setTag: jest.fn(), setContext: jest.fn(), setLevel: jest.fn(), setExtra: jest.fn() })
-  ),
-  reactNavigationIntegration: jest.fn(() => ({})),
-  mobileReplayIntegration: jest.fn(() => ({})),
-  TouchEventBoundary: ({ children }: { children: unknown }) => children,
-}));
-
-// expo-constants — Sentry init reads projectId + app version.
+// expo-constants — provides projectId + app version to code that reads expoConfig.
 jest.mock('expo-constants', () => ({
   __esModule: true,
   default: {

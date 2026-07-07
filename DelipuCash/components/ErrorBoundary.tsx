@@ -21,7 +21,6 @@ import {
 } from 'react-native';
 import { AlertTriangle, RefreshCw } from 'lucide-react-native';
 import { useTheme, SPACING, TYPOGRAPHY, RADIUS, COMPONENT_SIZE } from '@/utils/theme';
-import { captureException } from '@/utils/sentry';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -52,13 +51,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     this.setState((prev) => ({ errorCount: prev.errorCount + 1 }));
     this.props.onError?.(error, errorInfo);
-
-    captureException(error, {
-      errorBoundary: {
-        screenName: this.props.screenName ?? 'unknown',
-        componentStack: errorInfo.componentStack ?? undefined,
-      },
-    });
 
     // Announce to screen readers
     AccessibilityInfo.announceForAccessibility(
